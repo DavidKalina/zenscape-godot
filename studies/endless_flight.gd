@@ -1552,7 +1552,9 @@ func _react(delta: float) -> void:
 	var h: float = field.height(p.x,p.z)
 	var over := p.y-h if h > Field.SEA_Y+0.2 and not _on_river() else NAN
 	var thrust := 0.0
-	if hand_landing.on_ground(): thrust = hand_landing.engine*(0.3+0.7*maxf(hand_landing.throttle,0.0))
+	# Parked, the air is the prop's, from the starter's nothing through the catch.
+	if stage != null and stage.holding(): thrust = plane_figure.prop_air()
+	elif hand_landing.on_ground(): thrust = hand_landing.engine*(0.3+0.7*maxf(hand_landing.throttle,0.0))
 	else: thrust = float(plane.engine)*clampf(0.6+0.4*float(plane.throttle),0.35,1.0)
 	var facing := -camera.global_basis.z
 	if eddies != null:

@@ -943,7 +943,9 @@ uniform float coat_roughness = 0.08;
 // set_wear: 0 new; faded, dusty and dull at 1, as the old paint did.
 uniform float wear : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 wear_dust : source_color = vec3(0.71, 0.65, 0.55);
-uniform float flex = 0.0;
+// Per instance (the airframe's and wires': the hinged parts' x is their own):
+// the wing tips' bend, by distance out along the span, scripts/plane_figure.gd.
+instance uniform float flex = 0.0;
 void vertex() {
 	float span_out = max(abs(VERTEX.x) - 0.16, 0.0);
 	VERTEX.y += flex * span_out * span_out * 0.35;
@@ -1005,8 +1007,11 @@ uniform float darkest = 1.3;
 uniform float fill = 2.2;
 uniform float shade_lift = 3.0;
 uniform float shade_lit = 0.3;
+instance uniform float flex = 0.0;
 varying float cover;
 void vertex() {
+	float span_out = max(abs(VERTEX.x) - 0.16, 0.0);
+	VERTEX.y += flex * span_out * span_out * 0.35;
 	float depth = max(-(MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).z, 0.01);
 	float toy_px = 2.0 * depth / (abs(PROJECTION_MATRIX[1][1]) * VIEWPORT_SIZE.y) / length(MODEL_MATRIX[0].xyz);
 	// A three-sided tube of radius r stands about 1.6 r wide.
