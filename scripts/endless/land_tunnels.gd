@@ -1698,6 +1698,24 @@ static func _basalt_material(t: Tunnels.Site) -> ShaderMaterial:
 ## (ROCK_LUMP; none in the portals, so the opening stays true) and a flat
 ## floor of FLOOR_SEGS strips between the walls' feet. Indexed, its normals
 ## smoothed, so the lumps shade.
+## The lumps of the carved rock: ridged noise, so it reads broken rather than poured
+## (`_build_rock`; the burrower's ridge in a bore lies on the same rock).
+static func rock_grain(t: Tunnels.Site) -> FastNoiseLite:
+	var grain := FastNoiseLite.new()
+	grain.seed = hash([t.seed,"grain"]) & 0x7fffffff
+	grain.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	grain.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	grain.fractal_octaves = 3
+	grain.frequency = 1.0/Tunnels.ROCK_GRAIN
+	return grain
+
+## How far the lumps reach out of the profile (m) at distance `s`.
+static func rock_lump(t: Tunnels.Site, s: float) -> float:
+	if s <= 0.0 or s >= t.length: return 0.0
+	var lump := ROCK_LUMP*(0.45+0.55*Tunnels.cave_ease(t,s))
+	if t.sunk: lump *= CAVE_LUMP*smoothstep(0.0,Tunnels.CAVE_CALM,minf(s,t.length-s))
+	return lump
+
 func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -1711,13 +1729,7 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		for k in range(1,sub): ss.append(lerpf(prev,s,float(k)/sub))
 		ss.append(s)
 	ss.append_array([t.length,t.length+ends])
-	# The lumps: ridged noise, so the rock reads broken rather than poured.
-	var grain := FastNoiseLite.new()
-	grain.seed = hash([t.seed,"grain"]) & 0x7fffffff
-	grain.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	grain.fractal_type = FastNoiseLite.FRACTAL_RIDGED
-	grain.fractal_octaves = 3
-	grain.frequency = 1.0/Tunnels.ROCK_GRAIN
+	var grain := rock_grain(t)
 	var pos := PackedVector3Array()
 	var inward := PackedVector3Array()
 	var per := RING_SEGS+1+FLOOR_SEGS+1
@@ -1731,8 +1743,7 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		var n3 := Vector3(n.x,0.0,n.y)
 		var pr := Tunnels.profile(t,s)
 		var e := Tunnels.cave_ease(t,s)
-		var lump := 0.0 if s <= 0.0 or s >= t.length else ROCK_LUMP*(0.45+0.55*e)
-		if t.sunk: lump *= CAVE_LUMP*smoothstep(0.0,Tunnels.CAVE_CALM,minf(s,t.length-s))
+		var lump := rock_lump(t,s)
 		var fy := Tunnels.floor_at(t,s)
 		var hw := (pr.x+pr.y)*0.5
 		var feet: Array = []

@@ -14,8 +14,9 @@ extends Node
 ## plane is left behind, or the run's orbs are out: he goes on all the same, and he
 ## only stops short if caught, or if the plane lands or crashes. The caves are there
 ## without him: he shows one, he doesn't open it.
-## There is no timer: he's seen at a mouth or not at all. REST s after a run he can be
-## found again, and each mouth once until the plane has been well away from it.
+## Inside he carries on along the bore (scripts/endless/burrower_bore.gd). There is no
+## timer: he's seen at a mouth or not at all. REST s after a run he can be found again,
+## and each mouth once until the plane has been well away from it.
 ## `--no-burrower` leaves him out; `--burrower-every=S` makes the rest S s;
 ## `--burrower-near=M` makes MOUTH_NEAR M m (it stays inside the caves' build reach).
 ## The run's tuning: `--burrower-orb-off=M` (least m off the plane's line an orb comes
@@ -30,6 +31,7 @@ signal caught(at: Vector3)
 
 const Burrower = preload("res://scripts/burrower/burrower.gd")
 const PushUps = preload("res://scripts/burrower/push_ups.gd")
+const BurrowerBore = preload("res://scripts/endless/burrower_bore.gd")
 const GameLand = preload("res://scripts/burrower/game_land.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -104,6 +106,7 @@ const GUST_FAR_M := 300.0
 var land: GameLand
 var burrower: Burrower
 var push_ups: PushUps
+var bore: BurrowerBore
 var _idle := 0
 var _ask := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -159,12 +162,18 @@ func setup(game: Node3D) -> void:
 	burrower.swing_m = _flag("--burrower-swing",SWING_M)
 	burrower.swing_s = maxf(_flag("--burrower-swing-s",SWING_S),1.0)
 	push_ups.taken.connect(_taken.bind(game))
+	bore = BurrowerBore.new()
+	add_child(bore)
+	bore.setup()
+	bore.ended.connect(_bore_over)
 	_rng.randomize()
 	_every = every_flag()
 	_near = clampf(_flag("--burrower-near",MOUTH_NEAR),MOUTH_NEAR_SET.x,MOUTH_NEAR_SET.y)
 
 ## One frame: whether he's about (asleep, only that), the creature and its push-ups.
 func step(delta: float, game: Node3D) -> void:
+	bore.step(delta,game)
+	FrameLog.mark(&"b_bore")
 	_rouse(delta,game)
 	# Asleep and all settled: nothing more a frame (a couple of frames on
 	# after, so the last halo and mote are cleared).
@@ -186,6 +195,7 @@ func _taken(kind: StringName, at: Vector3, game: Node3D) -> void:
 
 func _rouse(delta: float, game: Node3D) -> void:
 	var flying: bool = game.hand_landing.flying()
+	if bore.running() and not burrower.active: return
 	if burrower.active:
 		if burrower.diving(): return
 		if burrower.route_done(): _in(game)
@@ -221,7 +231,8 @@ func _far(game: Node3D) -> void:
 	burrower.set_distant(d > FAR_M+(-FAR_SLIP if burrower.distant else FAR_SLIP))
 	game.react.gust_gain = remap(clampf(d,GUST_NEAR_M,GUST_FAR_M),GUST_NEAR_M,GUST_FAR_M,1.0,GUST_FAR)
 
-## At the end of his route: he goes in, and is gone.
+## At the end of his route: he goes in, and the bore has him (the rest starts when
+## that's over, `_bore_over`).
 func _in(game: Node3D) -> void:
 	_sighted = false
 	burrower.shudder.sight = false
@@ -232,6 +243,12 @@ func _in(game: Node3D) -> void:
 	rouse.why = "mouth"
 	rouse.dives = int(rouse.dives)+1
 	rouse.mouths = int(rouse.mouths)+1
+	rouse.bore = ""
+	bore.begin(_mouth.site,int(_mouth.end))
+
+## The chase in the bore is over.
+func _bore_over(why: StringName) -> void:
+	rouse.bore = why
 	_rest()
 
 ## On a run, up and running: he can be caught.
