@@ -14,6 +14,11 @@ hollow the sheet hung at the old ground's height, up to 105 m over the carved
 land, with trees standing on it up to 61 m up. The split canyons had the same
 fault (`bcb3e8a7`); `_floor_off_cuts` only knew the splits.
 
+It shows wherever a hollow is cut through woods: trees floated at 6 of the 8
+openings. (4640, 4384) end B and (-6880, 5408) end B stand in open meadow, with
+no floating trees and only a few floor vertices over the land, so `8cc12233`'s
+"all 8" overstates those two.
+
 Proved on one flown line into (4640, 4384): native shows the veil and the
 trees; native with `--no-forest-floor` loses the veil and keeps the trees;
 GDScript shows neither.
