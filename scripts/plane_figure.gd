@@ -57,6 +57,7 @@ const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const PLANE_SURFACE := preload("res://shaders/plane_surface.gdshader")
 const PROP_BLUR := preload("res://shaders/prop_blur.gdshader")
 const PlaneIdle = preload("res://scripts/plane_idle.gd")
+const PlaneExhaust = preload("res://scripts/plane_exhaust.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 ## The wanderer's model; loaded only when one is built, so traffic and the
 ## scripts that only read this file's constants don't pull its atlas in.
@@ -211,6 +212,8 @@ var starter := -1.0
 ## How much of the hum's sway on the springs shows (rolling, it goes).
 var sway := 1.0
 var _life: RefCounted
+var _exhaust: Node3D
+var _drawn := Transform3D.IDENTITY
 var _sway_now := 1.0
 var _blur_phase := 0.0
 var _cowl: Node3D
@@ -450,11 +453,17 @@ func reset(glide: RefCounted) -> void:
 	_last_pitch = float(glide.pitch)
 	_last_heading = float(glide.heading)
 	_let_go_idle()
+	if _exhaust != null: _exhaust.clear()
 	update(0.0,glide,0.0,Callable(),false)
 
 ## The world moved under it (SkyIslands `arrive`): the vapour goes too.
 func shift(by: Vector3) -> void:
 	for i in range(_vapour_points.size()): _vapour_points[i] += by
+	if _exhaust != null: _exhaust.shift_by(by)
+
+## The prop's air (0 to 1) while the engine's life runs (scripts/plane_idle.gd `air`).
+func prop_air() -> float:
+	return _life.air() if _life != null else 0.0
 
 ## One frame: posed on `glide` (a SkyPlane, or a plain
 ## glide drawn without its roll), `dive` held 0..1 (unused), `ground` the
@@ -462,6 +471,8 @@ func shift(by: Vector3) -> void:
 ## `near` (0 to 1) how hard the vapour pulls off its wingtips and `lean`
 ## the bank, the outer tip's the stronger.
 func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, landable: bool, near := 0.0, lean := 0.0) -> void:
+	# As last drawn: the ground scale is laid on after this returns.
+	_drawn = global_transform
 	var at: Vector3 = glide.position
 	var roll := _roll(glide)
 	transform = pose(at,float(glide.heading),float(glide.pitch),roll)
@@ -527,8 +538,15 @@ func _idle(delta: float, pace: float, height: float) -> void:
 	if on and _life == null and not _wheels.is_empty(): _life = PlaneIdle.new()
 	if _life != null:
 		_life.step(delta,starter,on,rev,pace,height < WHEELS_NEAR)
-		_sway_now = lerpf(_sway_now,sway,1.0-exp(-delta/SWAY_EASE))
+		# Off the wheels and handed over, the run-up's pose lets go in the air
+		# without showing: the pose is the flight's own.
+		_sway_now = lerpf(_sway_now,sway if on else 0.0,1.0-exp(-delta/SWAY_EASE))
+		if _exhaust == null:
+			_exhaust = PlaneExhaust.new()
+			add_child(_exhaust)
+		_exhaust.step(delta,_drawn,_life.heat,_life.air(),_life.puffs)
 		if not on and _life.spent(): _let_go_idle()
+	elif _exhaust != null: _exhaust.step(delta,_drawn,0.0,0.0,[] as Array[float])
 	if _life != null:
 		var turn := Basis.from_euler(Vector3(_life.pitch*_sway_now,_life.yaw*_sway_now,_life.roll*_sway_now))
 		var rise := Vector3.UP*(_life.heave as float)*_sway_now

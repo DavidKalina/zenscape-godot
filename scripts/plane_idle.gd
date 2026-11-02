@@ -119,6 +119,12 @@ const NOISE_MOST := 9.0
 const AIR_MOST := 3.0
 
 const SMOKE_GAP := Vector2(0.14,0.5)
+## The stubs warm over this (s) from the catch, and cool over the other.
+const HEAT_UP := 1.6
+const HEAT_DOWN := 0.5
+const HEAT_IDLE := 0.7
+## The prop's pace (turns/s) over which it starts to move air worth the name.
+const AIR_FROM := Vector2(2.0,6.0)
 
 ## The body now: pitch, roll, yaw (rad), heave (toy units).
 var pitch := 0.0
@@ -137,8 +143,10 @@ var angle := 0.0
 var turned := 0.0
 ## Its pace (turns/s).
 var turns := 0.0
-## Puffs this frame: [[how strong (0 to 1)], ...], for the exhaust to spend.
+## Puffs this frame (how strong, 0 to 1), for the exhaust to spend.
 var puffs: Array[float] = []
+## How hot the stubs are (0 to 1): up from the catch, and on the run-up.
+var heat := 0.0
 
 var _t := 0.0
 var _spare := 0.0
@@ -185,10 +193,18 @@ func step(delta: float, starter: float, on: bool, rev: float, pace: float, rolli
 		_tick(at,on,rev,pace,rolling)
 	_spare -= n*STEP
 	if n > 0: _clock = clock
+	# A frame shorter than a step: the prop's still going.
+	else: turned = turns*TAU*minf(delta,MOST)
+
+## The air the prop moves, for the wash on the grass (`thrust`, 0 to 1): a smooth
+## pace, without the lope's kicks, so held air holds steady. About the 0.3 a
+## parked idle always gave the wash, 1 at the run-up's top; none on the starter.
+func air() -> float:
+	return clampf(turns/FULL,0.0,1.0)*smoothstep(AIR_FROM.x,AIR_FROM.y,turns)
 
 ## The whole of it settled, hum gone: the figure can let go.
 func spent() -> bool:
-	if _level > 0.002 or turns > 0.05: return false
+	if _level > 0.002 or turns > 0.05 or heat > 0.01: return false
 	for k in range(4):
 		if absf(_x[k]) > 0.0002: return false
 	return absf(tips)+absf(elevator)+absf(rudder) < 0.001
@@ -236,6 +252,8 @@ func _tick(clock: float, on: bool, rev: float, pace: float, rolling: bool) -> vo
 			_next_wisp = _rng.randf_range(SMOKE_GAP.x,SMOKE_GAP.y)
 			puffs.append(0.06+0.08*_rough+0.1*_rev)
 	var running := (1.0 if caught else 0.0)*_level
+	var hot := running*lerpf(HEAT_IDLE,1.0,_rev)
+	heat += (hot-heat)*(1.0-exp(-dt/(HEAT_UP if hot > heat else HEAT_DOWN)))
 	var air := minf(pow(pace_now/IDLE,2.0),AIR_MOST)
 	var bump := minf(pace/BUMPS_FULL,1.0)*ROLL_BUMPS if rolling else 0.0
 	if rolling and not _rolled and _rev > 0.5 and pace > ROLLING:
