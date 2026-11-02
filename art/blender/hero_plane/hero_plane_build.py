@@ -641,12 +641,26 @@ def wheel_geo(side):
 	def tuv(i, k):
 		return uv_px(tx + 6.0 + k / n * (tw - 12.0), ty + 6.0 + i / (len(tyre) - 1) * (th - 12.0))
 	loft(g, rings, tuv, True)
+	# The discs, closed to the middle, so no daylight shows through. Each side's
+	# own hub, proud of the disc: a boss, a shoulder and a nut, longer outboard.
+	# A dish is an open shell, which orient() can't judge by volume, so its faces
+	# are turned to look away from the wheel here. (They used to be culled.)
 	for sgn in (-1.0, 1.0):
-		prof = [(0.03 * sgn, 0.056), (0.026 * sgn, 0.05), (0.018 * sgn, 0.03), (0.024 * sgn, 0.02), (0.03 * sgn, 0.0185), (0.034 * sgn, 0.014), (0.0345 * sgn, 0.0005)]
-		rings = [[(al, math.cos(k * math.tau / n) * r, math.sin(k * math.tau / n) * r) for k in range(n)] for al, r in prof]
+		boss = 0.046 if sgn * side > 0.0 else 0.039
+		prof = [(0.03, 0.056), (0.026, 0.05), (0.018, 0.03), (0.024, 0.02), (0.03, 0.0185), (boss - 0.006, 0.0172), (boss - 0.004, 0.0135), (boss, 0.0118), (boss, 0.0005)]
+		rings = [[(al * sgn, math.cos(k * math.tau / n) * r, math.sin(k * math.tau / n) * r) for k in range(n)] for al, r in prof]
 		def duv(i, k):
 			return disc(Vector((0.0, rings[i][k % n][1], rings[i][k % n][2])))
+		start = len(g.f)
 		loft(g, rings, duv, True)
+		lean = 0.0
+		for f in g.f[start:]:
+			a, b, c = (Vector(g.v[j]) for j in f[:3])
+			lean += (b - a).cross(c - a).x
+		if lean * sgn < 0.0:
+			for k in range(start, len(g.f)):
+				g.f[k] = tuple(reversed(g.f[k]))
+				g.uv[k] = tuple(reversed(g.uv[k]))
 	return g
 
 
@@ -656,12 +670,18 @@ def gear_geo(side):
 	axle = (WHEEL_X * side - 0.03 * side, AXLE_Y, WHEEL_Z)
 	stub = (WHEEL_X * side + 0.012 * side, AXLE_Y, WHEEL_Z)
 	tube(g, [axle, stub], 0.0085, 8, "steel")
-	# The V, faired: front and rear legs to the belly.
-	tube(g, [(0.05 * side, -0.14, -0.40), axle], 0.0105, 8, "dark", aft=1.6)
-	tube(g, [(0.05 * side, -0.145, -0.17), axle], 0.0105, 8, "dark", aft=1.6)
-	# The spring leg: from the lower wing's root down, a boot, a polished rod
-	# and a fairing collar.
-	top = (0.135 * side, -0.092, -0.285)
+	# The V, faired: front and rear legs into the belly, each on a fitting, so
+	# the ends sit inside the skin however the body comes out.
+	fore = (0.042 * side, -0.120, -0.408)
+	aft = (0.046 * side, -0.130, -0.165)
+	tube(g, [fore, axle], 0.0105, 8, "dark", aft=1.6)
+	tube(g, [aft, axle], 0.0105, 8, "dark", aft=1.6)
+	tube(g, [(0.047 * side, -0.142, -0.400), (0.041 * side, -0.112, -0.408)], [0.012, 0.024], 8, "steel")
+	tube(g, [(0.051 * side, -0.152, -0.161), (0.045 * side, -0.122, -0.165)], [0.012, 0.024], 8, "steel")
+	# The spring leg: from the body's side down, a boot, a polished rod and a
+	# fairing collar. Its fitting goes on the side, under the wing root's line.
+	top = (0.085 * side, -0.082, -0.285)
+	tube(g, [(0.128 * side, -0.119, -0.285), (0.086 * side, -0.083, -0.285)], [0.0145, 0.024], 8, "steel")
 	dn = Vector(axle) - Vector(top)
 	knee = Vector(top) + dn * 0.56
 	rod = Vector(top) + dn * 0.74
