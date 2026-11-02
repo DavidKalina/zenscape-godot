@@ -240,7 +240,7 @@ def frame(d, up=None):
 	return a, d.cross(a).normalized()
 
 
-def tube(g, pts, radii, n, swatch, aft=1.0, cap=True, col=1.0, up=None):
+def tube(g, pts, radii, n, swatch, aft=1.0, cap=True, col=1.0, up=None, thin=0.62):
 	"""A pipe through pts, n round. `aft` > 1 draws it a teardrop, `aft` long
 	against the wind (+z) and thin across it: a streamlined strut."""
 	pts = [Vector(p) for p in pts]
@@ -256,7 +256,7 @@ def tube(g, pts, radii, n, swatch, aft=1.0, cap=True, col=1.0, up=None):
 			t = k * math.tau / n
 			ca, sa = math.cos(t), math.sin(t)
 			if aft > 1.0:
-				ring.append(p + a * (ca * radii[i] * (aft if ca > 0.0 else 1.0)) + b * (sa * radii[i] * 0.62))
+				ring.append(p + a * (ca * radii[i] * (aft if ca > 0.0 else 1.0)) + b * (sa * radii[i] * thin))
 			else:
 				ring.append(p + a * (ca * radii[i]) + b * (sa * radii[i]))
 		rings.append(ring)
@@ -641,12 +641,26 @@ def wheel_geo(side):
 	def tuv(i, k):
 		return uv_px(tx + 6.0 + k / n * (tw - 12.0), ty + 6.0 + i / (len(tyre) - 1) * (th - 12.0))
 	loft(g, rings, tuv, True)
+	# The discs, closed to the middle, so no daylight shows through. Each side's
+	# own hub, proud of the disc: a boss, a shoulder and a nut, longer outboard.
+	# A dish is an open shell, which orient() can't judge by volume, so its faces
+	# are turned to look away from the wheel here. (They used to be culled.)
 	for sgn in (-1.0, 1.0):
-		prof = [(0.03 * sgn, 0.056), (0.026 * sgn, 0.05), (0.018 * sgn, 0.03), (0.024 * sgn, 0.02), (0.03 * sgn, 0.0185), (0.034 * sgn, 0.014), (0.0345 * sgn, 0.0005)]
-		rings = [[(al, math.cos(k * math.tau / n) * r, math.sin(k * math.tau / n) * r) for k in range(n)] for al, r in prof]
+		boss = 0.046 if sgn * side > 0.0 else 0.039
+		prof = [(0.03, 0.056), (0.026, 0.05), (0.018, 0.03), (0.024, 0.02), (0.03, 0.0185), (boss - 0.006, 0.0172), (boss - 0.004, 0.0135), (boss, 0.0118), (boss, 0.0005)]
+		rings = [[(al * sgn, math.cos(k * math.tau / n) * r, math.sin(k * math.tau / n) * r) for k in range(n)] for al, r in prof]
 		def duv(i, k):
 			return disc(Vector((0.0, rings[i][k % n][1], rings[i][k % n][2])))
+		start = len(g.f)
 		loft(g, rings, duv, True)
+		lean = 0.0
+		for f in g.f[start:]:
+			a, b, c = (Vector(g.v[j]) for j in f[:3])
+			lean += (b - a).cross(c - a).x
+		if lean * sgn < 0.0:
+			for k in range(start, len(g.f)):
+				g.f[k] = tuple(reversed(g.f[k]))
+				g.uv[k] = tuple(reversed(g.uv[k]))
 	return g
 
 
@@ -656,12 +670,18 @@ def gear_geo(side):
 	axle = (WHEEL_X * side - 0.03 * side, AXLE_Y, WHEEL_Z)
 	stub = (WHEEL_X * side + 0.012 * side, AXLE_Y, WHEEL_Z)
 	tube(g, [axle, stub], 0.0085, 8, "steel")
-	# The V, faired: front and rear legs to the belly.
-	tube(g, [(0.05 * side, -0.14, -0.40), axle], 0.0105, 8, "dark", aft=1.6)
-	tube(g, [(0.05 * side, -0.145, -0.17), axle], 0.0105, 8, "dark", aft=1.6)
-	# The spring leg: from the lower wing's root down, a boot, a polished rod
-	# and a fairing collar.
-	top = (0.135 * side, -0.092, -0.285)
+	# The V, faired: front and rear legs into the belly, each on a fitting, so
+	# the ends sit inside the skin however the body comes out.
+	fore = (0.042 * side, -0.120, -0.408)
+	aft = (0.046 * side, -0.130, -0.165)
+	tube(g, [fore, axle], 0.0105, 8, "dark", aft=1.6)
+	tube(g, [aft, axle], 0.0105, 8, "dark", aft=1.6)
+	tube(g, [(0.047 * side, -0.142, -0.400), (0.041 * side, -0.112, -0.408)], [0.012, 0.024], 8, "steel")
+	tube(g, [(0.051 * side, -0.152, -0.161), (0.045 * side, -0.122, -0.165)], [0.012, 0.024], 8, "steel")
+	# The spring leg: from the body's side down, a boot, a polished rod and a
+	# fairing collar. Its fitting goes on the side, under the wing root's line.
+	top = (0.085 * side, -0.082, -0.285)
+	tube(g, [(0.128 * side, -0.119, -0.285), (0.086 * side, -0.083, -0.285)], [0.0145, 0.024], 8, "steel")
 	dn = Vector(axle) - Vector(top)
 	knee = Vector(top) + dn * 0.56
 	rod = Vector(top) + dn * 0.74
@@ -688,7 +708,8 @@ def build_struts(g, w):
 		for ch in (0.2, 0.68):
 			lo = (x_low, lo_y + 0.008, -CHORD * 0.5 + CHORD * ch)
 			up = (x_up, UPPER_Y - 0.002, le_up + CHORD * ch)
-			tube(g, [lo, up], 0.0092, 8, "dark", aft=2.2)
+			# Thick enough across the wind to stay whole from straight behind at chase.
+			tube(g, [lo, up], 0.0095, 8, "dark", aft=2.0, thin=0.95)
 			# The fittings: a small plate at each end.
 			for e in (lo, up):
 				tube(g, [(e[0], e[1] - 0.003, e[2] - 0.016), (e[0], e[1] - 0.003, e[2] + 0.022)], 0.0058, 5, "steel")
@@ -696,7 +717,7 @@ def build_struts(g, w):
 		for ch, zb in ((0.12, -0.36), (0.62, -0.17)):
 			base = (0.1 * side, 0.094, zb)
 			top = (0.105 * side, UPPER_Y - 0.004, le_up + CHORD * ch)
-			tube(g, [base, top], 0.0066, 8, "dark", aft=2.0)
+			tube(g, [base, top], 0.0072, 8, "dark", aft=1.8, thin=0.95)
 		# Flying and landing wires, a doubled pair in the bay, and the incidence X.
 		for ch, dz in ((0.2, -0.006), (0.2, 0.006), (0.68, -0.006), (0.68, 0.006)):
 			wing_z_up = le_up + CHORD * ch + dz
@@ -913,6 +934,8 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
+global uniform vec3 zs_key_direction;
+global uniform float zs_daylight;
 uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D mask_tex : hint_default_black, filter_linear_mipmap_anisotropic, repeat_disable;
@@ -929,11 +952,30 @@ uniform float normal_depth = 1.0;
 uniform float fill = 2.2;
 uniform float rim = 0.3;
 uniform float bounce = 4.0;
+// The side turned from the sun. The world's fill is about a twentieth of the
+// sun in the red and blue besides, so a saturated paint in it goes to black: a
+// near-neutral light scaled off the sky's own, so moods and night reach it,
+// strongest away from the sun and a little of it on the lit side, so cast
+// shadows lift too without washing the lit paint out.
+uniform float shade_lift = 3.0;
+// By night the lift and the sky's fill give way to these shares: the land goes
+// dark then, the fill does nearly all the plane's lighting (hardly the moon),
+// and in full they read as lit from within.
+uniform float shade_night = 0.1;
+uniform float fill_night = 0.6;
+// How far a roof shuts the sky out (PlaneFigure `_cover`), 0 open air to 1 under
+// stone, and how much of the sky's light it takes away then.
+uniform float roof = 0.0;
+uniform float roof_dim = 0.82;
+uniform float shade_lit = 0.3;
+uniform float shade_neutral = 0.7;
 uniform float coat_roughness = 0.08;
 // set_wear: 0 new; faded, dusty and dull at 1, as the old paint did.
 uniform float wear : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 wear_dust : source_color = vec3(0.71, 0.65, 0.55);
-uniform float flex = 0.0;
+// Per instance (the airframe's and wires': the hinged parts' x is their own):
+// the wing tips' bend, by distance out along the span, scripts/plane_figure.gd.
+instance uniform float flex = 0.0;
 void vertex() {
 	float span_out = max(abs(VERTEX.x) - 0.16, 0.0);
 	VERTEX.y += flex * span_out * span_out * 0.35;
@@ -972,7 +1014,61 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground * bounce, zs_hemi_sky, up.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - orm.g * 0.3);
-	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	float sunward = clamp(dot(up, zs_key_direction), 0.0, 1.0);
+	vec3 lift = mix(zs_hemi_sky, vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722))), shade_neutral) * zs_hemi_energy * shade_lift * mix(shade_night, 1.0, zs_daylight) * mix(1.0, shade_lit, sunward);
+	EMISSION = (diffuse * (hemi * fill * mix(fill_night, 1.0, zs_daylight) + lift) + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim) * (1.0 - roof * roof_dim);
+}
+"""
+
+WIRE = """shader_type spatial;
+// Written by art/blender/hero_plane/hero_plane_build.py. The wires, far under a
+// pixel wide at chase, where they broke into dashes: each is held to `min_px`
+// on screen, pushed out along its normal, and fades by what it really covers,
+// so a far wire is a faint whole line. Lit as hero_surface.gdshader.
+render_mode diffuse_lambert, specular_schlick_ggx, blend_mix, depth_draw_never, shadows_disabled;
+global uniform vec3 zs_hemi_sky;
+global uniform vec3 zs_hemi_ground;
+global uniform float zs_hemi_energy;
+global uniform vec3 zs_key_direction;
+global uniform float zs_daylight;
+uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform float wire_r = 0.0016;
+uniform float min_px = 1.5;
+uniform float darkest = 1.3;
+uniform float fill = 2.2;
+uniform float shade_lift = 3.0;
+// By night the lift and the sky's fill give way to these shares: the land goes
+// dark then, the fill does nearly all the plane's lighting (hardly the moon),
+// and in full they read as lit from within.
+uniform float shade_night = 0.1;
+uniform float fill_night = 0.6;
+// How far a roof shuts the sky out (PlaneFigure `_cover`), 0 open air to 1 under
+// stone, and how much of the sky's light it takes away then.
+uniform float roof = 0.0;
+uniform float roof_dim = 0.82;
+uniform float shade_lit = 0.3;
+instance uniform float flex = 0.0;
+varying float cover;
+void vertex() {
+	float span_out = max(abs(VERTEX.x) - 0.16, 0.0);
+	VERTEX.y += flex * span_out * span_out * 0.35;
+	float depth = max(-(MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).z, 0.01);
+	float toy_px = 2.0 * depth / (abs(PROJECTION_MATRIX[1][1]) * VIEWPORT_SIZE.y) / length(MODEL_MATRIX[0].xyz);
+	// A three-sided tube of radius r stands about 1.6 r wide.
+	float want = min_px * toy_px / 1.6;
+	VERTEX += NORMAL * max(want - wire_r, 0.0);
+	cover = clamp(wire_r / want * darkest, 0.0, 1.0);
+}
+void fragment() {
+	vec3 base = texture(albedo_tex, UV).rgb * COLOR.r;
+	ALBEDO = base;
+	ROUGHNESS = 0.45;
+	METALLIC = 0.0;
+	ALPHA = cover;
+	vec3 up = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, up.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	float sunward = clamp(dot(up, zs_key_direction), 0.0, 1.0);
+	EMISSION = base * (hemi * fill * mix(fill_night, 1.0, zs_daylight) + zs_hemi_sky * zs_hemi_energy * shade_lift * mix(shade_night, 1.0, zs_daylight) * mix(1.0, shade_lit, sunward)) * (1.0 - roof * roof_dim);
 }
 """
 
@@ -985,6 +1081,8 @@ global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 uniform vec3 tint : source_color = vec3(0.13, 0.21, 0.27);
 uniform float depth = 0.78;
+uniform float roof = 0.0;
+uniform float roof_dim = 0.82;
 void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.5);
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
@@ -995,7 +1093,7 @@ void fragment() {
 	METALLIC = 0.0;
 	SPECULAR = 0.7;
 	ALPHA = mix(depth, 0.97, edge);
-	EMISSION = sky * (0.25 + 1.4 * edge) + tint * sky * 0.8;
+	EMISSION = (sky * (0.25 + 1.4 * edge) + tint * sky * 0.8) * (1.0 - roof * roof_dim);
 }
 """
 
@@ -1003,14 +1101,15 @@ void fragment() {
 def write_materials():
 	(TEX / "hero_surface.gdshader").write_text(SHADER)
 	(TEX / "hero_glass.gdshader").write_text(GLASS)
+	(TEX / "hero_wire.gdshader").write_text(WIRE)
 	tex = (("albedo_tex", "hero_albedo.jpg", 2), ("normal_tex", "hero_normal.jpg", 3), ("mask_tex", "hero_mask.png", 4), ("orm_tex", "hero_orm.png", 5))
-	for name, extra in (("hero", ""), ("wire", "shader_parameter/normal_depth = 0.0\n")):
-		ext = [f'[ext_resource type="Shader" path="{RES}/hero_surface.gdshader" id="1"]']
+	for name, shader, maps in (("hero", "hero_surface", tex), ("wire", "hero_wire", tex[:1])):
+		ext = [f'[ext_resource type="Shader" path="{RES}/{shader}.gdshader" id="1"]']
 		lines = ['shader = ExtResource("1")']
-		for key, file, i in tex:
+		for key, file, i in maps:
 			ext.append(f'[ext_resource type="Texture2D" path="{RES}/{file}" id="{i}"]')
 			lines.append(f'shader_parameter/{key} = ExtResource("{i}")')
-		(TEX / f"{name}.tres").write_text('[gd_resource type="ShaderMaterial" format=3]\n\n' + "\n".join(ext) + "\n\n[resource]\n" + "\n".join(lines) + "\n" + extra)
+		(TEX / f"{name}.tres").write_text('[gd_resource type="ShaderMaterial" format=3]\n\n' + "\n".join(ext) + "\n\n[resource]\n" + "\n".join(lines) + "\n")
 	(TEX / "glass.tres").write_text(f'[gd_resource type="ShaderMaterial" format=3]\n\n[ext_resource type="Shader" path="{RES}/hero_glass.gdshader" id="1"]\n\n[resource]\nshader = ExtResource("1")\n')
 	# The imports: only the params; Godot fills in the rest on its first import.
 	subs = ",\n".join(f'"{n}": {{\n"use_external/enabled": true,\n"use_external/fallback_path": "{RES}/{n}.tres",\n"use_external/path": "{RES}/{n}.tres"\n}}' for n in ("hero", "glass", "wire"))

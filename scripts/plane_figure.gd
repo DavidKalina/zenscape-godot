@@ -36,15 +36,14 @@ extends Node3D
 ## Landed, it stands on its two wheels and a tail skid, nose up (`park`,
 ## scripts/plane_strip.gd `rest`), the propeller still.
 ##
-## Idling (`hum`, 0 to 1; the main menu's parked plane, scripts/endless/
-## main_menu.gd): the propeller at IDLE_TURNS, a blur; the engine's buzz, a
-## fast small shake (HUM_BUZZ m and HUM_TWITCH radians, sines out of step
-## at HUM_HZ); the body swaying slowly on its wheels' springs (HUM_SWAY
-## radians of roll and pitch at HUM_SWAY_HZ, bobbing HUM_BOB m) and leaning
-## a little against the propeller's torque (HUM_TORQUE); the elevator and
-## ailerons fluttering in the propeller's wash (HUM_FLUTTER radians at
-## HUM_FLUTTER_HZ). `rev` (0 to 1) runs the engine up: the propeller REV_TURNS
-## times faster, the buzz and flutter REV_SHAKE times stronger.
+## Idling (`hum`, the main menu's parked plane, scripts/endless/menu_stage.gd):
+## scripts/plane_idle.gd runs the engine, from the starter (`starter`, its clock)
+## through the catch to a lumpy idle, with `rev` (0 to 1) running it up, and
+## here its numbers are laid on: the body on its springs about the wheels, which
+## stay on the ground, the legs and tyres taking it; the cowl and the prop on
+## their mounts; the wing tips (`flex`), the surfaces. A propeller at a pace the
+## frames can't show is drawn smeared along the path it went that frame (the
+## disc's `blades`), so it can't strobe; at speed that gives way to the disc.
 ##
 ## That is the code-built figure, which the sky's traffic flies (a livery
 ## passed to `_init`). The wanderer's own plane (no livery) is the authored
@@ -57,6 +56,8 @@ const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const PLANE_SURFACE := preload("res://shaders/plane_surface.gdshader")
 const PROP_BLUR := preload("res://shaders/prop_blur.gdshader")
+const PlaneIdle = preload("res://scripts/plane_idle.gd")
+const PlaneExhaust = preload("res://scripts/plane_exhaust.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 ## The wanderer's model; loaded only when one is built, so traffic and the
 ## scripts that only read this file's constants don't pull its atlas in.
@@ -166,23 +167,26 @@ const PROP_TURNS := 3.0
 const PROP_PER := 0.6
 const PROP_HIDE := 9.5
 const PROP_SHOW := 8.5
-const BLUR := Vector2(0.22,0.55)
+const BLUR := Vector2(0.5,1.0)
 const BLUR_CRAWL := 1.4
 ## The landing mark shows within MARK_HEIGHT m of the ground.
 const MARK_HEIGHT := 28.0
-## Idling (`hum`; the header's last paragraph).
-const IDLE_TURNS := 16.0
-const REV_TURNS := 1.6
-const HUM_BUZZ := Vector3(0.003,0.004,0.002)
-const HUM_TWITCH := Vector3(0.003,0.002,0.004)
-const HUM_HZ := Vector3(23.0,29.0,17.0)
-const HUM_SWAY := Vector2(0.018,0.009)
-const HUM_SWAY_HZ := Vector2(0.55,0.83)
-const HUM_BOB := 0.008
-const HUM_TORQUE := 0.012
-const HUM_FLUTTER := Vector2(0.07,0.035)
-const HUM_FLUTTER_HZ := Vector2(6.3,9.7)
-const REV_SHAKE := 1.8
+## The mesh blades give way to their smear past this travel in a frame
+## (radians), and the smear fades into the disc over these turns/s.
+const SMEAR_FROM := 0.36
+const SMEAR_BACK := 0.28
+const SMEAR_FADE := Vector2(12.0,20.0)
+## The share of a wheel's drop its tyre takes; the V legs' hinge on the belly
+## (toy units across, from the middle) and its reach to the axle.
+const TYRE_SHARE := 0.35
+const LEG_HINGE := Vector3(0.05,-0.14,-0.285)
+const LEG_REACH := 0.155
+const TYRE_RADIUS := 0.08
+const AXLE_X := 0.205
+## The cowl turns about the firewall with its offset (rad per toy unit).
+const COWL_TURN := 2.2
+## How fast the body's share follows `sway` (s).
+const SWAY_EASE := 0.15
 ## The wingtip vapour: points kept a tip, laid every VAPOUR_EVERY seconds
 ## (so a trail lasts VAPOUR*VAPOUR_EVERY), its width new and old and its
 ## strength (toy m, grown with the plane), its drift up and outward (m/s),
@@ -203,9 +207,21 @@ var parked := false
 ## header's last paragraph.
 var hum := 0.0
 var rev := 0.0
+## The starter's clock (s; scripts/plane_idle.gd), under 0 for an engine already running.
+var starter := -1.0
 ## How much of the hum's sway on the springs shows (rolling, it goes).
 var sway := 1.0
-var _hum_t := 0.0
+var _life: RefCounted
+var _exhaust: Node3D
+var _drawn := Transform3D.IDENTITY
+var _sway_now := 1.0
+var _blur_phase := 0.0
+var _cowl: Node3D
+var _gear: Array[Node3D] = []
+var _airframe: GeometryInstance3D
+var _wires: GeometryInstance3D
+## Where the parts the idle moves sit at rest.
+var _home := {}
 ## The control surfaces' angles from the stick, under the hum's flutter.
 var _aileron_at := Vector2.ZERO
 var _elevator_at := 0.0
@@ -227,6 +243,24 @@ var _wheels: Array[Node3D] = []
 var _wheel_rate := 0.0
 var _wheel_angle := 0.0
 var _hero_paint: Array[ShaderMaterial] = []
+## Every material of the model's (this figure's own copies), and how far a roof
+## shuts the sky out of them now (0 open air, 1 under stone). The sky's light is
+## emission here, which no shadow reaches, so the figure dims it itself. Eased
+## over ROOF_EASE s; ROOF_STEP is the least change worth writing.
+var _hero_lit: Array[ShaderMaterial] = []
+var _cover := 0.0
+var _cover_set := 0.0
+var _covered := false
+## In a bore (set by the study each frame): the model goes on the bore's own
+## layer, as the door hall does with the figure, so the sun and the moon leave it
+## and the torches take it (LandTunnels UNDER_LAYER).
+var bore := false
+var _bore_set := false
+var _hero_parts: Array[MeshInstance3D] = []
+const BORE_LAYER := 1 << 14
+const OPEN_LAYER := 1
+const ROOF_EASE := 0.22
+const ROOF_STEP := 0.004
 ## Where the vapour leaves the upper wingtips (z).
 var _tip_z := STAGGER
 var _mark: MeshInstance3D
@@ -313,10 +347,12 @@ func _build_hero() -> void:
 	var own := {}
 	for found: Node in model.find_children("*","MeshInstance3D",true,false):
 		var part := found as MeshInstance3D
+		_hero_parts.append(part)
 		for s in range(part.mesh.get_surface_count()):
 			var was := part.mesh.surface_get_material(s) as ShaderMaterial
 			if not own.has(was):
 				own[was] = was.duplicate()
+				_hero_lit.append(own[was])
 				if own[was].get_shader_parameter("mask_tex") != null: _hero_paint.append(own[was])
 			part.set_surface_override_material(s,own[was])
 	_tip_z = HERO_TIP_Z
@@ -327,6 +363,12 @@ func _build_hero() -> void:
 	_rudder = model.get_node("Rudder")
 	_wheels.append(model.get_node("WheelL"))
 	_wheels.append(model.get_node("WheelR"))
+	_cowl = model.get_node("Cowl")
+	_gear.append(model.get_node("GearL"))
+	_gear.append(model.get_node("GearR"))
+	_airframe = model.get_node("Airframe")
+	_wires = model.get_node("Wires")
+	for still: Node3D in [_cowl,_prop,_wheels[0],_wheels[1]]: _home[still] = still.position
 	# Hair-thin and glazed: nothing they'd throw shows, and thin shadows crawl.
 	for thin: String in ["Wires","Glass"]:
 		(model.get_node(thin) as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -430,11 +472,18 @@ func reset(glide: RefCounted) -> void:
 	_last_roll = _roll(glide)
 	_last_pitch = float(glide.pitch)
 	_last_heading = float(glide.heading)
+	_let_go_idle()
+	if _exhaust != null: _exhaust.clear()
 	update(0.0,glide,0.0,Callable(),false)
 
 ## The world moved under it (SkyIslands `arrive`): the vapour goes too.
 func shift(by: Vector3) -> void:
 	for i in range(_vapour_points.size()): _vapour_points[i] += by
+	if _exhaust != null: _exhaust.shift_by(by)
+
+## The prop's air (0 to 1) while the engine's life runs (scripts/plane_idle.gd `air`).
+func prop_air() -> float:
+	return _life.air() if _life != null else 0.0
 
 ## One frame: posed on `glide` (a SkyPlane, or a plain
 ## glide drawn without its roll), `dive` held 0..1 (unused), `ground` the
@@ -442,6 +491,8 @@ func shift(by: Vector3) -> void:
 ## `near` (0 to 1) how hard the vapour pulls off its wingtips and `lean`
 ## the bank, the outer tip's the stronger.
 func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, landable: bool, near := 0.0, lean := 0.0) -> void:
+	# As last drawn: the ground scale is laid on after this returns.
+	_drawn = global_transform if is_inside_tree() else transform
 	var at: Vector3 = glide.position
 	var roll := _roll(glide)
 	transform = pose(at,float(glide.heading),float(glide.pitch),roll)
@@ -463,58 +514,108 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 	_last_pitch = float(glide.pitch)
 	_last_heading = float(glide.heading)
 	var on := float(running) if running != null else 1.0
-	_idle(delta,on)
 	var pace := float(glide.speed)
+	var height := _height(at,ground)
+	_shut_sky(delta,glide)
+	_idle(delta,pace,height)
 	_spin_prop(delta,pace,on)
 	_trail_vapour(delta,near,lean)
-	var height := _height(at,ground)
 	_turn_wheels(delta,pace,height)
+	_seat_parts()
 	_place_mark(delta,at,height,landable)
 
 ## The propeller turns with the speed while the engine runs (`running`, 0
-## to 1), its blur fading as it spins down. Too fast to see, the blades
-## give way to the disc alone, its sweeps crawling round.
+## to 1), or as the idle has it; its blur fading as it spins down. Past what
+## a frame can show, the blades give way to their smear over the path they went
+## this frame, and past that to the disc alone, its sweeps crawling round.
 func _spin_prop(delta: float, pace: float, running: float) -> void:
 	var turns := (PROP_TURNS+PROP_PER*pace)*running
-	if hum > 0.0: turns = maxf(turns,IDLE_TURNS*(1.0+REV_TURNS*rev)*running*hum)
-	_prop_angle = wrapf(_prop_angle+delta*turns*TAU,0.0,TAU)
+	var went := delta*turns*TAU
+	if _life != null and (_life.turned as float) >= went:
+		went = _life.turned
+		turns = went/(TAU*delta) if delta > 0.0 else 0.0
+	_prop_angle = wrapf(_prop_angle+went,0.0,TAU)
 	_prop.rotation.z = _prop_angle
-	if _blades_shown and turns > PROP_HIDE: _blades_shown = false
-	elif not _blades_shown and turns < PROP_SHOW: _blades_shown = true
+	if _blades_shown and went > SMEAR_FROM: _blades_shown = false
+	elif not _blades_shown and went < SMEAR_BACK: _blades_shown = true
 	for blade in _prop.get_children(): blade.visible = _blades_shown
 	var fast := clampf(pace/30.0,0.0,1.0)
-	_blur_material.set_shader_parameter("strength",lerpf(BLUR.x,BLUR.y,fast)*smoothstep(0.0,0.6,running))
+	var air := lerpf(BLUR.x,BLUR.y,fast)*smoothstep(0.0,0.6,running)
+	var smear := 0.0 if _blades_shown else 1.0-smoothstep(SMEAR_FADE.x,SMEAR_FADE.y,turns)
+	_blur_material.set_shader_parameter("strength",air)
 	_blur_material.set_shader_parameter("spread",fast)
-	_blur_material.set_shader_parameter("phase",fmod(Time.get_ticks_msec()*0.001*BLUR_CRAWL,TAU)*running)
-	_blur.visible = running > 0.01
+	_blur_phase = wrapf(_blur_phase+delta*BLUR_CRAWL,0.0,TAU)
+	_blur_material.set_shader_parameter("phase",_blur_phase)
+	_blur_material.set_shader_parameter("blades",smear)
+	_blur_material.set_shader_parameter("blade_angle",_prop_angle)
+	_blur_material.set_shader_parameter("blade_went",went)
+	_blur.visible = running > 0.01 or smear > 0.0
 
-## Idling (`hum`, the engine `running` 0 to 1): the shake and sway laid
-## over the pose (in the pose's frame, about the wheels, so the ground
-## scale's growing about them keeps it), the control surfaces' flutter
-## over the stick's angles.
-func _idle(delta: float, running: float) -> void:
-	var on := hum*running
-	var flutter := Vector2.ZERO
-	if on > 0.0:
-		_hum_t += delta
-		var t := _hum_t*TAU
-		var buzz := on*(1.0+REV_SHAKE*rev)
-		var jig := func(hz: float, phase: float) -> float: return sin(t*hz+phase)*0.65+sin(t*hz*1.37+phase*2.1)*0.35
-		var shake := Vector3(jig.call(HUM_HZ.x,0.3),jig.call(HUM_HZ.y,1.9),jig.call(HUM_HZ.z,4.1))*HUM_BUZZ*buzz
-		var twitch := Vector3(jig.call(HUM_HZ.y*0.9,2.7),jig.call(HUM_HZ.z*1.1,0.8),jig.call(HUM_HZ.x*0.8,5.3))*HUM_TWITCH*buzz
-		# The springs: a slow roll and nod about the wheels, out of step, and
-		# a bob; leaning a touch against the torque, more run up.
-		var springy := Vector2(sin(t*HUM_SWAY_HZ.x)*0.7+sin(t*HUM_SWAY_HZ.x*1.9+1.3)*0.3,sin(t*HUM_SWAY_HZ.y+0.6)*0.75+sin(t*HUM_SWAY_HZ.y*2.3+2.2)*0.25)*HUM_SWAY*on*sway*(1.0+0.6*rev)
-		var bob := sin(t*HUM_SWAY_HZ.y*1.6+0.4)*HUM_BOB*on*sway
-		var lean := HUM_TORQUE*on*sway*(1.0+rev)
-		var wheels := PIVOT
-		var springs := Basis.from_euler(Vector3(springy.y+twitch.x,twitch.y,-(springy.x+lean)+twitch.z))
-		transform = transform*Transform3D(Basis.IDENTITY,wheels+shake+Vector3.UP*bob)*Transform3D(springs,Vector3.ZERO)*Transform3D(Basis.IDENTITY,-wheels)
-		var wash := on*(1.0+REV_SHAKE*rev)
-		flutter = Vector2(jig.call(HUM_FLUTTER_HZ.x,0.0)*HUM_FLUTTER.x,jig.call(HUM_FLUTTER_HZ.y,1.1)*HUM_FLUTTER.y)*wash
-	for s in range(2): _ailerons[s].rotation.x = _aileron_at[s]+flutter.y*(1.0 if s == 0 else -0.8)
+## The engine's life (`hum`) stepped, and the body's share of it laid over the
+## pose, in the pose's frame, about the wheels, so the ground scale's growing
+## about them keeps it. `_seat_parts` does the rest once the wheels have turned.
+func _idle(delta: float, pace: float, height: float) -> void:
+	var on := hum > 0.0
+	if on and _life == null and not _wheels.is_empty(): _life = PlaneIdle.new()
+	if _life != null:
+		_life.step(delta,starter,on,rev,pace,height < WHEELS_NEAR)
+		# Off the wheels and handed over, the run-up's pose lets go in the air
+		# without showing: the pose is the flight's own.
+		_sway_now = lerpf(_sway_now,sway if on else 0.0,1.0-exp(-delta/SWAY_EASE))
+		if _exhaust == null:
+			_exhaust = PlaneExhaust.new()
+			add_child(_exhaust)
+		_exhaust.step(delta,_drawn,_life.heat,_life.air(),_life.puffs)
+		if not on and _life.spent(): _let_go_idle()
+	elif _exhaust != null: _exhaust.step(delta,_drawn,0.0,0.0,[] as Array[float])
+	if _life != null:
+		var turn := Basis.from_euler(Vector3(_life.pitch*_sway_now,_life.yaw*_sway_now,_life.roll*_sway_now))
+		var rise := Vector3.UP*(_life.heave as float)*_sway_now
+		transform = transform*Transform3D(Basis.IDENTITY,PIVOT+rise)*Transform3D(turn,Vector3.ZERO)*Transform3D(Basis.IDENTITY,-PIVOT)
+	var flutter := Vector3(_life.elevator,_life.rudder,0.0) if _life != null else Vector3.ZERO
+	var tips := Vector2(_life.ailerons) if _life != null else Vector2.ZERO
+	for s in range(2): _ailerons[s].rotation.x = _aileron_at[s]+tips[s]
 	_elevator.rotation.x = _elevator_at+flutter.x
-	if _rudder != null: _rudder.rotation.y = _rudder_at+flutter.x*0.5
+	if _rudder != null: _rudder.rotation.y = _rudder_at+flutter.y
+
+## The idle's smaller parts: the cowl and prop on their mounts, the wing tips,
+## and the wheels held to the ground against the body's rock, the legs swung
+## to follow and the tyres taking their share.
+func _seat_parts() -> void:
+	if _life == null: return
+	var nose: Vector2 = _life.nose
+	var shift_by := Vector3(nose.x,nose.y,0.0)
+	_cowl.position = _home[_cowl]+shift_by
+	_cowl.rotation = Vector3(nose.y,-nose.x,0.0)*COWL_TURN
+	_prop.position = _home[_prop]+shift_by
+	_blur.position = Vector3(nose.x,nose.y,-0.69)
+	_airframe.set_instance_shader_parameter("flex",_life.tips)
+	_wires.set_instance_shader_parameter("flex",_life.tips)
+	for s in range(2):
+		var hand := -1.0 if s == 0 else 1.0
+		var drop := ((_life.heave as float)+hand*AXLE_X*(_life.roll as float))*_sway_now
+		var squash := maxf(-drop,0.0)*TYRE_SHARE/TYRE_RADIUS
+		var stay := -drop*(1.0-TYRE_SHARE)
+		var wheel := _wheels[s]
+		var squat := Basis.from_scale(Vector3(1.0+squash*0.4,1.0-squash,1.0+squash*0.4))
+		wheel.transform = Transform3D(squat*Basis(Vector3.RIGHT,_wheel_angle),_home[wheel]+Vector3.UP*stay)
+		var leg_turn := stay/(LEG_REACH*hand)
+		var hinge := Vector3(LEG_HINGE.x*hand,LEG_HINGE.y,LEG_HINGE.z)
+		_gear[s].transform = Transform3D(Basis.IDENTITY,hinge)*Transform3D(Basis(Vector3.BACK,leg_turn),Vector3.ZERO)*Transform3D(Basis.IDENTITY,-hinge)
+
+## Nothing left of the idle: every part back on its rest.
+func _let_go_idle() -> void:
+	_life = null
+	if _cowl == null: return
+	_cowl.position = _home[_cowl]
+	_cowl.rotation = Vector3.ZERO
+	_prop.position = _home[_prop]
+	_blur.position = Vector3(0.0,0.0,-0.69)
+	_airframe.set_instance_shader_parameter("flex",0.0)
+	_wires.set_instance_shader_parameter("flex",0.0)
+	for s in range(2):
+		_wheels[s].transform = Transform3D(Basis(Vector3.RIGHT,_wheel_angle),_home[_wheels[s]])
+		_gear[s].transform = Transform3D.IDENTITY
 
 ## The wheels' contact under the body's middle, in the figure's frame
 ## (scripts/plane_ground_scale.gd PIVOT).
@@ -593,10 +694,26 @@ func _trail_vapour(delta: float, near: float, side: float) -> void:
 ## How far `at` is over what `ground` finds under it (INF over nothing).
 func _height(at: Vector3, ground: Callable) -> float:
 	var under: Variant = ground.call(at) if ground.is_valid() else null
+	_covered = false
 	if under is Vector2:
 		var body := under as Vector2
+		_covered = at.y < body.y
 		under = body.x if at.y > body.x else null
 	return at.y-float(under) if under != null else INF
+
+## Under stone (a span, a hall's roof or a bore: an underside over it, or the
+## study's `roofed`) the model's sky light eases down, and back out.
+func _shut_sky(delta: float, glide: RefCounted) -> void:
+	if _hero_lit.is_empty(): return
+	if bore != _bore_set:
+		_bore_set = bore
+		for part in _hero_parts: part.layers = BORE_LAYER if bore else OPEN_LAYER
+		_blur.layers = BORE_LAYER if bore else OPEN_LAYER
+	var want := 1.0 if _covered or glide.get("roofed") == true else 0.0
+	_cover = move_toward(_cover,want,delta/ROOF_EASE)
+	if absf(_cover-_cover_set) < ROOF_STEP and (_cover != want or _cover == _cover_set): return
+	_cover_set = _cover
+	for m in _hero_lit: m.set_shader_parameter("roof",_cover)
 
 ## The model's wheels: turned by the ground while they're on it (at the
 ## plane's drawn size, capped at WHEELS_MOST), coasting down off it. Forward

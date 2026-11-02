@@ -7,7 +7,8 @@ extends Node
 ## (MAP_PX texels over MAP_M m, half float, a SubViewport with one
 ## MultiMeshInstance2D; shaders/grass_react_stamp.gdshader works out each
 ## stamp's push from its age: a quick push as its front arrives, held, then
-## a springy overshoot back past rest and settling). The near tufts
+## either a springy overshoot back past rest and settling, or, for a CALM
+## stamp, an ease back upright with no overshoot). The near tufts
 ## (reference_surface `grass_blades`), the far ring (shaders/
 ## endless_tuft_far.gdshader) and the painted ground (shaders/
 ## endless_ground.gdshader) read it through shaders/grass_react.gdshaderinc
@@ -19,7 +20,11 @@ extends Node
 ##          comes down behind it: it fans out from there (WASH_FRONT m/s),
 ##          swirling with the prop (WASH_SWIRL) and blown back along the
 ##          plane's way (WASH_BACK). Stronger low and with the throttle open
-##          (`thrust`); rolling on the wheels too.
+##          (`thrust`); rolling on the wheels too. Its puffs are calm: air
+##          that stays keeps the grass peeled back, without a beat, and it
+##          eases upright when the air leaves. Each is sized by how long the
+##          plane's air sits on a point (HELD_SPAN stood still, less the
+##          faster it goes), so the lean is the same parked and in passing.
 ##   walker `walker(at, velocity, sliding)` each frame while someone is on
 ##          foot: a stamp a stride, parting the grass round him and
 ##          dragging it a little after him (WALK_*).
@@ -70,13 +75,25 @@ const WASH_HOLD := 0.12
 const WASH_SWIRL := 0.6
 const WASH_BACK := 0.9
 ## A puff's strength at full thrust right over the grass; the steady sum of
-## puffs WASH_EVERY apart is about this (each is scaled by SUM_SPAN).
+## puffs WASH_EVERY apart is about this (each is scaled by the seconds of
+## push it gives, between SUM_SPAN and HELD_SPAN).
 const WASH_STRENGTH := 2.8
-## About the seconds of push one stamp gives (its hold, rise and swing
-## summed), so a stream of them sums to their strength.
+## About the seconds of push one springy stamp gives (its hold, rise and
+## swing summed), so a stream of them sums to their strength.
 const SUM_SPAN := 0.24
-## The jitter in each puff's strength (the wash is turbulent).
-const WASH_TURB := 0.45
+## A calm stamp's ease back upright: critically damped at EASE per second
+## (half way in about 0.5 s), done to 1% EASE_DONE/EASE s after its hold.
+const EASE := 3.5
+const EASE_DONE := 6.6
+## The seconds of push one calm wash puff gives stood still (its rise, hold
+## and ease summed). Moving, the air is on a point only about WASH_DWELL x
+## reach / speed, so the puffs that land there add up over that, not this
+## (never under SUM_SPAN).
+const HELD_SPAN := 0.05+WASH_HOLD+2.0/EASE
+const WASH_DWELL := 1.4
+## The jitter in each puff's strength (the wash is turbulent; much more and
+## the sum beats).
+const WASH_TURB := 0.2
 
 ## The walker: a stamp each WALK_STEP of his height moved (or WALK_EVERY s
 ## standing), its reach in his heights (WorldScale wanderer_tall; sliding
@@ -144,6 +161,7 @@ var _buffer := PackedFloat32Array()
 var _min := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _wash_at := 0.0
+var _wash_hit := Vector2.INF
 var _walk_from := Vector2.INF
 var _walk_at := 0.0
 var rings_on := true
@@ -236,6 +254,7 @@ func set_enabled(on: bool) -> void:
 		_wake_until = -INF
 		_wake_step(Vector2.ZERO)
 		_stamps.clear()
+		_held = [{},{},{}]
 		_gusts.clear()
 		for i in SLOTS: _free_parcel(i)
 	_publish_rect()
@@ -288,6 +307,7 @@ func _wash(plane: Dictionary) -> void:
 	stats.wash = k
 	if k < 0.02:
 		wash_spot = {}
+		_wash_hit = Vector2.INF
 		return
 	if time-_wash_at < WASH_EVERY: return
 	var spent := minf(time-_wash_at,WASH_EVERY*3.0)
@@ -301,9 +321,12 @@ func _wash(plane: Dictionary) -> void:
 	var hit := Vector2(p.x,p.z)-flat*(maxf(over,0.0)*WASH_LAG+s*0.25)
 	var reach := s*lerpf(WASH_REACH.x,WASH_REACH.y,lift)
 	wash_spot = {"at": hit, "reach": reach, "k": k, "back": -flat}
-	var strength := WASH_STRENGTH*k*spent/SUM_SPAN*(1.0+_rng.randf_range(-WASH_TURB,WASH_TURB))
+	var speed := 0.0 if _wash_hit == Vector2.INF or spent <= 0.0 else hit.distance_to(_wash_hit)/spent
+	_wash_hit = hit
+	var soak := clampf(WASH_DWELL*reach/maxf(speed,0.01),SUM_SPAN,HELD_SPAN)
+	var strength := WASH_STRENGTH*k*spent/soak*(1.0+_rng.randf_range(-WASH_TURB,WASH_TURB))
 	_add({"at": hit, "way": -flat*WASH_BACK, "strength": strength, "swirl": WASH_SWIRL,
-		"reach": reach, "front": WASH_FRONT, "hold": WASH_HOLD})
+		"reach": reach, "front": WASH_FRONT, "hold": WASH_HOLD, "calm": true})
 
 # --- The walker -----------------------------------------------------------------------
 
@@ -329,18 +352,24 @@ func walker(at: Vector3, velocity: Vector3, sliding := false) -> void:
 
 ## Something parked at `at` (the main menu's plane, studies/endless_flight.gd):
 ## the grass parted round it out to `reach` m, `strength` times a standing
-## walker's push, kept so while it is called each frame (a stamp every
-## PART_EVERY s, overlapping as his do standing). `slot` (0 or 1) keeps two
-## such things apart.
+## walker's push, kept so while it is called each frame: one calm stamp held
+## for as long as that lasts, following `at`, which eases off once it stops.
+## `slot` (0 to 2) keeps such things apart.
 func part(at: Vector2, reach: float, strength := 1.0, slot := 0) -> void:
 	if not enabled: return
-	if time-_part_at[slot] < PART_EVERY: return
-	_part_at[slot] = time
-	_add({"at": at, "way": Vector2.ZERO, "strength": WALK_STRENGTH*strength*2.2*PART_EVERY/(WALK_HOLD+SUM_SPAN), "swirl": 0.0,
-		"reach": reach, "front": 0.0, "hold": WALK_HOLD})
+	var s: Dictionary = _held[slot]
+	if s.is_empty():
+		s = {"way": Vector2.ZERO, "swirl": 0.0, "front": 0.0, "hold": 0.001, "calm": true, "born": time}
+		_held[slot] = s
+	s.at = at
+	s.reach = reach
+	s.strength = WALK_STRENGTH*strength*2.2
+	s.last = time
 
-const PART_EVERY := 0.2
-var _part_at := [-INF,-INF]
+## How long a held stamp waits for its next call before it lets go (more than
+## a slow frame).
+const HELD_GRACE := 0.25
+var _held: Array[Dictionary] = [{},{},{}]
 
 # --- Gusts ----------------------------------------------------------------------------
 
@@ -461,12 +490,18 @@ func _wake_step(eye: Vector2) -> void:
 
 # --- The map --------------------------------------------------------------------------
 
-## A stamp's life: until its front has crossed its reach, held, and swung out.
+## A stamp's rise, s (as the shader's).
+static func rise_of(reach: float) -> float:
+	return 0.1+0.35*smoothstep(4.0,30.0,reach)
+
+## A stamp's life: until its front has crossed its reach, risen, held, and
+## swung out or eased back.
 static func life(stamp: Dictionary) -> float:
 	var front: float = stamp.front
 	var arrive: float = float(stamp.reach)/front if front > 0.0 else 0.0
 	var wide := smoothstep(4.0,30.0,float(stamp.reach))
-	return arrive+float(stamp.hold)+2.4/lerpf(1.0,0.6,wide)
+	var back: float = EASE_DONE/EASE if stamp.get("calm",false) else 2.4/lerpf(1.0,0.6,wide)
+	return arrive+rise_of(stamp.reach)+float(stamp.hold)+back
 
 func _add(stamp: Dictionary) -> void:
 	stamp.born = time
@@ -474,14 +509,29 @@ func _add(stamp: Dictionary) -> void:
 	if _stamps.size() >= MOST: _stamps.pop_front()
 	_stamps.append(stamp)
 
+## A held stamp's hold runs on with the clock, so its push stays; left
+## uncalled it keeps the hold it has and goes the way of any stamp.
+func _hold_on() -> void:
+	for slot in _held.size():
+		var s: Dictionary = _held[slot]
+		if s.is_empty(): continue
+		if time-float(s.last) > HELD_GRACE:
+			s.dies = float(s.born)+life(s)
+			_stamps.append(s)
+			_held[slot] = {}
+		else:
+			s.hold = maxf(time-float(s.born)-rise_of(s.reach),0.001)
+
 func _draw() -> void:
+	_hold_on()
 	var i := 0
 	while i < _stamps.size():
 		if time >= float(_stamps[i].dies): _stamps.remove_at(i)
 		else: i += 1
 	var per_m := MAP_PX/MAP_M
 	var n := 0
-	for s: Dictionary in _stamps:
+	for s: Dictionary in _held+_stamps:
+		if s.is_empty() or n >= MOST: continue
 		var at: Vector2 = s.at
 		var reach: float = s.reach
 		var px := (at-_min)*per_m
@@ -501,7 +551,8 @@ func _draw() -> void:
 		_buffer[o+12] = float(s.get("press",1.0))
 		_buffer[o+13] = time-float(s.born)
 		_buffer[o+14] = float(s.front)
-		_buffer[o+15] = float(s.hold)
+		# A negative hold marks a calm stamp (the shader's `calm`).
+		_buffer[o+15] = -float(s.hold) if s.get("calm",false) else float(s.hold)
 		n += 1
 	_multimesh.buffer = _buffer
 	_multimesh.visible_instance_count = n
@@ -511,7 +562,8 @@ func _draw() -> void:
 ## the CPU as the stamp shader does (for drivers and checks).
 func push_at(p: Vector2) -> Vector3:
 	var sum := Vector3.ZERO
-	for s: Dictionary in _stamps:
+	for s: Dictionary in _held+_stamps:
+		if s.is_empty(): continue
 		var reach: float = s.reach
 		var o: Vector2 = p-Vector2(s.at)
 		var r := o.length()
@@ -519,9 +571,11 @@ func push_at(p: Vector2) -> Vector3:
 		if u >= 1.0: continue
 		var wide := smoothstep(4.0,30.0,reach)
 		var front: float = s.front
-		var t := time-float(s.born)-(r/front if front > 0.0 else 0.0)
+		var rise := rise_of(reach)
+		var t := time-float(s.born)-(r/front if front > 0.0 else 0.0)-rise
 		var after := maxf(t-float(s.hold),0.0)
-		var swing := smoothstep(-(0.1+0.35*wide),0.0,t)*exp(-2.4*lerpf(1.0,0.6,wide)*after)*cos(5.2*lerpf(1.0,0.55,wide)*after)
+		var back := (1.0+EASE*after)*exp(-EASE*after) if s.get("calm",false) else exp(-2.4*lerpf(1.0,0.6,wide)*after)*cos(5.2*lerpf(1.0,0.55,wide)*after)
+		var swing := smoothstep(-rise,0.0,t)*back
 		var fall := 1.0-smoothstep(0.45,1.0,u)
 		var out := o/sqrt(r*r+0.04*reach*reach)
 		var turn := Vector2(-out.y,out.x)*float(s.swirl)
