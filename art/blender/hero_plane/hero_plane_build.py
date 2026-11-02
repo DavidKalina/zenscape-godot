@@ -15,10 +15,11 @@ y up, z aft (the nose toward -z), and turned to Blender's on the way out
 
 Nodes, each its own mesh with its origin on its hinge or axle: Airframe (body,
 wings, tail, struts, the fixed fittings), Cowl (the cowl, the engine in it and
-the exhaust stubs; it trembles on its own), Prop (turns about its local z),
-AileronL/R and Elevator (hinge along local x), Rudder (hinge along local y),
-GearL/R (the sprung legs), WheelL/R (axle along local x), Glass, Wires. Left is
--x. No spin, hinge or spring is keyed here: the game drives them.
+the exhaust stubs; it trembles on its own), Prop (the hub and spinner, turns
+about its local z) with Blades under it (they alone hide for the blur disc, so
+the spinner stays), AileronL/R and Elevator (hinge along local x), Rudder (hinge
+along local y), GearL/R (the sprung legs), WheelL/R (axle along local x), Glass,
+Wires. Left is -x. No spin, hinge or spring is keyed here: the game drives them.
 
 One atlas for the whole plane, painted here in numpy: albedo, normal, and two
 data maps at half size: `mask` (RGBA: how much of the body, trim, wing and dark
@@ -591,8 +592,10 @@ def build_cowl(g):
 
 
 def build_prop():
-	"""In the prop's own frame, its hub at the origin, blades along +-y."""
+	"""In the prop's own frame, its hub at the origin, blades along +-y: the
+	hub and spinner, and the blades on their own, which hide for the blur."""
 	g = Geo()
+	blades = Geo()
 	x0, y0, w, h = REG["prop"]
 	for sgn in (1.0, -1.0):
 		rings = []
@@ -611,7 +614,7 @@ def build_prop():
 			r = st[i][0]
 			a = sect[k % len(sect)][0]
 			return uv_px(x0 + 6.0 + r * D, y0 + 50.0 + a * 38.0)
-		loft(g, rings, uv, True, False, True)
+		loft(blades, rings, uv, True, False, True)
 	# The hub and the spinner dome, with its bolts.
 	b = sw("brass")
 	prof = [(-0.088, 0.0004), (-0.084, 0.008), (-0.072, 0.019), (-0.054, 0.031), (-0.034, 0.041), (-0.014, 0.047), (0.004, 0.049), (0.006, 0.054), (0.03, 0.054), (0.046, 0.05), (0.05, 0.04)]
@@ -619,7 +622,7 @@ def build_prop():
 	for k in range(6):
 		t = k * math.tau / 6
 		tube(g, [(math.sin(t) * 0.04, math.cos(t) * 0.04, 0.0), (math.sin(t) * 0.04, math.cos(t) * 0.04, 0.009)], 0.0038, 6, "steel")
-	return g
+	return g, blades
 
 
 def wheel_geo(side):
@@ -839,8 +842,10 @@ def build():
 	ail_z = le_up + CHORD * AIL_H
 	emit("Airframe", frame_g, mats["hero"])
 	emit("Cowl", cowl, mats["hero"], (0.0, 0.0, -0.5))
-	emit("Prop", build_prop(), mats["hero"])
-	bpy.data.objects["Prop"].location = (0.0, -PROP_Z, 0.0)
+	hub, blades = build_prop()
+	prop = emit("Prop", hub, mats["hero"])
+	prop.location = (0.0, -PROP_Z, 0.0)
+	emit("Blades", blades, mats["hero"]).parent = prop
 	emit("AileronL", ail[-1.0], mats["hero"], (-(AIL[0] + AIL[1]) * 0.5, UPPER_Y, ail_z))
 	emit("AileronR", ail[1.0], mats["hero"], ((AIL[0] + AIL[1]) * 0.5, UPPER_Y, ail_z))
 	emit("Elevator", elevator, mats["hero"], (0.0, TAIL_Y, TAIL_Z + TAIL_CHORD * ELEV_H))
