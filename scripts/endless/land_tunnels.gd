@@ -94,8 +94,7 @@ const FIRE_ENERGY := 4.0
 const FACE_TINT := Color(0.5,0.43,0.36)
 const SKIN_TINT := Color(0.74,0.64,0.52)
 const FRAME_TINT := Color(0.94,0.9,0.83)
-## The portals' texture: its darkest (ROCK_TEX_LOW for the bore's rock),
-## so the cut stone reads even in the sun.
+## The portals' texture: its darkest, so the cut stone reads even in the sun.
 const PORTAL_TEX_LOW := 0.86
 ## Daylight in at each mouth: a spot SPILL_IN m inside the front, SPILL_Y
 ## over the floor, looking SPILL_AIM m in at the floor, lighting the
@@ -254,11 +253,9 @@ const VINES = preload("res://shaders/tunnel_vines.gdshader")
 const STRANDS = preload("res://shaders/tunnel_strands.gdshader")
 const FERN_LOOK = preload("res://shaders/tunnel_fern.gdshader")
 ## The rock's texture: a ridged noise worn triplanar in world space, ROCK_TILE
-## m a repeat, its relief ROCK_BUMP; ROCK_TEX_LOW the darkest it takes the
-## vertex colour to.
+## m a repeat, its relief ROCK_BUMP.
 const ROCK_TILE := 9.0
 const ROCK_BUMP := 5.0
-const ROCK_TEX_LOW := 0.62
 
 ## The dark inside (knobs): the hall stretches' stone and growth keep
 ## STONE_DIM of their sky fill (shaders/tunnel_stone.gdshader), so the
@@ -405,6 +402,7 @@ func setup(land_field: RefCounted, ground: Material = null) -> void:
 	_card_shader()
 	_door_material()
 	_growth_materials()
+	_rock_textures()
 	halls = LandHalls.new()
 	halls.name = "Stretches"
 	halls.squares = false
@@ -640,9 +638,8 @@ static func _dark_materials(tone_of := "") -> Dictionary:
 ## Builds, on this thread, the streamed tunnels within PRIME_REACH of `at`
 ## (a task still running is left to finish; the rest stream) and the hall
 ## stretches' far detail now, and the near detail round `at`. Never waits
-## on the task: its build reads meshes back from the renderer
-## (`surface_get_arrays`, `get_faces`), which answers only when this thread
-## runs, so a wait here never ends (the title's parking spot primed it). A
+## on the task: renderer calls in its build can answer only when this thread
+## runs, so a wait here could never end (the title's parking spot primed it). A
 ## tunnel the task builds too is dropped as stood already (`_stand_one`).
 func prime(at: Vector3) -> void:
 	if _streams():
@@ -1127,24 +1124,24 @@ func note() -> String:
 
 func _build(b: Built, f: RefCounted) -> void:
 	var t: Tunnels.Site = b.site
-	var rock := _build_rock(t,b)
+	var rock := _build_rock(t,b).commit_to_arrays()
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var tris := 0
 	var lip := _mouth_arrays(t,f) if t.sunk else {}
 	if not t.sunk:
 		for m in 2: tris += _build_portal(st,t,m,f)
-	var mesh: ArrayMesh = rock.commit()
-	if t.sunk:
-		tris += int(lip.tris)
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,lip.arrays,[],{},RockShape.format(lip.arrays))
-	else: st.commit(mesh)
+	# Each surface's arrays, kept: reading a mesh back from the renderer would
+	# stop the main thread (about 160 ms a read on a worker in flight).
+	var portals: Array = st.commit_to_arrays() if not t.sunk else []
+	if t.sunk: tris += int(lip.tris)
+	var solid: Array = [rock,lip.arrays if t.sunk else portals]
 	# Seen: the rock on the inside's layer (torch lit), the portal blocks
 	# in the day (sun, sky and haze); the collider is both.
 	var mat := _basalt_material(t)
 	var node := MeshInstance3D.new()
 	node.name = t.name.replace("/","_")
-	node.mesh = _surface(mesh,0,mat)
+	node.mesh = _surface(rock,mat)
 	node.layers = UNDER_LAYER
 	b.node.add_child(node)
 	var blocks := MeshInstance3D.new()
@@ -1154,17 +1151,17 @@ func _build(b: Built, f: RefCounted) -> void:
 		day.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,lip.arrays,[],{},RockShape.format(lip.arrays))
 		day.surface_set_material(0,_ground if _ground != null else _portal_material(t))
 		blocks.mesh = day
-	else: blocks.mesh = _surface(mesh,1,_portal_material(t))
+	else: blocks.mesh = _surface(portals,_portal_material(t))
 	b.node.add_child(blocks)
 	if not t.sunk:
 		for m in 2: _build_fires(b,m)
 	if not t.sunk: b.node.add_child(_build_doors(t,node.name))
-	tris += _build_shafts(b,mesh,node.name,mat)
+	tris += _build_shafts(b,solid,node.name,mat)
 	tris += _build_growth(b)
 	# The collider in BODY_TRIS pieces (in the mesh's order, so each is a
 	# run of the bore), stood one a frame (`_stand_bodies`): Jolt builds a
 	# trimesh's tree as it enters the space, ~30 ms for a whole tunnel.
-	var faces := mesh.get_faces()
+	var faces := _faces(solid)
 	var per := BODY_TRIS*3
 	var i0 := 0
 	while i0 < faces.size():
@@ -1541,24 +1538,43 @@ static func _portal_material(t: Tunnels.Site) -> StandardMaterial3D:
 		raw.roughness = 0.95
 		raw.cull_mode = BaseMaterial3D.CULL_DISABLED
 		return raw
-	var mat := _rock_material(t,PORTAL_TEX_LOW)
+	var mat := _rock_material()
 	mat.disable_ambient_light = false
 	mat.disable_fog = false
 	mat.roughness = 0.95
 	return mat
 
-## Surface `i` of `mesh` as a mesh of its own, wearing `mat`.
-static func _surface(mesh: ArrayMesh, i: int, mat: Material) -> ArrayMesh:
+## Surface `arrays` as a mesh of its own, wearing `mat`.
+static func _surface(arrays: Array, mat: Material) -> ArrayMesh:
 	var out := ArrayMesh.new()
-	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,mesh.surface_get_arrays(i))
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	out.surface_set_material(0,mat)
 	return out
 
-## The rock's material: its vertex colours under a noise worn
-## triplanar in world space (grain and relief), lit by the torches alone.
-static func _rock_material(t: Tunnels.Site, low := ROCK_TEX_LOW) -> StandardMaterial3D:
+## The triangles of `parts` (each a surface's arrays), three points each.
+static func _faces(parts: Array) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for arrays: Array in parts:
+		var pts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		if arrays[Mesh.ARRAY_INDEX] == null:
+			out.append_array(pts)
+			continue
+		var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		var at := out.size()
+		out.resize(at+idx.size())
+		for i in idx.size(): out[at+i] = pts[idx[i]]
+	return out
+
+## The rock's two textures, made once at load and shared by every tunnel: a
+## NoiseTexture2D's first image is made on the main thread, whatever thread
+## made the texture, about 170 ms each in the frame after a worker's build.
+static var _rock_albedo: NoiseTexture2D
+static var _rock_bump: NoiseTexture2D
+
+static func _rock_textures() -> void:
+	if _rock_albedo != null: return
 	var noise := FastNoiseLite.new()
-	noise.seed = hash([t.seed,"rock_tex"]) & 0x7fffffff
+	noise.seed = hash("rock_tex") & 0x7fffffff
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	noise.fractal_octaves = 4
@@ -1569,28 +1585,33 @@ static func _rock_material(t: Tunnels.Site, low := ROCK_TEX_LOW) -> StandardMate
 	fine.fractal_type = FastNoiseLite.FRACTAL_FBM
 	fine.fractal_octaves = 6
 	fine.frequency = 0.012
+	var low := PORTAL_TEX_LOW
 	var grad := Gradient.new()
 	grad.set_color(0,Color(low,low*0.97,low*0.93))
 	grad.set_color(1,Color(1.0,0.98,0.95))
-	var albedo := NoiseTexture2D.new()
-	albedo.width = 512
-	albedo.height = 512
-	albedo.seamless = true
-	albedo.noise = noise
-	albedo.color_ramp = grad
-	var bump := NoiseTexture2D.new()
-	bump.width = 512
-	bump.height = 512
-	bump.seamless = true
-	bump.noise = fine
-	bump.as_normal_map = true
-	bump.bump_strength = ROCK_BUMP
+	_rock_albedo = NoiseTexture2D.new()
+	_rock_albedo.width = 512
+	_rock_albedo.height = 512
+	_rock_albedo.seamless = true
+	_rock_albedo.noise = noise
+	_rock_albedo.color_ramp = grad
+	_rock_bump = NoiseTexture2D.new()
+	_rock_bump.width = 512
+	_rock_bump.height = 512
+	_rock_bump.seamless = true
+	_rock_bump.noise = fine
+	_rock_bump.as_normal_map = true
+	_rock_bump.bump_strength = ROCK_BUMP
+
+## The rock's material: its vertex colours under a noise worn
+## triplanar in world space (grain and relief), lit by the torches alone.
+static func _rock_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.vertex_color_is_srgb = true
-	mat.albedo_texture = albedo
+	mat.albedo_texture = _rock_albedo
 	mat.normal_enabled = true
-	mat.normal_texture = bump
+	mat.normal_texture = _rock_bump
 	mat.normal_scale = 1.0
 	mat.uv1_triplanar = true
 	mat.uv1_world_triplanar = true
@@ -1714,6 +1735,7 @@ static func _growth_materials() -> void:
 	if _fern_mat != null: return
 	HangingRoots.warm()
 	UndergrowthMesh.fern()
+	_fern_tris()
 	_root_mat = ShaderMaterial.new()
 	_root_mat.shader = STRANDS
 	_root_mat.set_shader_parameter("tint",ROOT_BARK)
@@ -2027,9 +2049,9 @@ static func _faces_out(st: SurfaceTool, pos: PackedVector3Array, inward: PackedV
 ## Tunnel `t`'s shafts (Tunnels.shafts): the lip in the vault (a skirt and
 ## a flare, the rock's material on the inside's layer), the wall up to the
 ## pit's floor and the curb round its top (in the day), each added to
-## `mesh` too (the collider's); a spot of daylight down each and a faint
+## `solid` too (the collider's); a spot of daylight down each and a faint
 ## beam. Returns the triangles.
-func _build_shafts(bt: Built, mesh: ArrayMesh, base_name: String, rock_mat: Material) -> int:
+func _build_shafts(bt: Built, solid: Array, base_name: String, rock_mat: Material) -> int:
 	var t: Tunnels.Site = bt.site
 	if t.shafts.is_empty(): return 0
 	var tris := 0
@@ -2116,21 +2138,20 @@ func _build_shafts(bt: Built, mesh: ArrayMesh, base_name: String, rock_mat: Mate
 			var down := Vector3.DOWN*(CURB_H+SKIRT)
 			tris += _quad(curb,c+ra*(r+CURB_W),c+rb*(r+CURB_W),c+rb*(r+CURB_W)+down,c+ra*(r+CURB_W)+down,(ra+rb).normalized(),tint.darkened(0.12))
 		_shaft_light(bt,si,base_name)
-	var dmesh := dark.commit()
-	var wmesh := wall.commit()
-	curb.commit(wmesh)
-	for m: ArrayMesh in [dmesh,wmesh]:
-		for i in m.get_surface_count(): mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,m.surface_get_arrays(i))
+	var dark_arrays := dark.commit_to_arrays()
+	var wall_arrays := wall.commit_to_arrays()
+	var curb_arrays := curb.commit_to_arrays()
+	solid.append_array([dark_arrays,wall_arrays,curb_arrays])
 	var lipn := MeshInstance3D.new()
 	lipn.name = base_name+"_shaft_lips"
-	lipn.mesh = _surface(dmesh,0,rock_mat)
+	lipn.mesh = _surface(dark_arrays,rock_mat)
 	lipn.layers = UNDER_LAYER
 	bt.node.add_child(lipn)
 	var day := _portal_material(t)
 	var walls := MeshInstance3D.new()
 	walls.name = base_name+"_shafts"
-	var wm := _surface(wmesh,0,day)
-	wm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,wmesh.surface_get_arrays(1))
+	var wm := _surface(wall_arrays,day)
+	wm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,curb_arrays)
 	wm.surface_set_material(1,day)
 	walls.mesh = wm
 	bt.node.add_child(walls)
