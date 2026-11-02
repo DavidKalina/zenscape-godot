@@ -106,7 +106,7 @@ const NEEDLE := Vector2(20.0,40.0)
 const WINDOWS_LOW: Array[float] = [-90.0,-30.0,40.0,100.0]
 const WINDOWS_UP: Array[float] = ARCHES
 const WINDOW_Z := 60.0
-## Bays open to the sun on the +x face: x, z0, z1, floor. The arch they light through.
+## Bays open on the +x face: x, z0, z1, floor. The wide arch from the high one.
 const SUN_BAYS: Array[Vector4] = [Vector4(105.0,-72.0,-30.0,20.0),Vector4(105.0,28.0,70.0,28.0),Vector4(75.0,18.0,60.0,60.0)]
 const SUN_BAY_TALL := 20.0
 const SUN_ARCH := Vector2(-12.0,26.0)
@@ -226,8 +226,8 @@ static func rooms() -> Array[Dictionary]:
 			o.append({"r":_span(side*UP_X.y-side,side*OUT,z-win,z+win),"y0":UP_FLOOR+6.0,"y1":UP_HEAD-6.0})
 		o.append({"r":_span(side*WINDOW_Z-win,side*WINDOW_Z+win,-OUT,CROSS_Z.x+1.0),"y0":FLOOR+6.0,"y1":FLOOR+24.0})
 		o.append({"r":_span(side*WINDOW_Z-win,side*WINDOW_Z+win,BACK_Z.y-1.0,OUT),"y0":STEP_FLOOR+10.0,"y1":STEP_FLOOR+28.0})
-	# The sun stands low over +x +z: bays on that side let it in, one high, through a
-	# wide arch, so it reaches the shaft.
+	# Big bays on the +x face to light the galleries, one high, by a wide arch into
+	# the shaft. The great door takes the low sun down the hall.
 	for b: Vector4 in SUN_BAYS:
 		o.append({"r":_span(b.x,OUT,b.y,b.z),"y0":b.w,"y1":b.w+SUN_BAY_TALL})
 	o.append({"r":_span(SHAFT_X,UP_X.x,SUN_ARCH.x,SUN_ARCH.y),"y0":UP_FLOOR+2.0,"y1":UP_HEAD-8.0})

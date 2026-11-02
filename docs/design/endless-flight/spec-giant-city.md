@@ -140,6 +140,7 @@ road; the file can stay, out of `PLACED`, or lend its figures as accents.
    them. The pyramid's interior isn't flyable, it's solid: give it a real inside to fly
    through. Recheck the road, the pyramid and the stomper's line against the merged heads
    and swells.
+   (Done; see the trail. Stomper's line reopened, wreck seated, pyramid hollow.)
 5. **The hall off the path.** Move it to the side, with its sight line or spur.
 6. **Off the path.** Small chunks of ruin, cheap reuses of the road's kit, and the heads
    moved clear of the road. Then cost, smoke; the handoff and the window are the loop's.
