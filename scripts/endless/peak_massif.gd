@@ -1697,6 +1697,7 @@ func _ice_carve(a: float, v: float, step: float) -> Vector2:
 	if e > -20.0 or a >= ICE_FLAT: return Vector2(dh,0.0)
 	# The forms on the floor.
 	var cut := crack
+	var band_cut := 0.0
 	var ridge := 0.0
 	var groove := 0.0
 	# The long crevasse.
@@ -1747,7 +1748,7 @@ func _ice_carve(a: float, v: float, step: float) -> Vector2:
 			var run := smoothstep(float(row[4]),float(row[4])+ICE_PINCH,vr)*(1.0-smoothstep(float(row[5])-ICE_PINCH,float(row[5]),vr))
 			run *= smoothstep(-0.45,-0.2,_noise.get_noise_2d(vr*0.45+i*300.0,7300.0))
 			if run <= 0.0: continue
-			cut = maxf(cut,float(row[3])*wl/w*run*(1.0-smoothstep(fl,w,d))*kb)
+			band_cut = maxf(band_cut,float(row[3])*wl/w*run*(1.0-smoothstep(fl,w,d))*kb)
 	# The medial moraine.
 	var kr := 1.0-smoothstep(MR_W,MR_W*3.0,step)
 	if kr > 0.0 and a > MR_A0 and a < MR_A1:
@@ -1766,7 +1767,9 @@ func _ice_carve(a: float, v: float, step: float) -> Vector2:
 			var gh: float = row[2]
 			var x := absf(vr-float(row[0])-GROOVE_WANDER*_noise.get_noise_2d(a*0.5+1000.0*k,3000.0))
 			if x < gh: groove = maxf(groove,float(row[1])*(1.0-smoothstep(0.0,gh,x))*along*kg)
+	var bp := 1.0-smoothstep(BAND_PAINT_STEP.x,BAND_PAINT_STEP.y,step)
+	var slot := clampf(maxf(cut,band_cut*bp)/SLOT_PAINT,0.0,1.0)
+	cut = maxf(cut,band_cut)
 	var surf := ridge-groove
-	var slot := clampf(cut/SLOT_PAINT,0.0,1.0)
 	var paint := lerpf(clampf(ridge/12.0,0.0,1.0)*RIDGE_PAINT-clampf(groove/4.0,0.0,1.0)*GROOVE_PAINT,-1.0,slot)
 	return Vector2(dh+surf*(1.0-clampf(cut/8.0,0.0,1.0))-cut,paint)
