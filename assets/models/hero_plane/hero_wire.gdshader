@@ -15,8 +15,11 @@ uniform float darkest = 1.3;
 uniform float fill = 2.2;
 uniform float shade_lift = 3.0;
 uniform float shade_lit = 0.3;
+instance uniform float flex = 0.0;
 varying float cover;
 void vertex() {
+	float span_out = max(abs(VERTEX.x) - 0.16, 0.0);
+	VERTEX.y += flex * span_out * span_out * 0.35;
 	float depth = max(-(MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).z, 0.01);
 	float toy_px = 2.0 * depth / (abs(PROJECTION_MATRIX[1][1]) * VIEWPORT_SIZE.y) / length(MODEL_MATRIX[0].xyz);
 	// A three-sided tube of radius r stands about 1.6 r wide.

@@ -8,13 +8,15 @@ extends RefCounted
 ## the chase's (`frame`).
 ##
 ## Its phases:
-##   MENU     the engine comes on ENGINE_AT s in and runs up to idle over
-##            ENGINE_UP s; the eye circles the plane at ORBIT rad/s, ORBIT_R
+##   MENU     the starter turns ENGINE_AT s in, and the engine catches and
+##            settles to idle (scripts/plane_idle.gd, whose clock this keeps,
+##            `figure.starter`); the eye circles the plane at ORBIT rad/s, ORBIT_R
 ##            wingspans out from its middle and ORBIT_UP over it, starting
 ##            three-quarters on from the front (ORBIT_FROM radians off the
 ##            nose), at FOV degrees, the land past the plane softly blurred
 ##            (DOF). No flight input.
-##   LEAVING  Start: the overlay fades; the eye swings round behind the
+##   LEAVING  Start: the overlay fades, the start-up hurried on HURRY times
+##            over if it hasn't finished; the eye swings round behind the
 ##            plane into the chase over SWING s (eased, round the plane, the
 ##            depth of field going); from SPOOL_AT s it runs up on the brakes
 ##            (ManualLanding's Brake and Boost held: the engine revs, the
@@ -27,12 +29,13 @@ extends RefCounted
 ##   DONE     flying as ever.
 
 const WorldScale = preload("res://scripts/world_scale.gd")
+const PlaneIdle = preload("res://scripts/plane_idle.gd")
 
 enum {MENU,LEAVING,TAKEOFF,DONE}
 const NAMES := ["menu","leaving","takeoff","done"]
 
-const ENGINE_AT := 0.6
-const ENGINE_UP := 1.1
+const ENGINE_AT := 1.0
+const HURRY := 3.0
 const ORBIT := 0.075
 const ORBIT_R := 2.35
 const ORBIT_UP := 0.12
@@ -49,6 +52,7 @@ const DOF := Vector3(8.0,40.0,0.035)
 const SWING := 2.6
 const SPOOL_AT := 0.9
 const PULL := 1.0
+const ROLL_SWAY := 0.4
 const LIFT_HOLD := 1.0
 ## The eye keeps this far over the land (m), and in the menu EYE_OVER
 ## wingspans over it (over the meadow's grass).
@@ -64,6 +68,8 @@ var time := 0.0
 var elapsed := 0.0
 ## The engine's run (0 to 1), for the study to lay over the landing's.
 var engine := 0.0
+## The starter's clock (s), under 0 before it turns.
+var _starter := -1.0
 ## The orbit's angle round the plane (radians, world, as a heading).
 var angle := 0.0
 var overlay: Control
@@ -116,18 +122,17 @@ func _enter(next: int) -> void:
 func input(delta: float, player: Dictionary, landing: RefCounted, figure: Node3D) -> Dictionary:
 	time += delta
 	elapsed += delta
-	if phase == MENU or phase == LEAVING:
-		engine = clampf((elapsed-ENGINE_AT)/ENGINE_UP,0.0,1.0) if phase == MENU else maxf(engine,clampf((elapsed-ENGINE_AT)/ENGINE_UP,0.0,1.0))
-	else: engine = 1.0
+	if phase == LEAVING: _starter = maxf(_starter,0.0)+delta*HURRY
+	elif elapsed >= ENGINE_AT: _starter = maxf(_starter,0.0)+delta
+	engine = PlaneIdle.engine_at(_starter) if phase == MENU or phase == LEAVING else 1.0
+	figure.starter = _starter
 	var none := {"turn":0.0,"pitch":0.0,"look":Vector2.ZERO,"lean":0.0,"boost":0.0,"brake":0.0,"roll":0.0}
 	match phase:
 		MENU:
-			figure.hum = smoothstep(0.0,1.0,engine)
+			figure.hum = 1.0 if _starter >= 0.0 else 0.0
 			figure.rev = 0.0
 			return none
 		LEAVING:
-			# Engine on for the run-up even if Start came before it was.
-			engine = maxf(engine,clampf(time/0.5,0.0,1.0))
 			figure.hum = 1.0
 			figure.rev = float(landing.strain)
 			if time >= SWING:
@@ -151,7 +156,9 @@ func input(delta: float, player: Dictionary, landing: RefCounted, figure: Node3D
 			p.brake = 0.0
 			if absf(float(player.get("pitch",0.0))) < 0.2: p.pitch = PULL
 			figure.rev = 1.0
-			figure.sway = clampf(1.0-landing.roll_speed()/4.0,0.0,1.0) if not flying else 0.0
+			# The springs give way to the roll's own pose, but the ground still
+			# comes up through them till it's off.
+			figure.sway = lerpf(ROLL_SWAY,1.0,clampf(1.0-landing.roll_speed()/4.0,0.0,1.0)) if not flying else 0.0
 			return p
 	return player
 
