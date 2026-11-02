@@ -259,6 +259,11 @@ const ROOM_ACROSS := [-46.0,-34.0,-22.0,-11.0,11.0,22.0,34.0,46.0]
 const ROOM_EVERY := 2
 const MOUTH_ROUND := 2.5
 ## Seed 1's sunk tunnels by square: [path seed, mouth A's x, z, yaw].
+## The squares of seed 1's wilderness where the rolled search finds a tunnel
+## that stands (the other squares it finds one in are cut by the Peak): the
+## search is skipped everywhere else, about 3 s of the launch, 90 ms a square
+## over some 140 squares. A land flag that moves a site needs a rescan.
+const ROLLED_SITES := {Vector2i(0,-2):true,Vector2i(1,0):true}
 const SUNK_SITES := {
 	Vector2i(1,-1):[2057609815,4896.0,-1504.0,1.1781],
 	Vector2i(-2,1):[1779212981,-6880.0,5408.0,0.7854],
@@ -488,6 +493,7 @@ static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> 
 			at.name = name
 			at.coded = at.frame
 		return at
+	if seed == 1 and density == 1.0 and _world_id() == "doors" and not ROLLED_SITES.has(Vector2i(ci,cj)): return null
 	if float(hash([seed,ci,cj,"tunnel_roll"]) & 0xffffff)/16777216.0 >= minf(CHANCE*density,CHANCE_MAX): return null
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed,ci,cj,"tunnel_place"])

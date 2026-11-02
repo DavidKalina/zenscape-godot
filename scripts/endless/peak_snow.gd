@@ -203,7 +203,10 @@ func _exit_tree() -> void:
 func _bake() -> void:
 	var n := BROAD_PX
 	var step := _broad_rect.z/n
-	var hs: PackedFloat32Array = field.grid(_broad_rect.x+step*0.5,_broad_rect.y+step*0.5,step,n,n).heights
+	# A field of its own: the study's isn't safe off the main thread, and a read
+	# torn here could lose a tunnel the main thread was placing.
+	var own: RefCounted = Field.new(int(field.seed),field.world)
+	var hs: PackedFloat32Array = own.grid(_broad_rect.x+step*0.5,_broad_rect.y+step*0.5,step,n,n).heights
 	# (A rare NaN in the field's height: take its neighbour's.)
 	for k in hs.size():
 		if is_nan(hs[k]): hs[k] = hs[k-1] if k > 0 else Field.SEA_Y
