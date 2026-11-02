@@ -208,6 +208,16 @@ const BOWL_ROUGH := 6.0
 const BOWL_RISE := 0.04
 const SUNK_RIVER := 50.0
 const SUNK_LOOK := 6
+## How far from a mouth its sinkhole can reach at all (m): its length and,
+## rolled wide by the rag, its half width.
+const BOWL_FAR := 240.0
+## The sinkholes' keep-outs (`_bowl_columns`): a column's width, the scan's
+## step along it, how far past the hollow it runs, and tree_plan.gd's (and
+## tree_cell.h's) ARCH_CLEAR.
+const KEEP_COLUMN := 18.0
+const KEEP_SCAN := 4.0
+const KEEP_PAD := 4.0
+const KEEP_CLEAR := 18.0
 ## A sunk cave (knobs): its bends' radius (m) and turn (rad, the heading
 ## swings half that either side of the first way), the runs between them
 ## and at the mouths (m); half width and vault (m) over WALL_WAVE and VAULT_WAVE
@@ -352,6 +362,8 @@ class Site extends RefCounted:
 	var way := Vector2.RIGHT
 	var mouth_b := Vector2.ZERO
 	var out_b := Vector2.RIGHT
+	## A sunk tunnel's sinkholes as trees' keep-outs (`_bowl_columns`).
+	var bowl_keep: Array = []
 	## The table over u (every STEP m from mouth A along `way`).
 	var u_end := 0.0
 	var tv := PackedFloat32Array()
@@ -652,6 +664,7 @@ static func try_sunk(impl: Object, tseed: int, dry: Site, a: Vector2, yaw: float
 	if not (_flat_near(impl,t,0) and _flat_near(impl,t,1)):
 		_why("flat")
 		return null
+	t.bowl_keep = _bowl_columns(t,0)+_bowl_columns(t,1)
 	return t
 
 ## Mouth `m`'s sinkhole's length, or -1: it would meet the sea or a river,
@@ -674,23 +687,68 @@ static func _ramp_out(impl: Object, t: Site, m: int) -> float:
 ## BOWL_WIDE, its edge ragged by noise, its floor the bore's climbing a little,
 ## its walls falling steep from the land.
 static func _bowl(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float, reach: float) -> float:
-	var qx := x-m.x
-	var qz := z-m.y
-	var a := qx*o.x+qz*o.y
-	if a < 0.0 or a > reach: return y
-	var b := absf(o.x*qz-o.y*qx)
-	var c := reach*0.42
-	var wide := lerpf(BOWL_MOUTH,BOWL_WIDE,smoothstep(0.0,c,a))
-	var along := maxf(a-c,0.0)/(reach-c)
-	var rag := t.rock.get_noise_2d(x*0.35,z*0.35)*0.34+t.rock.get_noise_2d(x*1.3,z*1.3)*0.1
-	var e := sqrt(along*along+b*b/(wide*wide))*(1.0+rag)
+	var e := _bowl_e(t,m,o,x,z,reach)
 	if e >= 1.0: return y
+	var a := (x-m.x)*o.x+(z-m.y)*o.y
 	var lid := t.floor_y-SINK+a*BOWL_RISE
 	if y <= lid: return y
 	# A funnel, not a floor: rough underfoot past the mouth's apron.
 	var k := pow(e,BOWL_FALL)
 	var rough := BOWL_ROUGH*smoothstep(APRON,APRON*3.0,a)*(1.0-k)*absf(t.rock.get_noise_2d(x*0.9,z*0.9))*2.0
 	return minf(y,lerpf(lid+rough,y,k))
+
+## How far out the sinkhole at `m` (facing `o`) (x, z) lies: under 1 is on
+## it, 1 its ragged rim; INF past its ends.
+static func _bowl_e(t: Site, m: Vector2, o: Vector2, x: float, z: float, reach: float) -> float:
+	var qx := x-m.x
+	var qz := z-m.y
+	var a := qx*o.x+qz*o.y
+	if a < 0.0 or a > reach: return INF
+	var b := absf(o.x*qz-o.y*qx)
+	var c := reach*0.42
+	var wide := lerpf(BOWL_MOUTH,BOWL_WIDE,smoothstep(0.0,c,a))
+	var along := maxf(a-c,0.0)/(reach-c)
+	var rag := t.rock.get_noise_2d(x*0.35,z*0.35)*0.34+t.rock.get_noise_2d(x*1.3,z*1.3)*0.1
+	return sqrt(along*along+b*b/(wide*wide))*(1.0+rag)
+
+## Whether (x, z) is on one of `t`'s sinkholes, `grow` times out (1 its rim).
+## The native tree building stands on the native field, which knows nothing
+## of the sinkholes (a layer LandField cuts in after it): what it puts there
+## hangs at the old ground's height over the hollow.
+static func on_bowl(t: Site, x: float, z: float, grow := 1.0) -> bool:
+	if not t.sunk: return false
+	var p := Vector2(x,z)
+	if p.distance_squared_to(t.origin) < BOWL_FAR*BOWL_FAR and _bowl_e(t,t.origin,-t.way,x,z,t.ramp.x) < grow: return true
+	return p.distance_squared_to(t.mouth_b) < BOWL_FAR*BOWL_FAR and _bowl_e(t,t.mouth_b,t.out_b,x,z,t.ramp.y) < grow
+
+## The sinkhole at mouth `m` as keep-outs for the trees: columns KEEP_COLUMN
+## m wide up its way out, each as long as the hollow is at it, so the woods
+## come to its ragged rim. A column's half span is under the keep-out's
+## ARCH_CLEAR, which leaves its half span below zero, so it has no approach:
+## no lane through the woods past the rim (tree_plan.gd `_by_arch`).
+static func _bowl_columns(t: Site, m: int) -> Array:
+	var at: Vector2 = t.origin if m == 0 else t.mouth_b
+	var o: Vector2 = -t.way if m == 0 else t.out_b
+	var reach: float = t.ramp.x if m == 0 else t.ramp.y
+	var side := Vector2(-o.y,o.x)
+	var turned := atan2(-o.y,o.x)+PI*0.5
+	var half := KEEP_COLUMN*0.5
+	var out: Array = []
+	var d := -BOWL_FAR
+	while d <= BOWL_FAR:
+		var lo := INF
+		var hi := -INF
+		for line: float in [d-half,d,d+half]:
+			var a := 0.0
+			while a <= reach:
+				var p := at+o*a+side*line
+				if _bowl_e(t,at,o,p.x,p.y,reach) < 1.0:
+					lo = minf(lo,a)
+					hi = maxf(hi,a)
+				a += KEEP_SCAN
+		if hi >= lo: out.append([at+o*(lo+hi)*0.5+side*d,cos(turned),sin(turned),half-KEEP_CLEAR,(hi-lo)*0.5+KEEP_PAD-KEEP_CLEAR])
+		d += KEEP_COLUMN
+	return out
 
 ## Whether (x, z) is in sunk tunnel `t`'s corridor, its path and ramps, where
 ## no sea lies: the land stands over it, or the ramp is cut through it.
@@ -1554,6 +1612,8 @@ static func tree_keepouts(t: Site) -> Array:
 		s = e
 	# The shafts' pits' floors.
 	for sh: Dictionary in t.shafts: out.append([sh.at,1.0,0.0,PIT_FLOOR+4.0,PIT_FLOOR+4.0])
+	# The sinkholes, rim to rim.
+	out.append_array(t.bowl_keep)
 	return out
 
 const KEEP_RUN := 40.0

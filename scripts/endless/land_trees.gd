@@ -105,6 +105,10 @@ const FAR_BAKED := 0.75
 const FLOOR_STEP := 16.0
 const FLOOR_COLOUR := Color(0.2,0.29,0.14)
 const FLOOR_STRENGTH := 0.82
+## The floor stops this far out a sunk cave's sinkhole (tunnel_sites.gd
+## `on_bowl`'s grow): past the rim, so none of its lattice hangs in a bay of
+## the ragged edge.
+const FLOOR_OFF_BOWL := 1.2
 ## The floor is see-through but lies on the land, so it draws before the
 ## clouds' sheet (EndlessClouds RENDER_PRIORITY -6) and after the sea
 ## (EndlessLook SEA_PRIORITY -8): drawn after the sheet it painted itself
@@ -687,7 +691,9 @@ func _build(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted) ->
 ## through in the air where the rock was carved away; and on the floor's
 ## coarse lattice (FLOOR_STEP, TreePlan.FAR_SLOT) even the GDScript one's
 ## triangles reach from the rim across the canyon. Off the cut the two
-## fields' heights are the same, so what is kept lies on the land.
+## fields' heights are the same, so what is kept lies on the land. A sunk
+## cave's sinkholes are the same fault (tunnel_sites.gd `on_bowl`): the sheet
+## hung over the hollow as a ghost of the land cut away.
 static func _floor_off_cuts(floor: Dictionary, field: RefCounted) -> Dictionary:
 	if floor.is_empty() or not field.has_method("splits_in"): return floor
 	var arrays: Array = floor.arrays
@@ -697,8 +703,12 @@ static func _floor_off_cuts(floor: Dictionary, field: RefCounted) -> Dictionary:
 	var box := AABB(verts[0],Vector3.ZERO)
 	for v: Vector3 in verts: box = box.expand(v)
 	var cuts: Array = field.splits_in(box.position.x,box.position.z,box.end.x,box.end.z)
-	if cuts.is_empty(): return floor
 	const Splits = preload("res://scripts/endless/split_sites.gd")
+	const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
+	var near := Rect2(box.position.x,box.position.z,box.size.x,box.size.z).grow(Tunnels.BOWL_FAR)
+	var sunk: Array = field.tunnels_in(box.position.x,box.position.z,box.end.x,box.end.z).filter(func(t: RefCounted) -> bool:
+		return t.sunk and (near.has_point(t.origin) or near.has_point(t.mouth_b))) if field.has_method("tunnels_in") else []
+	if cuts.is_empty() and sunk.is_empty(): return floor
 	var on := PackedByteArray()
 	on.resize(verts.size())
 	var any := false
@@ -708,6 +718,12 @@ static func _floor_off_cuts(floor: Dictionary, field: RefCounted) -> Dictionary:
 				on[k] = 1
 				any = true
 				break
+		if on[k] == 0:
+			for t: RefCounted in sunk:
+				if Tunnels.on_bowl(t,verts[k].x,verts[k].z,FLOOR_OFF_BOWL):
+					on[k] = 1
+					any = true
+					break
 	if not any: return floor
 	var kept := PackedInt32Array()
 	for t in range(0,index.size(),3):
