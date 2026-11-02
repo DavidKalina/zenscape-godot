@@ -935,6 +935,7 @@ global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 global uniform vec3 zs_key_direction;
+global uniform float zs_daylight;
 uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D mask_tex : hint_default_black, filter_linear_mipmap_anisotropic, repeat_disable;
@@ -957,6 +958,15 @@ uniform float bounce = 4.0;
 // strongest away from the sun and a little of it on the lit side, so cast
 // shadows lift too without washing the lit paint out.
 uniform float shade_lift = 3.0;
+// By night the lift and the sky's fill give way to these shares: the land goes
+// dark then, the fill does nearly all the plane's lighting (hardly the moon),
+// and in full they read as lit from within.
+uniform float shade_night = 0.1;
+uniform float fill_night = 0.6;
+// How far a roof shuts the sky out (PlaneFigure `_cover`), 0 open air to 1 under
+// stone, and how much of the sky's light it takes away then.
+uniform float roof = 0.0;
+uniform float roof_dim = 0.82;
 uniform float shade_lit = 0.3;
 uniform float shade_neutral = 0.7;
 uniform float coat_roughness = 0.08;
@@ -1005,8 +1015,8 @@ void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - orm.g * 0.3);
 	float sunward = clamp(dot(up, zs_key_direction), 0.0, 1.0);
-	vec3 lift = mix(zs_hemi_sky, vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722))), shade_neutral) * zs_hemi_energy * shade_lift * mix(1.0, shade_lit, sunward);
-	EMISSION = diffuse * (hemi * fill + lift) + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	vec3 lift = mix(zs_hemi_sky, vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722))), shade_neutral) * zs_hemi_energy * shade_lift * mix(shade_night, 1.0, zs_daylight) * mix(1.0, shade_lit, sunward);
+	EMISSION = (diffuse * (hemi * fill * mix(fill_night, 1.0, zs_daylight) + lift) + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim) * (1.0 - roof * roof_dim);
 }
 """
 
@@ -1020,12 +1030,22 @@ global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 global uniform vec3 zs_key_direction;
+global uniform float zs_daylight;
 uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float wire_r = 0.0016;
 uniform float min_px = 1.5;
 uniform float darkest = 1.3;
 uniform float fill = 2.2;
 uniform float shade_lift = 3.0;
+// By night the lift and the sky's fill give way to these shares: the land goes
+// dark then, the fill does nearly all the plane's lighting (hardly the moon),
+// and in full they read as lit from within.
+uniform float shade_night = 0.1;
+uniform float fill_night = 0.6;
+// How far a roof shuts the sky out (PlaneFigure `_cover`), 0 open air to 1 under
+// stone, and how much of the sky's light it takes away then.
+uniform float roof = 0.0;
+uniform float roof_dim = 0.82;
 uniform float shade_lit = 0.3;
 instance uniform float flex = 0.0;
 varying float cover;
@@ -1048,7 +1068,7 @@ void fragment() {
 	vec3 up = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, up.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float sunward = clamp(dot(up, zs_key_direction), 0.0, 1.0);
-	EMISSION = base * (hemi * fill + zs_hemi_sky * zs_hemi_energy * shade_lift * mix(1.0, shade_lit, sunward));
+	EMISSION = base * (hemi * fill * mix(fill_night, 1.0, zs_daylight) + zs_hemi_sky * zs_hemi_energy * shade_lift * mix(shade_night, 1.0, zs_daylight) * mix(1.0, shade_lit, sunward)) * (1.0 - roof * roof_dim);
 }
 """
 
@@ -1061,6 +1081,8 @@ global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 uniform vec3 tint : source_color = vec3(0.13, 0.21, 0.27);
 uniform float depth = 0.78;
+uniform float roof = 0.0;
+uniform float roof_dim = 0.82;
 void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.5);
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
@@ -1071,7 +1093,7 @@ void fragment() {
 	METALLIC = 0.0;
 	SPECULAR = 0.7;
 	ALPHA = mix(depth, 0.97, edge);
-	EMISSION = sky * (0.25 + 1.4 * edge) + tint * sky * 0.8;
+	EMISSION = (sky * (0.25 + 1.4 * edge) + tint * sky * 0.8) * (1.0 - roof * roof_dim);
 }
 """
 

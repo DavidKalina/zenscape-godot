@@ -1231,7 +1231,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"t_feel")
 	input["flaps"] = 1.0 if flaps else 0.0
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
-	plane.roofed = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (ice != null and int(ice.tube(plane.position)) == 0) or (doors != null and doors.holds(plane.position))
+	plane_figure.bore = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (ice != null and int(ice.tube(plane.position)) == 0)
+	plane.roofed = plane_figure.bore or (doors != null and doors.holds(plane.position))
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
 	FrameLog.mark(&"t_roofed")

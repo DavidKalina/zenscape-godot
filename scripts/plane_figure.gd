@@ -243,6 +243,24 @@ var _wheels: Array[Node3D] = []
 var _wheel_rate := 0.0
 var _wheel_angle := 0.0
 var _hero_paint: Array[ShaderMaterial] = []
+## Every material of the model's (this figure's own copies), and how far a roof
+## shuts the sky out of them now (0 open air, 1 under stone). The sky's light is
+## emission here, which no shadow reaches, so the figure dims it itself. Eased
+## over ROOF_EASE s; ROOF_STEP is the least change worth writing.
+var _hero_lit: Array[ShaderMaterial] = []
+var _cover := 0.0
+var _cover_set := 0.0
+var _covered := false
+## In a bore (set by the study each frame): the model goes on the bore's own
+## layer, as the door hall does with the figure, so the sun and the moon leave it
+## and the torches take it (LandTunnels UNDER_LAYER).
+var bore := false
+var _bore_set := false
+var _hero_parts: Array[MeshInstance3D] = []
+const BORE_LAYER := 1 << 14
+const OPEN_LAYER := 1
+const ROOF_EASE := 0.22
+const ROOF_STEP := 0.004
 ## Where the vapour leaves the upper wingtips (z).
 var _tip_z := STAGGER
 var _mark: MeshInstance3D
@@ -329,10 +347,12 @@ func _build_hero() -> void:
 	var own := {}
 	for found: Node in model.find_children("*","MeshInstance3D",true,false):
 		var part := found as MeshInstance3D
+		_hero_parts.append(part)
 		for s in range(part.mesh.get_surface_count()):
 			var was := part.mesh.surface_get_material(s) as ShaderMaterial
 			if not own.has(was):
 				own[was] = was.duplicate()
+				_hero_lit.append(own[was])
 				if own[was].get_shader_parameter("mask_tex") != null: _hero_paint.append(own[was])
 			part.set_surface_override_material(s,own[was])
 	_tip_z = HERO_TIP_Z
@@ -472,7 +492,7 @@ func prop_air() -> float:
 ## the bank, the outer tip's the stronger.
 func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, landable: bool, near := 0.0, lean := 0.0) -> void:
 	# As last drawn: the ground scale is laid on after this returns.
-	_drawn = global_transform
+	_drawn = global_transform if is_inside_tree() else transform
 	var at: Vector3 = glide.position
 	var roll := _roll(glide)
 	transform = pose(at,float(glide.heading),float(glide.pitch),roll)
@@ -496,6 +516,7 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 	var on := float(running) if running != null else 1.0
 	var pace := float(glide.speed)
 	var height := _height(at,ground)
+	_shut_sky(delta,glide)
 	_idle(delta,pace,height)
 	_spin_prop(delta,pace,on)
 	_trail_vapour(delta,near,lean)
@@ -673,10 +694,26 @@ func _trail_vapour(delta: float, near: float, side: float) -> void:
 ## How far `at` is over what `ground` finds under it (INF over nothing).
 func _height(at: Vector3, ground: Callable) -> float:
 	var under: Variant = ground.call(at) if ground.is_valid() else null
+	_covered = false
 	if under is Vector2:
 		var body := under as Vector2
+		_covered = at.y < body.y
 		under = body.x if at.y > body.x else null
 	return at.y-float(under) if under != null else INF
+
+## Under stone (a span, a hall's roof or a bore: an underside over it, or the
+## study's `roofed`) the model's sky light eases down, and back out.
+func _shut_sky(delta: float, glide: RefCounted) -> void:
+	if _hero_lit.is_empty(): return
+	if bore != _bore_set:
+		_bore_set = bore
+		for part in _hero_parts: part.layers = BORE_LAYER if bore else OPEN_LAYER
+		_blur.layers = BORE_LAYER if bore else OPEN_LAYER
+	var want := 1.0 if _covered or glide.get("roofed") == true else 0.0
+	_cover = move_toward(_cover,want,delta/ROOF_EASE)
+	if absf(_cover-_cover_set) < ROOF_STEP and (_cover != want or _cover == _cover_set): return
+	_cover_set = _cover
+	for m in _hero_lit: m.set_shader_parameter("roof",_cover)
 
 ## The model's wheels: turned by the ground while they're on it (at the
 ## plane's drawn size, capped at WHEELS_MOST), coasting down off it. Forward

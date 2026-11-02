@@ -7,6 +7,8 @@ global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 uniform vec3 tint : source_color = vec3(0.13, 0.21, 0.27);
 uniform float depth = 0.78;
+uniform float roof = 0.0;
+uniform float roof_dim = 0.82;
 void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.5);
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
@@ -17,5 +19,5 @@ void fragment() {
 	METALLIC = 0.0;
 	SPECULAR = 0.7;
 	ALPHA = mix(depth, 0.97, edge);
-	EMISSION = sky * (0.25 + 1.4 * edge) + tint * sky * 0.8;
+	EMISSION = (sky * (0.25 + 1.4 * edge) + tint * sky * 0.8) * (1.0 - roof * roof_dim);
 }
