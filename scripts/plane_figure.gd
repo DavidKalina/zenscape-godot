@@ -166,7 +166,7 @@ const PROP_TURNS := 3.0
 const PROP_PER := 0.6
 const PROP_HIDE := 9.5
 const PROP_SHOW := 8.5
-const BLUR := Vector2(0.22,0.55)
+const BLUR := Vector2(0.5,1.0)
 const BLUR_CRAWL := 1.4
 ## The landing mark shows within MARK_HEIGHT m of the ground.
 const MARK_HEIGHT := 28.0
