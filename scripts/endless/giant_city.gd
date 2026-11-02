@@ -64,8 +64,9 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PLACED := [
 	{"name":"city/gate","piece":preload("res://scripts/endless/city/gate.gd"),"along":350.0,"across":71.0,"turn":0.2},
 	{"name":"city/road","piece":preload("res://scripts/endless/city/road.gd"),"along":470.0,"across":530.0,"turn":1.6},
-	{"name":"city/pillar_hall","piece":preload("res://scripts/endless/city/pillar_hall.gd"),"along":-365.0,"across":1192.0,"turn":2.92},
+	{"name":"city/pillar_hall","piece":preload("res://scripts/endless/city/pillar_hall.gd"),"along":2640.0,"across":2160.0,"turn":0.8},
 	{"name":"city/pyramid","piece":preload("res://scripts/endless/city/pyramid.gd"),"along":2800.0,"across":850.0,"turn":0.3,"lift":26.0},
+	{"name":"city/hall_spur","piece":preload("res://scripts/endless/city/hall_spur.gd"),"along":2013.0,"across":1514.0,"turn":0.8},
 ]
 
 ## How far under the origin a piece's feet go (m): the land's rise and fall
@@ -92,6 +93,9 @@ const START_LEAST := 90
 const START_MOST := 360
 ## --city-start=pyramid: how far along the pyramid's own axis it's let go.
 const START_OFF := -560.0
+## --city-start=hall: how far along the hall's own axis, and how high over the land.
+const START_HALL_OFF := -1340.0
+const START_HALL_UP := 30.0
 
 var _views: Array[RID] = []
 var _bodies: Array[RID] = []
@@ -108,6 +112,7 @@ var _tris := Vector2i.ZERO
 ## --city-start's ticks held, -1 when done with.
 var _start_held := 0
 var _start_pyramid := false
+var _start_hall := false
 static var _rings: Array = []
 static var _rings_for := 0
 
@@ -160,14 +165,16 @@ static func clear_of(world: RefCounted, x: float, z: float, room: float) -> bool
 ## side at once, the plane held out of the mouth and facing the gate until the
 ## land there has streamed in, then let go at speed. A debug start.
 ## --city-start=pyramid: the same, on the pyramid's axis, its door ahead.
+## --city-start=hall: the same, on the road at the spur's fork, the hall's door ahead.
 func debug_start(host: Node3D) -> void:
 	if _start_held < 0: return
 	if _start_held == 0:
 		var args := LaunchArgs.user_args()
-		if not "--city-start" in args and not "--city-start=pyramid" in args:
+		_start_pyramid = "--city-start=pyramid" in args
+		_start_hall = "--city-start=hall" in args
+		if not "--city-start" in args and not _start_pyramid and not _start_hall:
 			_start_held = -1
 			return
-		_start_pyramid = "--city-start=pyramid" in args
 		host.doors._swap(1)
 	_start_held += 1
 	var f := frame(host.world)
@@ -180,6 +187,11 @@ func debug_start(host: Node3D) -> void:
 		gate = row.origin
 		at = row.origin+row.basis.z.normalized()*START_OFF
 		at.y = 50.0
+	if _start_hall:
+		var row := _coded(host.world,PLACED[2])
+		gate = row.origin
+		at = row.origin+row.basis.z.normalized()*START_HALL_OFF
+		at.y = float(host.field.height(at.x,at.z))+START_HALL_UP
 	var way := Vector3(gate.x-at.x,0.0,gate.z-at.z).normalized()
 	host.plane.heading = atan2(-way.x,-way.z)
 	host.plane.pitch = 0.0
