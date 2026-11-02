@@ -9,7 +9,7 @@ uniform sampler2D screen_tex : hint_screen_texture, filter_linear, repeat_disabl
 uniform float amount = 0.0;
 uniform float clock = 0.0;
 // The push in toy units, the pattern's scale along and across, its run.
-uniform float push = 0.016;
+uniform float push = 0.008;
 uniform vec2 scale = vec2(6.0, 11.0);
 uniform float run = 2.4;
 
