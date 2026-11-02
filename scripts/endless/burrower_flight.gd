@@ -56,28 +56,31 @@ const ORB_OFF := Vector2(9.0,15.0)
 ## His swing on the run: m each side of his course, s there and back.
 const SWING_M := 18.0
 const SWING_S := 7.0
-## The plane within this of a mouth (m), the most it can be set to (under the caves'
-## build reach, 2500), and how far past it the plane must go before that mouth has him
-## again.
+## The plane within this of a mouth (m), what it can be set to (the most under the
+## caves' build reach, 2500; the least leaves him LEAD_LEAST), and how far past it the
+## plane must go before that mouth has him again.
 const MOUTH_NEAR := 1000.0
-const MOUTH_NEAR_MOST := 2200.0
+const MOUTH_NEAR_SET := Vector2(700.0,2200.0)
 const MOUTH_AWAY := 400.0
 ## Between runs (s of flight): at most one at a time, and never straight after another.
 const REST := Vector2(45.0,75.0)
 ## A look, every ASK s while the plane is near a mouth: off the view's axis between the
-## cosines (not on the nose, well inside the frame), SIGHT_M m off. The way from the
-## plane to the mouth's way in must be within LEAD_COS of its nose and leave him room.
+## cosines (not on the nose, well inside the frame), SIGHT_M m off, the nearer the closer
+## the plane is to the mouth (SIGHT_FROM m), so that it's left a run behind him. The way
+## in must be within LEAD_COS of the plane's nose and at least LEAD_LEAST m off.
 const ASK := 0.4
 const SIGHT_M := Vector2(240.0,420.0)
+const SIGHT_FROM := Vector2(650.0,1000.0)
 const SIGHT_FAN := [0.2,0.3,0.4,0.5,0.58]
 const NOSE_COS := 0.985
 const WIDE_COS := 0.82
 const LEAD_COS := 0.2
+const LEAD_LEAST := 420.0
 const SIGHT_TRIES := 8
 ## His route: to the way in, on the sinkhole's axis WAY_IN m out past its rim, then up
 ## that axis, nothing turning him aside from the rim on, to LIP_M m out of the opening.
 ## His spot is at most TURN_M m nearer the mouth than the way in, or he'd have to run
-## back on himself there. The plane must be TURN_M past his nearest spot from the way in.
+## back on himself there.
 const WAY_IN := 70.0
 const LIP_M := 16.0
 const TURN_M := 40.0
@@ -87,6 +90,8 @@ const BOWL_GROW := 1.2
 const NOTICE_M := 170.0
 const NOTICE_UP := 130.0
 const NOTICE_EVERY := 0.1
+## The plane this far over him (m) on a run: he keeps his plume.
+const PLUME_OVER := 22.0
 ## Past this he's `distant`, with some slip either side.
 const FAR_M := 220.0
 const FAR_SLIP := 20.0
@@ -154,7 +159,7 @@ func setup(game: Node3D) -> void:
 	push_ups.taken.connect(_taken.bind(game))
 	_rng.randomize()
 	_every = every_flag()
-	_near = minf(_flag("--burrower-near",MOUTH_NEAR),MOUTH_NEAR_MOST)
+	_near = clampf(_flag("--burrower-near",MOUTH_NEAR),MOUTH_NEAR_SET.x,MOUTH_NEAR_SET.y)
 
 ## One frame: whether he's about (asleep, only that), the creature and its push-ups.
 func step(delta: float, game: Node3D) -> void:
@@ -195,10 +200,11 @@ func _rouse(delta: float, game: Node3D) -> void:
 	var spot := _spot_by_mouth(game)
 	if not spot.is_empty(): sight(game,spot)
 
-## The run: what ends it short of the mouth. Left far behind he shows from afar again.
+## The run: what ends it short of the mouth. Left far behind, or high over him where
+## the ridge doesn't show, the plume marks him.
 func _running(game: Node3D, flying: bool) -> void:
 	_far(game)
-	burrower.plume = burrower.distant
+	burrower.plume = burrower.distant or float(game.plane.position.y)-float(burrower.head().y) > PLUME_OVER
 	if flying: return
 	burrower.dive()
 	rouse.why = "down"
@@ -344,10 +350,10 @@ func _can_lead(m: Dictionary, p: Vector2, nose: Vector2) -> bool:
 	if (p-at).dot(out) < 0.0: return false
 	var way_in := at+out*(float(m.reach)+WAY_IN)
 	var to := way_in-p
-	return to.length() > SIGHT_M.x+TURN_M and nose.dot(to.normalized()) > LEAD_COS
+	return to.length() > LEAD_LEAST and nose.dot(to.normalized()) > LEAD_COS
 
 ## In view, off the nose, on open ground, nearer the mouth's way in than the plane and
-## with a clear way there; the spot nearest the line to it first.
+## with a clear way there; the spot nearest the line to it and the distance wanted first.
 func _spot_for(game: Node3D, t: Tunnels.Site, m: Dictionary, p: Vector2) -> Dictionary:
 	var v := _view(game)
 	var eye: Vector2 = v[0]
@@ -356,6 +362,7 @@ func _spot_for(game: Node3D, t: Tunnels.Site, m: Dictionary, p: Vector2) -> Dict
 	var out: Vector2 = m.out
 	var way_in := at+out*(float(m.reach)+WAY_IN)
 	var to := (way_in-p).normalized()
+	var want := remap(clampf(p.distance_to(at),SIGHT_FROM.x,SIGHT_FROM.y),SIGHT_FROM.x,SIGHT_FROM.y,SIGHT_M.x,SIGHT_M.y)
 	var found: Array = []
 	for a: float in SIGHT_FAN:
 		for s: float in [-1.0,1.0]:
@@ -363,7 +370,7 @@ func _spot_for(game: Node3D, t: Tunnels.Site, m: Dictionary, p: Vector2) -> Dict
 				var q := eye+way.rotated(a*s)*d
 				if q.distance_to(way_in) >= p.distance_to(way_in): continue
 				if (q-at).dot(out) < float(m.reach)+WAY_IN-TURN_M: continue
-				found.append([absf((q-p).cross(to)),q])
+				found.append([absf((q-p).cross(to))*0.5+absf(d-want),q])
 	found.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
 	var tried := 0
 	for f: Array in found:
