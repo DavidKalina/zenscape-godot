@@ -4,8 +4,9 @@ extends SceneTree
 ## the camera circles it, so the paint's shine, the pilot and the scarf can
 ## be seen from every side. Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . -s res://tools/view_plane.gd
-## Keys: drag to turn the camera, wheel to come closer, 0-4 the livery (0
-## the wanderer's), Up/Down the speed, R a barrel roll, P parks it, Space
+## Keys: drag to turn the camera, wheel to come closer, 0-4 the livery on the
+## wanderer's model (0 its own; 1-4 traffic's colours and wear, repainted, as
+## the shop does), Up/Down the speed, R a barrel roll, P parks it, Space
 ## stops the circling.
 ## With --shots=DIR it saves stills round the plane into DIR and quits.
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -65,8 +66,12 @@ func run() -> void:
 
 func _build() -> void:
 	if figure != null: figure.free()
-	figure = PlaneFigure.new(SkyTraffic.LIVERIES[livery-1] if livery > 0 else {})
+	figure = PlaneFigure.new()
 	stage.add_child(figure)
+	if livery > 0:
+		var colours: Dictionary = SkyTraffic.LIVERIES[livery-1]
+		figure.repaint(colours)
+		figure.set_wear(float(colours.get("wear",0.0)))
 	figure.reset(flight)
 
 func _process(delta: float) -> bool:

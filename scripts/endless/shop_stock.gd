@@ -10,12 +10,11 @@ extends RefCounted
 ## Slots, each with its free first item (had by everyone, worn when the
 ## book names none):
 ##   paint   the plane's livery: body, dark, trim and wing colours
-##           (PlaneFigure `paints`' keys), repainted in place
+##           (PlaneFigure `repaint`'s keys), repainted in place
 ##   ribbon  a streamer off the rudder's top, two colours: nothing on the
 ##           flight, only to look at
 ## The book (PilotBook) keeps owned ids and the worn id per slot.
 
-const PlaneFigure = preload("res://scripts/plane_figure.gd")
 
 const SLOTS := ["paint","ribbon"]
 ## Each slot's heading in the shop.
@@ -97,17 +96,10 @@ static func dress(figure: Node3D, book: RefCounted, try := {}) -> void:
 			"paint": _paint(figure,item(id).get("livery",{}))
 			"ribbon": _ribbon(figure,item(id).get("colours",[]))
 
-## Repaints the figure's own paints in place (PlaneFigure `paints`: the
-## materials its parts share) to `livery`'s colours (its defaults else).
+## Repaints the figure in place (PlaneFigure `repaint`) to `livery`'s colours
+## (its defaults else).
 static func _paint(figure: Node3D, livery: Dictionary) -> void:
-	var p: Variant = figure.get("_paints")
-	if not p is Dictionary: return
-	var paint: Dictionary = p
-	var keys := {"wood":["body",PlaneFigure.WOOD],"dark":["dark",PlaneFigure.DARK],"trim":["trim",PlaneFigure.TRIM],"cream":["wing",PlaneFigure.WING]}
-	for k: String in keys:
-		if not paint.has(k): continue
-		var pair: Array = keys[k]
-		(paint[k] as ShaderMaterial).set_shader_parameter("albedo",livery.get(pair[0],pair[1]))
+	figure.repaint(livery)
 
 const RIBBON_SHADER := """
 shader_type spatial;

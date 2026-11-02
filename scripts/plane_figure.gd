@@ -45,11 +45,26 @@ extends Node3D
 ## ailerons fluttering in the propeller's wash (HUM_FLUTTER radians at
 ## HUM_FLUTTER_HZ). `rev` (0 to 1) runs the engine up: the propeller REV_TURNS
 ## times faster, the buzz and flutter REV_SHAKE times stronger.
+##
+## That is the code-built figure, which the sky's traffic flies (a livery
+## passed to `_init`). The wanderer's own plane (no livery) is the authored
+## model, assets/models/hero_plane/ (art/blender/hero_plane/): same size,
+## same holds, its parts turned by the same code (`_build_hero`), plus the
+## rudder after the heading and the wheels after the ground. One painted
+## material, so `repaint` and `set_wear` set its slots rather than paints.
 
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const PLANE_SURFACE := preload("res://shaders/plane_surface.gdshader")
 const PROP_BLUR := preload("res://shaders/prop_blur.gdshader")
+const WorldScale = preload("res://scripts/world_scale.gd")
+## The wanderer's model; loaded only when one is built, so traffic and the
+## scripts that only read this file's constants don't pull its atlas in.
+const HERO := "res://assets/models/hero_plane/hero_plane.glb"
+## Livery keys (`_init`) to the code-built figure's paints, and to the
+## model's shader slots with their defaults.
+const TOY_SLOTS := {"body":"wood","dark":"dark","trim":"trim","wing":"cream"}
+const HERO_SLOTS := {"body":["paint_body",WOOD],"dark":["paint_dark",DARK],"trim":["paint_trim",TRIM],"wing":["paint_wing",WING]}
 ## Each paint slot's colour: "wood" the body, "dark" the struts, legs and
 ## tail skid, "trim" the cowl, wingtips, fin and band, "cream" the wings,
 ## tailplane and rudder, "canopy" the cockpit's tinted cover, "brass" the
@@ -130,6 +145,19 @@ const AIRFOIL_SCALE := 0.72
 const AILERON := 0.35
 const ELEVATOR := 0.5
 const DEFLECT := 0.5
+## The model's rudder: radians per radian a second of turn, and the most it
+## swings.
+const RUDDER := 0.5
+const RUDDER_MOST := 0.35
+## The model's wheels (their radius, toy units) turn with the speed while the
+## flight is within WHEELS_NEAR m of the ground, then coast down (seconds).
+## WHEELS_MOST turns a second caps them: any faster they only strobe.
+const WHEEL_RADIUS := 0.08
+## The upper wingtip's middle on the model, whose tips rake aft (z).
+const HERO_TIP_Z := -0.015
+const WHEELS_NEAR := 1.2
+const WHEELS_COAST := 0.8
+const WHEELS_MOST := 5.0
 ## The propeller: turns a second at rest and per m/s of speed; the blades
 ## hide past PROP_HIDE turns a second (shown again under PROP_SHOW), leaving
 ## the disc; the disc's strength at rest and at speed, and how fast its
@@ -189,6 +217,18 @@ var _ailerons: Array[Node3D] = []
 var _elevator: Node3D
 var _last_roll := 0.0
 var _last_pitch := 0.0
+## The model's own (null or empty on the code-built figure): its rudder, its
+## wheels, how fast they turn (radians a second) and where they are, and its
+## painted materials, this figure's own copies.
+var _rudder: Node3D
+var _rudder_at := 0.0
+var _last_heading := 0.0
+var _wheels: Array[Node3D] = []
+var _wheel_rate := 0.0
+var _wheel_angle := 0.0
+var _hero_paint: Array[ShaderMaterial] = []
+## Where the vapour leaves the upper wingtips (z).
+var _tip_z := STAGGER
 var _mark: MeshInstance3D
 var _mark_material: StandardMaterial3D
 var _mark_bright := 0.0
@@ -209,9 +249,91 @@ var _wear := 0.0
 ## own plane takes none, new.
 func _init(livery := {}) -> void:
 	name = "Plane"
-	var paint := paints(livery)
-	_paints = paint
 	_wear = clampf(float(livery.get("wear",0.0)),0.0,1.0)
+	if livery.is_empty(): _build_hero()
+	else: _build_toy(paints(livery))
+	var blur := MeshInstance3D.new()
+	_blur = blur
+	var disc := QuadMesh.new()
+	disc.size = Vector2.ONE*0.6
+	blur.mesh = disc
+	_blur_material = ShaderMaterial.new()
+	_blur_material.shader = PROP_BLUR
+	blur.material_override = _blur_material
+	blur.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	blur.position = Vector3(0.0,0.0,-0.69)
+	add_child(blur)
+	_mark = MeshInstance3D.new()
+	var mark := QuadMesh.new()
+	mark.size = Vector2.ONE
+	mark.orientation = PlaneMesh.FACE_Y
+	_mark.mesh = mark
+	_mark.top_level = true
+	_mark_material = StandardMaterial3D.new()
+	_mark_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mark_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_mark_material.albedo_texture = FacetMesh.soft_ring()
+	_mark_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_mark.material_override = _mark_material
+	_mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mark.visible = false
+	add_child(_mark)
+	_vapour_mesh = ImmediateMesh.new()
+	_vapour = MeshInstance3D.new()
+	_vapour.name = "Vapour"
+	_vapour.mesh = _vapour_mesh
+	_vapour.top_level = true
+	var mist := StandardMaterial3D.new()
+	mist.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mist.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mist.vertex_color_use_as_albedo = true
+	mist.albedo_texture = FacetMesh.soft_band()
+	mist.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_vapour.material_override = mist
+	_vapour.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_vapour.visible = false
+	add_child(_vapour)
+	_vapour_points.resize(VAPOUR*2)
+	_vapour_strength.resize(VAPOUR*2)
+	if not _paints.is_empty():
+		# The body's paint first among its children (sky_traffic tells liveries
+		# by it).
+		_join(self,_paints.wood)
+		_join(_prop,_paints.varnish)
+
+## The wanderer's plane: the authored model, each surface on this figure's
+## own copy of its material (the shop repaints one figure, not the file's).
+## Prop spins about its local z, its Blades alone hide for the disc; the
+## ailerons and elevator hinge on local x, the rudder on y, the wheels' axle
+## is local x.
+func _build_hero() -> void:
+	var model := (load(HERO) as PackedScene).instantiate() as Node3D
+	model.name = "Hero"
+	add_child(model)
+	var own := {}
+	for found: Node in model.find_children("*","MeshInstance3D",true,false):
+		var part := found as MeshInstance3D
+		for s in range(part.mesh.get_surface_count()):
+			var was := part.mesh.surface_get_material(s) as ShaderMaterial
+			if not own.has(was):
+				own[was] = was.duplicate()
+				if own[was].get_shader_parameter("mask_tex") != null: _hero_paint.append(own[was])
+			part.set_surface_override_material(s,own[was])
+	_tip_z = HERO_TIP_Z
+	_prop = model.get_node("Prop")
+	_ailerons.append(model.get_node("AileronL"))
+	_ailerons.append(model.get_node("AileronR"))
+	_elevator = model.get_node("Elevator")
+	_rudder = model.get_node("Rudder")
+	_wheels.append(model.get_node("WheelL"))
+	_wheels.append(model.get_node("WheelR"))
+	# Hair-thin and glazed: nothing they'd throw shows, and thin shadows crawl.
+	for thin: String in ["Wires","Glass"]:
+		(model.get_node(thin) as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+## The code-built figure, in `paint` (`paints`): traffic's.
+func _build_toy(paint: Dictionary) -> void:
+	_paints = paint
 	var wood: Material = paint.wood
 	var dark: Material = paint.dark
 	var trim: Material = paint.trim
@@ -292,55 +414,7 @@ func _init(livery := {}) -> void:
 	_prop = Node3D.new()
 	_prop.position = Vector3(0.0,0.0,-0.68)
 	add_child(_prop)
-	var varnish: Material = paint.varnish
 	_add_piece("propeller",paint,_prop)
-	var blur := MeshInstance3D.new()
-	_blur = blur
-	var disc := QuadMesh.new()
-	disc.size = Vector2.ONE*0.6
-	blur.mesh = disc
-	_blur_material = ShaderMaterial.new()
-	_blur_material.shader = PROP_BLUR
-	blur.material_override = _blur_material
-	blur.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	blur.position = Vector3(0.0,0.0,-0.69)
-	add_child(blur)
-	_mark = MeshInstance3D.new()
-	var mark := QuadMesh.new()
-	mark.size = Vector2.ONE
-	mark.orientation = PlaneMesh.FACE_Y
-	_mark.mesh = mark
-	_mark.top_level = true
-	_mark_material = StandardMaterial3D.new()
-	_mark_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_mark_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mark_material.albedo_texture = FacetMesh.soft_ring()
-	_mark_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_mark.material_override = _mark_material
-	_mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_mark.visible = false
-	add_child(_mark)
-	_vapour_mesh = ImmediateMesh.new()
-	_vapour = MeshInstance3D.new()
-	_vapour.name = "Vapour"
-	_vapour.mesh = _vapour_mesh
-	_vapour.top_level = true
-	var mist := StandardMaterial3D.new()
-	mist.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mist.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mist.vertex_color_use_as_albedo = true
-	mist.albedo_texture = FacetMesh.soft_band()
-	mist.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_vapour.material_override = mist
-	_vapour.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_vapour.visible = false
-	add_child(_vapour)
-	_vapour_points.resize(VAPOUR*2)
-	_vapour_strength.resize(VAPOUR*2)
-	# The body's paint first among its children (sky_traffic tells liveries
-	# by it).
-	_join(self,wood)
-	_join(_prop,varnish)
 
 ## Its parent must be a plain Node (or the scene root): it is placed by its
 ## own transform. The mark and the vapour are top level, in global space.
@@ -355,6 +429,7 @@ func reset(glide: RefCounted) -> void:
 	_vapour_now = Vector2.ZERO
 	_last_roll = _roll(glide)
 	_last_pitch = float(glide.pitch)
+	_last_heading = float(glide.heading)
 	update(0.0,glide,0.0,Callable(),false)
 
 ## The world moved under it (SkyIslands `arrive`): the vapour goes too.
@@ -382,14 +457,19 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 			var hand := -1.0 if s == 0 else 1.0
 			_aileron_at[s] = lerpf(_aileron_at[s],rolled*hand,k)
 		_elevator_at = lerpf(_elevator_at,pitched,k)
+		var turned := wrapf(float(glide.heading)-_last_heading,-PI,PI)/delta
+		_rudder_at = lerpf(_rudder_at,clampf(-turned*RUDDER,-RUDDER_MOST,RUDDER_MOST),k)
 	_last_roll = roll
 	_last_pitch = float(glide.pitch)
+	_last_heading = float(glide.heading)
 	var on := float(running) if running != null else 1.0
 	_idle(delta,on)
 	var pace := float(glide.speed)
 	_spin_prop(delta,pace,on)
 	_trail_vapour(delta,near,lean)
-	_place_mark(delta,at,ground,landable)
+	var height := _height(at,ground)
+	_turn_wheels(delta,pace,height)
+	_place_mark(delta,at,height,landable)
 
 ## The propeller turns with the speed while the engine runs (`running`, 0
 ## to 1), its blur fading as it spins down. Too fast to see, the blades
@@ -434,6 +514,7 @@ func _idle(delta: float, running: float) -> void:
 		flutter = Vector2(jig.call(HUM_FLUTTER_HZ.x,0.0)*HUM_FLUTTER.x,jig.call(HUM_FLUTTER_HZ.y,1.1)*HUM_FLUTTER.y)*wash
 	for s in range(2): _ailerons[s].rotation.x = _aileron_at[s]+flutter.y*(1.0 if s == 0 else -0.8)
 	_elevator.rotation.x = _elevator_at+flutter.x
+	if _rudder != null: _rudder.rotation.y = _rudder_at+flutter.x*0.5
 
 ## The wheels' contact under the body's middle, in the figure's frame
 ## (scripts/plane_ground_scale.gd PIVOT).
@@ -479,7 +560,7 @@ func _trail_vapour(delta: float, near: float, side: float) -> void:
 				_vapour_strength[o+i] = _vapour_strength[o+i-1]
 		var drift := (Vector3.UP*VAPOUR_DRIFT.x+basis.x.normalized()*hand*VAPOUR_DRIFT.y)*grown*delta
 		for i in range(1,VAPOUR): _vapour_points[o+i] += drift*float(i)/VAPOUR
-		_vapour_points[o] = transform*Vector3(SPAN*0.5*hand,UPPER_Y,STAGGER)
+		_vapour_points[o] = transform*Vector3(SPAN*0.5*hand,UPPER_Y,_tip_z)
 		_vapour_now[s] = lerpf(_vapour_now[s],clampf(near,0.0,1.0)*clampf(0.6+0.6*side*hand,0.25,1.0),follow)
 		_vapour_strength[o] = _vapour_now[s]
 		for i in range(VAPOUR): shown = shown or _vapour_strength[o+i] > 0.004
@@ -509,24 +590,37 @@ func _trail_vapour(delta: float, near: float, side: float) -> void:
 			_vapour_mesh.surface_add_vertex(p+facing)
 		_vapour_mesh.surface_end()
 
-func _place_mark(delta: float, at: Vector3, ground: Callable, landable: bool) -> void:
+## How far `at` is over what `ground` finds under it (INF over nothing).
+func _height(at: Vector3, ground: Callable) -> float:
 	var under: Variant = ground.call(at) if ground.is_valid() else null
 	if under is Vector2:
 		var body := under as Vector2
 		under = body.x if at.y > body.x else null
-	var height := at.y-float(under) if under != null else INF
+	return at.y-float(under) if under != null else INF
+
+## The model's wheels: turned by the ground while they're on it (at the
+## plane's drawn size, capped at WHEELS_MOST), coasting down off it. Forward
+## roll brings the tyre's top toward the nose: negative about +x.
+func _turn_wheels(delta: float, pace: float, height: float) -> void:
+	if _wheels.is_empty() or delta <= 0.0: return
+	if height < WHEELS_NEAR: _wheel_rate = minf(pace/(WHEEL_RADIUS*WorldScale.plane),WHEELS_MOST*TAU)
+	else: _wheel_rate *= exp(-delta/WHEELS_COAST)
+	_wheel_angle = wrapf(_wheel_angle-_wheel_rate*delta,0.0,TAU)
+	for wheel in _wheels: wheel.rotation.x = _wheel_angle
+
+func _place_mark(delta: float, at: Vector3, height: float, landable: bool) -> void:
 	_mark.visible = height < MARK_HEIGHT
 	if not _mark.visible: return
 	_mark_bright = lerpf(_mark_bright,float(landable),1.0-exp(-delta/0.2)) if delta > 0.0 else float(landable)
 	var close := 1.0-clampf(height/MARK_HEIGHT,0.0,1.0)
 	var size := lerpf(1.2,2.8,clampf(height/12.0,0.0,1.0))
-	_mark.transform = Transform3D(Basis().scaled(Vector3(size,1.0,size)),Vector3(at.x,float(under)+0.06,at.z))
+	_mark.transform = Transform3D(Basis().scaled(Vector3(size,1.0,size)),Vector3(at.x,at.y-height+0.06,at.z))
 	_mark_material.albedo_color = Color(1.0,0.97,0.88,close*lerpf(0.35,0.85,_mark_bright))
 
 # --- The paint ----------------------------------------------------------------------
 
 func _ready() -> void:
-	_finish(_paints,_wear)
+	set_wear(_wear)
 
 ## How worn its paint is, `t` from 0 (new: deep clean lacquer, crisp trim,
 ## bright brass, glowing varnish, taut clean cloth) to 1 (dusty, faded,
@@ -534,10 +628,20 @@ func _ready() -> void:
 func set_wear(t: float) -> void:
 	_wear = clampf(t,0.0,1.0)
 	_finish(_paints,_wear)
+	for m in _hero_paint: m.set_shader_parameter("wear",_wear)
 
 ## How worn its paint is now (`set_wear`).
 func get_wear() -> float:
 	return _wear
+
+## Repaints it in place to `livery`'s body, dark, trim and wing, its defaults
+## for any it lacks (the shop, scripts/endless/shop_stock.gd).
+func repaint(livery: Dictionary) -> void:
+	for key: String in HERO_SLOTS:
+		var slot: Array = HERO_SLOTS[key]
+		for m in _hero_paint: m.set_shader_parameter(slot[0],livery.get(key,slot[1]))
+		var old: String = TOY_SLOTS[key]
+		if _paints.has(old): (_paints[old] as ShaderMaterial).set_shader_parameter("albedo",livery.get(key,slot[1]))
 
 ## The plane's paints by name, `livery` (see `_init`) repainting the body,
 ## dark, trim and wing and setting their wear (new without); the pieces

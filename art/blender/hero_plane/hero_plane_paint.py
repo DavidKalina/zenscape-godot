@@ -342,7 +342,7 @@ def paint_body(cv):
 	p.lay(K["BODY_C"], np.ones_like(z), 0, 0.46, 0.55, 0.0)
 	p.shade(1.0 + (p.big - 0.5) * 0.2 + (p.mid - 0.5) * 0.12)
 	p.col = over(p.col, np.array((0.78, 0.45, 0.28), dtype=np.float32), sst(0.5, 0.8, p.big) * 0.2)
-	p.col = over(p.col, np.array((0.5, 0.21, 0.15), dtype=np.float32), sst(0.5, 0.8, 1.0 - p.mid) * 0.22)
+	p.col = over(p.col, np.array((0.56, 0.24, 0.16), dtype=np.float32), sst(0.5, 0.8, 1.0 - p.mid) * 0.14)
 
 	# Metal: panel seams, rivets and access plates.
 	seams_z = (-0.44, -0.33, -0.22, -0.11, K["FABRIC_FROM"])
@@ -392,8 +392,8 @@ def paint_body(cv):
 	dist = np.minimum(dist, np.abs(1.0 - bay) * (math.tau / n) * r)
 	tape = (1.0 - sst(0.0042, 0.0056, dist + (p.fine - 0.5) * 0.0015)) * fabric
 	slack = np.sin(bay * math.pi) * fabric
-	p.shade(1.0 - slack * 0.07)
-	p.shade(1.0 + tape * 0.1)
+	p.shade(1.0 - slack * 0.04)
+	p.shade(1.0 + tape * 0.05)
 	p.hgt += tape * 1.1 + fabric * (weave(z, s, 0.0034) * 0.1 + (p.fine - 0.5) * 0.25)
 	former = (1.0 - sst(0.0032, 0.0046, np.abs(((z - 0.02) / 0.084 + 0.5) % 1.0 - 0.5) * 0.084)) * fabric
 	p.shade(1.0 + former * 0.05)
@@ -421,13 +421,17 @@ def paint_body(cv):
 	p.lay(K["DARK_C"], deck, 3, 0.74, 0.08, 0.0)
 	line_top = np.interp(z, [-0.5, 0.0, 0.3, 0.72], [1.5, 1.58, 1.66, 1.7]).astype(np.float32)
 	line_w = np.interp(z, [-0.5, 0.0, 0.3, 0.72], [0.34, 0.34, 0.3, 0.2]).astype(np.float32)
-	cheat = band(aphi, line_top, line_top + line_w, 0.006) * (1.0 - sst(0.395, 0.4, z))
-	pin_ = (band(aphi, line_top - 0.065, line_top - 0.03, 0.005) + band(aphi, line_top + line_w + 0.03, line_top + line_w + 0.05, 0.005)) * (1.0 - sst(0.395, 0.4, z))
+	cheat = band(aphi, line_top, line_top + line_w, 0.006) * (1.0 - sst(0.335, 0.34, z))
+	pin_ = (band(aphi, line_top - 0.065, line_top - 0.03, 0.005) + band(aphi, line_top + line_w + 0.03, line_top + line_w + 0.05, 0.005)) * (1.0 - sst(0.335, 0.34, z))
 	p.lay(K["TRIM_C"], cheat, 1, 0.44, 0.55)
 	p.lay(K["WING_C"], pin_, 2, 0.5, 0.45)
-	ringt = band(z, 0.40, 0.468, 0.0015)
-	p.lay(K["TRIM_C"], ringt, 1, 0.44, 0.55)
-	p.lay(K["WING_C"], band(z, 0.385, 0.397, 0.001) + band(z, 0.471, 0.483, 0.001), 2, 0.5, 0.45)
+	# The rear in big plain blocks, for the chase: a wide cream band, then the
+	# tail cone in the trim, running into the fin.
+	block = sst(0.3385, 0.3415, z)
+	p.lay(K["WING_C"], block, 2, 0.5, 0.45)
+	cone = sst(0.4185, 0.4215, z)
+	p.lay(K["TRIM_C"], cone, 1, 0.44, 0.55)
+	p.shade(1.0 + block * ((p.big - 0.5) * 0.14 + (p.mid - 0.5) * 0.06))
 	# Re-cut the seams through the scheme, since a coat doesn't hide them.
 	p.shade(1.0 - seam * 0.3 * (deck + cheat * 1.0))
 	# Cockpit well under the glass.
@@ -435,7 +439,6 @@ def paint_body(cv):
 	p.lay(np.array((0.08, 0.09, 0.09), dtype=np.float32), well, 3, 0.9, 0.0)
 	# Stencils and the number.
 	bone = K["WING_C"]
-	dk = np.array((0.12, 0.1, 0.09), dtype=np.float32)
 	def on(side, z_at, a_phi):
 		r_at = float(np.interp(z_at, [b[0] for b in K["BODY"]], [max(b[1], (b[2] - b[3]) * 0.5) for b in K["BODY"]]))
 		col = 8.0 + (z_at - Z0) * f
@@ -456,9 +459,9 @@ def paint_body(cv):
 	c, rw = on(1.0, 0.09, 1.34)
 	p.text("WANDERER", c, rw, 4, bone, 2, True, False, 0.85)
 	c, rw = on(1.0, 0.56, 1.28)
-	p.text("LIFT", c, rw, 3, dk, None, True, False, 0.7)
+	p.text("LIFT", c, rw, 3, bone, 2, True, False, 0.7)
 	c, rw = on(-1.0, 0.56, 1.28)
-	p.text("LIFT", c, rw, 3, dk, None, False, True, 0.7)
+	p.text("LIFT", c, rw, 3, bone, 2, False, True, 0.7)
 
 	# Wear. Hands: the flank under the cockpit and round the step, rubbed to
 	# bare skin in places, the paint chipped along every seam nearest to it.
@@ -467,11 +470,11 @@ def paint_body(cv):
 	on_seam = np.maximum(blur(seam, 3.0) * 3.0, 0.0)
 	chips = worn * np.clip(on_seam * 2.0 + near * 0.7, 0.0, 1.0) * sst(0.6, 0.7, p.chip + (p.fine - 0.5) * 0.3 + on_seam * 0.25)
 	p.lay(K["ALU_C"], chips, None, 0.36, 0.0, 1.0)
-	p.stain(K["DUST_C"], near * sst(0.45, 0.8, p.mid) * 0.36)
-	p.stain(K["SOOT_C"], near * sst(0.5, 0.8, p.fine) * 0.18)
+	p.stain(K["DUST_C"], near * sst(0.45, 0.8, p.mid) * 0.22)
+	p.stain(K["SOOT_C"], near * sst(0.5, 0.8, p.fine) * 0.1)
 	# The fabric's scrapes low on the tail, and the chafed keel.
 	aft = sst(0.3, 0.68, z)
-	p.stain(K["DUST_C"], aft * sst(1.9, 2.9, aphi) * sst(0.3, 0.7, p.along) * 0.5)
+	p.stain(K["DUST_C"], aft * sst(1.9, 2.9, aphi) * sst(0.3, 0.7, p.along) * 0.3)
 	# Exhaust: soot laid back from the stubs, thinning, climbing a little in the
 	# wash. Three plumes a side, merging, gone by the tail.
 	plume = np.zeros_like(z)
@@ -481,14 +484,14 @@ def paint_body(cv):
 		plume = np.maximum(plume, np.exp(-((aphi - climb) / spread) ** 2) / (1.0 + np.clip(z + 0.36, 0.0, 1.0) * 2.2))
 	plume *= sst(-0.40, -0.345, z) * (1.0 - sst(0.2, 0.62, z))
 	soot = plume * (0.55 + 0.45 * sst(0.3, 0.75, p.along))
-	p.stain(K["SOOT_C"], np.clip(soot * 0.95, 0.0, 0.85), 0.82)
+	p.stain(K["SOOT_C"], np.clip(soot * 0.7, 0.0, 0.65), 0.82)
 	tan = plume * sst(0.45, 0.78, p.along * 0.6 + p.mid * 0.4)
-	p.stain(np.array((0.34, 0.24, 0.15), dtype=np.float32), np.clip(tan * 0.5, 0.0, 0.6))
+	p.stain(np.array((0.3, 0.24, 0.18), dtype=np.float32), np.clip(tan * 0.2, 0.0, 0.3))
 	# Oil: the belly, in long glossy runs from the sump.
 	oil = sst(2.35, 3.0, aphi) * (1.0 - sst(-0.1, 0.4, z)) * sst(0.42, 0.68, p.along)
 	p.stain(K["OIL_C"], np.clip(oil * 0.9, 0.0, 0.9), 0.3)
 	# Runs under the fasteners and the rivets.
-	drip = sst(0.6, 0.78, p.along) * metal * 0.18
+	drip = sst(0.62, 0.8, p.along) * metal * 0.08
 	p.stain(np.array((0.18, 0.13, 0.1), dtype=np.float32), drip)
 	# Sun: the cloth's top chalks a little.
 	p.col = over(p.col, np.array((0.9, 0.72, 0.56), dtype=np.float32), fabric * (1.0 - sst(0.8, 1.5, aphi)) * sst(0.45, 0.75, p.big) * 0.12)
@@ -561,16 +564,16 @@ def paint_cowl(cv):
 	p.hgt += (blur(lou, 3.0) * 2.2 - lou * 3.4) * 1.0
 	# Chips along the skirt and the blisters' crowns; rubbed metal round fasteners.
 	crown = np.exp(-(((t + bay * 0.5) % bay - bay * 0.5) / 0.14) ** 2) * band(q, 0.3, 0.6, 0.04)
-	chips = sst(0.8, 0.84, p.chip + crown * 0.05 + sst(0.9, 1.0, q) * 0.1 + (p.fine - 0.5) * 0.16)
+	chips = sst(0.84, 0.88, p.chip + crown * 0.05 + sst(0.9, 1.0, q) * 0.1 + (p.fine - 0.5) * 0.16)
 	p.lay(K["ALU_C"], chips * (1.0 - lip), None, 0.34, 0.0, 1.0)
 	# Soot: back from the lip low down, heavy over the stubs, heat straw on top.
 	lower = np.abs(t % math.tau - math.pi)     # from the keel
 	low = 1.0 - sst(0.5, 1.7, lower)
 	p.stain(K["SOOT_C"], np.clip(low * sst(0.55, 1.0, q) * (0.45 + 0.55 * p.across) * 1.1, 0.0, 0.85), 0.8)
 	p.stain(K["OIL_C"], np.clip(low * sst(0.3, 0.72, p.across) * 0.7, 0.0, 0.7), 0.32)
-	p.stain(np.array((0.34, 0.27, 0.19), dtype=np.float32), sst(0.2, 0.5, q) * sst(0.5, 0.8, p.across) * 0.28)
+	p.stain(np.array((0.3, 0.27, 0.22), dtype=np.float32), sst(0.2, 0.5, q) * sst(0.5, 0.8, p.across) * 0.12)
 	heat = band(q, 0.64, 1.0, 0.12) * (0.25 + 0.5 * low)
-	p.stain(np.array((0.22, 0.2, 0.19), dtype=np.float32), heat * 0.3)
+	p.stain(np.array((0.22, 0.2, 0.19), dtype=np.float32), heat * 0.2)
 	p.store()
 
 
@@ -593,10 +596,7 @@ def paint_fin(cv, reg):
 	p.shade(1.0 + (p.big - 0.5) * 0.3 + (p.mid - 0.5) * 0.16)
 	p.lay(K["WING_C"], rudder, 2, 0.6, 0.3)
 	p.shade(1.0 + (p.big - 0.5) * 0.1 * rudder)
-	bars = (band(y, 0.235, 0.268, 0.001) + band(y, 0.15, 0.183, 0.001) + band(y, 0.066, 0.1, 0.001)) * rudder
-	p.lay(K["TRIM_C"], bars, 1, 0.46, 0.45)
-	bars2 = (band(y, 0.2, 0.218, 0.001) + band(y, 0.116, 0.134, 0.001)) * rudder
-	p.lay(K["BODY_C"], bars2, 0, 0.46, 0.45)
+	p.lay(K["BODY_C"], band(y, -0.2, 0.17, 0.001) * rudder, 0, 0.46, 0.45)
 	# Ribs, horizontal; a spar line; cloth weave.
 	pitch = 0.042
 	rib = np.abs(((y / pitch + 0.5) % 1.0) - 0.5) * pitch
@@ -647,6 +647,7 @@ def paint_tailplane(cv):
 	p.lay(np.array((0.08, 0.08, 0.08), dtype=np.float32), gap, None, 0.8, 0.0)
 	p.hgt -= gap * 2.2
 	p.lay(K["TRIM_C"], sst(0.205, 0.207, a), 1, 0.46, 0.45)
+	p.lay(K["BODY_C"], sst(h + 0.002, h + 0.004, b) * (1.0 - sst(0.205, 0.207, a)), 0, 0.46, 0.45)
 	p.stain(K["DUST_C"], sst(0.5, 0.8, p.across) * 0.22)
 	p.stain(K["SOOT_C"], (1.0 - sst(0.0, 0.1, a)) * sst(0.4, 0.75, p.across) * 0.35)
 	p.store()
@@ -682,11 +683,11 @@ def paint_prop(cv):
 
 
 def polished(p):
-	"""Brass a hand keeps bright: deep gold, tarnish in the low places, rubbed
-	pale along the grain."""
-	c = np.broadcast_to(K["BRASS_C"] * np.array((0.86, 0.8, 0.66), dtype=np.float32), p.col.shape)
-	c = over(c, np.array((0.36, 0.25, 0.12), dtype=np.float32), sst(0.5, 0.74, p.mid) * 0.62)
-	c = over(c, np.array((0.9, 0.78, 0.5), dtype=np.float32), sst(0.56, 0.76, p.along) * 0.34)
+	"""Brass a hand keeps bright: gold, a breath of tarnish in the low places,
+	rubbed pale along the grain."""
+	c = np.broadcast_to(K["BRASS_C"] * np.array((0.98, 0.93, 0.8), dtype=np.float32), p.col.shape)
+	c = over(c, np.array((0.56, 0.43, 0.22), dtype=np.float32), sst(0.58, 0.82, p.mid) * 0.16)
+	c = over(c, np.array((0.95, 0.84, 0.58), dtype=np.float32), sst(0.56, 0.76, p.along) * 0.34)
 	return c
 
 
@@ -775,7 +776,7 @@ def paint_swatches(cv):
 			p.met[:] = 0.7
 			p.rgh[:] = 0.62
 			p.shade(n)
-			p.col = over(p.col, np.array((0.44, 0.27, 0.16), dtype=np.float32), sst(0.45, 0.7, p.mid) * 0.8)
+			p.col = over(p.col, np.array((0.44, 0.27, 0.16), dtype=np.float32), sst(0.5, 0.75, p.mid) * 0.3)
 			p.col = over(p.col, np.array((0.09, 0.08, 0.08), dtype=np.float32), sst(0.5, 0.8, p.fine) * 0.6)
 			p.col = over(p.col, np.array((0.36, 0.31, 0.4), dtype=np.float32), sst(0.6, 0.8, p.big) * 0.3)
 		elif name == "rubber":

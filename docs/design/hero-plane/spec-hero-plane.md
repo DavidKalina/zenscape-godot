@@ -72,6 +72,13 @@ polished. Skins for anything else are out of scope.
 - Assess `docs/art/model-budget.md` and list what applies in the handoff
   (AGENTS.md, Models).
 
+## The user's call on stage 1
+
+The look is approved and merged to main (model and textures only). It stays
+adventurous, but it is a little too rusty: bring the rust down, the brass
+spinner and cowl lip first. Also give the chase view bolder colour blocks on
+the rear, which reads thin and busy there.
+
 ## The idle (title screen)
 
 The cause to confirm first: `_idle` in `scripts/plane_figure.gd` shakes the
