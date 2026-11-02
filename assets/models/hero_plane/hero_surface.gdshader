@@ -8,6 +8,7 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
+global uniform vec3 zs_key_direction;
 uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D mask_tex : hint_default_black, filter_linear_mipmap_anisotropic, repeat_disable;
@@ -24,6 +25,14 @@ uniform float normal_depth = 1.0;
 uniform float fill = 2.2;
 uniform float rim = 0.3;
 uniform float bounce = 4.0;
+// The side turned from the sun. The world's fill is about a twentieth of the
+// sun in the red and blue besides, so a saturated paint in it goes to black: a
+// near-neutral light scaled off the sky's own, so moods and night reach it,
+// strongest away from the sun and a little of it on the lit side, so cast
+// shadows lift too without washing the lit paint out.
+uniform float shade_lift = 3.0;
+uniform float shade_lit = 0.3;
+uniform float shade_neutral = 0.7;
 uniform float coat_roughness = 0.08;
 // set_wear: 0 new; faded, dusty and dull at 1, as the old paint did.
 uniform float wear : hint_range(0.0, 1.0) = 0.0;
@@ -67,5 +76,7 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground * bounce, zs_hemi_sky, up.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - orm.g * 0.3);
-	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	float sunward = clamp(dot(up, zs_key_direction), 0.0, 1.0);
+	vec3 lift = mix(zs_hemi_sky, vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722))), shade_neutral) * zs_hemi_energy * shade_lift * mix(1.0, shade_lit, sunward);
+	EMISSION = diffuse * (hemi * fill + lift) + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
 }
