@@ -662,8 +662,10 @@ func _ready() -> void:
 	tunnels = LandTunnels.new()
 	tunnels.name = "Tunnels"
 	add_child(tunnels)
-	tunnels.setup(field)
-	if look != null: tunnels.clouds = look.clouds
+	tunnels.setup(field,look.ground if look != null else null,look.sun.global_transform.basis.z if look != null else Vector3.ZERO)
+	if look != null:
+		tunnels.clouds = look.clouds
+		if look.water != null: tunnels.sea = look.water.material
 	ice = LandIceTunnel.new()
 	ice.name = "IceTunnel"
 	add_child(ice)
@@ -1131,7 +1133,7 @@ func _blocked(p: Vector3) -> bool:
 func floor_at(p: Vector2) -> float:
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
 	var h: float = field.height(p.x,p.y)
-	if h < Field.SEA_Y+0.2 or _on_river(): return NAN
+	if (h < Field.SEA_Y+0.2 and not tunnels.dry(Vector3(p.x,h,p.y))) or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
 	var q := Vector3(p.x,plane.position.y if plane != null else h,p.y)
 	return ice.land_y(q,tunnels.land_y(q,h))
@@ -1143,6 +1145,7 @@ func _on_river() -> bool:
 
 ## The water under a point: the sea's swell, or a river's level over it.
 func water_at(p: Vector3) -> float:
+	if tunnels != null and tunnels.dry(p): return -INF
 	var level := Field.SEA_Y+sea_height(p)
 	var river: float = field.river_y(p.x,p.z)
 	return level if is_nan(river) else maxf(level,river)
@@ -1155,6 +1158,7 @@ func eye_floor(p: Vector3) -> float:
 	var h: float = field.height(p.x,p.z)
 	if _on_river(): h = maxf(h,field.river_drawn())
 	h = ice.land_y(p,tunnels.land_y(p,h))
+	if tunnels.dry(p): return h
 	return maxf(h,Field.SEA_Y+sea_height(p))
 
 ## Inside the land or the sea, for the camera to keep out of.
@@ -1215,6 +1219,8 @@ func tick(delta: float) -> void:
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
 	if doors != null and doors.holds(plane.position): plane.water = -INF
+	# Under the level in a sunk tunnel: no sea to skim, no sea floor to catch it.
+	plane.floor_y = Field.SEA_Y-15.0-(150.0 if tunnels != null and tunnels.dry(plane.position) else 0.0)
 	FrameLog.mark(&"t_input")
 	if water != null: water.feel(delta)
 	FrameLog.mark(&"t_feel")

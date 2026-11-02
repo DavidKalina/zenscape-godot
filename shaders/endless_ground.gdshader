@@ -410,6 +410,11 @@ varying vec4 land_colour;
 // The land's carve (land_field.gd, via land_stream's CUSTOM0): x how deep
 // in a groove or a ledge's inner corner, y a buttress crest or ledge lip.
 varying vec2 land_carve;
+// Dry land under the sea's level (a sunk cave's sinkhole: tunnel_sites.gd
+// apply_chunk marks it with a river level of its own, DRY_LOW_RIVER, far under
+// the sea - 100 of every riverless vertex): painted as land, not sea bed.
+varying float dry_low;
+const float DRY_LOW_OVER = 26.0;
 // The river (land_stream's CUSTOM1) and its flow (CUSTOM0.zw, m/s).
 varying vec3 river;
 varying vec2 river_flow;
@@ -425,6 +430,7 @@ void vertex() {
 	// The vertex colour is sRGB; its alpha the meadow.
 	land_colour = vec4(pow(COLOR.rgb, vec3(2.2)), COLOR.a);
 	land_carve = CUSTOM0.xy;
+	dry_low = 1.0 - smoothstep(sea_y - 300.0, sea_y - 200.0, CUSTOM1.z);
 	river = CUSTOM1.xyz;
 	river_flow = (CUSTOM0.zw * 2.0 - 1.0) * 4.0;
 	river_frame = river_live > 0.5 ? CUSTOM2 : vec4(0.0);
@@ -803,7 +809,7 @@ void fragment() {
 	}
 	vec2 gxz = p.xz + shear * vec2(sheared_y * 0.8, sheared_y * 0.55);
 	fp = max(fp, fp3 * shear);
-	float over = p.y - sea_y;
+	float over = max(p.y - sea_y, DRY_LOW_OVER * dry_low);
 	float meadow = clamp(land_colour.a, 0.0, 1.0);
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - p);
 	// (The live river's map gradients, taken here in uniform control flow.)

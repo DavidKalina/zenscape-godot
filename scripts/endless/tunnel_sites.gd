@@ -33,6 +33,17 @@ extends RefCounted
 ## that grows tunnels (LandBlend `site_ok`; the tries that fail it count as
 ## `why.region`), so no massif or trench meets a border band.
 ##
+## A sunk tunnel raises no massif: the bore runs under the land as it stands,
+## its floor SUNK_COVER m under the lowest land on the path, and each mouth
+## opens in the back wall of a sinkhole (`_bowl`, `Site.ramp` its length)
+## sunk into the open ground, so a run drops in and comes back up with the land
+## over it unchanged but for the hollows. It is one raw cave: no halls, its
+## path winding (CAVE_PATH), its walls, vault and floor wandering by noise,
+## with chambers where the land over it leaves room (`_cave_profile`, Site
+## `rise`: the floor over `floor_y` along the path, `floor_at`).
+## `--tunnel-sunk=X` its share of the
+## squares (SUNK_SHARE), `--tunnel-length=m` a sunk path's length.
+##
 ## `--tunnel-test`: one tunnel TEST_AHEAD m ahead of the start, on its
 ## heading (the world's spawn, `--at=` and `--heading=`). Named
 ## `<world>/tunnel/test`; a streamed tunnel will be `<world>/tunnel/<cx>_<cz>`.
@@ -176,6 +187,127 @@ const FLAT_RISE := 4.0
 const FLAT_STEP := 16.0
 const FLAT_FAN := [-0.6,-0.3,0.0,0.3,0.6]
 
+## Sunk tunnels (knobs): the share of the rolled squares that search for one
+## (none: seed 1's stand in SUNK_SITES, found once over every square); the
+## path's length (m, rolled); rock over the floor at the lowest land on the
+## path (the vault, its swell and a skin of rock); its lowest floor (the sea
+## is a level and most land stands under 30 m over it, so a floor goes under
+## the sea: `dry_at`, the sea cut out of the ramps, land_tunnels.gd `dry`);
+## the sinkhole's length, half width and most depth (m), the share of it that
+## is floor and the floor's climb. No river within SUNK_RIVER m of one.
+const SUNK_SHARE := 0.0
+const SUNK_LENGTH := Vector2(1400.0,2600.0)
+const SUNK_COVER := 36.0
+const SUNK_LOWEST := -150.0
+const BOWL_LONG := 180.0
+const BOWL_WIDE := 74.0
+const BOWL_MOUTH := 42.0
+const BOWL_DEEP := 86.0
+const BOWL_FALL := 2.4
+const BOWL_ROUGH := 6.0
+const BOWL_RISE := 0.04
+const SUNK_RIVER := 50.0
+const SUNK_LOOK := 6
+## A sinkhole's walls, rock rather than a smooth funnel. WALL_E: the wall from
+## .x to .y of the way out (`_bowl_e`), the top WALL_RIM of it easing into the
+## land round it, so the rim has no crease. Gullies down the fall line: how
+## far each cuts back (in `e`), their width across and length down it (the
+## noise's scale, as `rag`'s). Benches: one every WALL_BENCH m up, their riser
+## over this part of a bench, their wander; only in patches (BENCH_PATCH, the
+## noise's scale and its ramp), so they fork and stop rather than ring the
+## hollow. Past WALL_FADE m of chunk step the benches go, past GULLY_FADE the
+## gullies, as the land's carve does.
+const WALL_E := Vector2(0.35,0.6)
+const WALL_RIM := 0.9
+const GULLY_BACK := 0.1
+const GULLY_SCALE := Vector2(1.3,0.1)
+const WALL_BENCH := 11.0
+const BENCH_RISER := Vector2(0.22,0.78)
+const BENCH_WANDER := 2.4
+const BENCH_PATCH := Vector3(0.6,-0.05,0.3)
+const WALL_FADE := Vector2(2.0,4.0)
+const GULLY_FADE := Vector2(6.0,12.0)
+## Turf thins over this much cut (m), so the grass stops in a soft line and
+## not at the first vertex moved. Past that the hollow's floor, where it lies
+## flat (the land's normal's y, .x to .y), keeps this much of a meadow's paint.
+const BOWL_TURF := 7.0
+## The river level that marks a sinkhole's land for shaders/endless_ground
+## (`dry_low`): well under SEA_Y-100, every other riverless vertex's.
+const DRY_LOW_RIVER := SEA_Y-400.0
+const BOWL_FLOOR := Vector3(0.82,0.96,0.7)
+## How far from a mouth its sinkhole can reach at all (m): its length and,
+## rolled wide by the rag, its half width.
+const BOWL_FAR := 240.0
+## The sinkholes' keep-outs (`_bowl_columns`): a column's width, the scan's
+## step along it, how far past the hollow it runs, and tree_plan.gd's (and
+## tree_cell.h's) ARCH_CLEAR.
+const KEEP_COLUMN := 18.0
+const KEEP_SCAN := 4.0
+const KEEP_PAD := 4.0
+const KEEP_CLEAR := 18.0
+## A sunk cave (knobs): its bends' radius (m) and turn (rad, the heading
+## swings half that either side of the first way), the runs between them
+## and at the mouths (m); half width and vault (m) over WALL_WAVE and VAULT_WAVE
+## m along the path; a chamber each CHAMBER_EVERY m or so, CHAMBER_LONG m long,
+## CHAMBER_ADD wider and higher; the floor's wander (most, wave); rock kept
+## over the vault; the mouths' calm reach, in which it eases to the arch.
+## The climbs and dips (`_cave_levels`): the floor sits on levels and changes
+## level by a rolled height over a run at CAVE_GRADE (rise over run, the mean:
+## the middle of a run is half as steep again, CAVE_STEEPEST the most ever),
+## then holds for a rolled run before the next, which goes back the other way
+## unless CAVE_SAME says not. CAVE_SMALL_SHARE of them are the smaller CAVE_SMALL,
+## more often stepped on the same way, so no two swings match. A level stays
+## CAVE_HEAD under what the land allows.
+## The rock hangs over the low end of each change, so the vault there is no
+## taller than the change (and a level line through it meets rock): for
+## CAVE_THROAT.x m out from the run, and never under CAVE_THROAT.y, the pull-out
+## being there.
+const CAVE_RADIUS := Vector2(120.0,230.0)
+const CAVE_TURN := Vector2(deg_to_rad(44.0),deg_to_rad(74.0))
+const CAVE_STRAIGHT := Vector2(24.0,120.0)
+const CAVE_MOUTH_RUN := 70.0
+## The mouth's arch (half width, crown over the floor; m).
+const MOUTH_HALF := 17.0
+const MOUTH_VAULT := 23.0
+const CAVE_WIDE := Vector2(12.5,27.0)
+const CAVE_HIGH := Vector2(15.0,30.0)
+const WALL_WAVE := 150.0
+const VAULT_WAVE := 210.0
+const CHAMBER_EVERY := 620.0
+const CHAMBER_LONG := 70.0
+const CHAMBER_ADD := Vector2(20.0,26.0)
+const CAVE_RISE := 3.0
+const RISE_WAVE := 140.0
+const CAVE_CHANGE := Vector2(30.0,48.0)
+const CAVE_GRADE := Vector2(0.13,0.17)
+const CAVE_STEEPEST := 0.28
+const CAVE_HOLD := Vector2(30.0,130.0)
+const CAVE_SAME := 0.15
+const CAVE_SAME_SMALL := 0.5
+const CAVE_SMALL := Vector2(14.0,22.0)
+const CAVE_SMALL_SHARE := 0.4
+const CAVE_HEAD := 16.0
+const CAVE_THROAT := Vector2(50.0,20.0)
+const CAVE_ROOF_FALL := 0.55
+const CAVE_ROCK := 8.0
+const CAVE_CALM := 56.0
+## The land read beside the path for the rock over a cave: m across, every few samples.
+const ROOM_ACROSS := [-46.0,-34.0,-22.0,-11.0,11.0,22.0,34.0,46.0]
+const ROOM_EVERY := 2
+const MOUTH_ROUND := 2.5
+## Seed 1's sunk tunnels by square: [path seed, mouth A's x, z, yaw].
+## The squares of seed 1's wilderness where the rolled search finds a tunnel
+## that stands (the other squares it finds one in are cut by the Peak): the
+## search is skipped everywhere else, about 3 s of the launch, 90 ms a square
+## over some 140 squares. A land flag that moves a site needs a rescan.
+const ROLLED_SITES := {Vector2i(0,-2):true,Vector2i(1,0):true}
+const SUNK_SITES := {
+	Vector2i(1,-1):[2057609815,4896.0,-1504.0,1.1781],
+	Vector2i(-2,1):[1779212981,-6880.0,5408.0,0.7854],
+	Vector2i(-1,1):[4028630523,-480.0,5920.0,1.9635],
+	Vector2i(1,1):[2016843212,4640.0,4384.0,0.0],
+}
+
 static var _cache := {}
 static var _lock := Mutex.new()
 ## Why tries fell (a count by reason, for the drivers).
@@ -257,6 +389,8 @@ class Site extends RefCounted:
 	var way := Vector2.RIGHT
 	var mouth_b := Vector2.ZERO
 	var out_b := Vector2.RIGHT
+	## A sunk tunnel's sinkholes as trees' keep-outs (`_bowl_columns`).
+	var bowl_keep: Array = []
 	## The table over u (every STEP m from mouth A along `way`).
 	var u_end := 0.0
 	var tv := PackedFloat32Array()
@@ -282,6 +416,12 @@ class Site extends RefCounted:
 	## The shelves: {a, b (the flat's run along the path), y (its floor,
 	## world y)}, the crest planed off over a hall stretch's middle.
 	var shelves: Array = []
+	## Under the land, no massif (the header): each mouth's ramp length (m)
+	## and its climb.
+	var sunk := false
+	var rise := PackedFloat32Array()
+	var ramp := Vector2(RAMP_MOST,RAMP_MOST)
+	var grade := GRADE
 
 ## The tunnels' density: the world's `tunnels` layer (0: none), then
 ## `--tunnels=X` or `--no-tunnels`.
@@ -299,6 +439,18 @@ static func test_wanted() -> bool:
 ## How many caverns get a shaft: SHAFT_MOST, or `--tunnel-shafts=N`.
 static func shelves_wanted() -> bool:
 	return not ("--tunnel-shelves=0" in LaunchArgs.user_args())
+
+static func sunk_share() -> float:
+	var out := SUNK_SHARE
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--tunnel-sunk="): out = clampf(float(a.get_slice("=",1)),0.0,1.0)
+	return out
+
+## A sunk path's length: rolled in SUNK_LENGTH, or `--tunnel-length=m`.
+static func sunk_length(rolled: float) -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--tunnel-length="): return float(a.get_slice("=",1))
+	return rolled
 
 static func shafts_wanted() -> int:
 	var out := SHAFT_MOST
@@ -370,12 +522,27 @@ static func cell_of(x: float, z: float) -> Vector2i:
 ## Square (ci, cj)'s tunnel, or null.
 static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> Site:
 	if density <= 0.0: return null
-	if float(hash([seed,ci,cj,"tunnel_roll"]) & 0xffffff)/16777216.0 >= minf(CHANCE*density,CHANCE_MAX): return null
 	var name := "%s/tunnel/%d_%d" % [_world_id(),ci,cj]
 	if LayoutOverrides.deleted(name): return null
+	var fixed: Variant = SUNK_SITES.get(Vector2i(ci,cj)) if seed == 1 else null
+	if fixed != null:
+		var dry := _build(null,int(fixed[0]),Transform3D.IDENTITY,false,true)
+		var at := try_sunk(impl,int(fixed[0]),dry,Vector2(fixed[1],fixed[2]),float(fixed[3]),Rect2(ci*CELL,cj*CELL,CELL,CELL).grow(-CELL_MARGIN))
+		if at != null:
+			at.name = name
+			at.coded = at.frame
+		return at
+	if seed == 1 and density == 1.0 and _world_id() == "doors" and not ROLLED_SITES.has(Vector2i(ci,cj)): return null
+	if float(hash([seed,ci,cj,"tunnel_roll"]) & 0xffffff)/16777216.0 >= minf(CHANCE*density,CHANCE_MAX): return null
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed,ci,cj,"tunnel_place"])
 	var sq := Rect2(ci*CELL,cj*CELL,CELL,CELL).grow(-CELL_MARGIN)
+	if sunk_share() >= 0.0 and float(hash([seed,ci,cj,"tunnel_sunk"]) & 0xffffff)/16777216.0 < sunk_share():
+		var under := _make_sunk(impl,seed,ci,cj,sq)
+		if under != null:
+			under.name = name
+			under.coded = under.frame
+			return under
 	var best: Site = null
 	var best_score := -INF
 	# In a world of regions (the field a LandBlend), only a tunnel whose
@@ -445,6 +612,231 @@ static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> 
 	best.name = name
 	best.coded = coded
 	return best
+
+## Square (ci, cj)'s sunk tunnel in `sq`, or null: as `_make`, a path turned
+## to YAWS headings. The shortest ramps win: the least land cut.
+static func _make_sunk(impl: Object, seed: int, ci: int, cj: int, sq: Rect2) -> Site:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed,ci,cj,"tunnel_sunk_place"])
+	var best: Site = null
+	var best_score := -INF
+	for k in TRIES:
+		var tseed := hash([seed,ci,cj,"tunnel_sunk",k])
+		var jit := Vector2(rng.randf_range(-1.0,1.0),rng.randf_range(-1.0,1.0))
+		var yaw0 := rng.randf()*TAU
+		var dry := _build(null,tseed,Transform3D.IDENTITY,false,true)
+		for w in YAWS:
+			var yaw := yaw0+w*TAU/YAWS
+			var box := sunk_reach(dry,yaw)
+			if box.size.x > sq.size.x or box.size.y > sq.size.y:
+				_why("box")
+				continue
+			var room := (sq.size-box.size)*0.5*JITTER
+			var t := try_sunk(impl,tseed,dry,sq.get_center()+jit*room-box.get_center(),yaw,sq)
+			if t == null: continue
+			var score := -t.ramp.x-t.ramp.y
+			if score <= best_score: continue
+			best = t
+			best_score = score
+	return best
+
+## The room dry run `dry` turned by `yaw` needs: its path, and its ramps at
+## their most (half of them, a ramp being rarely its most).
+static func sunk_reach(dry: Site, yaw: float) -> Rect2:
+	var box := Rect2(dry.pts[0].rotated(-yaw),Vector2.ZERO)
+	var i := 0
+	while i < dry.pts.size():
+		box = box.expand(dry.pts[i].rotated(-yaw))
+		i += BOX_EVERY
+	return box.expand(dry.mouth_b.rotated(-yaw)).grow(TRENCH_WIDE+BOWL_LONG)
+
+## The sunk tunnel of path `dry` (rolled from `tseed`) turned by `yaw`, mouth
+## A at `a`, or null: the floor goes SUNK_COVER m under the lowest land on the
+## path, no lower than SUNK_LOWEST, and both sinkholes must lie dry and be no
+## deeper than BOWL_DEEP, with a flat in reach.
+static func try_sunk(impl: Object, tseed: int, dry: Site, a: Vector2, yaw: float, sq: Rect2) -> Site:
+	var high := maxf(SEA_Y+DRY,SUNK_LOWEST+SUNK_COVER)
+	var b := a+dry.mouth_b.rotated(-yaw)
+	var ha := _h(impl,a.x,a.y)
+	var hb := _h(impl,b.x,b.y)
+	var lo := minf(ha,hb)
+	if lo < high:
+		_why("low")
+		return null
+	# The lowest land on the path: a dip takes the floor with it.
+	var i := SUNK_LOOK
+	while i < dry.pts.size() and lo >= high:
+		var p := a+(dry.pts[i]-dry.origin).rotated(-yaw)
+		lo = minf(lo,_h(impl,p.x,p.y))
+		i += SUNK_LOOK
+	if lo < high:
+		_why("dip")
+		return null
+	var floor_y := lo-SUNK_COVER
+	if maxf(ha,hb)-floor_y > BOWL_DEEP:
+		_why("deep")
+		return null
+	var t := _build(impl,tseed,Transform3D(Basis(Vector3.UP,yaw),Vector3(a.x,floor_y,a.y)),false,true)
+	t.ramp = Vector2(_ramp_out(impl,t,0),_ramp_out(impl,t,1))
+	if t.ramp.x < 0.0 or t.ramp.y < 0.0:
+		_why("ramp")
+		return null
+	_box_ramps(t)
+	if not sq.encloses(t.box):
+		_why("box")
+		return null
+	if impl != null and impl.has_method("site_ok") and not impl.site_ok(&"tunnels",t.box.position.x,t.box.position.y,t.box.end.x,t.box.end.y):
+		_why("region")
+		return null
+	if not (_flat_near(impl,t,0) and _flat_near(impl,t,1)):
+		_why("flat")
+		return null
+	t.bowl_keep = _bowl_columns(t,0)+_bowl_columns(t,1)
+	return t
+
+## Mouth `m`'s sinkhole's length, or -1: it would meet the sea or a river,
+## or the land past it stands too high for a way in.
+static func _ramp_out(impl: Object, t: Site, m: int) -> float:
+	var at: Vector2 = t.origin if m == 0 else t.mouth_b
+	var o: Vector2 = -t.way if m == 0 else t.out_b
+	var n := Vector2(-o.y,o.x)
+	for a: float in [30.0,90.0,150.0,BOWL_LONG]:
+		for d: float in [-BOWL_WIDE,0.0,BOWL_WIDE]:
+			var p := at+o*a+n*d
+			var h := _h(impl,p.x,p.y)
+			if h < SEA_Y+DRY or float(impl.last_river) < SUNK_RIVER: return -1.0
+	var far := at+o*(BOWL_LONG+60.0)
+	if _h(impl,far.x,far.y) > _h(impl,at.x,at.y)+40.0: return -1.0
+	return BOWL_LONG
+
+## The sinkhole out of the mouth at `m` (xz), facing out along `o`, over the
+## land `y`: a slot as wide as the mouth's wall at the back, swelling to
+## BOWL_WIDE, its edge ragged by noise, its floor the bore's climbing a little,
+## its walls falling steep from the land.
+static func _bowl(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float, reach: float) -> float:
+	return _bowl_cut(t,y,m,o,x,z,reach,0.0).x
+
+## `_bowl` with its rock's marks: Vector3(the land, the groove 0..1, the crest
+## 0..1, for the ground shader's CUSTOM0). `step`: the chunk's grid (0: all
+## the rock, as `height` and the collider read it).
+static func _bowl_cut(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float, reach: float, step: float) -> Vector3:
+	var e := _bowl_e(t,m,o,x,z,reach)
+	if e >= 1.0: return Vector3(y,0.0,0.0)
+	var a := (x-m.x)*o.x+(z-m.y)*o.y
+	var lid := t.floor_y-SINK+a*BOWL_RISE
+	if y <= lid: return Vector3(y,0.0,0.0)
+	var wall := smoothstep(WALL_E.x,WALL_E.y,e)*(1.0-smoothstep(WALL_RIM,1.0,e))
+	var flute := 0.0
+	if wall > 0.0:
+		# Across the bowl's round and down its fall.
+		var c := m+o*reach*0.42
+		var q := Vector2(x,z)-c
+		var ring := atan2(q.y,q.x)*BOWL_WIDE
+		var fall := q.length()
+		flute = 1.0-absf(t.rock.get_noise_2d(ring*GULLY_SCALE.x,fall*GULLY_SCALE.y))*2.6
+		flute = clampf(flute,0.0,1.0)*wall*(1.0-smoothstep(GULLY_FADE.x,GULLY_FADE.y,step))
+	var k := pow(minf(e+flute*GULLY_BACK,1.0),BOWL_FALL)
+	k = lerpf(k,1.0,smoothstep(WALL_RIM,1.0,e))
+	# A funnel, not a floor: rough underfoot past the mouth's apron.
+	var rough := BOWL_ROUGH*smoothstep(APRON,APRON*3.0,a)*(1.0-k)*absf(t.rock.get_noise_2d(x*0.9,z*0.9))*2.0
+	var cut := lerpf(lid+rough,y,k)
+	var groove := flute
+	var crest := 0.0
+	var bench := wall*(1.0-smoothstep(WALL_FADE.x,WALL_FADE.y,step))
+	if bench > 0.0: bench *= smoothstep(BENCH_PATCH.y,BENCH_PATCH.z,t.rock.get_noise_2d(x*BENCH_PATCH.x+91.0,z*BENCH_PATCH.x))
+	if bench > 0.0:
+		var tier := cut/WALL_BENCH+t.rock.get_noise_2d(x*0.18,z*0.18)*BENCH_WANDER
+		var fr := tier-floorf(tier)
+		cut += (smoothstep(BENCH_RISER.x,BENCH_RISER.y,fr)-fr)*WALL_BENCH*bench
+		groove = maxf(groove,smoothstep(0.05,BENCH_RISER.x,fr)*(1.0-smoothstep(BENCH_RISER.x,0.5,fr))*bench)
+		crest = smoothstep(0.5,BENCH_RISER.y,fr)*(1.0-smoothstep(BENCH_RISER.y,0.95,fr))*bench
+	return Vector3(minf(y,cut),groove,crest)
+
+## The land `base` with `t`'s sinkholes cut in at (x, z), and the rock's marks
+## (`_bowl_cut`).
+static func sunk_cut(t: Site, base: float, x: float, z: float, step := 0.0) -> Vector3:
+	var a := _bowl_cut(t,base,t.origin,-t.way,x,z,t.ramp.x,step)
+	var b := _bowl_cut(t,a.x,t.mouth_b,t.out_b,x,z,t.ramp.y,step)
+	return Vector3(b.x,maxf(a.y,b.y),maxf(a.z,b.z))
+
+## How far out the sinkhole at `m` (facing `o`) (x, z) lies: under 1 is on
+## it, 1 its ragged rim; INF past its ends.
+static func _bowl_e(t: Site, m: Vector2, o: Vector2, x: float, z: float, reach: float) -> float:
+	var qx := x-m.x
+	var qz := z-m.y
+	var a := qx*o.x+qz*o.y
+	if a < 0.0 or a > reach: return INF
+	var b := absf(o.x*qz-o.y*qx)
+	var c := reach*0.42
+	var wide := lerpf(BOWL_MOUTH,BOWL_WIDE,smoothstep(0.0,c,a))
+	var along := maxf(a-c,0.0)/(reach-c)
+	var rag := t.rock.get_noise_2d(x*0.35,z*0.35)*0.34+t.rock.get_noise_2d(x*1.3,z*1.3)*0.1
+	return sqrt(along*along+b*b/(wide*wide))*(1.0+rag)
+
+## Whether (x, z) is on one of `t`'s sinkholes, `grow` times out (1 its rim).
+## The native tree building stands on the native field, which knows nothing
+## of the sinkholes (a layer LandField cuts in after it): what it puts there
+## hangs at the old ground's height over the hollow.
+static func on_bowl(t: Site, x: float, z: float, grow := 1.0) -> bool:
+	if not t.sunk: return false
+	var p := Vector2(x,z)
+	if p.distance_squared_to(t.origin) < BOWL_FAR*BOWL_FAR and _bowl_e(t,t.origin,-t.way,x,z,t.ramp.x) < grow: return true
+	return p.distance_squared_to(t.mouth_b) < BOWL_FAR*BOWL_FAR and _bowl_e(t,t.mouth_b,t.out_b,x,z,t.ramp.y) < grow
+
+## The sinkhole at mouth `m` as keep-outs for the trees: columns KEEP_COLUMN
+## m wide up its way out, each as long as the hollow is at it, so the woods
+## come to its ragged rim. A column's half span is under the keep-out's
+## ARCH_CLEAR, which leaves its half span below zero, so it has no approach:
+## no lane through the woods past the rim (tree_plan.gd `_by_arch`).
+static func _bowl_columns(t: Site, m: int) -> Array:
+	var at: Vector2 = t.origin if m == 0 else t.mouth_b
+	var o: Vector2 = -t.way if m == 0 else t.out_b
+	var reach: float = t.ramp.x if m == 0 else t.ramp.y
+	var side := Vector2(-o.y,o.x)
+	var turned := atan2(-o.y,o.x)+PI*0.5
+	var half := KEEP_COLUMN*0.5
+	var out: Array = []
+	var d := -BOWL_FAR
+	while d <= BOWL_FAR:
+		var lo := INF
+		var hi := -INF
+		for line: float in [d-half,d,d+half]:
+			var a := 0.0
+			while a <= reach:
+				var p := at+o*a+side*line
+				if _bowl_e(t,at,o,p.x,p.y,reach) < 1.0:
+					lo = minf(lo,a)
+					hi = maxf(hi,a)
+				a += KEEP_SCAN
+		if hi >= lo: out.append([at+o*(lo+hi)*0.5+side*d,cos(turned),sin(turned),half-KEEP_CLEAR,(hi-lo)*0.5+KEEP_PAD-KEEP_CLEAR])
+		d += KEEP_COLUMN
+	return out
+
+## Whether (x, z) is in sunk tunnel `t`'s corridor, its path and ramps, where
+## no sea lies: the land stands over it, or the ramp is cut through it.
+static func dry_at(t: Site, x: float, z: float) -> bool:
+	if not t.sunk or not t.box.has_point(Vector2(x,z)): return false
+	var q := local(t,x,z)
+	return q.x >= -APRON-t.ramp.x and q.x <= t.length+APRON+t.ramp.y and absf(q.y) <= TRENCH_WIDE
+
+## The ramps of sunk tunnel `t` as the sea's cuts (shaders/endless_sea.gdshader
+## `dry_cut`): each Vector4(from xz, to xz), DRY_HALF m wide each side.
+static func dry_cuts(t: Site) -> Array:
+	if not t.sunk: return []
+	var a: Vector2 = t.origin
+	var b: Vector2 = t.mouth_b
+	var ea: Vector2 = t.origin-t.way*t.ramp.x
+	var eb: Vector2 = t.mouth_b+t.out_b*t.ramp.y
+	return [Vector4(a.x,a.y,ea.x,ea.y),Vector4(b.x,b.y,eb.x,eb.y)]
+
+const DRY_HALF := BOWL_WIDE
+
+## The box of a sunk tunnel: the path and its ramps, TRENCH_WIDE m round.
+static func _box_ramps(t: Site) -> void:
+	var box := Rect2(t.origin,Vector2.ZERO)
+	for p: Vector2 in t.pts: box = box.expand(p)
+	box = box.expand(t.origin-t.way*(APRON+t.ramp.x)).expand(t.mouth_b+t.out_b*(APRON+t.ramp.y))
+	t.box = box.grow(TRENCH_WIDE+EDGE_FADE*0.25)
 
 ## The box's samples along the path (every BOX_EVERY, and the last) and
 ## each one's reach (m, Site `box`).
@@ -528,15 +920,25 @@ static func _world_id() -> String:
 
 ## A tunnel from frame `frame` (mouth A on the floor, the way in along +X),
 ## its path rolled from `seed`. `test`: 2 or 3 hall stretches, else 3 to 5.
-static func _build(impl: Object, seed: int, frame: Transform3D, test: bool) -> Site:
+static func _build(impl: Object, seed: int, frame: Transform3D, test: bool, sunk := false) -> Site:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var t := Site.new()
 	t.seed = seed
+	t.sunk = sunk
 	t.frame = frame
 	t.floor_y = frame.origin.y
 	t.origin = Vector2(frame.origin.x,frame.origin.z)
 	t.way = Vector2(frame.basis.x.x,frame.basis.x.z).normalized()
+	if sunk:
+		_cave_path(t,rng,sunk_length(rng.randf_range(SUNK_LENGTH.x,SUNK_LENGTH.y)))
+		_sample_path(t)
+		_table(t)
+		_cave_profile(t,impl)
+		t.crest_noise = FastNoiseLite.new()
+		t.gully = FastNoiseLite.new()
+		_box_ramps(t)
+		return t
 	var halls := rng.randi_range(2,3) if test else rng.randi_range(3,5)
 	var caves := halls-1
 	var bends := rng.randi_range(BENDS.x,BENDS.y)
@@ -617,6 +1019,197 @@ static func _build(impl: Object, seed: int, frame: Transform3D, test: bool) -> S
 	_place_shafts(t)
 	_place_shelves(t)
 	return t
+
+## A sunk cave's path: one cave piece of alternating bends, the first half a
+## turn so the heading swings either side of the first way, `want` m long or
+## so, a straight run at each mouth.
+static func _cave_path(t: Site, rng: RandomNumberGenerator, want: float) -> void:
+	var s := CAVE_MOUTH_RUN
+	t.segs.append({"piece":0,"type":"line","s0":0.0,"s1":s,"turn":0.0,"radius":0.0})
+	var sign := 1.0 if rng.randf() < 0.5 else -1.0
+	var bends := 0
+	var share := 0.5
+	while s < want-CAVE_MOUTH_RUN:
+		var r := rng.randf_range(CAVE_RADIUS.x,CAVE_RADIUS.y)
+		var a := rng.randf_range(CAVE_TURN.x,CAVE_TURN.y)*share
+		t.segs.append({"piece":0,"type":"arc","s0":s,"s1":s+r*a,"turn":a*sign,"radius":r})
+		s += r*a
+		var run := rng.randf_range(CAVE_STRAIGHT.x,CAVE_STRAIGHT.y)
+		t.segs.append({"piece":0,"type":"line","s0":s,"s1":s+run,"turn":0.0,"radius":0.0})
+		s += run
+		sign = -sign
+		bends += 1
+		# Each swing undoes the last, so the run never strays far.
+		share = 1.0
+	t.segs.append({"piece":0,"type":"line","s0":s,"s1":s+CAVE_MOUTH_RUN,"turn":0.0,"radius":0.0})
+	s += CAVE_MOUTH_RUN
+	t.length = s
+	t.pieces.append({"kind":"cave","s0":0.0,"s1":s,"bends":bends})
+
+## A sunk cave's profile at every sample: walls and vault by slow noise, each
+## wall its own; chambers; the floor climbing and dipping round `floor_y`; all
+## held under the land (`impl`) by CAVE_ROCK, calmed to the mouth's arch at each end.
+static func _cave_profile(t: Site, impl: Object) -> void:
+	t.rock = FastNoiseLite.new()
+	t.rock.seed = hash([t.seed,"rock"]) & 0x7fffffff
+	t.rock.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	t.rock.frequency = 1.0/ROCK_WAVE
+	t.rock.fractal_octaves = 2
+	var wave := FastNoiseLite.new()
+	wave.seed = hash([t.seed,"cave"]) & 0x7fffffff
+	wave.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	wave.frequency = 1.0
+	wave.fractal_octaves = 2
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([t.seed,"chambers"])
+	var rooms := PackedFloat32Array()
+	var c := CHAMBER_EVERY*rng.randf_range(0.4,0.8)
+	while c < t.length-CAVE_CALM*2.0:
+		rooms.append(c)
+		c += CHAMBER_EVERY*rng.randf_range(0.7,1.3)
+	# The headroom: land over the path, the least within a few steps.
+	var n := t.ss.size()
+	var room := PackedFloat32Array()
+	room.resize(n)
+	room.fill(1000.0)
+	if impl != null:
+		var raw := PackedFloat32Array()
+		for i in n:
+			var lo := _h(impl,t.pts[i].x,t.pts[i].y)
+			# A chamber reaches past the path: the land beside it counts too.
+			if i % ROOM_EVERY == 0:
+				var across: Vector2 = t.tans[i].orthogonal()
+				for d: float in ROOM_ACROSS:
+					var q: Vector2 = t.pts[i]+across*d
+					lo = minf(lo,_h(impl,q.x,q.y))
+			raw.append(lo-t.floor_y-CAVE_ROCK)
+		for i in n:
+			var lo := raw[i]
+			for k in range(maxi(i-8,0),mini(i+9,n)): lo = minf(lo,raw[k])
+			room[i] = lo
+	var runs := _cave_runs(t,room)
+	var level := _cave_levels(t,room,runs)
+	for i in n:
+		var s := t.ss[i]
+		var calm := smoothstep(0.0,CAVE_CALM,minf(s,t.length-s))
+		var hall := 0.0
+		for r: float in rooms:
+			var q := (s-r)/CHAMBER_LONG
+			hall = maxf(hall,exp(-q*q))
+		var wn := lerpf(CAVE_WIDE.x,CAVE_WIDE.y,wave.get_noise_2d(s/WALL_WAVE,3.0)*0.5+0.5)+CHAMBER_ADD.x*hall
+		var wp := lerpf(CAVE_WIDE.x,CAVE_WIDE.y,wave.get_noise_2d(s/WALL_WAVE,41.0)*0.5+0.5)+CHAMBER_ADD.x*hall
+		var vt := lerpf(CAVE_HIGH.x,CAVE_HIGH.y,wave.get_noise_2d(s/VAULT_WAVE,83.0)*0.5+0.5)+CHAMBER_ADD.y*hall
+		var up := level[i]+CAVE_RISE*wave.get_noise_2d(s/RISE_WAVE,127.0)*calm
+		for run: Array in runs:
+			var low: float = run[0] if float(run[3]) > float(run[2]) else run[1]
+			var mid := (float(run[0])+float(run[1]))*0.5
+			var out := signf(low-mid)
+			var past := (s-low)*out
+			var hang := 1.0-smoothstep(0.0,CAVE_THROAT.x,past) if past > 0.0 else smoothstep(0.0,1.0,(s-mid)/(low-mid))
+			if hang > 0.0: vt = lerpf(vt,clampf(vt,CAVE_THROAT.y,maxf(absf(float(run[3])-float(run[2])),CAVE_THROAT.y)),hang)
+		vt = minf(vt,maxf(room[i]-up,CAVE_HIGH.x))
+		t.wn.append(lerpf(MOUTH_HALF,wn,calm))
+		t.wp.append(lerpf(MOUTH_HALF,wp,calm))
+		t.vt.append(lerpf(MOUTH_VAULT,vt,calm))
+		t.rn.append(lerpf(MOUTH_ROUND,lerpf(2.1,2.9,wave.get_noise_2d(s/90.0,163.0)*0.5+0.5),calm))
+		t.rise.append(up*calm)
+	# The roof comes down no steeper than CAVE_ROOF_FALL: the land's limit steps.
+	for pass_way: int in [1,-1]:
+		var i := 1 if pass_way > 0 else n-2
+		while i >= 0 and i < n:
+			var k := i-pass_way
+			var most := t.rise[k]+t.vt[k]+CAVE_ROOF_FALL*absf(t.ss[i]-t.ss[k])
+			t.vt[i] = minf(t.vt[i],maxf(most-t.rise[i],CAVE_HIGH.x))
+			i += pass_way
+
+## The floor's level over `floor_y` at every sample: 0 through each mouth's
+## straight run, between them runs up and down from level to level, in the
+## rock's uneven rhythm rather than a wave. Held under the land by `room`
+## (the headroom) with the slope kept to CAVE_STEEPEST, over SUNK_LOWEST.
+static func _cave_levels(t: Site, room: PackedFloat32Array, runs: Array) -> PackedFloat32Array:
+	var n := t.ss.size()
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var r := 0
+	var y := 0.0
+	for i in n:
+		var q := t.ss[i]
+		while r < runs.size() and q >= float(runs[r][1]):
+			y = float(runs[r][3])
+			r += 1
+		out[i] = y
+		if r < runs.size() and q > float(runs[r][0]):
+			var run: Array = runs[r]
+			out[i] = lerpf(float(run[2]),float(run[3]),smoothstep(float(run[0]),float(run[1]),q))
+		out[i] = minf(out[i],room[i]-CAVE_HEAD)
+	# What the land took back, eased into the levels round it.
+	for i in range(1,n): out[i] = minf(out[i],out[i-1]+CAVE_STEEPEST*(t.ss[i]-t.ss[i-1]))
+	for i in range(n-2,-1,-1): out[i] = minf(out[i],out[i+1]+CAVE_STEEPEST*(t.ss[i+1]-t.ss[i]))
+	return out
+
+## The floor's changes of level, as [from s, to s, from level, to level].
+static func _cave_runs(t: Site, room: PackedFloat32Array) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([t.seed,"levels"])
+	var deep := minf(SUNK_LOWEST-t.floor_y,0.0)
+	# Runs as [s0, s1, from, to].
+	var runs: Array = []
+	var end := t.length-CAVE_MOUTH_RUN
+	var s := CAVE_MOUTH_RUN+rng.randf_range(0.0,CAVE_HOLD.y*0.5)
+	var at := 0.0
+	var way := -1.0 if rng.randf() < 0.65 else 1.0
+	while true:
+		var grade := rng.randf_range(CAVE_GRADE.x,CAVE_GRADE.y)
+		var small := rng.randf() < CAVE_SMALL_SHARE
+		var change := rng.randf_range(CAVE_SMALL.x,CAVE_SMALL.y) if small else rng.randf_range(CAVE_CHANGE.x,CAVE_CHANGE.y)
+		var to := at+way*change
+		var roll := rng.randf()
+		var hold := lerpf(CAVE_HOLD.x,CAVE_HOLD.y,roll*roll)
+		var run := change/grade
+		var top := _room_over(t,room,s,s+run+hold)-CAVE_HEAD
+		# Up there is no rock left, or down no depth: as far as there is, or
+		# the other way if that's not a change worth having.
+		to = clampf(to,deep,top)
+		if absf(to-at) < change*0.7:
+			way = -way
+			to = clampf(at+way*change,deep,top)
+		# It must leave room to come back to the mouth's level at the end:
+		# if not, a smaller change, toward that level.
+		var room_left := false
+		for k in 3:
+			run = absf(to-at)/grade
+			room_left = s+run+hold+absf(to)/CAVE_GRADE.x+CAVE_HOLD.x <= end
+			if room_left: break
+			change *= 0.65
+			hold = CAVE_HOLD.x
+			to = clampf(at-change*(signf(at) if absf(at) > 1.0 else 1.0),deep,top)
+		if not room_left: break
+		if to != at: runs.append([s,s+run,at,to])
+		at = to
+		s += run+hold
+		if rng.randf() >= (CAVE_SAME_SMALL if small else CAVE_SAME): way = -way
+	if at != 0.0: runs.append([end-absf(at)/CAVE_GRADE.x,end,at,0.0])
+	return runs
+
+## The least headroom from `a` to `b` m along the path.
+static func _room_over(t: Site, room: PackedFloat32Array, a: float, b: float) -> float:
+	var lo := INF
+	for i in t.ss.size():
+		if t.ss[i] >= a and t.ss[i] <= b: lo = minf(lo,room[i])
+	return lo
+
+## The bore's floor (world y) at distance `s` along the path.
+static func floor_at(t: Site, s: float) -> float:
+	if t.rise.is_empty() or s <= 0.0 or s >= t.length: return t.floor_y
+	var f := s/STEP
+	var i := clampi(int(f),0,t.rise.size()-2)
+	while i < t.ss.size()-2 and t.ss[i+1] < s: i += 1
+	while i > 0 and t.ss[i] > s: i -= 1
+	return t.floor_y+lerpf(t.rise[i],t.rise[i+1],clampf((s-t.ss[i])/maxf(t.ss[i+1]-t.ss[i],0.0001),0.0,1.0))
+
+## The bore's floor (world y) at (x, z).
+static func floor_xz(t: Site, x: float, z: float) -> float:
+	return floor_at(t,local(t,x,z).x)
 
 ## The shafts (SHAFT_MOST): over the middle of each cavern's longest bend,
 ## the deepest from the mouths first, where the massif stands SHAFT_DEEP m
@@ -835,6 +1428,7 @@ static func carve(t: Site, base: float, x: float, z: float) -> float:
 ## carve's height, and how much of a shelf's meadow (x, z) stands on (0..1).
 static func carve_m(t: Site, base: float, x: float, z: float) -> Vector2:
 	if not t.box.has_point(Vector2(x,z)): return Vector2(base,0.0)
+	if t.sunk: return Vector2(sunk_cut(t,base,x,z).x,0.0)
 	var q := local(t,x,z)
 	var sm := Vector2(_massif_q(t,q,x,z),0.0)
 	if not t.shelves.is_empty(): sm = _shelve(t,sm.x,q,x,z)
@@ -845,8 +1439,8 @@ static func carve_m(t: Site, base: float, x: float, z: float) -> Vector2:
 		# Land lower than the box allows for: the lift fades out at its edge.
 		var e := minf(minf(x-t.box.position.x,t.box.end.x-x),minf(z-t.box.position.y,t.box.end.y-z))
 		if e < EDGE_FADE: y = base+(y-base)*smoothstep(0.0,EDGE_FADE,e)
-	y = _trench(t,y,t.origin,-t.way,x,z)
-	y = _trench(t,y,t.mouth_b,t.out_b,x,z)
+	y = _trench(t,y,t.origin,-t.way,x,z,t.ramp.x)
+	y = _trench(t,y,t.mouth_b,t.out_b,x,z,t.ramp.y)
 	return Vector2(_pit(t,y,x,z),meadow)
 
 ## The shafts' sinkholes over `y` at (x, z): flat at the shaft's top within
@@ -867,15 +1461,15 @@ static func shaft_at(t: Site, x: float, z: float, grow := 0.0) -> int:
 	return -1
 
 ## The trench out of the mouth at `m` (xz), facing out along `o`.
-static func _trench(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float) -> float:
+static func _trench(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float, ramp: float) -> float:
 	var qx := x-m.x
 	var qz := z-m.y
 	var a := qx*o.x+qz*o.y
-	if a < 0.0 or a > TRENCH_REACH: return y
+	if a < 0.0 or a > APRON+ramp: return y
 	var b := absf(o.x*qz-o.y*qx)
 	if b > TRENCH_WIDE: return y
 	var lid := t.floor_y-SINK
-	if a > APRON: lid += (a-APRON)*GRADE
+	if a > APRON: lid += (a-APRON)*t.grade
 	if y <= lid: return y
 	if b <= HALL_HALF: return lid
 	if b <= HALL_HALF+EDGE: return minf(y,lid+SHEER*(b-HALL_HALF)/EDGE)
@@ -894,17 +1488,18 @@ static func _trench(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: floa
 ## coarse land behind the portal would fall farther than its skirts reach.
 const FACE_REACH := 16.0
 static func trench_under(t: Site, x: float, z: float, step: float) -> float:
-	if not t.box.has_point(Vector2(x,z)): return INF
+	if t.sunk or not t.box.has_point(Vector2(x,z)): return INF
 	var out := INF
 	for mm in 2:
 		var at: Vector2 = t.origin if mm == 0 else t.mouth_b
 		var o: Vector2 = -t.way if mm == 0 else t.out_b
 		var q := Vector2(x,z)-at
 		var a := q.dot(o)
-		if a < -minf(step,FACE_REACH) or a > TRENCH_REACH+step: continue
+		var reach := APRON+(t.ramp.x if mm == 0 else t.ramp.y)
+		if a < -minf(step,FACE_REACH) or a > reach+step: continue
 		var b := maxf(absf(o.cross(q))-step,0.0)
 		if b > TRENCH_WIDE: continue
-		var lid := t.floor_y-SINK+maxf(clampf(a-step,0.0,TRENCH_REACH)-APRON,0.0)*GRADE
+		var lid := t.floor_y-SINK+maxf(clampf(a-step,0.0,reach)-APRON,0.0)*t.grade
 		if b > HALL_HALF+EDGE: lid += SHEER+(b-HALL_HALF-EDGE)/LEAN
 		elif b > HALL_HALF: lid += SHEER*(b-HALL_HALF)/EDGE
 		out = minf(out,lid)
@@ -912,12 +1507,18 @@ static func trench_under(t: Site, x: float, z: float, step: float) -> float:
 
 ## True where (x, z) is on a trench's floor (no grass there).
 static func on_trench(t: Site, x: float, z: float) -> bool:
+	if t.sunk:
+		for m in 2:
+			var at: Vector2 = t.origin if m == 0 else t.mouth_b
+			var o: Vector2 = -t.way if m == 0 else t.out_b
+			if absf(_bowl(t,0.0,at,o,x,z,t.ramp[m])) > 0.0 and absf(o.cross(Vector2(x,z)-at)) < BOWL_WIDE*0.5: return true
+		return false
 	for m in 2:
 		var at: Vector2 = t.origin if m == 0 else t.mouth_b
 		var o: Vector2 = -t.way if m == 0 else t.out_b
 		var q := Vector2(x,z)-at
 		var a := q.dot(o)
-		if a >= 0.0 and a <= TRENCH_REACH and absf(o.cross(q)) <= HALL_HALF+EDGE+1.0: return true
+		if a >= 0.0 and a <= APRON+(t.ramp.x if m == 0 else t.ramp.y) and absf(o.cross(q)) <= HALL_HALF+EDGE+1.0: return true
 	return false
 
 ## The tunnels whose box meets the box (x0, z0)..(x1, z1).
@@ -982,6 +1583,7 @@ static func _carve_profile(t: Site) -> void:
 ## side, on the +d side, the crown over the floor, the roundness n); a
 ## hall's past the mouths.
 static func profile(t: Site, s: float) -> Vector4:
+	if t.sunk and (s <= 0.0 or s >= t.length): return Vector4(MOUTH_HALF,MOUTH_HALF,MOUTH_VAULT,MOUTH_ROUND)
 	if s <= 0.0 or s >= t.length or t.wn.is_empty(): return Vector4(HALL_HALF,HALL_HALF,HALL_VAULT,HALL_ROUND)
 	var i := clampi(int(s/STEP),0,t.ss.size()-2)
 	while i < t.ss.size()-2 and t.ss[i+1] < s: i += 1
@@ -1025,10 +1627,12 @@ static func bore_at(t: Site, x: float, z: float, grow := 0.0) -> Vector2:
 	var mid := (pr.y-pr.x)*0.5
 	var h := roof_over(pr,q.y+(grow if q.y >= mid else -grow))
 	if is_nan(h): return Vector2(NAN,NAN)
-	return Vector2(t.floor_y,t.floor_y+h)
+	var f := floor_at(t,q.x)
+	return Vector2(f,f+h)
 
 ## Which mouth's portal footprint (x, z) is on: 0 (A), 1 (B) or -1.
 static func portal_at(t: Site, x: float, z: float) -> int:
+	if t.sunk: return -1
 	for m in 2:
 		var q := portal_local(t,m,x,z)
 		if q.x >= -PORTAL_OUT and q.x <= PORTAL_IN and absf(q.y) <= PORTAL_HALF: return m
@@ -1056,7 +1660,8 @@ static func tree_keepouts(t: Site) -> Array:
 		var o: Vector2 = -t.way if m == 0 else t.out_b
 		var at: Vector2 = t.origin if m == 0 else t.mouth_b
 		var turned := atan2(-o.y,o.x)+PI*0.5
-		out.append([at+o*(TRENCH_REACH-PORTAL_IN)*0.5,cos(turned),sin(turned),HALL_HALF+EDGE,(TRENCH_REACH+PORTAL_IN)*0.5])
+		var reach := APRON+(t.ramp.x if m == 0 else t.ramp.y)
+		out.append([at+o*(reach-PORTAL_IN)*0.5,cos(turned),sin(turned),HALL_HALF+EDGE,(reach+PORTAL_IN)*0.5])
 	# The bore itself, in straight runs of at most KEEP_RUN m: the trees'
 	# plan put some on the land's floor inside it.
 	var s := 0.0
@@ -1069,6 +1674,8 @@ static func tree_keepouts(t: Site) -> Array:
 		s = e
 	# The shafts' pits' floors.
 	for sh: Dictionary in t.shafts: out.append([sh.at,1.0,0.0,PIT_FLOOR+4.0,PIT_FLOOR+4.0])
+	# The sinkholes, rim to rim.
+	out.append_array(t.bowl_keep)
 	return out
 
 const KEEP_RUN := 40.0
@@ -1171,6 +1778,7 @@ const MOUTH_TORCH_Y := 7.5
 ## s, then the mouths'.
 static func torch_spots(t: Site) -> Array:
 	var out: Array = []
+	if t.sunk: return _glow_spots(t)
 	# In a hall stretch a torch sits on the hall's wall: mid-bay where that
 	# bay's wall is whole, else on the jamb at its bay line.
 	var halls: Array = stretches(t)
@@ -1218,6 +1826,43 @@ static func torch_spots(t: Site) -> Array:
 			out.append({"pos":Vector3(p.x,t.floor_y+MOUTH_TORCH_Y,p.y),"into":-n*side,"s":ms,"side":side,"kind":"mouth"})
 	return out
 
+## A sunk cave's glows: patches on the walls, GLOW_GAP m or so apart, at
+## varied heights, as torch_spots' (kind "glow").
+const GLOW_GAP := 34.0
+static func _glow_spots(t: Site) -> Array:
+	var out: Array = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([t.seed,"glows"])
+	var side := 1.0
+	var s := 40.0
+	while s < t.length-40.0:
+		var at: Array = at_s(t,s)
+		var c: Vector2 = at[0]
+		var tg: Vector2 = at[1]
+		var n := Vector2(-tg.y,tg.x)
+		var pr := profile(t,s)
+		var y := pr.z*rng.randf_range(0.2,0.62)
+		var x := pow(1.0-pow(minf(y/pr.z,0.99),pr.w),1.0/pr.w)
+		var off := (pr.y-pr.x)*0.5+side*((pr.x+pr.y)*0.5*x-TORCH_IN)
+		var p := c+n*off
+		out.append({"pos":Vector3(p.x,floor_at(t,s)+y,p.y),"into":-n*side,"s":s,"side":side,"kind":"glow"})
+		s += GLOW_GAP*rng.randf_range(0.7,1.3)
+		side = -side
+	return out
+
+## The lowest a land chunk's skirt may hang at (x, z), over a sunk cave: its
+## crown and a little (a coarse chunk's skirt hung down into the bore), or -INF.
+static func skirt_floor(ts: Array, x: float, z: float) -> float:
+	var out := -INF
+	for t: Site in ts:
+		if not t.sunk or not t.box.has_point(Vector2(x,z)): continue
+		var q := local(t,x,z)
+		if q.x < -8.0 or q.x > t.length+8.0 or absf(q.y) > CAVE_WIDE.y+CHAMBER_ADD.x+16.0: continue
+		out = maxf(out,floor_at(t,q.x)+section(t,q.x).y+SKIRT_OVER)
+	return out
+
+const SKIRT_OVER := 5.0
+
 ## Which of a chunk's grid vertices stand on a portal's footprint (1), for
 ## land_stream.gd to drop the triangles wholly on one; empty if none do.
 static func portal_mask(ts: Array, x0: float, z0: float, step: float, cells: int) -> PackedByteArray:
@@ -1227,7 +1872,12 @@ static func portal_mask(ts: Array, x0: float, z0: float, step: float, cells: int
 	for t: Site in ts:
 		for m in 2:
 			var at: Vector2 = t.origin if m == 0 else t.mouth_b
-			var r := PORTAL_HALF+PORTAL_IN+PORTAL_OUT
+			# A sunk cave's mouth: only the wall the arch goes through (a quad
+			# either side of it, so every level opens), its rock laid over.
+			var out_m := step+1.5 if t.sunk else PORTAL_OUT
+			var in_m := step+3.0 if t.sunk else PORTAL_IN
+			var half := MOUTH_HALF+2.0+step if t.sunk else PORTAL_HALF
+			var r := half+in_m+out_m
 			var i0 := clampi(floori((at.x-r-x0)/step),0,cells)
 			var i1 := clampi(ceili((at.x+r-x0)/step),0,cells)
 			var j0 := clampi(floori((at.y-r-z0)/step),0,cells)
@@ -1236,7 +1886,7 @@ static func portal_mask(ts: Array, x0: float, z0: float, step: float, cells: int
 			for j in range(j0,j1+1):
 				for i in range(i0,i1+1):
 					var q := portal_local(t,m,x0+i*step,z0+j*step)
-					if q.x < -PORTAL_OUT or q.x > PORTAL_IN or absf(q.y) > PORTAL_HALF: continue
+					if q.x < -out_m or q.x > in_m or absf(q.y) > half: continue
 					if not any:
 						out.resize(n*n)
 						any = true
@@ -1270,11 +1920,15 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 	var colours: PackedColorArray = made.colours
 	var carved: PackedByteArray = made.carved
 	var river: PackedFloat32Array = made.river
+	var sunk := false
+	for t: Site in ts: sunk = sunk or t.sunk
 	var lift := PackedFloat32Array()
 	lift.resize(n*n)
 	var moved := PackedByteArray()
 	moved.resize(n*n)
 	var shelf := PackedFloat32Array()
+	var marks := PackedByteArray()
+	marks.resize(n*n*2 if sunk else 0)
 	var any_moved := false
 	for t: Site in ts:
 		var i0 := clampi(floori((t.box.position.x-x0)/step),0,cells)
@@ -1284,7 +1938,14 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 		for j in range(j0,j1+1):
 			for i in range(i0,i1+1):
 				var v := j*n+i
-				var ym := carve_m(t,heights[v],x0+i*step,z0+j*step)
+				var ym := Vector2.ZERO
+				if t.sunk:
+					var c := sunk_cut(t,heights[v],x0+i*step,z0+j*step,step)
+					ym.x = c.x
+					if c.y > 0.0 or c.z > 0.0:
+						marks[v*2] = int(c.y*255.0)
+						marks[v*2+1] = int(c.z*255.0)
+				else: ym = carve_m(t,heights[v],x0+i*step,z0+j*step)
 				var y := ym.x
 				if step > 1.0: y = minf(y,trench_under(t,x0+i*step,z0+j*step,step))
 				if ym.y > 0.0:
@@ -1319,21 +1980,25 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 			var normal := Vector3(hl-hr,2.0*step,hd-hu).normalized()
 			normals[v] = normal
 			var meadow := colours[v].a
-			if moved[v] != 0: meadow *= _meadow_keep(lift[v])
+			if moved[v] != 0: meadow *= 1.0-smoothstep(0.0,BOWL_TURF,-lift[v]) if sunk and lift[v] < 0.0 else _meadow_keep(lift[v])
+			if sunk and lift[v] < -BOWL_TURF: meadow = maxf(meadow,BOWL_FLOOR.z*smoothstep(BOWL_FLOOR.x,BOWL_FLOOR.y,normal.y))
 			if not shelf.is_empty(): meadow = maxf(meadow,SHELF_MEADOW*shelf[v])
-			var c: Color = impl.colour(x,z,heights[v],normal.y,meadow)
+			# Under the level a sunk cave's hollow is still land, not sea bed.
+			var c: Color = impl.colour(x,z,heights[v] if not sunk else maxf(heights[v],SEA_Y+26.0),normal.y,meadow)
 			c.a = meadow
 			colours[v] = c
 			if moved[v] != 0:
-				carved[v*4] = 0
-				carved[v*4+1] = 0
-				if lift[v] > 1.0:
+				carved[v*4] = marks[v*2] if sunk else 0
+				carved[v*4+1] = marks[v*2+1] if sunk else 0
+				if lift[v] > 1.0 or (sunk and lift[v] < -1.0):
 					# No river on the mountain: far from any, its flow still.
 					carved[v*4+2] = 128
 					carved[v*4+3] = 128
 					river[v*3] = 1000.0
 					river[v*3+1] = 0.0
-					river[v*3+2] = SEA_Y-100.0
+					# In a sinkhole a level of its own tells the ground shader
+					# this is dry land under the sea's, not sea bed (`dry_low`).
+					river[v*3+2] = DRY_LOW_RIVER if lift[v] < 0.0 else SEA_Y-100.0
 	var edges := [[],[],[],[]]
 	for t in n:
 		edges[0].append(t)
