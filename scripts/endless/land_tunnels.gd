@@ -1020,6 +1020,10 @@ func land_y(p: Vector3, h: float) -> float:
 		if cover != h: return cover
 	return h
 
+## The tunnels stood now (built, so a mouth among them is there to fly into).
+func stood() -> Array:
+	return _sites
+
 ## True inside the rock round a bore or a portal's block (the camera keeps
 ## out, the wheels stop): under the tube's floor, over its roof under the
 ## cover, or in the walls beside it under the land.

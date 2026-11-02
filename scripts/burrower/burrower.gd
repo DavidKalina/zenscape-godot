@@ -32,6 +32,9 @@ extends Node3D
 ## no entrance: he roams on his own (`wake` with no plane, `_roam_goal` asks the
 ## game's land) and `notice(plane)` starts the run from where he is. `distant`:
 ## too far off to see the ridge, clods or dust, so none of that is made.
+## `set_route` gives him a line to run to its end (the game's run to a cave mouth,
+## `route_done` there), at his own pace or, once he has noticed the plane, keeping
+## ahead of it; `plunge` is the end of that.
 
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const Ground = preload("res://scripts/burrower/burrower_ground.gd")
@@ -76,6 +79,8 @@ const LEAD_TURN_EASE := 7.0
 const LOST_FAR := 75.0
 const LOST_S := 0.45
 const SOUND_S := 0.3
+## How long a dive takes to go under (s).
+const DIVE_S := 1.1
 ## Clods thrown up where it breaks the turf again after a sounding.
 const BREACH_CLODS := 22
 const ACCEL := 14.0
@@ -147,6 +152,26 @@ const SWING_OFF := 0.95
 const SWING_BACK := 0.5
 const SWING_TURN := 1.3
 const SWING_EASE := 3.0
+## A route: he aims ROUTE_LOOK s of his way along it (at least ROUTE_LOOK_M m), never
+## under ROUTE_LEAST m/s, and comes up ROUTE_HOP m along it after a sounding. Past
+## `route_down` nothing turns him aside.
+const ROUTE_LOOK := 0.6
+const ROUTE_LOOK_M := 14.0
+const ROUTE_LEAST := 14.0
+const ROUTE_HOP := 70.0
+## His swing eases out over this many m before `route_down`.
+const ROUTE_SWING_OUT := 150.0
+## Going in (`plunge`): how long he takes to go under (s), the earth thrown (clods,
+## out and up m/s, spread m), dust at the head and the cloud blown back out (puffs,
+## m/s out, m wide at the start, s).
+const PLUNGE_S := 0.4
+const PLUNGE_CLODS := 80
+const PLUNGE_EARTH := Vector3(11.0,21.0,3.0)
+const PLUNGE_DUST := 16
+const PLUNGE_CLOUD := 18
+const PLUNGE_OUT := Vector2(6.0,16.0)
+const PLUNGE_WIDE := 10.0
+const PLUNGE_LIFE := 3.6
 ## Grass: a stamp every GRASS_STEP m, its reach (m), push and hold (s).
 const GRASS_STEP := 1.5
 const GRASS_REACH := 3.4
@@ -263,11 +288,19 @@ var _course := 0.0
 var swing_m := 0.0
 var swing_s := 7.0
 var _swing := 0.0
+## The line he's running (`set_route`), the distance along it at each point, how far
+## along he is, the leg he's on and where the last stretch starts.
+var _route := PackedVector2Array()
+var _route_ss := PackedFloat32Array()
+var _route_s := 0.0
+var _route_leg := 0
+var route_down := INF
 var _plane: Object
 var _turn := 0.0
 var _goal := Vector2.ZERO
 var _side := 1.0
 var _diving := false
+var _dive_s := DIVE_S
 ## Lost the plane (fell behind it through a turn): sinking to come up again
 ## in its slot ahead (not a dive: it stays active and leading).
 var _sounding := false
@@ -419,9 +452,75 @@ func wake(at: Vector2, way: float, plane: Object = null) -> void:
 	_sounding = false
 	_lost = 0.0
 	_run = 0.0
+	_route = PackedVector2Array()
+	route_down = INF
+	_dive_s = DIVE_S
 	_goal = _roam_goal()
 	_since_sample = SAMPLE
 	wet = _wet_at(pos)
+
+## A line to run to its end, from `points[0]`; `down`: m along it past which nothing
+## turns him aside.
+func set_route(points: PackedVector2Array, down: float) -> void:
+	_route = points
+	_route_ss.resize(points.size())
+	_route_ss[0] = 0.0
+	for i in range(1,points.size()): _route_ss[i] = _route_ss[i-1]+points[i-1].distance_to(points[i])
+	_route_s = 0.0
+	_route_leg = 0
+	route_down = down
+	_goal = points[1]
+
+## On a route, and at its end.
+func route_done() -> bool:
+	return not _route.is_empty() and _route_s >= _route_ss[-1]-1.0
+
+## What's left of his route (m).
+func route_left() -> float:
+	return _route_ss[-1]-_route_s if not _route.is_empty() else 0.0
+
+## The route's point `s` m along it, and past its end on along the last leg.
+func _route_at(s: float) -> Vector2:
+	var n := _route.size()
+	var i := _route_leg
+	while i < n-2 and _route_ss[i+1] < s: i += 1
+	var way := (_route[i+1]-_route[i]).normalized()
+	return _route[i]+way*(s-_route_ss[i])
+
+## His way along the route at `s` (unit).
+func _route_way(s: float) -> Vector2:
+	var i := _route_leg
+	while i < _route.size()-2 and _route_ss[i+1] < s: i += 1
+	return (_route[i+1]-_route[i]).normalized()
+
+## How far along he's got: the leg he's on, his place on it; it never goes back.
+func _route_on() -> void:
+	while true:
+		var a := _route[_route_leg]
+		var ab := _route[_route_leg+1]-a
+		var t := (pos-a).dot(ab)/maxf(ab.length_squared(),0.01)
+		if t >= 1.0 and _route_leg < _route.size()-2:
+			_route_leg += 1
+			continue
+		_route_s = maxf(_route_s,_route_ss[_route_leg]+clampf(t,0.0,1.0)*ab.length())
+		return
+
+## The route's step: for a point on along it, on his swing until the last stretch.
+## Noticed, he keeps ahead of the plane along his way, as `_run_on`; not, or left
+## behind, he goes at his own pace and doesn't wait. Its speed.
+func _on_route(delta: float, surge: float) -> float:
+	_route_on()
+	var aim := _route_at(_route_s+maxf(speed*ROUTE_LOOK,ROUTE_LOOK_M))
+	var ease_out := clampf((route_down-_route_s)/ROUTE_SWING_OUT,0.0,1.0)
+	_goal = pos+(aim-pos).normalized().rotated(_swing_on(delta,maxf(speed,ROAM_SPEED))*ease_out)*30.0
+	if _diving: return speed
+	if _plane == null: return ROAM_SPEED*surge
+	var p: Vector3 = _plane.position
+	var vp := _plane_speed()
+	var ahead := lerpf(RUN_AHEAD.x,RUN_AHEAD.y,clampf(0.5+1.1*_noise.get_noise_1d(time*0.45+100.0),0.0,1.0))
+	ahead = maxf(ahead,want_ahead)
+	var along := (pos-Vector2(p.x,p.z)).dot(_route_way(_route_s))
+	return maxf(clampf(vp*surge+(ahead-along)*1.1,vp*0.5,vp*1.8),ROUTE_LEAST)*run_pace
 
 ## Roaming, he has noticed `plane`: the run, from where he is, on the way he goes.
 func notice(plane: Object) -> void:
@@ -516,9 +615,9 @@ var _spot_found := true
 ## at the head (a cliff, a ruin wall, stone) and leading it sounds, to come
 ## up ahead past it.
 func _feel(look: float, delta: float) -> Vector2:
-	if not land.probes or _diving or _sounding: return Vector2.ZERO
+	if not land.probes or _diving or _sounding or _route_s >= route_down: return Vector2.ZERO
 	var fw := forward()
-	var lead := mode == &"lead" and _plane != null
+	var lead := (mode == &"lead" and _plane != null) or not _route.is_empty()
 	_grace -= delta
 	# Just up, only what stands sounds it (steep ground alone would hop it along
 	# a cliff).
@@ -608,12 +707,33 @@ func roam() -> void:
 func dive() -> void:
 	if active: _diving = true
 
+## Into a cave at the end of his route: down at a run, earth thrown up at the lip and
+## a cloud blown back out along `out` (unit, the way the mouth faces).
+func plunge(out: Vector2) -> void:
+	if not active: return
+	_diving = true
+	_dive_s = PLUNGE_S
+	var h := head()
+	throw_earth(h+Vector3.UP*0.4,PLUNGE_CLODS,PLUNGE_EARTH.x,PLUNGE_EARTH.y,PLUNGE_EARTH.z)
+	puff(h,PLUNGE_DUST)
+	var side := out.orthogonal()
+	for i in PLUNGE_CLOUD:
+		if _dusts.size() >= DUSTS: _dusts.pop_front()
+		var at := pos+side*_rng.randf_range(-PLUNGE_WIDE,PLUNGE_WIDE)
+		var v := out*_rng.randf_range(PLUNGE_OUT.x,PLUNGE_OUT.y)+side*_rng.randf_range(-3.0,3.0)
+		_dusts.append({"p": Vector3(at.x,h.y+_rng.randf_range(1.0,7.0),at.y), "v": Vector3(v.x,_rng.randf_range(1.5,5.0),v.y),
+			"age": 0.0, "life": PLUNGE_LIFE*_rng.randf_range(0.7,1.2), "size": _rng.randf_range(CHAFF_SIZE.x,CHAFF_SIZE.y),
+			"shade": _rng.randf_range(0.85,1.05), "colour": DUST, "most": CHAFF_MOST})
+
 ## Sunk after losing the plane: up again in its slot ahead of it, heading
 ## its way (the ridge starts afresh; strength rises from 0 as at a wake).
 func _resurface() -> void:
 	_sounding = false
 	_lost = 0.0
 	_finish_live()
+	if not _route.is_empty():
+		_resurface_on_route()
+		return
 	var p: Vector3 = _plane.position
 	var f: Vector3 = _plane.forward()
 	var fwd := Vector2(f.x,f.z).normalized()
@@ -636,6 +756,23 @@ func _resurface() -> void:
 	phase = &"run"
 	_turn = 0.0
 	speed = _plane_speed()
+	_since_sample = SAMPLE
+	wet = _wet_at(pos)
+	_breach()
+
+## Sunk on a route: up again ROUTE_HOP m on along it, or the nearest open spot past
+## that. Nowhere open, on the line all the same: a route is always finished.
+func _resurface_on_route() -> void:
+	var s := minf(_route_s+ROUTE_HOP,_route_ss[-1]-1.0)
+	var way := _route_way(s)
+	var at := _route_at(s)
+	if s < route_down:
+		var q := _open_spot(at,way)
+		if _spot_found: at = q
+	pos = at
+	heading = way.angle()
+	_turn = 0.0
+	_route_on()
 	_since_sample = SAMPLE
 	wet = _wet_at(pos)
 	_breach()
@@ -719,7 +856,7 @@ func settled() -> bool:
 func _move(delta: float) -> void:
 	_run += delta
 	var target := 0.0 if _diving or _sounding else 1.0
-	strength = move_toward(strength,target,delta/(1.1 if _diving else SOUND_S if _sounding else 0.5))
+	strength = move_toward(strength,target,delta/(_dive_s if _diving else SOUND_S if _sounding else 0.5))
 	if _diving and strength <= 0.0:
 		active = false
 		_finish_live()
@@ -730,7 +867,9 @@ func _move(delta: float) -> void:
 	# A burst now and then: the noise's peaks pushed harder.
 	surge += 0.35*maxf(_noise.get_noise_1d(time*0.6+300.0)-0.25,0.0)/0.75
 	var want_speed := ROAM_SPEED*surge
-	if mode == &"lead" and _plane != null and phase == &"enter":
+	if not _route.is_empty():
+		want_speed = _on_route(delta,surge)
+	elif mode == &"lead" and _plane != null and phase == &"enter":
 		want_speed = _enter(delta)
 	elif mode == &"lead" and _plane != null and phase == &"run":
 		want_speed = _run_on(delta,surge)
