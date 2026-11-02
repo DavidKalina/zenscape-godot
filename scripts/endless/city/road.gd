@@ -108,9 +108,10 @@ const BAYS := 61
 ## What's left at each station from PLAN's end, one letter each, L and R of the road:
 ## T a column with its beam on to the next, t a column, m a broken shaft, s a stump,
 ## f a column fallen into the road, o one fallen out of it, l one leaning in,
-## d drums, . nothing.
+## d drums, . nothing. The last on the right is down, so the slit past the stair has a
+## clear run in (pyramid.gd).
 const ROW_L := "-TTTtmTTTt" + "sdTTTt.mft" + "s.d.TTTt.s" + ".os..m.d.t" + "s.s.s.t.ft"
-const ROW_R := "-TtfTTTts." + "TTt.sTTTTt" + "..sfd.mt.f" + "s.d.t..s.." + ".s.m.s.dlt"
+const ROW_R := "-TtfTTTts." + "TTt.sTTTTt" + "..sfd.mt.f" + "s.d.t..s.." + ".s.m.s.dls"
 ## How much street each bay keeps from PLAN's end: F whole, G a whole slab and a
 ## gap, P patches, half sunk where the land rises, N none.
 const PAVE := "FFFFFGFFG" + "GFFGPGFGF" + "PGPPFGPPG" + "PNPNPPNPP" + "GPGPGGPPPPPPP"

@@ -90,6 +90,8 @@ const HEAD := 5
 const START_SPEED := 54.0
 const START_LEAST := 90
 const START_MOST := 360
+## --city-start=pyramid: how far along the pyramid's own axis it's let go.
+const START_OFF := -560.0
 
 var _views: Array[RID] = []
 var _bodies: Array[RID] = []
@@ -105,6 +107,7 @@ var _high := Vector2(-INF,-INF)
 var _tris := Vector2i.ZERO
 ## --city-start's ticks held, -1 when done with.
 var _start_held := 0
+var _start_pyramid := false
 static var _rings: Array = []
 static var _rings_for := 0
 
@@ -156,18 +159,27 @@ static func clear_of(world: RefCounted, x: float, z: float, room: float) -> bool
 ## --city-start: flying the city by hand with no crossing to fly first. The far
 ## side at once, the plane held out of the mouth and facing the gate until the
 ## land there has streamed in, then let go at speed. A debug start.
+## --city-start=pyramid: the same, on the pyramid's axis, its door ahead.
 func debug_start(host: Node3D) -> void:
 	if _start_held < 0: return
 	if _start_held == 0:
-		if not "--city-start" in LaunchArgs.user_args():
+		var args := LaunchArgs.user_args()
+		if not "--city-start" in args and not "--city-start=pyramid" in args:
 			_start_held = -1
 			return
+		_start_pyramid = "--city-start=pyramid" in args
 		host.doors._swap(1)
 	_start_held += 1
 	var f := frame(host.world)
 	var gate := f*Vector3(71.0,0.0,350.0)
 	var at := f*Vector3(10.0,0.0,70.0)
 	at.y = float(host.field.height(at.x,at.z))+24.0
+	if _start_pyramid:
+		# =pyramid: the road's last stretch, the door dead ahead.
+		var row := _coded(host.world,PLACED[3])
+		gate = row.origin
+		at = row.origin+row.basis.z.normalized()*START_OFF
+		at.y = 50.0
 	var way := Vector3(gate.x-at.x,0.0,gate.z-at.z).normalized()
 	host.plane.heading = atan2(-way.x,-way.z)
 	host.plane.pitch = 0.0
@@ -377,6 +389,9 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 	if near.is_empty(): return false
 	if pad < 0.0: pad = WorldScale.span*0.5
 	for i: int in near:
+		# Most of a stacked piece's shapes are at some other height.
+		var b := i*STRIDE
+		if p.y < _s[b+1]+_s[b+HEAD]-pad or p.y > _s[b+1]+_s[b+HEAD+1]+pad: continue
 		var s := _stretch(i,p.x,p.z,pad)
 		if p.y >= s.x and p.y <= s.y: return true
 	return false
