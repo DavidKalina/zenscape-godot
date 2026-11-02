@@ -815,10 +815,15 @@ func _ready() -> void:
 	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 ## The grass parted round the parked plane in the menu: out to PART_SPANS
-## wingspans (round the eye EYE_PART_SPANS), PART_PUSH times a standing walker's push (GrassReact `part`).
-const PART_SPANS := 0.8
+## wingspans (round the eye EYE_PART_SPANS, and SIGHT_PART_SPANS round the
+## middle of the line between them, which goes round with the eye: a stamp only
+## bends grass inside about 3/4 of its reach, so the two rings alone left a band
+## of standing grass across the view), PART_PUSH times a standing walker's push
+## (GrassReact `part`).
+const PART_SPANS := 1.0
 const PART_PUSH := 1.6
 const EYE_PART_SPANS := 1.3
+const SIGHT_PART_SPANS := 1.0
 
 ## The main menu's meadows (MenuSpot `find`) round the start; facing the
 ## Peak (`peaked`), the nearest whose run heads within PEAK_SPREADS of
@@ -1226,7 +1231,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"t_feel")
 	input["flaps"] = 1.0 if flaps else 0.0
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
-	plane.roofed = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (ice != null and int(ice.tube(plane.position)) == 0) or (doors != null and doors.holds(plane.position))
+	plane_figure.bore = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (ice != null and int(ice.tube(plane.position)) == 0)
+	plane.roofed = plane_figure.bore or (doors != null and doors.holds(plane.position))
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
 	FrameLog.mark(&"t_roofed")
@@ -1573,6 +1579,7 @@ func _react(delta: float) -> void:
 		react.part(Vector2(p.x,p.z),span*PART_SPANS,PART_PUSH)
 		var e := camera.global_position
 		react.part(Vector2(e.x,e.z),span*EYE_PART_SPANS,PART_PUSH,1)
+		react.part(Vector2(p.x+e.x,p.z+e.z)*0.5,span*SIGHT_PART_SPANS,PART_PUSH,2)
 	# Parked in the menu the idling wash stirs the grass but kicks none up.
 	var wash: Dictionary = {} if stage != null and stage.holding() else react.wash_spot
 	# On the Peak's snow the wash throws powder and cuts a furrow, not grass.

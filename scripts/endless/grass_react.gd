@@ -254,7 +254,7 @@ func set_enabled(on: bool) -> void:
 		_wake_until = -INF
 		_wake_step(Vector2.ZERO)
 		_stamps.clear()
-		_held = [{},{}]
+		_held = [{},{},{}]
 		_gusts.clear()
 		for i in SLOTS: _free_parcel(i)
 	_publish_rect()
@@ -354,7 +354,7 @@ func walker(at: Vector3, velocity: Vector3, sliding := false) -> void:
 ## the grass parted round it out to `reach` m, `strength` times a standing
 ## walker's push, kept so while it is called each frame: one calm stamp held
 ## for as long as that lasts, following `at`, which eases off once it stops.
-## `slot` (0 or 1) keeps two such things apart.
+## `slot` (0 to 2) keeps such things apart.
 func part(at: Vector2, reach: float, strength := 1.0, slot := 0) -> void:
 	if not enabled: return
 	var s: Dictionary = _held[slot]
@@ -369,7 +369,7 @@ func part(at: Vector2, reach: float, strength := 1.0, slot := 0) -> void:
 ## How long a held stamp waits for its next call before it lets go (more than
 ## a slow frame).
 const HELD_GRACE := 0.25
-var _held: Array[Dictionary] = [{},{}]
+var _held: Array[Dictionary] = [{},{},{}]
 
 # --- Gusts ----------------------------------------------------------------------------
 
