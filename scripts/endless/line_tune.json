@@ -1,0 +1,22 @@
+{
+	"points_per_unit": 100.0,
+	"base": {"graze": 0.65, "thread": 1.0, "pull-out": 0.5,
+		"carve": 0.6, "canopy run": 0.9, "canyon run": 1.3, "climb": 0.9, "surf": 0.8, "stack orbit": 1.7,
+		"orb": 0.5, "bell": 0.8, "gong": 1.5, "default": 0.65},
+	"skip": ["slalom"],
+	"band": {"near": 1.0, "close": 1.15, "razor": 1.3},
+	"close_cap": 1.5, "close_pow": 1.5,
+	"fast_cap": 1.5,
+	"knife_from": 30.0, "knife_to": 90.0, "knife_cap": 1.4,
+	"low_from": 10.0, "low_to": 3.0, "low_cap": 1.3,
+	"under": 1.3,
+	"hold_top": 3.0,
+	"farm_same": 0.35,
+	"run_gap": 2.0, "run_echo": 0.05, "run_min": 2, "run_scale": 0.05, "run_pow": 2.0,
+	"flourish_margin": 1.25, "flourish_min_run": 1, "flourish_step": 0.6, "switch_step": 0.2,
+	"filler": ["pull-out"], "filler_shows": ["razor", "close"],
+	"line_cap": 4.0,
+	"bank_after": 4.5,
+	"meter_full": 10.0,
+	"tag_min": 1.15
+}

@@ -347,7 +347,7 @@ func _draw_block() -> void:
 	for i in range(_feed.size()-1,-1,-1): _draw_line(_feed[i],cy,u)
 	# The bar running down to the bank, shrinking toward the corner.
 	if _near.chain_points > 0.0 and _near.bank_left > 0.0:
-		var share := clampf(_near.bank_left/NearMiss.BANK_AFTER,0.0,1.0)
+		var share := clampf(_near.bank_left/_near.bank_after(),0.0,1.0)
 		var bw := BAR_W*u
 		var y := cy+20.0*u
 		_block.draw_rect(Rect2(-bw-1.0,y-1.0,bw+2.0,3.0*u+2.0),Color(0,0,0,0.3))

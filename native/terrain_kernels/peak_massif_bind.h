@@ -57,12 +57,13 @@ protected:
 public:
 	// Bumped when the massif's output or this interface changes, so PeakMassif
 	// refuses a stale library (and runs its GDScript instead).
-	int64_t version() const { return 1; }
+	int64_t version() const { return 6; }
 
 	// All of it, once, before any worker reads it.
 	void setup(const Dictionary &d) {
 		m.libm = bool(d.get("libm", false));
 		m.rock_on = bool(d.get("rock", true));
+		m.ice_carve = bool(d.get("ice_carve", true));
 		m.centre = v2(d["centre"]);
 		m.facing = v2(d["facing"]);
 		m.side = v2(d["side"]);

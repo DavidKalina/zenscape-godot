@@ -525,6 +525,10 @@ var _split_here := PackedFloat32Array()
 ## last sample's land was lifted or cut by it (no river there).
 const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
 var _massif: RefCounted = null
+## The ice tunnel in the massif's shoulder (scripts/endless/peak_tunnel.gd;
+## null with --ice-tunnel=0 or without a massif): the chunks' holes read it.
+const PeakTunnel = preload("res://scripts/endless/peak_tunnel.gd")
+var ice_tunnel: RefCounted = null
 var _m_on := false
 ## The coast's islands (coast_isles.gd), or null: a stamp like the massif.
 const CoastIsles = preload("res://scripts/endless/coast_isles.gd")
@@ -559,6 +563,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	splits = 0.0 if k.get("old_land",false) else Splits.wanted(float(world.layer("splits",0.0)))
 	split_mix = world.layer("split_kinds",{})
 	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed,Callable(_impl,"height"))
+	ice_tunnel = PeakTunnel.make(_massif)
 	_isles = null if k.get("old_land",false) else CoastIsles.make(land_seed,String(world.id))
 	_set_edge(k)
 	if _blend:
