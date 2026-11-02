@@ -208,6 +208,33 @@ const BOWL_ROUGH := 6.0
 const BOWL_RISE := 0.04
 const SUNK_RIVER := 50.0
 const SUNK_LOOK := 6
+## A sinkhole's walls, rock rather than a smooth funnel. WALL_E: the wall from
+## .x to .y of the way out (`_bowl_e`), the top WALL_RIM of it easing into the
+## land round it, so the rim has no crease. Gullies down the fall line: how
+## far each cuts back (in `e`), their width across and length down it (the
+## noise's scale, as `rag`'s). Benches: one every WALL_BENCH m up, their riser
+## over this part of a bench, their wander; only in patches (BENCH_PATCH, the
+## noise's scale and its ramp), so they fork and stop rather than ring the
+## hollow. Past WALL_FADE m of chunk step the benches go, past GULLY_FADE the
+## gullies, as the land's carve does.
+const WALL_E := Vector2(0.35,0.6)
+const WALL_RIM := 0.9
+const GULLY_BACK := 0.1
+const GULLY_SCALE := Vector2(1.3,0.1)
+const WALL_BENCH := 11.0
+const BENCH_RISER := Vector2(0.22,0.78)
+const BENCH_WANDER := 2.4
+const BENCH_PATCH := Vector3(0.6,-0.05,0.3)
+const WALL_FADE := Vector2(2.0,4.0)
+const GULLY_FADE := Vector2(6.0,12.0)
+## Turf thins over this much cut (m), so the grass stops in a soft line and
+## not at the first vertex moved. Past that the hollow's floor, where it lies
+## flat (the land's normal's y, .x to .y), keeps this much of a meadow's paint.
+const BOWL_TURF := 7.0
+## The river level that marks a sinkhole's land for shaders/endless_ground
+## (`dry_low`): well under SEA_Y-100, every other riverless vertex's.
+const DRY_LOW_RIVER := SEA_Y-400.0
+const BOWL_FLOOR := Vector3(0.82,0.96,0.7)
 ## How far from a mouth its sinkhole can reach at all (m): its length and,
 ## rolled wide by the rag, its half width.
 const BOWL_FAR := 240.0
@@ -687,15 +714,50 @@ static func _ramp_out(impl: Object, t: Site, m: int) -> float:
 ## BOWL_WIDE, its edge ragged by noise, its floor the bore's climbing a little,
 ## its walls falling steep from the land.
 static func _bowl(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float, reach: float) -> float:
+	return _bowl_cut(t,y,m,o,x,z,reach,0.0).x
+
+## `_bowl` with its rock's marks: Vector3(the land, the groove 0..1, the crest
+## 0..1, for the ground shader's CUSTOM0). `step`: the chunk's grid (0: all
+## the rock, as `height` and the collider read it).
+static func _bowl_cut(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float, reach: float, step: float) -> Vector3:
 	var e := _bowl_e(t,m,o,x,z,reach)
-	if e >= 1.0: return y
+	if e >= 1.0: return Vector3(y,0.0,0.0)
 	var a := (x-m.x)*o.x+(z-m.y)*o.y
 	var lid := t.floor_y-SINK+a*BOWL_RISE
-	if y <= lid: return y
+	if y <= lid: return Vector3(y,0.0,0.0)
+	var wall := smoothstep(WALL_E.x,WALL_E.y,e)*(1.0-smoothstep(WALL_RIM,1.0,e))
+	var flute := 0.0
+	if wall > 0.0:
+		# Across the bowl's round and down its fall.
+		var c := m+o*reach*0.42
+		var q := Vector2(x,z)-c
+		var ring := atan2(q.y,q.x)*BOWL_WIDE
+		var fall := q.length()
+		flute = 1.0-absf(t.rock.get_noise_2d(ring*GULLY_SCALE.x,fall*GULLY_SCALE.y))*2.6
+		flute = clampf(flute,0.0,1.0)*wall*(1.0-smoothstep(GULLY_FADE.x,GULLY_FADE.y,step))
+	var k := pow(minf(e+flute*GULLY_BACK,1.0),BOWL_FALL)
+	k = lerpf(k,1.0,smoothstep(WALL_RIM,1.0,e))
 	# A funnel, not a floor: rough underfoot past the mouth's apron.
-	var k := pow(e,BOWL_FALL)
 	var rough := BOWL_ROUGH*smoothstep(APRON,APRON*3.0,a)*(1.0-k)*absf(t.rock.get_noise_2d(x*0.9,z*0.9))*2.0
-	return minf(y,lerpf(lid+rough,y,k))
+	var cut := lerpf(lid+rough,y,k)
+	var groove := flute
+	var crest := 0.0
+	var bench := wall*(1.0-smoothstep(WALL_FADE.x,WALL_FADE.y,step))
+	if bench > 0.0: bench *= smoothstep(BENCH_PATCH.y,BENCH_PATCH.z,t.rock.get_noise_2d(x*BENCH_PATCH.x+91.0,z*BENCH_PATCH.x))
+	if bench > 0.0:
+		var tier := cut/WALL_BENCH+t.rock.get_noise_2d(x*0.18,z*0.18)*BENCH_WANDER
+		var fr := tier-floorf(tier)
+		cut += (smoothstep(BENCH_RISER.x,BENCH_RISER.y,fr)-fr)*WALL_BENCH*bench
+		groove = maxf(groove,smoothstep(0.05,BENCH_RISER.x,fr)*(1.0-smoothstep(BENCH_RISER.x,0.5,fr))*bench)
+		crest = smoothstep(0.5,BENCH_RISER.y,fr)*(1.0-smoothstep(BENCH_RISER.y,0.95,fr))*bench
+	return Vector3(minf(y,cut),groove,crest)
+
+## The land `base` with `t`'s sinkholes cut in at (x, z), and the rock's marks
+## (`_bowl_cut`).
+static func sunk_cut(t: Site, base: float, x: float, z: float, step := 0.0) -> Vector3:
+	var a := _bowl_cut(t,base,t.origin,-t.way,x,z,t.ramp.x,step)
+	var b := _bowl_cut(t,a.x,t.mouth_b,t.out_b,x,z,t.ramp.y,step)
+	return Vector3(b.x,maxf(a.y,b.y),maxf(a.z,b.z))
 
 ## How far out the sinkhole at `m` (facing `o`) (x, z) lies: under 1 is on
 ## it, 1 its ragged rim; INF past its ends.
@@ -1366,7 +1428,7 @@ static func carve(t: Site, base: float, x: float, z: float) -> float:
 ## carve's height, and how much of a shelf's meadow (x, z) stands on (0..1).
 static func carve_m(t: Site, base: float, x: float, z: float) -> Vector2:
 	if not t.box.has_point(Vector2(x,z)): return Vector2(base,0.0)
-	if t.sunk: return Vector2(_bowl(t,_bowl(t,base,t.origin,-t.way,x,z,t.ramp.x),t.mouth_b,t.out_b,x,z,t.ramp.y),0.0)
+	if t.sunk: return Vector2(sunk_cut(t,base,x,z).x,0.0)
 	var q := local(t,x,z)
 	var sm := Vector2(_massif_q(t,q,x,z),0.0)
 	if not t.shelves.is_empty(): sm = _shelve(t,sm.x,q,x,z)
@@ -1865,6 +1927,8 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 	var moved := PackedByteArray()
 	moved.resize(n*n)
 	var shelf := PackedFloat32Array()
+	var marks := PackedByteArray()
+	marks.resize(n*n*2 if sunk else 0)
 	var any_moved := false
 	for t: Site in ts:
 		var i0 := clampi(floori((t.box.position.x-x0)/step),0,cells)
@@ -1874,7 +1938,14 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 		for j in range(j0,j1+1):
 			for i in range(i0,i1+1):
 				var v := j*n+i
-				var ym := carve_m(t,heights[v],x0+i*step,z0+j*step)
+				var ym := Vector2.ZERO
+				if t.sunk:
+					var c := sunk_cut(t,heights[v],x0+i*step,z0+j*step,step)
+					ym.x = c.x
+					if c.y > 0.0 or c.z > 0.0:
+						marks[v*2] = int(c.y*255.0)
+						marks[v*2+1] = int(c.z*255.0)
+				else: ym = carve_m(t,heights[v],x0+i*step,z0+j*step)
 				var y := ym.x
 				if step > 1.0: y = minf(y,trench_under(t,x0+i*step,z0+j*step,step))
 				if ym.y > 0.0:
@@ -1909,22 +1980,25 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 			var normal := Vector3(hl-hr,2.0*step,hd-hu).normalized()
 			normals[v] = normal
 			var meadow := colours[v].a
-			if moved[v] != 0: meadow *= _meadow_keep(lift[v])
+			if moved[v] != 0: meadow *= 1.0-smoothstep(0.0,BOWL_TURF,-lift[v]) if sunk and lift[v] < 0.0 else _meadow_keep(lift[v])
+			if sunk and lift[v] < -BOWL_TURF: meadow = maxf(meadow,BOWL_FLOOR.z*smoothstep(BOWL_FLOOR.x,BOWL_FLOOR.y,normal.y))
 			if not shelf.is_empty(): meadow = maxf(meadow,SHELF_MEADOW*shelf[v])
 			# Under the level a sunk cave's hollow is still land, not sea bed.
 			var c: Color = impl.colour(x,z,heights[v] if not sunk else maxf(heights[v],SEA_Y+26.0),normal.y,meadow)
 			c.a = meadow
 			colours[v] = c
 			if moved[v] != 0:
-				carved[v*4] = 0
-				carved[v*4+1] = 0
-				if lift[v] > 1.0:
+				carved[v*4] = marks[v*2] if sunk else 0
+				carved[v*4+1] = marks[v*2+1] if sunk else 0
+				if lift[v] > 1.0 or (sunk and lift[v] < -1.0):
 					# No river on the mountain: far from any, its flow still.
 					carved[v*4+2] = 128
 					carved[v*4+3] = 128
 					river[v*3] = 1000.0
 					river[v*3+1] = 0.0
-					river[v*3+2] = SEA_Y-100.0
+					# In a sinkhole a level of its own tells the ground shader
+					# this is dry land under the sea's, not sea bed (`dry_low`).
+					river[v*3+2] = DRY_LOW_RIVER if lift[v] < 0.0 else SEA_Y-100.0
 	var edges := [[],[],[],[]]
 	for t in n:
 		edges[0].append(t)
