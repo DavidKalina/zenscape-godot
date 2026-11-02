@@ -54,6 +54,12 @@ and no long ramp to the mouth.
    (`scratch/j_4896_1_top.png`). Fly each. Fix what shows up in flight; if
    one only shows after a teleport, say so and leave it.
 
+7. **Slow patch over the mountain tunnel.** Flying over the box x 4750 to
+   5400, z 450 to 2265 (rolled tunnel `doors/tunnel/1_0`) ran 64 fps, p95
+   42.9 ms, worst 109 ms, with all tick parts swelling. Fly the same line
+   with tunnels on and off. If the tunnel or its ridge causes it, fix it; if
+   it's there with tunnels off, say so and leave it.
+
 Do these in whatever order works. Do item 4 after item 3, since the path
 changes the mesh.
 
