@@ -743,12 +743,12 @@ def build_canopy(g, glass):
 	loft(glass, rings, lambda i, k: f(i, k), False, False, False)
 	# Frames: three hoops, the screen's bow, sills and a spine, proud of the glass.
 	for i, r in ((0, 0.0055), (2, 0.0052), (4, 0.0042), (5, 0.0042)):
-		tube(g, [tuple(p + Vector((0, 0.0012, 0))) for p in rings[i]], r, 6, "dark")
+		tube(g, [tuple(p + Vector((0, 0.0012, 0))) for p in rings[i]], r, 6, "body")
 	for k in (0, n):
-		tube(g, [tuple(rings[i][k]) for i in range(len(sta))], 0.0055, 6, "dark")
+		tube(g, [tuple(rings[i][k]) for i in range(len(sta))], 0.0055, 6, "body")
 	for k in (n // 2 - 3, n // 2 + 3):
-		tube(g, [tuple(rings[i][k] + Vector((0, 0.001, 0))) for i in range(0, 3)], 0.0038, 6, "dark")
-	tube(g, [tuple(rings[i][n // 2] + Vector((0, 0.001, 0))) for i in range(2, len(sta) - 1)], 0.0036, 6, "dark")
+		tube(g, [tuple(rings[i][k] + Vector((0, 0.001, 0))) for i in range(0, 3)], 0.0038, 6, "body")
+	tube(g, [tuple(rings[i][n // 2] + Vector((0, 0.001, 0))) for i in range(2, len(sta) - 1)], 0.0036, 6, "body")
 	# A dark well under the glass, so nothing's seen through it but dark.
 	tub = [[(math.sin(-math.pi * 0.5 + math.pi * k / 8) * sta[i][1] * 0.92, base(sta[i][0]) + 0.004 + math.cos(-math.pi * 0.5 + math.pi * k / 8) * 0.02, sta[i][0]) for k in range(9)] for i in range(len(sta) - 1)]
 	loft(g, tub, lambda i, k: f(i, k), False, False, False, 0.5)
