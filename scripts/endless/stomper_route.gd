@@ -14,7 +14,7 @@ extends RefCounted
 ## about, east end at the fin over the lake, between the two ruins at the west end.
 const LINE: Array[Vector2] = [Vector2(2220.0,-960.0),Vector2(2520.0,-1010.0),Vector2(2610.0,-1300.0),Vector2(2600.0,-1760.0),Vector2(2440.0,-2020.0),
 	Vector2(2340.0,-2240.0),Vector2(2360.0,-2480.0),Vector2(2390.0,-2620.0),Vector2(2250.0,-2650.0),Vector2(2100.0,-2630.0),
-	Vector2(2110.0,-2420.0),Vector2(2130.0,-2220.0),Vector2(2030.0,-1940.0),Vector2(1880.0,-1600.0),Vector2(1880.0,-1200.0),
+	Vector2(2110.0,-2420.0),Vector2(2150.0,-2220.0),Vector2(2130.0,-1960.0),Vector2(1960.0,-1600.0),Vector2(1880.0,-1200.0),
 	Vector2(1990.0,-1000.0)]
 ## The line: its points' spacing (m), smoothing passes.
 const SPACING := 40.0

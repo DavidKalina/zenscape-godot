@@ -138,10 +138,16 @@ const WRECK := {
 }
 ## The lake: a road crossing it stands this far over it, the lake at -40.
 const WET := -38.5
+## How low in the lake a fallen stone's foot is set, so it still shows.
+const BED := -42.0
 ## A column broken off, a fallen one's size, a heap's.
 const SNAPPED := 25.0
 const FALLEN := Vector3(4.2,8.0,34.0)
+## How far down a drum or a fallen column goes, in the ground.
+const DRUM_FOOT := 20.0
 const HEAP_TALL := 15.0
+## How far round a heap the ground is read for where it rests.
+const HEAP_REST := 12.0
 const SNAP_TOP := 3.0
 ## Aisle columns left standing in the road, how tall, their u; `low`: how far out its stumps
 ## stand, of the half street.
@@ -157,6 +163,8 @@ const LINES := {
 
 static var _pts := PackedVector3Array()
 static var _high := PackedFloat64Array()
+## The land, while `build` runs (`_rest`).
+static var _land: Callable
 
 static func half() -> float: return HALF
 static func pitch() -> float: return PITCH
@@ -221,12 +229,32 @@ static func _heights(land: Callable) -> void:
 		for k in n: soft[k] = (was[maxi(k-1,0)]+was[k]*2.0+was[mini(k+1,n-1)])*0.25
 	for k in n: _high.append(maxf(soft[k],raw[k]-LET_LAND)+OVER_LAND)
 
+## Whether whole street is left at (`si`, `u`), PAVE's or PLAN's.
+static func _paved(si: float, u: float) -> bool:
+	if absf(u) > half()+CURB: return false
+	var n := int(floorf(si/pitch()))-PLAN.size()
+	if n < 0: return true
+	if n >= PAVE.length(): return false
+	return PAVE[n] == "F" or (PAVE[n] == "G" and fposmod(si,pitch()) < pitch()*0.5)
+
+## Where a thing that fell comes to rest at (`si`, `u`), `r` m round: the paving where
+## there's street, else the lowest ground under it, or its foot just in the lake. So
+## nothing that fell hangs in the air, wherever the road's own height stands over the land.
+static func _rest(si: float, u: float, r: float) -> float:
+	if _paved(si,u): return level(si)
+	var q := spot(si,u)
+	var low := INF
+	for d: Vector2 in [Vector2.ZERO,Vector2(r,0.0),Vector2(-r,0.0),Vector2(0.0,r),Vector2(0.0,-r)]:
+		low = minf(low,float(_land.call(q.x+d.x,q.y+d.y)))
+	return maxf(low,BED)
+
 static func _sized(cache: Dictionary, key: Variant, make: Callable) -> Shapes:
 	if not cache.has(key): cache[key] = make.call()
 	return cache[key]
 
 static func build(s: Shapes, land: Callable) -> void:
 	_pts = PackedVector3Array()
+	_land = land
 	_heights(land)
 	var cache := {}
 	var bays := PLAN.size()
@@ -288,6 +316,7 @@ static func build(s: Shapes, land: Callable) -> void:
 		if bay.has("lean"): _leaning(s,cache,i,int(bay.lean),w)
 	_pave_ruin(s,cache,land)
 	_ruin(s,cache)
+	_land = Callable()
 
 ## What's left of the street past PLAN, as PAVE says. A sunk patch sits on the land.
 static func _pave_ruin(s: Shapes, cache: Dictionary, land: Callable) -> void:
@@ -353,7 +382,9 @@ static func _in(c: Vector3, y0: float, q: Vector2, y: float) -> Vector3:
 static func _remains(s: Shapes, b: Shapes, cache: Dictionary, c: Vector3, y0: float, st: int, side: float, what: String) -> void:
 	var si := st*pitch()
 	var w := half()
-	var o := _in(c,y0,spot(si,side*w),level(si))
+	# What still carries a beam keeps the street's height; the rest stands on its ground.
+	var foot := level(si) if what == "T" or _held(st) else _rest(si,side*w,FOOT)
+	var o := _in(c,y0,spot(si,side*w),foot)
 	var road := at(si).y
 	match what:
 		"T","t":
@@ -364,16 +395,18 @@ static func _remains(s: Shapes, b: Shapes, cache: Dictionary, c: Vector3, y0: fl
 		"f","o":
 			_shaft(b,o,STUMP,false)
 			var u := side*(w-FALLEN.z*0.6 if what == "f" else w+FALLEN.z*0.6)
-			var q := spot(si+(_h(st,1)-0.5)*16.0,u)
+			var si2 := si+(_h(st,1)-0.5)*16.0
+			var q := spot(si2,u)
 			var lying := _sized(cache,"fallen_col",_fallen)
-			s.stamp(lying,Vector3(q.x,level(si),q.y),road+PI*0.5+(_h(st,2)-0.5)*0.9)
+			s.stamp(lying,Vector3(q.x,_rest(si2,u,FALLEN.z*0.5),q.y),road+PI*0.5+(_h(st,2)-0.5)*0.9)
 		"l":
 			_shaft(b,o,STUMP,false)
 			_leaning(s,cache,st,int(side),w)
 		"d":
 			for k in 3:
-				var q := spot(si+(_h(st,k+3)-0.5)*30.0,side*(w-(_h(st,k+6)-0.3)*24.0))
-				_drum_in(b,_in(c,y0,q,level(si)))
+				var si2 := si+(_h(st,k+3)-0.5)*30.0
+				var u := side*(w-(_h(st,k+6)-0.3)*24.0)
+				_drum_in(b,_in(c,y0,spot(si2,u),_rest(si2,u,SHAFT.x)))
 
 ## The stones `WRECK` names for bay `i`.
 static func _wreck(s: Shapes, b: Shapes, cache: Dictionary, c: Vector3, y0: float, i: int, d: Dictionary) -> void:
@@ -393,7 +426,7 @@ static func _wreck(s: Shapes, b: Shapes, cache: Dictionary, c: Vector3, y0: floa
 	if d.has("heap"):
 		var q := spot((i+0.5)*p,float(d.heap))
 		var heap := _sized(cache,"mound",_rubble.bind(20.0,HEAP_TALL,30.0))
-		s.stamp(heap,Vector3(q.x,level((i+0.5)*p),q.y),at((i+0.5)*p).y+0.4)
+		s.stamp(heap,Vector3(q.x,_rest((i+0.5)*p,float(d.heap),HEAP_REST),q.y),at((i+0.5)*p).y+0.4)
 	if d.has("low"):
 		var si := (i+0.5)*p
 		for side: float in [-1.0,1.0]:
@@ -413,7 +446,7 @@ static func _shaft(b: Shapes, o: Vector3, tall: float, capped: bool) -> void:
 
 static func _drum_in(b: Shapes, o: Vector3) -> void:
 	b.layer = Shapes.NEAR
-	b.cyl(o+Vector3(0.0,-3.0,0.0),SHAFT.x,SHAFT.x-0.4,9.0,8)
+	b.cyl(o+Vector3(0.0,-DRUM_FOOT,0.0),SHAFT.x,SHAFT.x-0.4,DRUM_FOOT+6.0,8)
 
 ## How bent the line is at `s`, the worst near it: 1/R.
 static func _bent(s: float) -> float:
@@ -481,14 +514,13 @@ static func _leaning(s: Shapes, cache: Dictionary, i: int, side: int, w: float) 
 	var p := pitch()
 	var si := (i+0.5)*p
 	var c := at(si)
-	var y := level(si)
 	var q := spot(si,side*w)
 	var lean := _sized(cache,"lean",_leaner)
-	s.stamp(lean,Vector3(q.x,y,q.y),c.y+(PI*0.5 if side > 0 else -PI*0.5))
+	s.stamp(lean,Vector3(q.x,_rest(si,side*w,SHAFT.x),q.y),c.y+(PI*0.5 if side > 0 else -PI*0.5))
 	var drum := _sized(cache,"drum",_drum)
 	for f: Vector2 in [Vector2(-0.3,0.45),Vector2(0.15,0.15),Vector2(0.38,0.7)]:
 		var d := spot(si+f.x*p,side*w*f.y)
-		s.stamp(drum,Vector3(d.x,level(si+f.x*p),d.y),f.x*5.0)
+		s.stamp(drum,Vector3(d.x,_rest(si+f.x*p,side*w*f.y,SHAFT.x),d.y),f.x*5.0)
 
 # --- The blocks ------------------------------------------------------------------
 
@@ -519,6 +551,7 @@ static func _fallen() -> Shapes:
 	var z := FALLEN.z*0.5
 	b.layer = Shapes.NEAR
 	b.slope(Rect2(-r,-z,r*2.0,z*2.0),Rect2(-r*0.6,-z,r*1.2,z*2.0),-1.0,FALLEN.y)
+	b.box(Vector3(-r,-DRUM_FOOT,-z),Vector3(r,-1.0,z))
 	return b
 
 static func _column(tall: float) -> Shapes:
@@ -572,9 +605,10 @@ static func _leaner() -> Shapes:
 	var b := Shapes.new()
 	var r := SHAFT.x-0.6
 	b.slope(Rect2(-r,-r,r*2.0,r*2.0),Rect2(-r,-r+24.0,r*2.0,r*2.0),-2.0,30.0)
+	b.box(Vector3(-r,-DRUM_FOOT,-r),Vector3(r,-2.0,r))
 	return b
 
 static func _drum() -> Shapes:
 	var b := Shapes.new()
-	b.cyl(Vector3(0.0,-3.0,0.0),SHAFT.x,SHAFT.x-0.4,9.0,8)
+	b.cyl(Vector3(0.0,-DRUM_FOOT,0.0),SHAFT.x,SHAFT.x-0.4,DRUM_FOOT+6.0,8)
 	return b
