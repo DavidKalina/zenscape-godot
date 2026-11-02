@@ -70,6 +70,8 @@ const ICE_LOW := 5.0
 const FILL := Color(0.16,0.24,0.36)
 const FILL_GAIN := 0.16
 const SNOW := Color(0.88,0.92,0.97)
+const DAY_BASALT_LO := Color(0.2,0.2,0.22)
+const DAY_BASALT_HI := Color(0.42,0.41,0.42)
 ## The collider's pieces (triangles each).
 const BODY_TRIS := 6000
 ## The guard (`guide`, `keep`), as LandTunnels'.
@@ -387,6 +389,16 @@ func _ice_material() -> ShaderMaterial:
 	mat.set_shader_parameter("basalt_hi",Color(0.2,0.21,0.23))
 	mat.set_shader_parameter("fill",FILL)
 	mat.set_shader_parameter("fill_gain",FILL_GAIN)
+	return mat
+
+## The open stretches under the sky: the inside's basalt (0.07-0.2, lit by its
+## fill) read near black in the sun, so they take the Peak's weathered grey and
+## no fill.
+func _day_material(inside: ShaderMaterial) -> ShaderMaterial:
+	var mat: ShaderMaterial = inside.duplicate()
+	mat.set_shader_parameter("basalt_lo",DAY_BASALT_LO)
+	mat.set_shader_parameter("basalt_hi",DAY_BASALT_HI)
+	mat.set_shader_parameter("fill_gain",0.0)
 	return mat
 
 static func _snow_material() -> StandardMaterial3D:

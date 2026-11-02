@@ -88,7 +88,7 @@ constexpr double LUMPS = 2.5, LUMP_SCALE = 3.7;
 constexpr double ICE_FROM = 2230.0, ICE_FLAT = 2850.0;
 constexpr double PROF_Y0 = 259.0, PROF_M = -0.156452, PROF_TOE = 0.048, PROF_KNEE = 40.0, PROF_FADE = 100.0;
 constexpr double STEP_A = 2390.0, STEP_RUN = 80.0, STEP_DROP = 50.0, STEP_STEPS = 3.0, STEP_RISER = 0.4, STEP_JAG = 10.0;
-constexpr double STEP_COL = 38.0, STEP_COL_WARP = 14.0, STEP_SHIFT = 0.35, STEP_BLOCK = 4.0, STEP_CRACK = 2.5, STEP_CRACK_DEEP = 9.0;
+constexpr double STEP_COL = 38.0, STEP_COL_WARP = 20.0, STEP_SHIFT = 0.6, STEP_TILT = 5.0, STEP_SLUMP = 0.3, STEP_BLOCK = 4.0, STEP_CRACK = 2.5, STEP_CRACK_DEEP = 9.0;
 constexpr double LC_A0 = 2480.0, LC_A1 = 2845.0, LC_RAMP = 70.0, LC_DEEP = 28.0, LC_TOP = 14.5, LC_FLOOR = 9.5;
 constexpr double LC_V = -85.0, LC_WANDER = 10.0, LC_WAVE = 75.0, LC_ROUGH = 1.2;
 constexpr double LEADS[][7] = {{2378.0, -70.0, 2180.0, -40.0, 13.0, 8.5, 20.0}, {2372.0, 132.0, 2180.0, 25.0, 5.5, 2.0, 14.0}};
@@ -102,7 +102,7 @@ constexpr double ICE_BANDS[][6] = {
 	{2752.0, 15.0, 4.5, 18.0, -10.0, 190.0}, {2790.0, 12.0, 5.0, 16.0, 30.0, 220.0}};
 constexpr int ICE_BANDS_N = int(sizeof(ICE_BANDS) / sizeof(ICE_BANDS[0]));
 constexpr double ICE_PINCH = 30.0, CREV_FLOOR = 0.3;
-constexpr double BAND_WOBBLE = 6.0, BAND_WIDEN = 0.3, SLOT_AA = 0.8;
+constexpr double BAND_WOBBLE = 6.0, BAND_WIDEN = 0.3, SLOT_AA = 0.8, BAND_AA = 2.5, BAND_AA_FLOOR = 1.0, BAND_PAINT_STEP0 = 4.0, BAND_PAINT_STEP1 = 8.0;
 constexpr double MR_A0 = 2250.0, MR_A1 = 2840.0, MR_UP = 20.0, MR_W = 22.0, MR_V = 20.0, MR_WANDER = 25.0, MR_WAVE = 110.0;
 constexpr double GROOVES[][3] = {{-185.0, 3.5, 5.0}, {130.0, 3.0, 4.5}, {225.0, 4.5, 6.0}};
 constexpr int GROOVES_N = int(sizeof(GROOVES) / sizeof(GROOVES[0]));
@@ -535,23 +535,29 @@ private:
 		const double on_floor = 1.0 - smoothstep(-30.0, 10.0, e);
 		double crack = 0.0;
 		if (on_floor > 0.0 && a > STEP_A - STEP_JAG * 3.0 && a < STEP_A + STEP_RUN + STEP_JAG * 3.0) {
-			const double cu = (vr + STEP_COL_WARP * nz(noise, a * 0.7 + 5100.0, vr * 0.3)) / STEP_COL;
+			const double cu = (vr + STEP_COL_WARP * nz(noise, a * 0.7 + 5100.0, vr * 1.2)) / STEP_COL;
 			const double col = std::floor(cu);
 			const double shift = STEP_SHIFT * nz(noise, col * 37.0 + 5300.0, 1700.0);
 			const double jag = STEP_JAG * nz(noise, vr * 3.0 + 4100.0, a * 0.2);
 			const double s3 = clampf((a - STEP_A + jag) / STEP_RUN * STEP_STEPS + shift + 0.3 * nz(noise, vr * 5.0 - 2300.0, a * 0.5 + 900.0), 0.0, STEP_STEPS);
 			const double k = minf(std::floor(s3), STEP_STEPS - 1.0);
 			const double inside = smoothstep(STEP_A - STEP_JAG * 2.0, STEP_A, a) * (1.0 - smoothstep(STEP_A + STEP_RUN, STEP_A + STEP_RUN + STEP_JAG * 2.0, a));
-			const double block = STEP_BLOCK * nz(noise, col * 23.0 - 900.0, k * 31.0 + 400.0) * inside / STEP_DROP;
-			drop = lerpf(drop, (k + smoothstep(0.0, STEP_RISER, s3 - k)) / STEP_STEPS - block, on_floor);
+			double block = STEP_BLOCK * nz(noise, col * 23.0 - 900.0, k * 31.0 + 400.0) * inside / STEP_DROP;
+			block += STEP_TILT * nz(noise, col * 29.0 + 2600.0, k * 41.0 - 1200.0) * (cu - col - 0.5) * 2.0 * inside / STEP_DROP;
+			const double x3 = s3 - k;
+			const double fall = (1.0 - STEP_SLUMP) * smoothstep(0.0, STEP_RISER, x3) + STEP_SLUMP * x3;
+			drop = lerpf(drop, (k + fall) / STEP_STEPS - block, on_floor);
 			const double edge = minf(cu - col, col + 1.0 - cu) * STEP_COL;
 			if (edge < STEP_CRACK)
+			{
 				crack = STEP_CRACK_DEEP * (1.0 - smoothstep(STEP_CRACK * 0.4, STEP_CRACK, edge)) * on_floor * inside * (1.0 - smoothstep(STEP_CRACK, STEP_CRACK * 3.0, step));
+				crack *= smoothstep(-0.25, 0.05, nz(noise, std::round(cu) * 17.0 + 700.0, k * 13.0 - 300.0));
+			}
 		}
 		g -= STEP_DROP * drop;
 		const double dh = (g - f0) * smoothstep(ICE_FROM, ICE_FROM + 70.0, a) * (1.0 - smoothstep(out_to, out_to + PROF_FADE, e));
 		if (e > -20.0 || a >= ICE_FLAT) return V2(dh, 0.0);
-		double cut = crack, ridge = 0.0, groove = 0.0;
+		double cut = crack, ridge = 0.0, groove = 0.0, band_cut = 0.0;
 		const double keep = 1.0 - smoothstep(LC_TOP * 3.0, LC_TOP * 6.0, step);
 		if (keep > 0.0 && a > LC_A0 && a < LC_A1) {
 			const double lw = maxf(LC_TOP, step * SLOT_AA);
@@ -592,13 +598,14 @@ private:
 				const double kb = 1.0 - smoothstep(w0 * 3.0, w0 * 6.0, step);
 				if (kb <= 0.0) continue;
 				const double wl = w0 * (1.0 + BAND_WIDEN * nz(noise, vr * 0.8 + 7100.0, double(i) * 50.0));
-				const double w = maxf(wl, step * SLOT_AA);
+				const double w = maxf(wl, step * BAND_AA);
+				const double fl = minf(maxf(w * CREV_FLOOR, step * BAND_AA_FLOOR), w * 0.85);
 				const double d = absf(a - row[0] - row[1] * bow - BAND_WOBBLE * nz(noise, vr * 0.6 + double(i) * 90.0, 7000.0));
 				if (d >= w) continue;
 				double run = smoothstep(row[4], row[4] + ICE_PINCH, vr) * (1.0 - smoothstep(row[5] - ICE_PINCH, row[5], vr));
 				run *= smoothstep(-0.45, -0.2, nz(noise, vr * 0.45 + double(i) * 300.0, 7300.0));
 				if (run <= 0.0) continue;
-				cut = maxf(cut, row[3] * wl / w * run * (1.0 - smoothstep(w * CREV_FLOOR, w, d)) * kb);
+				band_cut = maxf(band_cut, row[3] * wl / w * run * (1.0 - smoothstep(fl, w, d)) * kb);
 			}
 		}
 		const double kr = 1.0 - smoothstep(MR_W, MR_W * 3.0, step);
@@ -620,8 +627,10 @@ private:
 				if (x < gh) groove = maxf(groove, GROOVES[k][1] * (1.0 - smoothstep(0.0, gh, x)) * along * kg);
 			}
 		}
+		const double bp = 1.0 - smoothstep(BAND_PAINT_STEP0, BAND_PAINT_STEP1, step);
+		const double slot = clampf(maxf(cut, band_cut * bp) / SLOT_PAINT, 0.0, 1.0);
+		cut = maxf(cut, band_cut);
 		const double surf = ridge - groove;
-		const double slot = clampf(cut / SLOT_PAINT, 0.0, 1.0);
 		const double paint = lerpf(clampf(ridge / 12.0, 0.0, 1.0) * RIDGE_PAINT - clampf(groove / 4.0, 0.0, 1.0) * GROOVE_PAINT, -1.0, slot);
 		return V2(dh + surf * (1.0 - clampf(cut / 8.0, 0.0, 1.0)) - cut, paint);
 	}

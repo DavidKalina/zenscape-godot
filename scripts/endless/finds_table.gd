@@ -123,7 +123,7 @@ const WORLDS := {
 		{"id":"gorge-room","area":"foothills","kind":"relic","anchor":"chamber/gorge","up":0.0,
 			"title":"The ring in the gorge room"},
 		{"id":"bend-ring","area":"foothills","kind":"relic","anchor":"peak/ice-arch/1","up":0.0,
-			"title":"The ring at the gorge's bend","hint":"Up the ice, past the second bend"},
+			"title":"The ring under the ice arch","hint":"Under the ice at the glacier's head"},
 		{"id":"tunnel-deep","area":"foothills","kind":"relic","anchor":"peak/tunnel/deep","under":true,"up":15.0,
 			"title":"The ring deep in the ice","hint":"A dark mouth in the glacier's flank"},
 		{"id":"gorge-run","area":"foothills","kind":"line","place":"foothills","name":"gorge_run",
