@@ -60,6 +60,18 @@ and no long ramp to the mouth.
    with tunnels on and off. If the tunnel or its ridge causes it, fix it; if
    it's there with tunnels off, say so and leave it.
 
+8. **Ghost terrain at the entrance.** The user saw "a weird ghost terrain at
+   the tunnel entrance" while playing round 1's build or later, and doesn't
+   know if it's fixed. Nothing on the trail names it, and we don't know what
+   it is. Candidates to rule in or out: a coarse land chunk showing at the
+   hole before the fine one swaps in, the mouth rock or land drawn with a
+   pop or a transparent fade, a leftover collider or stale chunk, the sea's
+   depth map lagging. Fly into all four mouths from at least 1 km out at full
+   speed on a real launch, not a teleport, with stills every few frames over
+   the last 300 m, and look at them. Fix what you find. If nothing shows,
+   say so plainly and describe the closest thing seen, so the user can say
+   whether that was it.
+
 Do these in whatever order works. Do item 4 after item 3, since the path
 changes the mesh.
 
