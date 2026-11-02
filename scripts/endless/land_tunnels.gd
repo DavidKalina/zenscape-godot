@@ -1294,8 +1294,8 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> 
 ## running back under the land past the hole the land leaves, so the land's
 ## own cliff meets it and no edge shows. Spokes out of the ring, smooth shaded, baked for the land's rock
 ## paint: it wears the ground material (`_ground`). Returns its triangles.
-const LIP_SPOKES := 96
-const LIP_RINGS := 30
+const LIP_SPOKES := 180
+const LIP_RINGS := 60
 ## How far past the mouth's bowl the rock reaches across; up, it stops at the
 ## highest land along LIP_LAND (m in), LIP_OVER over it, then runs back to
 ## LIP_BACK m in, LIP_UNDER m under the land there.
