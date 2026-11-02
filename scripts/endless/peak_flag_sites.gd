@@ -277,6 +277,12 @@ const TUNNEL_TALL := 22.0
 const TUNNEL_GATE := 14.0
 const TUNNEL_GATE_SIDE := 20.0
 const TUNNEL_STAKE := 26.0
+## The masts: the tell from the toe, on the banks over the vault (s MOUTH_A,
+## TUNNEL_MAST_SIDE m each side of the line; the -n one is the spot over the
+## mouth that shows over the hummocks from the whole glacier, a sight probe:
+## the mouth itself needs 6-28 m more), a great string between them.
+const TUNNEL_MAST_SIDE := -26.0
+const TUNNEL_MAST := {"height":48.0,"radius":0.55,"lean":3.0,"hoist":10.0,"fly":30.0,"wear":0.35}
 
 ## Off with `--ice-tunnel=0` (PeakTunnel.make is null then).
 static func _tunnel(flags: Node3D, peak: RefCounted, ground: Callable) -> void:
@@ -298,6 +304,16 @@ static func _tunnel(flags: Node3D, peak: RefCounted, ground: Callable) -> void:
 		var low: float = minf(tops[0].y,tops[1].y)-span*0.05-float(GREAT.length)
 		if low > float(t.floor_at(sg0))+float(t.profile(sg0).y)+6.0:
 			_string(flags,"peak/flags/tunnel/gate",tops[0],tops[1],span*0.05,GREAT.merged({"wear":0.6,"tails":true}))
+	var mc: Vector2 = t.at_s(PeakTunnel.MOUTH_A)
+	var mt: Vector2 = t.tan_s(PeakTunnel.MOUTH_A)
+	var masts: Array = []
+	for side in 2:
+		var mw := mc+Vector2(-mt.y,mt.x)*TUNNEL_MAST_SIDE*(1.0 if side == 0 else -1.0)
+		masts.append(_pole(flags,"peak/flags/tunnel/mast/%d" % side,Vector3(mw.x,float(ground.call(mw.x,mw.y)),mw.y),TUNNEL_MAST.merged({"lean_way":mt})))
+	# A great string mast to mast, high over the vault: a band of cloth.
+	if masts[0] != null and masts[1] != null:
+		var mspan: float = (masts[0] as Vector3).distance_to(masts[1])
+		_string(flags,"peak/flags/tunnel/mast",masts[0],masts[1],mspan*0.06,GREAT.merged({"width":5.5,"length":7.5,"gap":3.0,"wear":0.35,"tails":true}))
 	var c0: Vector2 = t.at_s(0.0)
 	var back: Vector2 = -t.tan_s(0.0)
 	var prev: Array = [null,null]

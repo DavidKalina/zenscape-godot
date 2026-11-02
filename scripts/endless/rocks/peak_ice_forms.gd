@@ -55,6 +55,8 @@ const FIN_LANE := 7.0
 const FIN_THICK := Vector2(1.6,2.4)
 const FIN_LONG := Vector2(9.0,14.0)
 const FIN_TALL := Vector2(15.0,26.0)
+## Shards the lower blade breaks into along the flow.
+const FIN_SPLIT := Vector2i(2,3)
 ## The arches: the a of each on the line, the opening (toy) and the room under
 ## the bridge over the highest ground across it (m).
 const ARCHES := [2560.0,2290.0]
@@ -63,8 +65,8 @@ const ARCH_UNDER := 18.0
 ## A leg's reach from its middle (m) and the bridge's thickness (m) and depth
 ## along the flow (m).
 const LEG_REACH := 6.5
-const BRIDGE_THICK := Vector2(4.0,5.5)
-const BRIDGE_DEEP := Vector2(7.0,9.5)
+const BRIDGE_THICK := Vector2(7.0,9.0)
+const BRIDGE_DEEP := Vector2(10.0,13.0)
 const SLABS := 5
 ## The tumbled blocks: from a, to a, a heap every BLOCK_STEP m each side, in a
 ## band this far inside the floor's edge (m), where the moraine's bank rises.
@@ -484,11 +486,34 @@ static func _fin(field: RefCounted, pos: Vector3, p: Dictionary, rng: RandomNumb
 	var turn := Basis(Vector3.UP,float(p.yaw))*Basis(Vector3.BACK,rng.randf_range(-0.06,0.06))
 	var cut := foot+(tall-foot)*rng.randf_range(0.5,0.66)
 	var ly := (cut-foot)*0.56
-	blocks.append(Serac._shard(rng,Vector3(thick,ly,long),Vector3(0.0,foot+ly,0.0),turn,tone,2))
+	# The lower blade split along the flow into FIN_SPLIT shards of their own
+	# heights and leans, so its side is a broken ridge, not one slab's face.
+	# Each its own height (one at the cut's), so the skyline is serrated.
+	var n := rng.randi_range(FIN_SPLIT.x,FIN_SPLIT.y)
+	var hi := rng.randi_range(0,n-1)
+	var top_z := 0.0
+	var top_y := 0.0
+	var zs: Array[float] = []
+	for k in n:
+		var zk := lerpf(-0.55,0.55,(k+0.5)/n)*long+rng.randf_range(-0.08,0.08)*long
+		var lk := long*rng.randf_range(0.42,0.6)*(3.0/n)
+		var yk := (cut-foot)*0.5*(1.0 if k == hi else rng.randf_range(0.4,0.8))
+		var tk := Basis(Vector3.UP,float(p.yaw)+rng.randf_range(-0.1,0.1))*Basis(Vector3.BACK,rng.randf_range(-0.08,0.08))*Basis(Vector3.RIGHT,rng.randf_range(-0.07,0.07))
+		blocks.append(Serac._shard(rng,Vector3(thick*rng.randf_range(0.8,1.05),yk,lk),Vector3(0.0,foot+yk,zk),tk,clampf(tone+rng.randf_range(-0.1,0.1),0.0,1.0),2))
+		zs.append(zk)
+		if yk > top_y:
+			top_y = yk
+			top_z = zk
 	var uy := (tall-cut)*0.64
 	var askew := Basis(Vector3.UP,rng.randf_range(-0.12,0.12))*turn*Basis(Vector3.BACK,rng.randf_range(-0.1,0.1))
-	blocks.append(Serac._shard(rng,Vector3(thick*rng.randf_range(0.75,0.95),uy,long*rng.randf_range(0.5,0.8)),
-		Vector3(0.0,tall-uy,rng.randf_range(-0.3,0.3)*long),askew,clampf(tone+rng.randf_range(-0.12,0.12),0.0,1.0),2))
+	blocks.append(Serac._shard(rng,Vector3(thick*rng.randf_range(0.75,0.95),uy,long*rng.randf_range(0.35,0.55)),
+		Vector3(0.0,tall-uy,top_z),askew,clampf(tone+rng.randf_range(-0.12,0.12),0.0,1.0),2))
+	# A lesser spire on another shard, half as far over the cut: two points.
+	var z2: float = zs[(zs.find(top_z)+1)%zs.size()]
+	var u2 := uy*rng.randf_range(0.45,0.6)
+	var lean2 := Basis(Vector3.UP,rng.randf_range(-0.15,0.15))*turn*Basis(Vector3.BACK,rng.randf_range(-0.14,0.14))*Basis(Vector3.RIGHT,signf(z2-top_z)*rng.randf_range(0.04,0.12))
+	blocks.append(Serac._shard(rng,Vector3(thick*rng.randf_range(0.7,0.9),u2,long*rng.randf_range(0.25,0.4)),
+		Vector3(0.0,cut+u2*0.6,z2),lean2,clampf(tone+rng.randf_range(-0.12,0.12),0.0,1.0),2))
 	var hy := (tall-foot)*0.5
 	# The lesser shard on the side away from the line.
 	var out_s := float(p.side)
