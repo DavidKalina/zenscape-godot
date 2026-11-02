@@ -204,5 +204,8 @@ const WORLDS := {
 		{"id":"horn-mouth","area":"coast","kind":"relic","at":Vector2(2930.0,3900.0),"up":12.0,
 			"title":"The ring in the Horn's mouth"},
 	],
-	"amberlands":[],
+	"amberlands":[
+		{"id":"lift-head","area":"amberlands","kind":"relic","anchor":"amber/lift-head","up":0.0,
+			"title":"Taken from inside a carried head","hint":"He holds it up. It has a way in"},
+	],
 }

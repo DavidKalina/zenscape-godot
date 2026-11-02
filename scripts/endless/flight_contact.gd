@@ -113,6 +113,11 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if coast != null:
 		var off: Vector3 = coast.deck_way_off(plane.position,str(hit.what))
 		if off != Vector3.ZERO: return glance(game,off,hit.at)
+	# The lifted head's bore (scripts/endless/head_lift.gd), the same.
+	var stomper = game.get("stomper")
+	if stomper != null and stomper.lift != null:
+		var off: Vector3 = stomper.lift.way_off(plane.position,str(hit.what))
+		if off != Vector3.ZERO: return glance(game,off,hit.at)
 	# A forgiving knife slot's jamb (a side touch of its stone, not its sill
 	# or head): glanced off toward its middle, never kicked across the slot.
 	var slot: Dictionary = game.glance.zone if game.get("glance") != null else {}

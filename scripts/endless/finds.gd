@@ -305,6 +305,19 @@ func complete(i: int) -> bool:
 	print("finds: %s (%d / %d)" % [e.book_id,got(str(e.world)),of(str(e.world))])
 	return true
 
+## Row `id` not found again, its mark back: the head-lift prototype's try again.
+func unfind(id: String) -> void:
+	var e := row(id)
+	if e.is_empty() or not is_found(e): return
+	_game.book.found.erase(e.book_id)
+	var i := rows.find(e)
+	if _live.has(i):
+		var node: Marks.Mark = _live[i]
+		_live.erase(i)
+		node.visible = false
+		_pool.append(node)
+	_cell = Vector2i(1 << 30,0)
+
 # --- The flight -------------------------------------------------------------------------
 
 func step(delta: float, game: Node) -> void:

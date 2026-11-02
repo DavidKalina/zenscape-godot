@@ -1275,6 +1275,7 @@ func tick(delta: float) -> void:
 	_stop_note()
 	FrameLog.mark(&"ground_scale")
 	if city != null: city.debug_start(self)
+	if stomper != null and stomper.lift != null: stomper.lift.debug_start(self)
 	# A door flown into carries the plane to the other side (region_doors.gd).
 	if doors != null: doors.step(delta)
 	FrameLog.mark(&"doors")
@@ -1757,6 +1758,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
 			KEY_F: _land_key()
+			KEY_U:
+				if stomper != null and stomper.lift != null: stomper.lift.again()
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_F2: _next_scale()
 			KEY_F3: _next_preset()

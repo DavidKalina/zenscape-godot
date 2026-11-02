@@ -28,6 +28,7 @@ const Fall = preload("res://scripts/endless/stomper_fall.gd")
 const Wake = preload("res://scripts/endless/stomper_wake.gd")
 const Solid = preload("res://scripts/endless/stomper_solid.gd")
 const Shadow = preload("res://scripts/endless/stomper_shadow.gd")
+const Lift = preload("res://scripts/endless/head_lift.gd")
 const Door = preload("res://scripts/endless/hall_doors.gd")
 const City = preload("res://scripts/endless/giant_city.gd")
 const MODEL := "res://assets/models/stomper_body.glb"
@@ -43,6 +44,8 @@ const LIFT: Array[float] = [0.62,0.12]
 const STANCE := 0.62
 ## The cycle's table: samples of the clip, read at setup.
 const SAMPLES := 96
+## Where in the cycle it stands for a lift: both feet down, a long stance.
+const STOP_PHASE := 0.04
 ## Where on the loop it starts, in the city's frame (along, across): the lake's end
 ## of the plain, in sight of the shore road.
 const START_AT := Vector2(1950.0,-1150.0)
@@ -86,6 +89,9 @@ var shadow: MeshInstance3D
 var route: RefCounted
 var field: RefCounted
 var world: RefCounted
+## The head he lifts (head_lift.gd), or null, and how far it drops his hips (m).
+var lift: Node3D
+var crouch := 0.0
 ## The capsules the flight meets (stomper_solid.gd).
 var solid := Solid.new()
 ## The land's home.
@@ -167,6 +173,10 @@ func setup(study: Node) -> void:
 		shadow.setup(study,self)
 		if fall != null: shadow.also(fall.dust_material())
 	visible = _plane_here()
+	if Lift.wanted() and str(world.id) == "doors":
+		lift = Lift.new()
+		add_child(lift)
+		lift.setup(study,self)
 
 ## A spot in the city's frame (along, across), as world x, z.
 func _in_city(at: Vector2) -> Vector2:
@@ -204,12 +214,14 @@ func _plane_here() -> bool:
 func step(delta: float) -> void:
 	visible = _plane_here()
 	if not visible: return
-	var was := phase
-	phase = fposmod(phase+delta/LENGTH,1.0)
-	along = fposmod(along+_gone(was,phase)*size,route.length)
-	for side in range(2):
-		if _crossed(was,phase,LAND[side]): _landed(side)
-		if _crossed(was,phase,LIFT[side]): _lifted(side)
+	if lift != null: lift.step(delta)
+	if lift == null or not lift.stops_him():
+		var was := phase
+		phase = fposmod(phase+delta/LENGTH,1.0)
+		along = fposmod(along+_gone(was,phase)*size,route.length)
+		for side in range(2):
+			if _crossed(was,phase,LAND[side]): _landed(side)
+			if _crossed(was,phase,LIFT[side]): _lifted(side)
 	_pose(delta)
 	if fall != null: fall.step(delta)
 	if wake != null: wake.step(delta)
@@ -247,11 +259,23 @@ func _pose(delta: float) -> void:
 		var room := sqrt(maxf(longest*longest-run*run,1.0))
 		want = maxf(want,drop-room)
 	_sink = move_toward(_sink,want,SINK_RATE*delta)
-	position = Vector3(p2.x,level-_sink,p2.y)
+	position = Vector3(p2.x,level-_sink-crouch,p2.y)
 	rotation.y = turn
 	legs.goals = goal
 	var yaw := Quaternion(Vector3.UP,turn)
 	for side in range(2): legs.tilts[side] = yaw.inverse()*rock[side]*yaw
+
+## Put at `s` along the loop, both feet down (head_lift.gd: the plane's coming and
+## nobody waits a lap). False if he's there already.
+func stands_for_lift(s: float) -> bool:
+	if phase == STOP_PHASE and absf(along-s) < 1.0: return false
+	along = s
+	phase = STOP_PHASE
+	down = [true,true]
+	_sink = 0.0
+	_stand()
+	_pose(1000.0)
+	return true
 
 ## The first stance: both feet down, the left just landed.
 func _stand() -> void:
