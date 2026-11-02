@@ -346,6 +346,7 @@ class Built extends RefCounted:
 	var ms := 0.0
 
 var field: RefCounted
+var _to_sun := Vector3.ZERO
 var stats := {"tunnels":0,"tris":0,"torches":0,"stretches":0,"lights":0}
 ## The hall stretches' streamer.
 var halls: Node3D
@@ -392,9 +393,10 @@ var _sky_cut := false
 ## The sun (the brightest DirectionalLight3D).
 var _sun: DirectionalLight3D
 
-func setup(land_field: RefCounted, ground: Material = null) -> void:
+func setup(land_field: RefCounted, ground: Material = null, to_sun := Vector3.ZERO) -> void:
 	field = land_field
 	_ground = ground
+	_to_sun = Vector3(to_sun.x,0.0,to_sun.z).normalized()
 	_grow = WorldScale.span*0.5
 	_open_nave = Tunnels.open_nave()
 	# Made here, once: the workers' builds share them.
@@ -1319,6 +1321,7 @@ const LIP_BULGE_SIZE := 15.0
 const LIP_LEDGE := 1.1
 const LIP_LEDGE_SIZE := 4.5
 const LIP_WANDER := 1.1
+const ROCK_LEAN := 1.0
 func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 	var v := PackedVector3Array()
 	var nrm := PackedVector3Array()
@@ -1398,10 +1401,11 @@ func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 				var du := pts[mini(k+1,per-1)+i*per]-pts[maxi(k-1,0)+i*per]
 				var dv := pts[k+mini(i+1,LIP_RINGS)*per]-pts[k+maxi(i-1,0)*per]
 				var nm := du.cross(dv)
-				if nm.dot(out) < 0.0: nm = -nm
-				# The run back: no grass grows on it, so it shades as rock.
+				# Out of the face; on the run back, up, as it falls away inward.
 				var lean := smoothstep(LIP_FACE-0.08,LIP_FACE,float(i)/LIP_RINGS)
-				nm = nm.normalized()+out.normalized()*1.6*lean
+				if nm.dot(out.lerp(Vector3.UP,lean)) < 0.0: nm = -nm
+				# The run back: no grass grows on it, so it shades as rock, lit.
+				nm = nm.normalized()+_rock_lean(out)*lean
 				v.append(e)
 				nrm.append(nm.normalized())
 				col.append(Color(0.56*0.94+0.1*lumps[k+i*per],0.45*0.94+0.08*lumps[k+i*per],0.33*0.94+0.06*lumps[k+i*per],0.0))
@@ -1409,9 +1413,11 @@ func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 			for k in LIP_SPOKES:
 				var p := base+k+i*per
 				# Wound to face out (Godot's front faces are clockwise as seen).
-				var flip := (pts[k+1+i*per]-pts[k+i*per]).cross(pts[k+(i+1)*per]-pts[k+i*per]).dot(out) > 0.0
+				var way := out.lerp(Vector3.UP,smoothstep(LIP_FACE-0.08,LIP_FACE,(i+0.5)/LIP_RINGS))
+				var flip := (pts[k+1+i*per]-pts[k+i*per]).cross(pts[k+(i+1)*per]-pts[k+i*per]).dot(way) > 0.0
 				if flip: idx.append_array([p,p+per+1,p+1,p,p+per,p+per+1])
 				else: idx.append_array([p,p+1,p+per+1,p,p+per+1,p+per])
+		_mouth_sill(t,m,lf,v,nrm,col,idx)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = v
@@ -1420,6 +1426,55 @@ func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 	arrays[Mesh.ARRAY_INDEX] = idx
 	RockShape.bake(arrays)
 	return {"arrays":arrays,"tris":idx.size()/3}
+
+## The lean of a mouth's top faces, which grass paint would cover but no blades
+## grow on: past the ground shader's rock_up (0.8), toward the sun (else `out`),
+## so a mouth facing away from the sun doesn't paint them as its shaded face.
+func _rock_lean(out: Vector3) -> Vector3:
+	return (_to_sun if _to_sun != Vector3.ZERO else out)*ROCK_LEAN
+
+## The sill: rock under the land past a sunk mouth's end. The land's hole stops
+## short of the bore's corners, and the funnel stands over the floor there, so
+## from inside a low line of sight ran under the land's edge into the empty sky.
+## This sheet lies SILL_UNDER m under the land, from the bore's end to SILL_OUT m
+## out and SILL_HALF m across, wide enough for the hole at the coarsest land in
+## sight; near the bore it is held down to the floor, rising SILL_RISE a metre.
+const SILL_OUT := 36.0
+const SILL_HALF := 52.0
+const SILL_STEP := 2.5
+const SILL_UNDER := 1.0
+const SILL_IN := 2.0
+const SILL_RISE := 1.2
+func _mouth_sill(t: Tunnels.Site, m: int, lf: RefCounted, v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray, idx: PackedInt32Array) -> void:
+	var rows := ceili((SILL_OUT-SILL_IN)/SILL_STEP)
+	var cols := ceili(SILL_HALF*2.0/SILL_STEP)
+	var per := cols+1
+	var base := v.size()
+	var out := (_v(t,m,0.0,0.0,0.0)-_v(t,m,1.0,0.0,0.0)).normalized()
+	var pts := PackedVector3Array()
+	pts.resize(per*(rows+1))
+	for i in rows+1:
+		var a := -SILL_IN-i*SILL_STEP
+		for k in per:
+			var d := -SILL_HALF+k*SILL_STEP
+			var q := Tunnels.portal_point(t,m,a,d)
+			var y := minf(float(lf.height(q.x,q.y))-SILL_UNDER,t.floor_y-0.3+(-a-SILL_IN)*SILL_RISE)
+			pts[k+i*per] = _v(t,m,a,d,y)
+	for i in rows+1:
+		for k in per:
+			var du := pts[mini(k+1,per-1)+i*per]-pts[maxi(k-1,0)+i*per]
+			var dv := pts[k+mini(i+1,rows)*per]-pts[k+maxi(i-1,0)*per]
+			var nm := du.cross(dv)
+			if nm.y < 0.0: nm = -nm
+			v.append(pts[k+i*per])
+			nrm.append((nm.normalized()+_rock_lean(out)).normalized())
+			col.append(Color(0.56*0.94,0.45*0.94,0.33*0.94,0.0))
+	for i in rows:
+		for k in cols:
+			var p := base+k+i*per
+			var flip := (pts[k+1+i*per]-pts[k+i*per]).cross(pts[k+(i+1)*per]-pts[k+i*per]).y > 0.0
+			if flip: idx.append_array([p,p+per+1,p+1,p,p+per,p+per+1])
+			else: idx.append_array([p,p+1,p+per+1,p,p+per+1,p+per])
 
 ## The far doors (DOOR_FROM): a dark quad filling each gate's opening
 ## DOOR_IN m inside its front, facing out (so not seen from inside), drawn
