@@ -72,6 +72,14 @@ and no long ramp to the mouth.
    say so plainly and describe the closest thing seen, so the user can say
    whether that was it.
 
+   User's playtest after the pause: the ghost terrain is definitely still
+   there, at the entrance and the exit. The textures there look really
+   poor, and there are floating trees. The tunnel itself is pretty good.
+9. **Feels slow inside (later, after the user's break; no go yet).** The user
+   felt slow in the tunnel: not enough going on in there to make it feel
+   fast. They also felt the frame rate was a little low, but other things
+   were running on the PC, so have them fly a `--frame-log` before believing it.
+
 Do these in whatever order works. Do item 4 after item 3, since the path
 changes the mesh.
 
