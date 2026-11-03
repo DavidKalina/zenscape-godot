@@ -53,6 +53,10 @@ hands-off low flight:
 3. **The crests throw spray.** Spindrift blowing off the tall crests, with the
    wind, the thing that says "big" at a distance. Cheap: it runs round the eye
    and only in the belt. No cost anywhere else in the world.
+   The first pass (`captures/swell/t3e_high130.png`) has far puffs floating
+   off the crests that read as little beige clouds over the sea. Spray must
+   stay tied to a crest's lip and read as white water torn off it, near and
+   far. Fix it with the motion task, which judges the spray in motion anyway.
 4. **They hold up in motion.** No popping as the sheet moves under the eye, no
    shimmer or swim on the far waves, and a calm join where the waves flatten
    with distance (the sheet's heave fades 2.2 to 3.2 km from the eye). The
