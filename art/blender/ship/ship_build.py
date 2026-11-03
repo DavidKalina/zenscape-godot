@@ -85,6 +85,14 @@ COR_H = 10.0
 COR_FLOOR = 3.0
 COR_TOP = COR_FLOOR + COR_H
 COR_Z = COR_FLOOR + COR_H * 0.5   # the flight line's height
+# The funnel: the tunnel closes in to the gun deck's lines at the bow's plate, its
+# walls from TUNNEL_X and its floor and roof from the lips, over FUNNEL_LEN forward of
+# the plate, so a plane off the middle coming in from the bow is turned in along
+# them and glances, never meeting a face (pirate_ship.gd FUNNEL, `_way_at`). Its walls
+# meet the plate on the gun deck's wall line.
+FUNNEL_LEN = 6.0
+FUNNEL_IN = COR_W * 0.5 + 0.06
+FUNNEL_STEP = 0.5         # the solid's stations along it (m)
 # The plugs: each fills the corridor's end, this big, in the flat of that end.
 CRACK_W = 18.0
 CRACK_H = 10.0
@@ -295,12 +303,33 @@ def half_at(y, z):
 	return half_beam(u_at(y, z), z)
 
 
-def cross_y(z, x=TUNNEL_X):
-	"""Where the prow's side at base height z comes in to x: the tunnel's mouth."""
+def funnel(y):
+	"""How open the funnel is at station y: 0 at the bow's plate, 1 from FUNNEL_LEN on."""
+	return min(1.0, max(0.0, (y - Y_BOW) / FUNNEL_LEN))
+
+
+def tunnel_x(y, inner=FUNNEL_IN):
+	"""The tunnel's walls' half width at station y, `inner` at the plate."""
+	return lerp(inner, TUNNEL_X, funnel(y))
+
+
+def tunnel_lo(y):
+	"""The tunnel's floor at station y: the gun deck's at the plate, the lower lip's on."""
+	return lerp(COR_FLOOR, TUNNEL_LO, funnel(y))
+
+
+def tunnel_hi(y):
+	"""Its roof: the gun deck's at the plate, the upper lip's underside on."""
+	return lerp(COR_TOP, TUNNEL_HI, funnel(y))
+
+
+def cross_y(z, x=None):
+	"""Where the prow's side at base height z comes in to x, or to the tunnel's walls
+	(the funnel's, then TUNNEL_X): the tunnel's mouth."""
 	lo, hi = Y_BOW, stem_y(z)
 	for _ in range(40):
 		mid = (lo + hi) * 0.5
-		if half_beam(mid, z) > x:
+		if half_beam(mid, z) > (tunnel_x(mid) if x is None else x):
 			lo = mid
 		else:
 			hi = mid
@@ -458,7 +487,8 @@ class Opening:
 		hit = None
 		hw = CRACK_W * 0.5
 		if z1 > COR_Z - CRACK_H * 0.5 + 0.01 and z0 < COR_Z + CRACK_H * 0.5 - 0.01:
-			w = min(self.surf.half_w(zm), TUNNEL_X) - 0.25
+			# The bow's plug reaches just into the funnel's walls, which hide its edge.
+			w = min(self.surf.half_w(zm), TUNNEL_X if self.surf.sign < 0 else FUNNEL_IN + 0.5) - 0.25
 			hit = (-min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)), min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)))
 		self.memo[j] = hit
 		return hit
@@ -955,30 +985,39 @@ def build_bottom(g):
 
 def build_tunnel(g):
 	"""The prow's cut: walls back to the bow's plate, the lips' faces over and under the
-	way out, and timbers round the opening, all outside the exit's rectangle."""
+	way out, and timbers round the opening, all outside the exit's rectangle. Its last
+	FUNNEL_LEN close in to the gun deck's lines at the plate (`tunnel_x`, `tunnel_lo`,
+	`tunnel_hi`): no face round the plate looks forward."""
 	lining = (0.16, 0.12, 0.095)
 	rng = random.Random(71)
+	in_end = Y_BOW + FUNNEL_LEN
 	for s in (-1.0, 1.0):
-		# The walls: planks along her at x +-TUNNEL_X, from the plate to the mouth.
+		# The walls: planks along her, in from the mouth to the plate's sides.
 		for j in range(ROW_LO, ROW_HI):
 			z0, z1 = row_z(j), row_z(j + 1)
-			y1 = cross_y((z0 + z1) * 0.5)
+			y1 = cross_y((z0 + z1) * 0.5) + 0.2
 			t = rng.uniform(0.75, 1.1)
-			a, b = Vector((s * TUNNEL_X, Y_BOW - 0.3, z0)), Vector((s * TUNNEL_X, y1 + 0.2, z0))
-			c, d = Vector((s * TUNNEL_X, y1 + 0.2, z1 - 0.03)), Vector((s * TUNNEL_X, Y_BOW - 0.3, z1 - 0.03))
-			g.quad(a, b, c, d, "wood", (lining[0] * t, lining[1] * t, lining[2] * t), hint=Vector((-s, 0, 0)))
+			col = (lining[0] * t, lining[1] * t, lining[2] * t)
+			ys = [Y_BOW - 0.05] + ([in_end] if in_end < y1 - 0.1 else []) + [y1]
+			for a, b in zip(ys, ys[1:]):
+				xa, xb = s * tunnel_x(a), s * tunnel_x(b)
+				lean = (tunnel_x(b) - tunnel_x(a)) / (b - a)
+				g.quad(Vector((xa, a, z0)), Vector((xb, b, z0)), Vector((xb, b, z1 - 0.03)), Vector((xa, a, z1 - 0.03)), "wood", col, hint=Vector((-s, lean, 0)))
 		# The cut's edge up the side, a timber, and one along each lip to the stem.
-		side = [(s * TUNNEL_X + s * 0.2, cross_y(z), z) for z in frange(TUNNEL_LO - 0.3, TUNNEL_HI + 0.3, 1.2)]
+		side = [(s * (tunnel_x(cy) + 0.2), cy, z) for z in frange(TUNNEL_LO - 0.3, TUNNEL_HI + 0.3, 1.2) for cy in (cross_y(z),)]
 		g.tube(side, [CUT_R] * len(side), 8, "wood", (0.2, 0.15, 0.11))
 		for z, zt in ((TUNNEL_LO, TUNNEL_LO - CUT_R), (TUNNEL_HI, TUNNEL_HI + CUT_R)):
 			edge = [(s * (half_beam(y, z) + 0.1), y, zt) for y in frange(cross_y(z), stem_y(z) - 0.6, 1.4)]
 			g.tube(edge, [CUT_R] * len(edge), 8, "wood", (0.2, 0.15, 0.11))
-	# The lips' faces: the floor up, the roof down, the hull's width to the stem.
-	for z, up, col in ((TUNNEL_LO, 1.0, (0.2, 0.165, 0.13)), (TUNNEL_HI, -1.0, lining)):
-		ys = frange(Y_BOW - 0.3, stem_y(z) - 0.02, 1.0)
+	# The lips' faces: the floor up, the roof down, the hull's width to the stem, each
+	# leaning to the gun deck's floor and roof over the funnel. The floor's runs on
+	# under the plate's foot to the gun deck's own.
+	for z, up, col, at, y0 in ((TUNNEL_LO, 1.0, (0.2, 0.165, 0.13), tunnel_lo, Y_BOW - 0.5), (TUNNEL_HI, -1.0, lining, tunnel_hi, Y_BOW - 0.05)):
+		ys = [y0] + frange(Y_BOW, in_end, 1.0) + frange(in_end, stem_y(z) - 0.02, 1.0)[1:]
 		for a, b in zip(ys, ys[1:]):
 			wa, wb = half_beam(a, z), half_beam(b, z)
-			g.quad(Vector((-wa, a, z)), Vector((wa, a, z)), Vector((wb, b, z)), Vector((-wb, b, z)), "wood", col, hint=Vector((0, 0, up)))
+			za, zb = at(a), at(b)
+			g.quad(Vector((-wa, a, za)), Vector((wa, a, za)), Vector((wb, b, zb)), Vector((-wb, b, zb)), "wood", col, hint=Vector((0, 0, up)))
 	# A stone boss at the stem's head, over the cut.
 	y = stem_y(14.0)
 	g.box(-1.6, 1.6, y - 2.4, y + 0.6, 13.6, 16.6, "paint", STONE)
@@ -3075,17 +3114,20 @@ def solid_cut(y, z):
 		return None
 	if COR_FLOOR <= z < COR_TOP and abs(y) < Y_BOW:
 		return COR_W * 0.5
-	if TUNNEL_LO <= z < TUNNEL_HI and y >= Y_BOW:
-		return TUNNEL_X
+	# The tunnel, its funnel stepped from the gun deck's own lines at the plate: each
+	# step (y its middle) as wide as its forward end, so none stands proud of the line.
+	if y >= Y_BOW and tunnel_lo(y) <= z < tunnel_hi(y):
+		return tunnel_x(y + FUNNEL_STEP * 0.5, COR_W * 0.5)
 	return 0.0
 
 
 def solid_stations():
-	"""Along her, SOLID_STEP at most, on every place the solid's makeup changes."""
-	cuts = sorted({SOLID_FROM, SOLID_TO, -Y_BOW, Y_BOW, BREAK_HIGH, BREAK_POOP, BREAK_FORE})
+	"""Along her, SOLID_STEP at most (FUNNEL_STEP along the funnel), on every place the
+	solid's makeup changes."""
+	cuts = sorted({SOLID_FROM, SOLID_TO, -Y_BOW, Y_BOW, Y_BOW + FUNNEL_LEN, BREAK_HIGH, BREAK_POOP, BREAK_FORE})
 	out = [SOLID_FROM]
 	for a, b in zip(cuts, cuts[1:]):
-		n = max(1, int(math.ceil((b - a) / SOLID_STEP - 1e-6)))
+		n = max(1, int(math.ceil((b - a) / (FUNNEL_STEP if a == Y_BOW else SOLID_STEP) - 1e-6)))
 		out += [a + (b - a) * (i + 1) / n for i in range(n)]
 	return out
 

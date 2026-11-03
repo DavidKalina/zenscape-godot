@@ -51,6 +51,7 @@ extends Node3D
 ## anchored to `coast/ship`, so she alone carries it (`carries`).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
+const SkyGlide = preload("res://scripts/sky_glide.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const SmashBreaks = preload("res://scripts/breaks/smash_breaks.gd")
@@ -131,8 +132,10 @@ const LONG := 110.0
 const FLOOR_Y := 3.0
 const DRAUGHT := 6.0
 const PLATE := 1.5
-## How far from a plate a touch stops being a glance.
+## How far from a shut plate a touch stops being a glance.
 const END_ROOM := 2.0
+## The most the plane is held off a corridor wall in a frame (`_keep_off_walls`, m).
+const KEEP_MOST := 0.8
 const DECK := 2.0
 ## The hull's half breadth at its widest, by the guns (ship_build.py BEAM), and at
 ## the waterline amidships.
@@ -143,10 +146,16 @@ const BEAM_WET := 12.9
 ## otherwise keeps the model's walls).
 const SOLIDS := preload("res://assets/models/pirate_ship/ship_solids.gd")
 ## The prow's tunnel past the bow's plate (ship_build.py TUNNEL_*): its walls' half
-## width and where they end, its floor on the lower lip and roof under the upper,
-## and where each lip ends at the stem (m, her frame's -z).
+## width, where they end by the lips and at their longest (the mouth's edge, half
+## way up), its floor on the lower lip and roof under the upper, and where each lip
+## ends at the stem (m, her frame's -z). Over FUNNEL m forward of the plate
+## (ship_build.py FUNNEL_LEN) walls, floor and roof close in to the gun deck's at the
+## plate (`_way_at`), so no face there looks forward and an off-centre plane from the
+## bow glances in.
 const TUNNEL_X := 10.4
-const TUNNEL_MOUTH := 60.5
+const TUNNEL_MOUTH := 61.3
+const TUNNEL_END := 62.5
+const FUNNEL := 6.0
 const TUNNEL_LO := 2.6
 const TUNNEL_HI := 13.4
 const LIP_LO := 72.65
@@ -591,29 +600,60 @@ func in_corridor(p: Vector3, pad := 0.0) -> bool:
 	return l.z > -LIP_HI-pad and absf(l.x) < TUNNEL_X and l.y > TUNNEL_LO-1.0 and l.y < TUNNEL_HI+1.0
 
 ## The way through at `z` (her frame): Vector3(the walls' half width, the floor, the
-## roof); the gun deck's, or the prow's tunnel's, open at the sides past its mouth
-## and underneath past the lower lip.
+## roof); the gun deck's, or the prow's tunnel's (in the funnel, closing in to the gun
+## deck's at the plate), open at the sides past its mouth and underneath past the
+## lower lip.
 func _way_at(z: float) -> Vector3:
 	if z > -LONG*0.5: return Vector3(wide*0.5,FLOOR_Y,FLOOR_Y+high)
-	return Vector3(TUNNEL_X if z > -TUNNEL_MOUTH else INF,TUNNEL_LO if z > -LIP_LO else -INF,TUNNEL_HI)
+	var t := _funnel(z)
+	return Vector3(lerpf(wide*0.5,TUNNEL_X,t) if z > -TUNNEL_END else INF,lerpf(FLOOR_Y,TUNNEL_LO,t) if z > -LIP_LO else -INF,lerpf(FLOOR_Y+high,TUNNEL_HI,t))
+
+## How open the prow's funnel is at `z` (her frame): 0 at the bow plate's face and
+## aft of it, 1 from FUNNEL m forward of it on.
+static func _funnel(z: float) -> float:
+	return clampf((-z-LONG*0.5-PLATE)/FUNNEL,0.0,1.0)
 
 ## The way off the gun deck's (or the prow tunnel's) nearest wall, roof or floor,
 ## in the world, for FlightContact: a touch in there is glanced off, never a
-## crash. ZERO outside it, or within END_ROOM of a plate, where a shut plate still
-## stops the plane.
+## crash. In the funnel its faces lean to the bow, so the way off them leans that
+## way too and a plane coming in is turned in along them. ZERO outside it, or within
+## END_ROOM of a plate still shut, which stops the plane.
 func deck_way_off(p: Vector3, what := "") -> Vector3:
 	var l := local(p)
 	if state == SINKING and not in_corridor(p): return _wreck_way_off(p,l,what)
 	if state == GONE: return Vector3.ZERO
-	if not in_corridor(p) or (state == AFLOAT and absf(absf(l.z)-LONG*0.5-PLATE*0.5) < END_ROOM+PLATE*0.5): return Vector3.ZERO
+	if not in_corridor(p) or (state == AFLOAT and _by_shut_plate(l)): return Vector3.ZERO
 	var w := _way_at(l.z)
-	var side := w.x-absf(l.x)
+	var wall := _wall_off(l)
+	var side := wall.x
 	var roof := w.z-l.y
 	var floor_gap := l.y-w.y
-	var off := Vector3(-signf(l.x),0.0,0.0)
-	if roof < side and roof <= floor_gap: off = Vector3.DOWN
-	elif floor_gap < side: off = Vector3.UP
+	var t := _funnel(l.z)
+	var lean := 1.0/FUNNEL if t > 0.0 and t < 1.0 else 0.0
+	var off := Vector3(wall.y,0.0,wall.z)
+	if roof < side and roof <= floor_gap: off = Vector3(0.0,-1.0,-(TUNNEL_HI-FLOOR_Y-high)*lean)
+	elif floor_gap < side: off = Vector3(0.0,1.0,-(FLOOR_Y-TUNNEL_LO)*lean)
 	return (transform.basis*off).normalized()
+
+## The nearest wall to `l` (her frame) across the floor: Vector3(the gap from it, the
+## way off it in x, in z): the gun deck's walls, the funnel's leaning in, the
+## tunnel's to their end, then just past it the mouth's edge itself; INF where none.
+func _wall_off(l: Vector3) -> Vector3:
+	var s := signf(l.x)
+	if l.z > -TUNNEL_END:
+		var t := _funnel(l.z)
+		var k := (TUNNEL_X-wide*0.5)/FUNNEL if t > 0.0 and t < 1.0 else 0.0
+		var n := sqrt(1.0+k*k)
+		return Vector3((_way_at(l.z).x-absf(l.x))/n,-s/n,-k/n)
+	var c := Vector2(l.x-s*TUNNEL_X,l.z+TUNNEL_END)
+	if c.length() < 0.01: return Vector3(0.0,-s,0.0)
+	return Vector3(c.length(),c.x/c.length(),c.y/c.length())
+
+## Within END_ROOM of a plate still shut (her frame): a touch there is the plate's,
+## graded as anywhere. Open, it leaves the gun deck's walls and the funnel to glance.
+func _by_shut_plate(l: Vector3) -> bool:
+	if absf(absf(l.z)-LONG*0.5-PLATE*0.5) >= END_ROOM+PLATE*0.5: return false
+	return not bool(plates["bow" if l.z < 0.0 else "stern"].open)
 
 ## One frame, before the surge and the plane's: she sails, the plates come back,
 ## the guns aim and fire.
@@ -627,6 +667,7 @@ func before(delta: float) -> void:
 	_ride_step(delta)
 	_pose()
 	if _sails != null: _sails.step(delta,position,way,state == SINKING)
+	_keep_off_walls()
 	var p: Vector3 = game.plane.position
 	var d := p.distance_to(position)
 	skim = SKIM_SCALE if state == AFLOAT and d < SKIM_NEAR else 1.0
@@ -639,6 +680,32 @@ func before(delta: float) -> void:
 	if bool(game.smash.hot) and in_corridor(p,12.0): game.smash.keep_hot(0.3)
 	_guns_step(delta,p,d)
 	if state == SINKING: _sink_step(delta,p,d)
+
+## The plane's middle held off the gun deck's and the tunnel's walls (the funnel's by
+## the plate, the mouth's edge past their end; `_wall_off`) by the reach its roll
+## gives it this frame (the study's `solid_pad`): a roll that widens it by a wall, or
+## her own roll bringing a wall to it, would start its move inside her solid, which
+## SkyGlide can only lift it out of, onto her deck. Only ever off the wall, and only
+## a little (a plane deeper in is the move's to put back). Likewise under her roof.
+func _keep_off_walls() -> void:
+	var plane = game.plane
+	var p: Vector3 = plane.position
+	# Out through the stern's plate too, under the exit's head.
+	if state != AFLOAT or not in_corridor(p,PLATE+0.5): return
+	var l := local(p)
+	if _by_shut_plate(l): return
+	var was := l
+	var wall := _wall_off(l)
+	var short := WorldScale.reach_rolled(float(plane.bank)+float(plane.spin))+0.02-wall.x
+	if short > 0.0 and short <= KEEP_MOST: l += Vector3(wall.y,0.0,wall.z)*short
+	# Riding under the roof (SkyGlide `_under`), held CLEAR under it as she pitches or
+	# heaves down onto it: a roof come nearer than that lifts the plane onto her deck.
+	# The funnel's solid keeps the gun deck's roof to half way along it (ship_build.py
+	# steps that band there), under its leaning line.
+	if l.z > -TUNNEL_END:
+		var lid := (FLOOR_Y+high if _funnel(l.z) < 0.5 else _way_at(l.z).z)-SkyGlide.CLEAR-0.05
+		if l.y > lid and l.y < lid+KEEP_MOST: l.y = lid
+	if l != was: plane.position = transform*l
 
 ## One frame, after the plane's: the balls fly and meet it. `events` as the
 ## study's: "scrape", "lost".
@@ -1409,18 +1476,19 @@ func _shards_step(delta: float) -> void:
 				v *= maxf(1.0-SHARD_RUB*delta,0.0)
 				low = true
 		elif at.z < -LONG*0.5 and at.z > -LIP_HI:
-			# Out the prow: its tunnel's walls to the mouth, its lips over and under,
-			# each narrowing to the stem.
-			if at.z > -TUNNEL_MOUTH and absf(at.x) > TUNNEL_X-SHARD_ROOM and absf(at.x) < TUNNEL_X+2.0:
-				at.x = signf(at.x)*(TUNNEL_X-SHARD_ROOM)
+			# Out the prow: its tunnel's walls to the mouth (the funnel's, by the plate),
+			# its lips over and under, each narrowing to the stem.
+			var way := _way_at(at.z)
+			if absf(at.x) > way.x-SHARD_ROOM and absf(at.x) < way.x+2.0:
+				at.x = signf(at.x)*(way.x-SHARD_ROOM)
 				v.x *= -SHARD_BOUNCE
 			var lip := TUNNEL_X*sqrt(clampf((LIP_HI+at.z)/(LIP_HI-TUNNEL_MOUTH),0.0,1.0))
-			if absf(at.x) < lip and at.y > TUNNEL_HI-SHARD_ROOM and at.y < TUNNEL_HI+3.0:
-				at.y = TUNNEL_HI-SHARD_ROOM
+			if absf(at.x) < lip and at.y > way.z-SHARD_ROOM and at.y < way.z+3.0:
+				at.y = way.z-SHARD_ROOM
 				v.y = -absf(v.y)*SHARD_BOUNCE
 			lip = TUNNEL_X*sqrt(clampf((LIP_LO+at.z)/(LIP_LO-TUNNEL_MOUTH),0.0,1.0))
-			if absf(at.x) < lip and at.y < TUNNEL_LO+SHARD_ROOM and at.y > TUNNEL_LO-3.0:
-				at.y = TUNNEL_LO+SHARD_ROOM
+			if absf(at.x) < lip and at.y < way.y+SHARD_ROOM and at.y > way.y-3.0:
+				at.y = way.y+SHARD_ROOM
 				v.y = absf(v.y)*SHARD_BOUNCE
 				v *= maxf(1.0-SHARD_RUB*delta,0.0)
 				low = true
