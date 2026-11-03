@@ -1,5 +1,5 @@
 extends Node3D
-## The ground the burrower runs in (burrower.gd, push_ups.gd,
+## The ground the burrower runs in (burrower.gd,
 ## tree_shudder.gd): what they ask of the land. The study's land
 ## (burrower_land.gd) and endless flight's (game_land.gd) fill it in.
 
@@ -76,7 +76,7 @@ func trees_near(_at: Vector2, _r: float) -> PackedFloat32Array:
 	return PackedFloat32Array()
 
 ## The top (world y) of the tallest tree within `r` m of `at`, or -INF: a
-## forest's roof, for a plane skimming it and a push-up rising through it.
+## forest's roof, for a plane skimming it.
 func canopy_top(_at: Vector2, _r: float) -> float:
 	return -INF
 

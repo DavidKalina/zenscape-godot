@@ -121,13 +121,12 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		if band == "razor": _hold(0.25,50)
 		if not _bank.is_empty() and not _bank.has("cut"): _bank.cut = float(_bank.age)
 		if not _loss.is_empty(): _loss.age = maxf(float(_loss.age),LOSS_TIME-0.2)
-		# A push-up has no clearance to show.
-		if not bool(m.get("chime",false)) and is_finite(float(m.clear)): _clear = {"m":float(m.clear),"band":band,"age":0.0}
+		if is_finite(float(m.clear)): _clear = {"m":float(m.clear),"band":band,"age":0.0}
 		var filler := bool(m.get("filler",false))
 		# A filler moment takes no pop; the ring needs a glyph only if it's the line's first.
 		if not filler or _moves.is_empty():
 			_moves.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
-				"points":float(m.points),"clear":float(m.clear),"age":1.0 if filler else 0.0,"chime":bool(m.get("chime",false))})
+				"points":float(m.points),"clear":float(m.clear),"age":1.0 if filler else 0.0})
 			if _moves.size() > 64: _moves.resize(64)
 		if not filler:
 			_jolt = 0.0
@@ -183,6 +182,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		_loss.age += delta*(1.4 if bool(_loss.crash) else 1.0)
 		if float(_loss.age) >= LOSS_TIME: _loss = {}
 	_flare = maxf(_flare-delta,0.0)
+	_meter_rise(near)
 	_place_ring()
 	_prev_chain = near.chain_points
 	_prev_mult = mult
@@ -494,7 +494,6 @@ func _draw_bank_c(s: float) -> void:
 		var nw := _width(_nums,text,npx)
 		var mpx := 20.0*s
 		_txt(_block,_nums_i,"×%s" % String.num(float(_bank.mult),1),Vector2(at.x+nw+10.0*s,c.y+3.0*s),mpx,Color(CREAM,alpha*k),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
-	if a >= _slam_end() and a < _slam_end()+0.05: _flare = 0.4
 	if has_line and k > 0.0:
 		if _bank.line.has("shape"): _draw_recap(s,c,px,a-read,alpha)
 		else: _draw_banner(s,c,px,a-read,alpha)

@@ -4,7 +4,7 @@ extends "res://scripts/burrower/burrower_ground.gd"
 ## (studies/endless_flight.gd `water_at`). No lists and no rim: it feels
 ## ahead with `open` (steep ground, and the game's rocks, sea stacks, arches,
 ## ruins, halls and tunnels; not trees, it runs through a forest), and `room` is
-## 0 where it can't run (so a start, a resurfacing or a push-up there is
+## 0 where it can't run (so a start or a resurfacing there is
 ## passed over) and ROOM elsewhere. Trees are asked of the game's own stand
 ## near the head (`trees_near`, `canopy_top`, `stand_ahead`): it has no nodes
 ## for them, so `trees` stays empty.
@@ -229,23 +229,6 @@ func room(at: Vector2) -> float:
 ## Water over the bed here.
 func wet(at: Vector2) -> bool:
 	return height(at.x,at.y) < water_y(at.x,at.y)-WET_DEEP
-
-## Water all the way `length` m from `at` along `way` (unit).
-func wet_along(at: Vector2, way: Vector2, length: float) -> bool:
-	return wet_run(at,way,length,WET_DEEP) >= length
-
-## The middles of the stood plan cells with STAND_N trees or more within `r` m of
-## `at`, thickest first (only cells that have loaded: there's no planning here).
-func stands_round(at: Vector2, r: float) -> Array:
-	var lo := TreePlan.cell_of(at.x-r,at.y-r)
-	var hi := TreePlan.cell_of(at.x+r,at.y+r)
-	var found: Array = []
-	for cz in range(lo.y,hi.y+1):
-		for cx in range(lo.x,hi.x+1):
-			var n: int = game.trees.cell_trees(Vector2i(cx,cz)).size()/8
-			if n >= STAND_N: found.append([n,(Vector2(cx,cz)+Vector2(0.5,0.5))*TreePlan.CELL])
-	found.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
-	return found.map(func(f: Array) -> Vector2: return f[1])
 
 ## How far (m, at most `most`) water `deep` m over the bed runs from `at` along `way` (unit).
 func wet_run(at: Vector2, way: Vector2, most: float, deep: float) -> float:

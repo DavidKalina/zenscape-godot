@@ -354,6 +354,10 @@ var halls: Node3D
 const DRY_CUTS := 8
 ## The look's clouds (their valley fog hushed in the bore), or null.
 var clouds: Node
+## The burrower's spurs, stone that stands in the bores (scripts/endless/bore_spurs.gd), or null.
+var spurs: Node3D
+## The plugs he brings down across them (scripts/endless/bore_plug.gd), or null.
+var plugs: Node3D
 ## The land's ground material, which a sunk cave's mouth rock wears.
 var _ground: Material
 ## The sea's material, cut along the sunk tunnels' ramps (`_cut_sea`), or null.
@@ -894,6 +898,8 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 			# the aisle behind, where every way out was a column or the wall.
 			if _open_nave and _in_nave(t,p): return cover
 			var list: Array = halls.stretches(p,pad)
+			if spurs != null: spurs.stretches(p,grow,list)
+			if plugs != null: plugs.stretches(p,grow,list)
 			list.append(Vector2(b.y,cover))
 			return LandHalls.over(p,b.x,list)
 		if cover > h: return cover
@@ -1020,11 +1026,21 @@ func land_y(p: Vector3, h: float) -> float:
 		if cover != h: return cover
 	return h
 
+## The tunnels stood now (built, so a mouth among them is there to fly into).
+func stood() -> Array:
+	return _sites
+
+## Whether the tunnel called `tunnel` stands now.
+func has_built(tunnel: String) -> bool:
+	return _built.has(tunnel)
+
 ## True inside the rock round a bore or a portal's block (the camera keeps
 ## out, the wheels stop): under the tube's floor, over its roof under the
 ## cover, or in the walls beside it under the land.
 func inside(p: Vector3) -> bool:
 	if halls.inside(p): return true
+	if spurs != null and spurs.inside(p): return true
+	if plugs != null and plugs.inside(p): return true
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
 		var sh := Tunnels.shaft_at(t,p.x,p.z)
@@ -1057,6 +1073,8 @@ func sight(from: Vector3, to: Vector3) -> float:
 	for i in range(1,n+1):
 		var p := from.lerp(to,float(i)/n)
 		var got := tube(p)
+		if got == 0 and spurs != null and spurs.inside(p): got = 1
+		if got == 0 and plugs != null and plugs.inside(p): got = 1
 		if got < 0:
 			whole = false
 			if inside(p) or p.y < land_y(p,field.height(p.x,p.z)): got = 1
@@ -1694,6 +1712,24 @@ static func _basalt_material(t: Tunnels.Site) -> ShaderMaterial:
 ## (ROCK_LUMP; none in the portals, so the opening stays true) and a flat
 ## floor of FLOOR_SEGS strips between the walls' feet. Indexed, its normals
 ## smoothed, so the lumps shade.
+## The lumps of the carved rock: ridged noise, so it reads broken rather than poured
+## (`_build_rock`; the burrower's ridge in a bore lies on the same rock).
+static func rock_grain(t: Tunnels.Site) -> FastNoiseLite:
+	var grain := FastNoiseLite.new()
+	grain.seed = hash([t.seed,"grain"]) & 0x7fffffff
+	grain.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	grain.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	grain.fractal_octaves = 3
+	grain.frequency = 1.0/Tunnels.ROCK_GRAIN
+	return grain
+
+## How far the lumps reach out of the profile (m) at distance `s`.
+static func rock_lump(t: Tunnels.Site, s: float) -> float:
+	if s <= 0.0 or s >= t.length: return 0.0
+	var lump := ROCK_LUMP*(0.45+0.55*Tunnels.cave_ease(t,s))
+	if t.sunk: lump *= CAVE_LUMP*smoothstep(0.0,Tunnels.CAVE_CALM,minf(s,t.length-s))
+	return lump
+
 func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -1707,13 +1743,7 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		for k in range(1,sub): ss.append(lerpf(prev,s,float(k)/sub))
 		ss.append(s)
 	ss.append_array([t.length,t.length+ends])
-	# The lumps: ridged noise, so the rock reads broken rather than poured.
-	var grain := FastNoiseLite.new()
-	grain.seed = hash([t.seed,"grain"]) & 0x7fffffff
-	grain.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	grain.fractal_type = FastNoiseLite.FRACTAL_RIDGED
-	grain.fractal_octaves = 3
-	grain.frequency = 1.0/Tunnels.ROCK_GRAIN
+	var grain := rock_grain(t)
 	var pos := PackedVector3Array()
 	var inward := PackedVector3Array()
 	var per := RING_SEGS+1+FLOOR_SEGS+1
@@ -1727,8 +1757,7 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		var n3 := Vector3(n.x,0.0,n.y)
 		var pr := Tunnels.profile(t,s)
 		var e := Tunnels.cave_ease(t,s)
-		var lump := 0.0 if s <= 0.0 or s >= t.length else ROCK_LUMP*(0.45+0.55*e)
-		if t.sunk: lump *= CAVE_LUMP*smoothstep(0.0,Tunnels.CAVE_CALM,minf(s,t.length-s))
+		var lump := rock_lump(t,s)
 		var fy := Tunnels.floor_at(t,s)
 		var hw := (pr.x+pr.y)*0.5
 		var feet: Array = []

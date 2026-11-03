@@ -51,11 +51,13 @@ extends RefCounted
 ## `difficulty`) to the multiplier, cut by the farming cut and by its
 ## repeats in the line (a move's nth repeat adds 1/(n+1) of it); a kind new
 ## to a line already under way adds NEW_KIND more. The multiplier starts at
-## x1 and stops at CHAIN_TOP. BANK_AFTER s with no new moment banks it,
-## points x multiplier, into the meter (METER_FULL points fill it), or at once,
-## skimming or holding a move too, when that would fill the meter; reads the
+## x1 and stops at CHAIN_TOP. The meter fills live as the chain grows: its
+## points x multiplier, as they rise, over `meter_full` (none while the surge
+## is held or the smash is hot). BANK_AFTER s with no new moment banks the
+## chain, points x multiplier, into the score only; reads the
 ## line back (`_line`, the frame's "line", paid by `game.book`); a scrape
-## or crash (`lose`) drops what is unbanked. Each moment kicks the speed a
+## or crash (`lose`) drops what is unbanked, and the meter keeps what it
+## has. Each moment kicks the speed a
 ## little (KICK m/s by closeness). The surge (`fly_surge` held) spends the
 ## meter over SURGE_TIME s full, driving the plane past Boost (SkyPlane
 ## `surge`).
@@ -155,7 +157,7 @@ var closing := 0.0
 ## A body point in something (see the header), or {}.
 var touching := {}
 ## The chain: its points (before the multiplier), its moments, the seconds
-## left before it banks, and the meter (0 to 1) it banks into.
+## left before it banks, and the meter (0 to 1) it fills as it grows.
 var chain_points := 0.0
 var chain_count := 0
 ## The multiplier as the line has built it (`multiplier` caps it), and how
@@ -164,6 +166,9 @@ var chain_mult := 1.0
 var _kinds := {}
 var bank_left := 0.0
 var meter := 0.0
+## The unbanked line's points x multiplier already gone into the meter (or
+## passed by while surging): the meter fills live by what's past it.
+var _metered := 0.0
 ## How hard the surge drives now (0 to 1; SkyPlane `surge`).
 var surge := 0.0
 ## The nearest thing in reach now (m; INF: none, or slow, or not flying):
@@ -216,6 +221,9 @@ var _last_ground := INF
 var _near_id := 0
 var _near_c := INF
 var _near_what := "stone"
+## The nearest stone this frame is a burrower's spur (BoreSpurs `holds`).
+var _near_spur := false
+var _near_body: Object
 
 ## One channel's moment.
 class Tracker:
@@ -231,6 +239,8 @@ class Tracker:
 	var closing := 0.0
 	var sides := 0
 	var over := false
+	## It came near a burrower's spur: a graze though the bore is overhead.
+	var spur := false
 	## The roll at the least (radians), and each wing's least (a gap's sides).
 	var roll := 0.0
 	var wl := INF
@@ -241,6 +251,7 @@ class Tracker:
 		closing = 0.0
 		sides = 0
 		over = false
+		spur = false
 		wl = INF
 		wr = INF
 		least = clear
@@ -274,6 +285,7 @@ func _clear_line() -> void:
 	chain_points = 0.0
 	chain_count = 0
 	chain_mult = 1.0
+	_metered = 0.0
 	_kinds.clear()
 	line_moments.clear()
 
@@ -331,6 +343,7 @@ func measure(delta: float, game: Node3D) -> void:
 	var half := WorldScale.span*0.5
 	var reach := STONE_REACH*WorldScale.span
 	_near_c = INF
+	_near_body = null
 	var xf := Transform3D(Basis.from_euler(Vector3(float(plane.pitch),float(plane.heading),-(float(plane.bank)+float(plane.spin)))),plane.position)
 	touching = {}
 	overhead = false
@@ -386,7 +399,9 @@ func measure(delta: float, game: Node3D) -> void:
 			_near_c = c
 			_near_id = hash([hit.collider.get_instance_id(),hit.shape])
 			_near_what = "stone"
+			_near_body = hit.collider
 	if game.tunnels != null and int(game.tunnels.tube(xf.origin)) == 0: overhead = true
+	_near_spur = game.tunnels != null and game.tunnels.spurs != null and game.tunnels.spurs.holds(_near_body)
 	stone_clear = minf(minf(left_clear,right_clear),over_clear)
 
 ## The clearance along one wing (`side` -1 left, 1 right): two rays out
@@ -409,6 +424,7 @@ func _wing(space: PhysicsDirectSpaceState3D, game: Node3D, xf: Transform3D, side
 			_near_c = c
 			_near_id = hash([hit.collider.get_instance_id(),hit.shape])
 			_near_what = what
+			_near_body = hit.collider
 		if c < 0.0 and touching.is_empty():
 			touching = {"at":hit.position,"normal":-out,"what":what}
 	return best
@@ -458,7 +474,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 			_ground.id = hash(Vector2i(floori(ground_at.x/FARM_CELL),floori(ground_at.z/FARM_CELL)))
 	# The stone's moment.
 	var stone_reach := STONE_REACH*WorldScale.span
-	if _track(_stone,stone_clear,stone_reach,speed,game) and not _stone.over:
+	if _track(_stone,stone_clear,stone_reach,speed,game) and (_stone.spur or not _stone.over):
 		_moment("thread" if _stone.sides == 3 else "graze",_stone,stone_reach,cruise,out,game)
 	if _stone.active:
 		if left_clear < stone_reach: _stone.sides |= 1
@@ -466,6 +482,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		_stone.wl = minf(_stone.wl,left_clear)
 		_stone.wr = minf(_stone.wr,right_clear)
 		if overhead: _stone.over = true
+		if _near_spur and stone_clear < stone_reach: _stone.spur = true
 		if stone_clear <= _stone.least:
 			_stone.at = plane.position
 			_stone.id = _near_id
@@ -496,6 +513,8 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if _gate_last != Vector3.INF and fast and bool(game.hand_landing.flying()):
 		var arches = game.get("arches")
 		var hit: Dictionary = arches.gate_crossed(_gate_last,p_now) if arches != null else {}
+		# A plug's hole in a bore (BorePlugs `crossed`) is threaded the same way.
+		if hit.is_empty() and game.tunnels != null and game.tunnels.plugs != null: hit = game.tunnels.plugs.crossed(_gate_last,p_now)
 		if not hit.is_empty():
 			_gate.start(maxf(float(hit.room)-WorldScale.span*0.5,0.0))
 			_gate.speed = speed
@@ -539,13 +558,17 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if fast and bool(game.hand_landing.flying()):
 		if ground_clear < reach: gap = maxf(ground_clear,0.0)
 		if stone_clear < stone_reach: gap = minf(gap,maxf(stone_clear,0.0))
-	# The bank: on its timer, or now if it would fill the meter.
-	var fills := chain_points > 0.0 and meter < 1.0 and meter+chain_points*multiplier()/meter_full() >= 1.0
-	if fills or (chain_points > 0.0 and not skimming and not moves.holding):
+	# The meter fills live: the line's points x multiplier as they grow, not
+	# while the surge is held (or the smash is hot).
+	var live := chain_points*multiplier()
+	if live > _metered:
+		if not surge_held: meter = minf(1.0,meter+(live-_metered)/meter_full())
+		_metered = live
+	# The bank, on its timer: into the score only.
+	if chain_points > 0.0 and not skimming and not moves.holding:
 		bank_left -= delta
-		if fills or bank_left <= 0.0:
+		if bank_left <= 0.0:
 			var banked := chain_points*multiplier()
-			meter = minf(1.0,meter+banked/meter_full())
 			var line := _line(banked,game)
 			out["banked"] = {"points":banked,"line":line}
 			out["line"] = line
@@ -671,7 +694,7 @@ func _line(points: float, game: Node3D) -> Dictionary:
 		var flown := 0.0
 		for m: Dictionary in line_moments:
 			flown += float(m.get("flown",0.0))
-			if not bool(m.get("chime",false)): closest = minf(closest,float(m.clear))
+			closest = minf(closest,float(m.clear))
 		line.closest = closest
 		line.speed = flown/maxf(line_moments.size(),1)
 	var book = game.get("book")
@@ -735,7 +758,7 @@ func _line_moment(m: Dictionary, game: Node3D) -> bool:
 		"height":at.y-maxf(land,float(game.water_at(at))),"under":bool(m.get("under",false))}
 	var f := LineScoreS.factors(raw)
 	var hold := minf(float(m.held)/maxf(float(m.get("held_min",1.0)),0.001),float(t.hold_top)) if m.has("held") else 1.0
-	var farm := 1.0 if m.has("shot") or bool(m.get("chime",false)) else _farm_same(int(m.get("id",0)))
+	var farm := 1.0 if m.has("shot") else _farm_same(int(m.get("id",0)))
 	var units := LineScoreS.moment_units(kind,str(m.band),f,hold,farm)
 	var now := snappedf(clock,0.001)
 	if score_line.count == 0: line_id += 1

@@ -773,6 +773,12 @@ static func _bowl_e(t: Site, m: Vector2, o: Vector2, x: float, z: float, reach: 
 	var rag := t.rock.get_noise_2d(x*0.35,z*0.35)*0.34+t.rock.get_noise_2d(x*1.3,z*1.3)*0.1
 	return sqrt(along*along+b*b/(wide*wide))*(1.0+rag)
 
+## A sunk tunnel's two openings: {at (xz), out (unit, the way its sinkhole opens),
+## reach (the sinkhole's length), name, site, end (0 at the path's start, 1 its end)}.
+static func mouths(t: Site) -> Array:
+	return [{"at": t.origin, "out": -t.way, "reach": t.ramp.x, "name": t.name+"/a", "site": t, "end": 0},
+		{"at": t.mouth_b, "out": t.out_b, "reach": t.ramp.y, "name": t.name+"/b", "site": t, "end": 1}]
+
 ## Whether (x, z) is on one of `t`'s sinkholes, `grow` times out (1 its rim).
 ## The native tree building stands on the native field, which knows nothing
 ## of the sinkholes (a layer LandField cuts in after it): what it puts there

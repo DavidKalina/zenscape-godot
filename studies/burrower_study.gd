@@ -11,18 +11,14 @@ extends Node3D
 ## Q E knife edge, twice to roll) but Space (the pad's south face) rolls on
 ## one press, toward the side leant to or else the way banked (`roll_button`),
 ## and boost moves to F (the pad's right trigger keeps it); R up again;
-## 1 2 3 make the next push-up an orb, a bell or a gong;
 ## B calls the burrower up ahead of the plane (scripts/burrower/burrower.gd);
 ## it also wakes on its own when the plane skims the meadow or the pond
 ## (under one span, at speed, for WAKE_SKIM s), leads, and dives away when
 ## the plane climbs off (over CLIMB_OFF spans for CLIMB_HOLD s), leaves the
 ## meadow, or after RUN s (`_rouse`; B's call ignores the climb and the run);
-## while it leads it pushes up glowing orbs a beat ahead of the plane (fly
-## into one: motes and a chime; hits close together climb a scale);
 ## C toggles the watch camera, a slow orbit on its trail, the plane held
 ## still meanwhile (it roams the meadow on its own).
 ## Flags: --grass=X (the carpet's share, 1; 0 none), --at=x,z --alt=m
-## --bell=2 / --gong=2 (the other recording),
 ## --heading=deg (the launch), --burrow (called up at once), --watch (the
 ## watch camera from the start, the burrower roaming).
 
@@ -39,7 +35,6 @@ const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const Burrower = preload("res://scripts/burrower/burrower.gd")
-const PushUps = preload("res://scripts/burrower/push_ups.gd")
 ## The watch camera: its orbit's radius and height (m), turn (rad/s), and
 ## how fast it follows the head.
 const WATCH_R := 26.0
@@ -92,14 +87,9 @@ var _tap_at := 0
 var _start := Vector3(0.0,14.0,150.0)
 var _heading := 0.0
 var _hint: Label
-var _hint_text := ""
-var _bell_take := 0
-var _gong_take := 0
 var burrower: Burrower
 ## The run's length before it dives (s; RUN, or --run=).
 var run_s := RUN
-## What it pushes up ahead of the plane (scripts/burrower/push_ups.gd).
-var push_ups: PushUps
 ## The watch camera on (the plane held still).
 var watching := false
 var _watch_at := Vector3.ZERO
@@ -120,8 +110,6 @@ func _ready() -> void:
 			if p.size() >= 2: _start = Vector3(float(p[0]),_start.y,float(p[1]))
 		elif a.begins_with("--alt="): _start.y = a.get_slice("=",1).to_float()
 		elif a.begins_with("--heading="): _heading = deg_to_rad(a.get_slice("=",1).to_float())
-		elif a == "--bell=2": _bell_take = 1
-		elif a == "--gong=2": _gong_take = 1
 		elif a == "--burrow": _burrow_at_start = true
 		elif a == "--watch": watching = true
 		elif a.begins_with("--run="): run_s = maxf(a.get_slice("=",1).to_float(),1.0)
@@ -141,11 +129,6 @@ func _ready() -> void:
 	add_child(burrower)
 	burrower.setup(land,react)
 	burrower.view = camera
-	push_ups = PushUps.new()
-	push_ups.bell_take = _bell_take
-	push_ups.gong_take = _gong_take
-	add_child(push_ups)
-	push_ups.setup(land,burrower)
 	_build_ui()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -195,8 +178,7 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	_hint = Label.new()
-	_hint_text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space roll  ·  F boost  ·  Shift brake  ·  Q E knife edge  ·  R up again  ·  skim low to wake it  ·  B call it  ·  C watch it  ·  1 2 3 next: orb bell gong  ·  4 other bell  ·  5 other gong"
-	_hint.text = _hint_text
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space roll  ·  F boost  ·  Shift brake  ·  Q E knife edge  ·  R up again  ·  skim low to wake it  ·  B call it  ·  C watch it"
 	_hint.position = Vector2(16.0,12.0)
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.7))
 	_hint.add_theme_constant_override("outline_size",4)
@@ -247,17 +229,15 @@ func _physics_process(delta: float) -> void:
 func tick(delta: float, input: Dictionary) -> void:
 	if watching:
 		burrower.tick(delta)
-		push_ups.tick(delta,null,0.0)
 		_watch(delta)
 		if react != null: _react(delta)
 		return
 	var was: Vector3 = plane.position
 	plane.step(delta,input,Callable(land,"ground"))
-	var bumped := _space != null and RuinBump.bump(_space,plane,was)
+	if _space != null: RuinBump.bump(_space,plane,was)
 	figure.update(delta,plane,0.0,Callable(land,"ground"),false)
 	_rouse(delta)
 	burrower.tick(delta)
-	push_ups.tick(delta,plane,WorldScale.TOY_SPAN*ground_scale.size()*0.5,bumped)
 	_frame(delta)
 	if react != null: _react(delta)
 
@@ -421,12 +401,6 @@ func respawn() -> void:
 	rouse.rest = 0.0
 	launch(Vector3(_start.x,land.height(_start.x,_start.z)+_start.y,_start.z),_heading)
 
-## Shows which recording a key chose, under the hint.
-func _say(text: String) -> void:
-	print("burrower study: ",text)
-	if _hint != null: _hint.text = _hint_text+"
-"+text
-
 func _unhandled_input(event: InputEvent) -> void:
 	if not flight_ready: return
 	if event is InputEventMouseMotion:
@@ -447,9 +421,4 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_C: toggle_watch()
 			KEY_SPACE:
 				if not watching: roll_button()
-			KEY_1: push_ups.next_kind = &"orb"
-			KEY_2: push_ups.next_kind = &"bell"
-			KEY_3: push_ups.next_kind = &"gong"
-			KEY_4: _say("bell: "+push_ups.cycle_take(&"bell"))
-			KEY_5: _say("gong: "+push_ups.cycle_take(&"gong"))
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

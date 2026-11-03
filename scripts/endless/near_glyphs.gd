@@ -190,9 +190,6 @@ static func _build() -> void:
 	_add("surf","#8fa3ad",["M2 2.5 H6 L22 22.4 H2Z","M9.5 2.2 L18 12.4 L19.4 11.2 L20 17 L14.6 15.4 L16.2 14 L7.8 3.6Z"],["M4.4 8 L14 21.6"],116,1.2)
 	# Slalom: an S wound between two spruces.
 	_add("slalom","#6f9c4e",["M3 20 Q8 4 12 12 Q16 20 21 4 L22.4 5 Q17 23 12 15 Q8 8 4.4 21Z","M2.2 9.6 L5 2.6 L7.8 9.6Z","M16.2 22 L19 15 L21.8 22Z"],[],117,1.2)
-	# The burrower's push-ups (line_moves.gd).
-	# Orb: a glowing ball in its halo, flung off the ground.
-	_add("orb","#eda33e",[_circle(12,10.6,6.6),"M1.4 10.6 a10.6 10.6 0 1 0 21.2 0 a10.6 10.6 0 1 0 -21.2 0Z M3.2 10.6 a8.8 8.8 0 1 1 17.6 0 a8.8 8.8 0 1 1 -17.6 0Z"],["M8.4 9.4 Q9.4 6.8 12 6.6"],119,1.2)
 	# A relic: the find's broken ring of hewn blocks, one fallen out.
 	var ring := []
 	for k in range(9):
@@ -202,9 +199,5 @@ static func _build() -> void:
 		var at := Vector2(12.0,12.0)+Vector2(cos(a),sin(a))*9.0-side*2.3
 		ring.append(_bar(at.x,at.y,a+PI*0.5,4.6,4.4))
 	_add("relic","#e2b25e",ring,[],123,1.1)
-	# Bell: a green bronze bell on its yoke, the clapper hanging.
-	_add("bell","#5f9a86",["M7.4 1.8 H16.6 V4 H13.4 V5.2 Q17.8 6.4 18 12 Q18.2 16.4 21 18.8 V20 H3 V18.8 Q5.8 16.4 6 12 Q6.2 6.4 10.6 5.2 V4 H7.4Z",_circle(12,21.2,2.2)],["M7.2 16.2 H16.8","M8.4 12.6 Q8.6 9.4 10.4 8"],120,1.2)
-	# Gong: the disc hung in its frame, struck rings round the boss.
-	_add("gong","#c9893c",["M1.8 2.4 H22.2 V5 H20.6 V22.6 H18.2 V5 H5.8 V22.6 H3.4 V5 H1.8Z",_circle(12,13.6,5.8)],["M12 13.6 m-3.4 0 a3.4 3.4 0 1 0 6.8 0 a3.4 3.4 0 1 0 -6.8 0","M12 5 V8"],121,1.1)
 	# Stack orbit: a sea stack ringed by the path round it.
 	_add("orbit","#7c9aa8",["M9.2 22.6 L9.8 4 L12 2 L14.4 4.4 L14.8 22.6Z","M2 13.4 a10 4.4 0 1 0 20 0 a10 4.4 0 1 0 -20 0Z M4.4 13.4 a7.6 2.6 0 1 1 15.2 0 a7.6 2.6 0 1 1 -15.2 0Z"],["M10.4 8 L13.6 8.4","M10.4 18 L14.4 18.4"],118,1.1)

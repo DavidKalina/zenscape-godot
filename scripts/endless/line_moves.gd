@@ -28,6 +28,9 @@ extends RefCounted
 ## - stack orbit: round one rock pillar (a sea stack) within ORBIT_REACH
 ##   spans of its face, ORBIT_TURN of a turn about its middle.
 ## While a held move is under way (`holding`), the chain does not bank.
+## - smash: a surge broke a burrower's spur or plug (`smash`, from scripts/
+##   endless/surge_smash.gd), queued as a held move is; its worth is line_tune.
+##   json's base `smash` (BASE's under the old score).
 ##
 ## Every move gets its glyph (near_glyphs.gd), the kind of land under it
 ## (`terrain_at`: meadow, forest, canyon, mountain, sea, river, lake,
@@ -36,10 +39,9 @@ extends RefCounted
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 
-## Base points of the held moves and push-ups, and the renamed moments' gain
-## on theirs.
+## Base points of the held moves, and the renamed moments' gain on theirs.
 const BASE := {"carve":150.0,"canopy run":220.0,"canyon run":320.0,"climb":220.0,"surf":200.0,
-	"slalom":110.0,"stack orbit":420.0,"orb":120.0,"bell":200.0,"gong":380.0}
+	"slalom":110.0,"stack orbit":420.0,"smash":400.0}
 const GAIN := {"knife edge":1.5,"inverted":2.0}
 ## Held moves: least seconds held.
 const HELD_MIN := {"carve":1.0,"canopy run":1.2,"canyon run":1.2,"climb":1.0,"surf":1.0}
@@ -48,7 +50,7 @@ const GRACE := 0.35
 ## Glyphs (near_glyphs.gd ids) of the moves that have their own.
 const GLYPH := {"late pull":"dive","knife edge":"knife","inverted":"inverted","carve":"carve",
 	"canopy run":"canopy","canyon run":"canyon","climb":"climb","surf":"surf","slalom":"slalom",
-	"stack orbit":"orbit","orb":"orb","bell":"bell","gong":"gong"}
+	"stack orbit":"orbit","smash":"rock"}
 
 const KNIFE := deg_to_rad(60.0)
 const INVERTED := deg_to_rad(120.0)
@@ -87,12 +89,6 @@ const DIFF_KNIFE := 0.5
 const DIFF_INVERTED := 0.8
 const DIFF_DIVE := 0.8
 const DIFF_HELD := 0.4
-
-## The burrower's push-ups as moves: band and k (what the difficulty, the
-## punch and the shake read), none of them a matter of closeness. RAZOR is a
-## word on the HUD, so nothing here takes it.
-const PUSH_BAND := {"orb":"near","bell":"close","gong":"close"}
-const PUSH_K := {"orb":0.2,"bell":0.4,"gong":0.8}
 
 ## A rich line's name by its kinds and multiplier (placeholder words; the
 ## user names them): [kinds at least, multiplier at least, name], best last.
@@ -278,15 +274,6 @@ func _held(kind: String, on: bool, clear: float, pace: float, roll: float, p: Ve
 		_finish(m,game)
 	hold.wipe()
 
-## A push-up taken at `at` ("orb", "bell" or "gong"), queued for the chain.
-## It comes with its `farm` at 1: each is used up, and the burrower rations them.
-func push_up(kind: String, at: Vector3, game: Node3D) -> void:
-	var pace: float = float(game.plane.speed)/maxf(float(game.plane.cruise()),1.0)
-	_finish({"kind":kind,"of":kind,"band":PUSH_BAND[kind],"points":float(BASE[kind])*clampf(pace,0.5,2.0),
-		"k":PUSH_K[kind],"clear":float(game.plane.position.distance_to(at)),"at":at,
-		"surface":str(game.near.ground_surface),"pace":pace,"attitude":"","under":false,"chime":true,
-		"farm":1.0,"id":hash(at)},game)
-
 ## A held move's moment.
 func _held_move(kind: String, held: float, least_t: float, k: float, least: float, at: Vector3, surface: String, pace: float) -> Dictionary:
 	var points := float(BASE[kind])*minf(held/least_t,HELD_TOP)*(1.0+3.0*k*k)*clampf(pace,0.5,2.0)
@@ -294,6 +281,15 @@ func _held_move(kind: String, held: float, least_t: float, k: float, least: floa
 	return {"kind":kind,"of":kind,"band":band,"points":points,"k":k,"clear":least,"at":at,"surface":surface,
 		"pace":pace,"held":held,"held_min":least_t,"attitude":"","under":false,
 		"id":hash(Vector2i(floori(at.x/30.0),floori(at.z/30.0)))}
+
+## A surge smashed `what` (a spur, a plug) at `at`, `id` the stone's own: queued.
+func smash(game: Node3D, what: String, at: Vector3, id: int) -> void:
+	var plane = game.plane
+	var pace := float(plane.speed)/maxf(float(plane.cruise()),1.0)
+	var m := {"kind":"smash","of":"smash","band":"near","points":float(BASE.smash)*clampf(pace,0.5,2.0),"k":0.0,
+		"clear":0.0,"at":at,"surface":"stone","pace":pace,"speed":float(plane.speed),"roll":roll_of(plane),
+		"attitude":"","under":false,"farm":1.0,"id":id,"smashed":what}
+	_finish(m,game)
 
 ## Glyph, land and difficulty, then queued for the chain.
 func _finish(m: Dictionary, game: Node3D) -> void:
