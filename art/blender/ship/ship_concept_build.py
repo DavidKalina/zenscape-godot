@@ -55,6 +55,9 @@ DECK_GUNS = (-12.0, 16.0)             # DeckGun_*_01..02 on the main deck
 HEAD = "--head" in sys.argv
 # The fore course's glyph (--fore spiral|serpent|sun): the options for the user to pick.
 FORE = sys.argv[sys.argv.index("--fore") + 1] if "--fore" in sys.argv else "spiral"
+# A small figurehead at the stem's head under the bowsprit (--fig serpent|bird|mask),
+# the options for the user to pick; none by default. Writes ship_<scheme>_fig_<kind>.glb.
+FIG = sys.argv[sys.argv.index("--fig") + 1] if "--fig" in sys.argv else "none"
 SPRIT_TIP = (0.0, 44.0, -100.0)
 
 # Dark brown wood with grey stone and iron, no yellow; they differ in how dark the
@@ -997,6 +1000,8 @@ def build(scheme, out):
 	dm2.strength = 0.14
 	if HEAD:
 		figurehead(mats, Hd, Hc)
+	elif FIG != "none":
+		small_figurehead(mats, FIG)
 	Ma.build(mats)
 	Sa.build(mats, split=0.0)
 	Ro.build(mats)
@@ -1011,13 +1016,21 @@ def build(scheme, out):
 			e = bpy.data.objects.new("DeckGun_%s_%02d" % (side, i + 1), None)
 			e.location = bv((s_ * (half(16.0, z) + 1.8), 17.6, z))
 			bpy.context.scene.collection.objects.link(e)
-	path = out / ("ship_%s%s.glb" % (scheme, "" if FORE == "spiral" else "_" + FORE))
+	path = out / ("ship_%s%s%s.glb" % (scheme, "" if FORE == "spiral" else "_" + FORE, "" if FIG == "none" else "_fig_" + FIG))
 	bpy.ops.export_scene.gltf(filepath=str(path), export_format="GLB", use_selection=False, export_apply=True,
 							  export_yup=True, export_materials="EXPORT", export_normals=True, export_vertex_color="ACTIVE", export_animations=False,
 							  export_cameras=False, export_lights=False, export_image_format="AUTO")
 	tris = sum(sum(len(p.vertices) - 2 for p in o.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.polygons)
 			   for o in bpy.context.scene.objects if o.type == "MESH")
 	print("wrote %s (%d triangles)" % (path, tris))
+	for o in bpy.context.scene.objects:
+		if o.type == "MESH" and o.name.startswith("Figurehead"):
+			ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+			lo = np.min([ev.matrix_world @ v.co for v in ev.data.vertices], axis=0)
+			hi = np.max([ev.matrix_world @ v.co for v in ev.data.vertices], axis=0)
+			# back to the ship frame: Blender (x, y, z) is (x, -z, y) in Godot's
+			print("  %s: %d triangles, x %.1f..%.1f y %.1f..%.1f z %.1f..%.1f" % (o.name, sum(len(p.vertices) - 2 for p in ev.data.polygons),
+				  lo[0], hi[0], lo[2], hi[2], -hi[1], -lo[1]))
 
 
 
@@ -1030,6 +1043,314 @@ def figurehead(mats, Hd, Hc):
 	dm.texture = tex
 	dm.texture_coords = "LOCAL"
 	dm.strength = 0.25
+
+
+# --- The small figurehead options ------------------------------------------------
+# Each is carved wood, drawn in its own frame (x across, y up, z out over the sea;
+# metres): round masses remeshed into one smooth skin (`carve`), and the crisp
+# carving laid on it as lofted bands (`loft`: feather blades with a midrib, scrolls,
+# eye rims, collars), with bone fangs and dark inlay. `wood_tone` puts a long grain
+# and darker cuts in vertex colour. `fig_place` stands the frame on the stem's head,
+# under the bowsprit and well above the upper lip (y 13.4) and its stone boss
+# (y 13.6 to 16.6).
+
+FIG_WOOD = "463a31"   # a dark oiled wood, a step lighter than the tarred hull so it reads
+LENS = [(1.0, 0.0), (0.4, 0.75), (0.0, 1.0), (-0.4, 0.75), (-1.0, 0.0), (-0.4, -0.45), (0.0, -0.55), (0.4, -0.45)]
+CORD = [(1.0, -0.7), (1.0, 0.7), (0.75, 1.0), (-0.75, 1.0), (-1.0, 0.7), (-1.0, -0.7), (-0.75, -1.0), (0.75, -1.0)]
+
+
+def unit(v):
+	v = np.array(v, float)
+	return v / np.linalg.norm(v)
+
+
+def rot_x(a):
+	c, s = math.cos(a), math.sin(a)
+	return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+
+def ellipsoid(M, c, r, mat, R=None, n=14, m=9):
+	"""An ellipsoid at c with radii r along its own axes, turned by R, faces outward."""
+	c, r = np.array(c, float), np.array(r, float)
+	R = np.eye(3) if R is None else R
+	rings = []
+	for j in range(m + 1):
+		th = math.pi * j / m
+		rings.append([tuple(c + R @ (np.array([math.sin(th) * math.cos(2 * math.pi * k / n), math.cos(th),
+										   math.sin(th) * math.sin(2 * math.pi * k / n)]) * r)) for k in range(n)])
+	for j in range(m):
+		for k in range(n):
+			k2 = (k + 1) % n
+			if j == 0:
+				M.face([rings[0][k], rings[1][k2], rings[1][k]], mat)
+			elif j == m - 1:
+				M.face([rings[j][k], rings[j][k2], rings[m][k]], mat)
+			else:
+				M.quad(rings[j][k], rings[j][k2], rings[j + 1][k2], rings[j + 1][k], mat)
+
+
+def tube(M, pts, radii, mat, squash=1.0, step=0.16):
+	"""Balls strung close along a line, tapering by radii: one smooth limb once
+	remeshed. squash narrows it across (x)."""
+	P = [np.array(p, float) for p in pts]
+	for i in range(len(P) - 1):
+		a, b, ra, rb = P[i], P[i + 1], radii[i], radii[i + 1]
+		k = max(1, int(math.ceil(np.linalg.norm(b - a) / step)))
+		for j in range(k + (1 if i == len(P) - 2 else 0)):
+			t = j / k
+			r = ra + (rb - ra) * t
+			ellipsoid(M, a + (b - a) * t, (r * squash, r, r), mat, n=10, m=7)
+
+
+def loft(M, path, side, w, t, mat, sec=LENS):
+	"""A carved band along path: at each point its section (u across side, v off it,
+	the ridge at v 1) spread w across and t off the surface; capped."""
+	P = [np.array(p, float) for p in path]
+	n = len(P)
+	rings = []
+	for i in range(n):
+		T = unit(P[min(i + 1, n - 1)] - P[max(i - 1, 0)])
+		S = np.array(side[i] if isinstance(side, list) else side, float)
+		S = unit(S - T * np.dot(S, T))
+		Nn = np.cross(T, S)
+		rings.append([tuple(P[i] + S * u * w[i] + Nn * v * t[i]) for u, v in sec])
+	m = len(sec)
+	for i in range(n - 1):
+		for k in range(m):
+			k2 = (k + 1) % m
+			M.quad(rings[i][k], rings[i][k2], rings[i + 1][k2], rings[i + 1][k], mat)
+	M.face(rings[0][::-1], mat)
+	M.face(rings[-1], mat)
+
+
+def blade(M, root, d, side, length, width, thick, mat, bend=(0.0, 0.0, -1.0), curl=0.0, start=0.0, n=9):
+	"""A carved feather: a leaf from root along d, its midrib ridge away from side x d,
+	its tip curling toward bend."""
+	d, b = unit(d), np.array(bend, float)
+	path, w, t = [], [], []
+	for i in range(n + 1):
+		s_ = i / n
+		path.append(np.array(root, float) + d * (start + length * s_) + b * (length * curl * s_ * s_))
+		w.append(max(width * math.sin(math.pi * (0.12 + 0.86 * s_)) ** 0.7, 0.03))
+		t.append(max(thick * (1.0 - 0.6 * s_), 0.03))
+	loft(M, path, side, w, t, mat)
+
+
+def fan_side(d, face=(0.0, 0.0, 1.0)):
+	"""The width of a blade fanned out of a collar: across d, so its ridge faces face."""
+	return tuple(np.cross(np.array(face, float), unit(d)))
+
+
+def spiral(c, a, b, r0, r1, turns, n):
+	"""Points on a spiral round c, from direction a toward b, radius r0 to r1."""
+	c, a, b = np.array(c, float), unit(a), unit(b)
+	return [tuple(c + (a * math.cos(th) + b * math.sin(th)) * (r0 + (r1 - r0) * k / (n - 1)))
+			for k, th in enumerate(np.linspace(0.0, turns * 2 * math.pi, n))]
+
+
+def eye(D, c, r, s, pupil=0.68):
+	"""A carved eye facing across (side s): a crisp rim round a dark inlaid pupil."""
+	th = np.linspace(0.0, 2 * math.pi, 19)
+	th = th if s < 0 else th[::-1]
+	pts = [(c[0], c[1] + r * math.cos(a), c[2] + r * math.sin(a)) for a in th]
+	loft(D, pts, [(0.0, math.cos(a), math.sin(a)) for a in th], [0.11] * 19, [0.1] * 19, "figwood", CORD)
+	ellipsoid(D, c, (0.1, r * pupil, r * pupil), "dark", n=12, m=8)
+
+
+def ring_pts(c, r, n, z=0.0):
+	return [(c[0] + r * math.sin(a), c[1] + r * math.cos(a), c[2] + z) for a in np.linspace(0, 2 * math.pi, n)]
+
+
+def fig_serpent(M, D):
+	"""A serpent's head reaching out of a ruff of plumes: jaws open on bone fangs, a
+	snout scroll curling up and back, brow scrolls over ringed eyes, a short crest."""
+	W = "figwood"
+	tube(M, [(0, -0.1, -2.8), (0, 0.6, 0.6), (0, 1.05, 1.8)], [1.3, 1.22, 1.1], W)            # the neck
+	ellipsoid(M, (0, 1.35, 2.3), (1.18, 1.0, 1.45), W)                                         # the skull
+	for s in (1, -1):
+		ellipsoid(M, (s * 0.8, 0.85, 2.5), (0.46, 0.6, 0.8), W)                               # the jaw's hinge
+	ellipsoid(M, (0, 1.2, 4.0), (0.78, 0.56, 1.75), W, rot_x(-0.12))                          # the upper jaw
+	ellipsoid(M, (0, 0.02, 3.55), (0.68, 0.27, 1.5), W, rot_x(0.36))                          # the lower jaw, dropped
+	# the snout's scroll, curling up off the tip and back over it
+	sc = spiral((0, 1.72, 5.05), (0, -0.5, 0.87), (0, 0.87, 0.5), 0.6, 0.16, 0.9, 16)
+	loft(D, sc, (1, 0, 0), list(np.linspace(0.44, 0.2, 16)), list(np.linspace(0.24, 0.12, 16)), W, CORD)
+	for s in (1, -1):
+		# brow scrolls: over the eye from the snout, curling down behind it
+		br = [(s * 0.62, 1.9, 3.85), (s * 0.84, 2.16, 3.4), (s * 0.93, 2.26, 2.9), (s * 0.92, 2.14, 2.4), (s * 0.86, 1.86, 2.08)]
+		loft(D, br, (0, 1, 0.4), [0.12, 0.2, 0.24, 0.2, 0.1], [0.08, 0.15, 0.17, 0.14, 0.07], W, CORD)   # the brow, arched over the eye
+		eye(D, (s * 0.99, 1.68, 3.0), 0.36, s)
+		for z, x, y0, y1, r in ((5.1, 0.48, 0.82, -0.1, 0.19), (4.45, 0.6, 0.8, 0.22, 0.12), (4.0, 0.66, 0.85, 0.35, 0.1)):
+			D.cyl((s * x, y0, z), (s * (x - 0.04), y1, z + 0.1), r, 0.025, "bone", 8)          # fangs and teeth
+		D.cyl((s * 0.5, -0.1, 4.65), (s * 0.46, 0.5, 4.78), 0.15, 0.025, "bone", 8)
+		ellipsoid(D, (s * 0.27, 1.68, 5.45), (0.08, 0.12, 0.13), "dark", n=8, m=6)            # nostrils
+	ellipsoid(D, (0, 0.55, 3.4), (0.52, 0.26, 0.9), "dark", rot_x(0.15), n=12, m=8)            # the mouth's dark
+	loft(D, ring_pts((0, 0.62, 0.0), 1.3, 21, 0.6), (0, 0, 1), [0.22] * 21, [0.17] * 21, W, CORD)   # the collar
+	for k in range(9):   # the ruff: plumes fanned round the neck, tips curling back
+		a = math.radians(-112 + 224 * k / 8)
+		d = (math.sin(a), math.cos(a), -0.12)
+		blade(D, (0, 0.62, 0.45), d, fan_side(d), 2.6 if k % 2 == 0 else 2.1, 0.5, 0.16, W, curl=0.22, start=1.15)
+	for k in range(8):   # and a shorter row between them, in front
+		a = math.radians(-98 + 196 * k / 7)
+		d = (math.sin(a), math.cos(a), 0.0)
+		blade(D, (0, 0.62, 0.75), d, fan_side(d), 1.5, 0.4, 0.14, W, curl=0.18, start=1.15)
+	for k in range(3):   # a short crest on the skull
+		d = (0, math.cos(math.radians(55 + 14 * k)), -math.sin(math.radians(55 + 14 * k)))
+		blade(D, (0, 2.2, 2.7 - 0.45 * k), d, fan_side(d, (1, 0, 0)), 1.5 - 0.2 * k, 0.32, 0.12, W, bend=(0, -1, 0), curl=0.15)
+
+
+def fig_bird(M, D):
+	"""A bird's head on a feathered neck: a deep hooked beak, a ringed eye under a
+	heavy brow, a crest swept back, layered feathers down the cheeks and neck."""
+	W = "figwood"
+	tube(M, [(0, -0.1, -2.4), (0, 0.65, 0.4), (0, 1.15, 1.4)], [1.25, 1.18, 1.05], W)        # the neck
+	ellipsoid(M, (0, 1.6, 1.95), (1.1, 1.2, 1.36), W)                                           # the head
+	for s in (1, -1):
+		ellipsoid(M, (s * 0.56, 1.15, 2.35), (0.58, 0.64, 0.78), W)                            # cheeks
+	tube(M, [(0, 1.78, 2.85), (0, 1.86, 3.75), (0, 1.6, 4.55), (0, 1.08, 5.1), (0, 0.5, 5.22), (0, 0.12, 5.02)],
+		 [0.8, 0.64, 0.48, 0.34, 0.2, 0.08], W, 0.7, step=0.1)                                 # the beak, hooked
+	tube(M, [(0, 0.95, 2.8), (0, 0.78, 3.85), (0, 0.72, 4.45)], [0.5, 0.34, 0.16], W, 0.72)  # its lower half
+	ellipsoid(M, (0, 2.0, 3.3), (0.48, 0.26, 0.5), W)                                           # the cere
+	for k in range(4):   # the crest, swept back over the neck
+		a = math.radians(30 + 19 * k)
+		d = (0, math.cos(a), -math.sin(a))
+		blade(D, (0, 2.45, 2.3 - 0.4 * k), d, fan_side(d, (1, 0, 0)), 3.0 - 0.3 * k, 0.48, 0.16, W, bend=(0, -1, 0), curl=0.2)
+	for s in (1, -1):
+		eye(D, (s * 1.02, 1.86, 2.5), 0.34, s)
+		br = [(s * 0.6, 2.3, 3.15), (s * 0.8, 2.38, 2.7), (s * 0.86, 2.32, 2.2), (s * 0.74, 2.2, 1.7)]
+		loft(D, br, (0, 0.6, 1), [0.1, 0.24, 0.22, 0.08], [0.08, 0.15, 0.13, 0.06], W, CORD)   # the brow
+		for k in range(3):   # cheek feathers sweeping back from behind the eye
+			d = (s * 0.18, -0.25 - 0.25 * k, -1.0)
+			blade(D, (s * 0.95, 1.75 - 0.38 * k, 2.1 - 0.15 * k), d, (0, s, 0), 1.5 - 0.15 * k, 0.32, 0.12, W, bend=(s, 0, 0), curl=0.08)
+		ellipsoid(D, (s * 0.37, 2.0, 3.5), (0.07, 0.1, 0.14), "dark", n=8, m=6)               # nostrils
+	for row, (z, n_, ln) in enumerate(((1.1, 7, 1.5), (0.35, 8, 1.6))):   # neck feathers, lying back along it
+		for k in range(n_):
+			a = math.radians(-110 + 220 * k / (n_ - 1))
+			rr = 1.1 if row == 0 else 1.2
+			root = (rr * math.sin(a), 0.62 + 0.45 * (1 - row) + rr * math.cos(a), z)
+			d = (0.35 * math.sin(a), 0.35 * math.cos(a) - 0.15, -1.0)
+			out = (math.sin(a), math.cos(a), 0.0)
+			blade(D, root, d, tuple(np.cross(out, unit(d)) * -1), ln, 0.38, 0.12, W, bend=out, curl=0.1)
+
+
+def fig_mask(M, D):
+	"""A small carved mask on the stem: a broad calm face, almond eyes inlaid dark, a
+	broad nose, full parted lips, ear spools, a studded band and a fan of plumes."""
+	W = "figwood"
+	FC, FR = np.array([0.0, 1.5, 0.55]), np.array([1.85, 2.2, 0.7])
+
+	def front(x, y, out=0.0):
+		q = 1.0 - (x / FR[0]) ** 2 - ((y - FC[1]) / FR[1]) ** 2
+		return FC[2] + FR[2] * math.sqrt(max(q, 0.0)) + out
+
+	ellipsoid(M, FC, FR, W, n=16, m=12)                                                         # the face
+	tube(M, [(0, 2.25, front(0, 2.25, 0.05)), (0, 1.3, front(0, 1.3, 0.5))], [0.28, 0.46], W, 0.85)   # the nose
+	for s in (1, -1):
+		ellipsoid(M, (s * 0.34, 1.28, front(0.34, 1.28, 0.08)), (0.3, 0.24, 0.28), W)       # its wings
+		ellipsoid(M, (s * 1.0, 1.5, front(1.0, 1.5, -0.12)), (0.55, 0.42, 0.32), W)         # cheekbones
+	for y, out, r in ((0.86, 0.13, 0.21), (0.42, 0.11, 0.24)):   # the lips
+		tube(M, [(-0.62, y + 0.05, front(-0.62, y, out - 0.05)), (0, y, front(0, y, out)), (0.62, y + 0.05, front(0.62, y, out - 0.05))],
+			 [r * 0.7, r, r * 0.7], W)
+	ellipsoid(M, (0, -0.25, front(0, -0.25, -0.35)), (0.85, 0.5, 0.42), W)                   # the chin
+	band = [(x, 3.4 + 0.04 * x * x, 0.95 - 0.3 * x * x) for x in np.linspace(-1.9, 1.9, 13)]
+	loft(D, band, (0, 1, 0), [0.28] * 13, [0.2] * 13, W, CORD)                                  # the band, wrapped round
+	for x in np.linspace(-1.2, 1.2, 5):
+		y, z = 3.4 + 0.04 * x * x, 0.95 - 0.3 * x * x + 0.18
+		ellipsoid(D, (x, y, z), (0.17, 0.17, 0.09), W, n=12, m=8)                               # its studs
+	brow = [(x, 2.36 + 0.06 * x * x, front(x, 2.36 + 0.06 * x * x, 0.02)) for x in np.linspace(-1.4, 1.4, 9)]
+	loft(D, brow, (0, 1, 0), [0.17] * 9, [0.13] * 9, W, CORD)                                   # the brow
+	for s in (1, -1):
+		c = (s * 0.74, 1.92)
+		th = np.linspace(0.0, 2 * math.pi, 21)
+		lid = [(c[0] + 0.5 * math.cos(a), c[1] + 0.22 * math.sin(a) * (1.0 + 0.25 * math.cos(a) * s), 0) for a in th]
+		lid = [(x, y, front(x, y, 0.02)) for x, y, _ in lid]
+		loft(D, lid if s > 0 else lid[::-1], [(0, 0, 1)] * 21, [0.06] * 21, [0.07] * 21, W, CORD)   # the eye's lids
+		ellipsoid(D, (c[0], c[1], front(c[0], c[1], -0.04)), (0.46, 0.17, 0.1), "dark", n=12, m=8)   # inlaid dark
+		M.cyl((s * 1.9, 1.55, 0.3), (s * 1.9, 1.55, 0.62), 0.6, 0.6, W, 16)                   # ear spools
+		loft(D, ring_pts((s * 1.9, 1.55, 0.0), 0.54, 17, 0.66), (0, 0, 1), [0.07] * 17, [0.07] * 17, W, CORD)
+		D.cyl((s * 1.9, 1.55, 0.62), (s * 1.9, 1.55, 0.7), 0.3, 0.3, "dark", 12)
+		loft(D, [(s * 1.92, 0.95, 0.5), (s * 1.94, 0.2, 0.48), (s * 1.96, -0.45, 0.5)], (0, 0, 1), [0.17, 0.15, 0.24], [0.15, 0.13, 0.2], W, CORD)   # pendants
+	for k in range(5):   # plumes over the band
+		a = math.radians(-50 + 25 * k)
+		d = (math.sin(a), math.cos(a), -0.2)
+		blade(D, (0, 3.3, 0.55), d, fan_side(d), 1.8 if k % 2 == 0 else 1.45, 0.42, 0.14, W, curl=0.15, start=0.2)
+	ellipsoid(D, (0, 0.64, front(0, 0.64, 0.04)), (0.52, 0.1, 0.12), "dark", n=12, m=6)        # the mouth
+
+
+FIGS = {
+	# kind: (builder, mount height on the stem, how far out of it, tilt of its frame up from level, degrees)
+	"serpent": (fig_serpent, 21.4, 1.3, 16.0),
+	"bird": (fig_bird, 21.2, 1.0, 14.0),
+	"mask": (fig_mask, 20.6, -0.2, -8.0),
+}
+
+
+def fig_place(kind):
+	"""The figurehead's frame on the stem: z out over the sea, tilted up by its angle."""
+	_, y0, out, tilt = FIGS[kind]
+	a = math.radians(tilt)
+	o = np.array([0.0, y0, stem_z(y0) - out])
+	ex, ey, ez = np.array([-1.0, 0, 0]), np.array([0, math.cos(a), math.sin(a)]), np.array([0, math.sin(a), -math.cos(a)])
+	return lambda p: tuple(o + ex * p[0] + ey * p[1] + ez * p[2])
+
+
+def wood_tone(me, grain=(0.0, 1.0, 0.0)):
+	"""Vertex colour for carved wood: a long grain along the timber (Blender y, the
+	ship's length), darker down in the cuts, a touch lighter on the crisp edges."""
+	n = len(me.vertices)
+	P = np.empty(n * 3, np.float32)
+	N = np.empty(n * 3, np.float32)
+	E = np.empty(len(me.edges) * 2, np.int64)
+	me.vertices.foreach_get("co", P)
+	me.vertices.foreach_get("normal", N)
+	me.edges.foreach_get("vertices", E)
+	P, N, E = P.reshape(-1, 3).astype(np.float64), N.reshape(-1, 3), E.reshape(-1, 2)
+	acc, cnt = np.zeros((n, 3)), np.zeros(n)
+	for a, b in ((0, 1), (1, 0)):
+		np.add.at(acc, E[:, a], P[E[:, b]])
+		np.add.at(cnt, E[:, a], 1)
+	ln = np.mean(np.linalg.norm(P[E[:, 0]] - P[E[:, 1]], axis=1)) + 1e-6
+	cav = np.einsum("ij,ij->i", N, acc / np.maximum(cnt, 1)[:, None] - P) / ln
+	g = np.array(grain, float)
+	stretch = P - np.outer(P @ g, g) * 0.94          # long cells along the grain, fine across
+	v = 0.94 + 0.16 * (noise3(stretch, 0.22, 8) - 0.5) + 0.05 * (noise3(P, 0.7, 9) - 0.5)
+	v *= np.clip(1.0 - 0.9 * cav, 0.6, 1.08)
+	col = np.ones((n, 4), np.float32)
+	col[:, :3] = np.clip(v, 0, 1.2)[:, None]
+	attr = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
+	attr.data.foreach_set("color", col.ravel())
+	me.color_attributes.active_color = attr
+
+
+def carve(ob, voxel=0.05, smooth=5, tris=4500):
+	"""One smooth carved skin from the masses: remeshed whole, smoothed into flowing
+	forms, toned, then brought down to about tris triangles."""
+	r = ob.modifiers.new("remesh", "REMESH")
+	r.mode = "VOXEL"
+	r.voxel_size = voxel
+	sm = ob.modifiers.new("smooth", "SMOOTH")
+	sm.factor = 0.8
+	sm.iterations = smooth
+	dg = bpy.context.evaluated_depsgraph_get()
+	me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+	ob.modifiers.clear()
+	mat = ob.data.materials[0]
+	ob.data = me
+	me.materials.clear()
+	me.materials.append(mat)
+	for poly in me.polygons:
+		poly.use_smooth = True
+	wood_tone(me)
+	dec = ob.modifiers.new("decimate", "DECIMATE")
+	dec.ratio = min(1.0, tris / max(1.0, 2.0 * len(me.polygons)))
+
+
+def small_figurehead(mats, kind):
+	mats["figwood"] = material("figwood", rgb(FIG_WOOD))
+	F, Fd = Mesh("Figurehead"), Mesh("FigureheadDetail")
+	FIGS[kind][0](F, Fd)
+	place = fig_place(kind)
+	carve(F.build(mats, warp=place, split=0.0))
+	wood_tone(Fd.build(mats, warp=place, split=38.0).data)
 
 
 def main():

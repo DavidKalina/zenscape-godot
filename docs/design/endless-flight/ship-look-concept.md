@@ -151,8 +151,12 @@ prow, PC fidelity unseen, one hour of the day. The prow's lip timbers were nudge
 ## Rebuilding the stills
 
 ```
-python3 tools/blender.py run art/blender/ship/ship_concept_build.py [-- --schemes tar_slate] [--fore serpent] [--head]
+python3 tools/blender.py run art/blender/ship/ship_concept_build.py [-- --schemes tar_slate] [--fore serpent] [--head] [--fig serpent|bird|mask]
 ```
+
+`--fig` adds one of the three small carved-wood figurehead options at the stem's head
+(`ship_<scheme>_fig_<kind>.glb`); their stills are in `ship-build-stills/`
+(`figurehead_options.jpg`).
 
 The driver that took the stills is in `scratch/` (uncommitted). It loads each glb at
 runtime with `GLTFDocument`, swaps the materials for a copy of the ship's surface
