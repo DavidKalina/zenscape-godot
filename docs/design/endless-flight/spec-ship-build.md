@@ -91,7 +91,7 @@ cd /Users/davidkalina/Documents/Projects/zenscape-ship-build && python3 tools/pl
 5. **Guns.** Only after the `merge ship-guns` commit is in the trail; until then skip
    to the next task. Three hull guns a side at the new muzzles (`Gun_*_01..03`) and
    the deck guns modelled to the guns handoff's contract (`DeckGun_*_01..02`).
-6. **The figurehead.** Only once "Picks" names one; until then skip. Build the pick
+6. **The figurehead.** Dropped (see Picks): skip. Build the pick
    properly and place it.
 7. **Finish.** Visibility ranges and import LODs per the concept's model-budget
    table; `--ship-blocks` and `--one-ship` still work; final stills at 30, 100 and
@@ -101,7 +101,7 @@ cd /Users/davidkalina/Documents/Projects/zenscape-ship-build && python3 tools/pl
 
 ## Picks
 
-- Figurehead: not yet picked.
+- Figurehead: **none.** The user saw the three options (e6b007e6) and said "Looks rough. Let's axe it for now." Task 6 is dropped: no figurehead on the build. Leave the options in the concept script behind `--fig` (off); don't port them.
 
 ## Checks every iteration
 
