@@ -6,9 +6,11 @@ extends Node3D
 ##
 ## What shows: the sea (shaders/endless_sea.gdshader) draws what's under it from
 ## the screen, faded by the water it's seen through, so the fish is a real body
-## under the sheet: a dark shape at a metre down, gone by about four. The water
-## over it is the burrower's track on the sea (EndlessSea `other_track`): its V
-## and its churned line follow the fish while it's near the top.
+## under the sheet: a dark shape at a metre down, gone by about four. It swims
+## shallow enough that its dorsal cuts the surface now and then. The water over
+## it is its own (EndlessSea `swimmers`): a low hump pushed ahead of its head,
+## the chop stilled over its back, a little less sky where its body is, and fine
+## spray and two short ripples off the fin while it's out.
 ##
 ## It is placed by the plane, not by the water: a slot beside it and a little
 ## ahead (fore, side), where the chase camera, 12 m behind and 3.6 m over the
@@ -48,15 +50,20 @@ const RISE := 1.8
 const PACE := Vector2(5.0,8.0)
 const DIVE := 1.6
 ## Its slot: fore of the plane's centre (m, the camera's 12 m behind), out to one
-## side (m), down from the surface to its middle (m). It comes up from behind, wide
-## and deep, and dives back and away.
-const FORE := Vector2(3.0,10.0)
-const SIDE := Vector2(5.5,8.0)
-const DEPTH := 1.05
+## side (m), down from the surface to its middle (m), so about 14-18 m from the
+## eye. Deeper than about 1 m it's lost at that range; shallower than 0.6 its
+## back lies on top. Off Boost the camera's narrower: the slot is further on by
+## up to CRUISE_ON m. It comes up from behind, wide and deep, and dives back and
+## away.
+const FORE := Vector2(-2.0,4.0)
+const CRUISE_ON := 5.0
+const BOOST_SPEED := Vector2(42.0,54.0)
+const SIDE := Vector2(5.0,6.5)
+const DEPTH := 0.78
 const START := Vector3(-16.0,11.0,4.0)
 const GONE := Vector3(-30.0,13.0,5.5)
 ## How far its slot wanders (m) and how fast (rad/s).
-const WANDER := Vector3(2.5,1.0,0.12)
+const WANDER := Vector3(2.5,0.8,0.12)
 const WANDER_RATE := Vector3(0.55,0.4,0.9)
 ## A surge: once in a while it pulls ahead this far (m) for about this long (s).
 const SURGE := 4.0
@@ -72,19 +79,15 @@ const BEAT_HZ := Vector2(1.6,2.2)
 const BEAT := 0.42
 const YAW := 0.05
 const PITCH := 0.09
-## The water: track points every so many frames, at most POINTS (EndlessSea's 40).
-const EVERY := 3
-const POINTS := 40
-## The water over it: full this near the top (m), none this deep, and at most this
-## strong (the plane's own wake is 1; more read as painted lines, not water).
-const WET := Vector2(2.4,0.8)
-const WET_MOST := 0.3
+## The dorsal's tip over the spine, a share of its length (art/blender/fish/
+## fish_build.py: the back at 0.36 of the nose plus the fin's 0.085).
+const FIN_TOP := 0.167
 ## Under the water the sky doesn't reach it: the body's fill, bounce and mirror
 ## (shaders/wake_fish.gdshader) this much of the leaping fish's, back to all of it
 ## as it comes out.
 const UNDER_LIGHT := 0.35
-## The track lasts this long (s) after it dives (the sea's wake is gone by 4.6).
-const TAIL := 4.6
+## Its body takes the water's colour this far over the still sea's level (m).
+const WET_BACK := 0.4
 ## The kind: a dark back, a dull silver flank, a pale belly.
 const KIND := {"back":Color(0.04,0.06,0.07),"flank":Color(0.36,0.4,0.4),"belly":Color(0.78,0.78,0.74),"spot":Color(0.03,0.04,0.05),"band":Color(0.3,0.32,0.34),"fin":Color(0.08,0.1,0.11),"spots":0.5,"bands":0.0}
 
@@ -126,10 +129,9 @@ var _breach_v := 0.0
 var _air := -1.0
 var _surge_at := -1.0
 var _spine := PackedVector3Array()
-var _points: Array[Vector4] = []
-var _sent := 0
-var _frame := 0
-var _track_on := false
+## What the sea is sent for each (`_water`).
+var _at: Array[Vector4] = [Vector4.ZERO,Vector4.ZERO]
+var _body: Array[Vector4] = [Vector4.ZERO,Vector4.ZERO]
 var _warm := 0.5
 ## For the numbers and probes: time low over a lake (s), moments, breaches, and
 ## the last one's start (of that time); ms this frame and its mean.
@@ -173,6 +175,10 @@ func setup(the_wake: Node3D, mesh: Mesh, shader: Shader, skin: Texture2D) -> voi
 		s.mat.set_shader_parameter("fin_tint",KIND.fin)
 		s.mat.set_shader_parameter("spot_share",KIND.spots)
 		s.mat.set_shader_parameter("band_share",KIND.bands)
+		s.mat.set_shader_parameter("under",1.0)
+		# Over the still sea's level by a swell's trough: the swell lays its back
+		# bare now and then, and dry it reads as a fish lying on the water.
+		s.mat.set_shader_parameter("surface_y",Field.SEA_Y+WET_BACK)
 		s.node = MeshInstance3D.new()
 		s.node.name = "Swimmer%d" % i
 		s.node.mesh = mesh
@@ -184,7 +190,6 @@ func setup(the_wake: Node3D, mesh: Mesh, shader: Shader, skin: Texture2D) -> voi
 		s.node.top_level = true
 		add_child(s.node)
 		_pool.append(s)
-	_points.resize(POINTS)
 
 ## One frame, after WakeFish read the plane's line.
 func step(delta: float) -> void:
@@ -194,10 +199,7 @@ func step(delta: float) -> void:
 		if _warm <= 0.0:
 			for s: Swimmer in _pool: s.node.visible = false
 	if _on: _run(delta)
-	else:
-		_wait(delta)
-		if _track_on: _tail()
-	_frame += 1
+	else: _wait(delta)
 	ms = (Time.get_ticks_usec()-began)/1000.0
 	ms_avg = lerpf(ms_avg,ms,0.05)
 
@@ -211,10 +213,8 @@ func _wait(delta: float) -> void:
 		return
 	_left = _gap_mean*_rng.randf_range(1.0-GAP_SPREAD,1.0+GAP_SPREAD)
 
-## Begins one, on the side with water all along its stay: false if neither has,
-## or the burrower has the sea's track.
+## Begins one, on the side with water all along its stay: false if neither has.
 func _start() -> bool:
-	if wake.sea != null and wake.sea._other_on: return false
 	var pace := _rng.randf_range(PACE.x,PACE.y)
 	var sign := 1.0 if _rng.randf() < 0.5 else -1.0
 	var side := _rng.randf_range(SIDE.x,SIDE.y)
@@ -242,7 +242,6 @@ func _begin(pace: float, sign: float, side: float) -> void:
 	_air = -1.0
 	_breach_at = RISE+_rng.randf_range(0.3,0.65)*pace if _rng.randf() < BREACH_SHARE else -1.0
 	_surge_at = RISE+_rng.randf_range(0.15,0.8)*pace
-	_sent = 0
 	count += 1
 	last_at = water_s
 	_swim.clear()
@@ -250,7 +249,7 @@ func _begin(pace: float, sign: float, side: float) -> void:
 	var first := _pool[0]
 	_ready_one(first,long,Vector3(_rng.randf_range(FORE.x,FORE.y),side,DEPTH),Vector3.ZERO)
 	if _rng.randf() < PAIR_SHARE:
-		var off := Vector3(_rng.randf_range(-9.0,-5.0),_rng.randf_range(1.8,3.0),_rng.randf_range(0.2,0.5))
+		var off := Vector3(_rng.randf_range(-6.0,-3.0),_rng.randf_range(1.8,3.0),_rng.randf_range(0.15,0.35))
 		_ready_one(_pool[1],long*_rng.randf_range(SECOND.x,SECOND.y),first.to,off)
 
 func _ready_one(s: Swimmer, long: float, to: Vector3, offset: Vector3) -> void:
@@ -272,6 +271,7 @@ func _ready_one(s: Swimmer, long: float, to: Vector3, offset: Vector3) -> void:
 
 ## A slot's place in the world now.
 func _world(fore: float, side: float, depth: float) -> Vector3:
+	fore += CRUISE_ON*(1.0-smoothstep(BOOST_SPEED.x,BOOST_SPEED.y,float(wake._speed)))
 	var p: Vector3 = wake._at+wake._ahead*fore+wake._right*side*_sign
 	p.y = Field.SEA_Y-depth
 	return p
@@ -387,55 +387,41 @@ func _pose(s: Swimmer, delta: float) -> void:
 	s.mat.set_shader_parameter("spine",_spine)
 	s.mat.set_shader_parameter("flare",-0.4)
 	var lit := lerpf(1.0,UNDER_LIGHT,smoothstep(-0.2,0.6,s.depth))
+	# The flank's shine is the sky's and the sun's off it in the air: under, the
+	# surface takes them, or it shows as a white fish lying on the water.
+	var shine := 1.0-smoothstep(-0.3,0.4,s.depth)
 	s.mat.set_shader_parameter("fill",2.2*lit)
 	s.mat.set_shader_parameter("bounce",3.0*lit)
-	s.mat.set_shader_parameter("mirror",0.9*lit)
-	s.mat.set_shader_parameter("flash",3.0*lit)
+	s.mat.set_shader_parameter("mirror",0.9*shine)
+	s.mat.set_shader_parameter("flash",3.0*shine)
 
-## The water over it: the sea's second track, from the lead's head, as strong as
-## it is near the top.
+## The water over them: a hump pushed ahead of each, the chop stilled over its
+## back, its body darker, and spray where its fin cuts (EndlessSea `swimmers`).
 func _water() -> void:
 	if wake.sea == null: return
-	var lead := _swim[0]
-	var wet := smoothstep(WET.x,WET.y,lead.depth)*WET_MOST if not lead.out else 0.0
-	var head := Vector2(lead.pos.x,lead.pos.z)+Vector2(wake._ahead.x,wake._ahead.z)*lead.long*0.35
-	var now: float = wake._clock
-	if _frame%EVERY == 0:
-		# Newest first: shift the rest down.
-		for i in range(mini(_sent,POINTS-1),0,-1): _points[i] = _points[i-1]
-		_points[0] = Vector4(head.x,head.y,now,wet)
-		_sent = mini(_sent+1,POINTS)
-	# Ages from the clock, newest first, the head now in front.
-	var out: Array[Vector4] = _out
-	out.resize(_sent+1)
-	out[0] = Vector4(head.x,head.y,0.0,wet)
-	for i in _sent:
-		var q := _points[i]
-		out[i+1] = Vector4(q.x,q.y,now-q.z,q.w)
-	wake.sea.other_track(out,head)
-	_track_on = true
+	_swim_mark(0)
+	_swim_mark(1)
+	wake.sea.swimmers(_at[0],_body[0],_at[1],_body[1],_swim.size())
 
-var _out: Array[Vector4] = []
-
-## After it's gone, the track it left fades out on its own clock; then it's taken
-## off the sea.
-func _tail() -> void:
-	var now: float = wake._clock
-	if wake.sea == null or _sent == 0 or now-_points[_sent-1].z > TAIL:
-		_out.resize(0)
-		if wake.sea != null: wake.sea.other_track(_out,Vector2.ZERO)
-		_track_on = false
+## The sea's numbers for swimmer `i`: where it is and which way, its length, its
+## middle's depth, how far its fin stands out, and how strong (none in the air).
+func _swim_mark(i: int) -> void:
+	if i >= _swim.size():
+		_body[i] = Vector4.ZERO
 		return
-	_out.resize(_sent)
-	for i in _sent:
-		var q := _points[i]
-		_out[i] = Vector4(q.x,q.y,now-q.z,q.w)
-	wake.sea.other_track(_out,Vector2(_points[0].x,_points[0].y))
+	var s := _swim[i]
+	var fore := s.node.global_transform.basis.z
+	var way := Vector2(fore.x,fore.z)
+	way = way/way.length() if way.length_squared() > 1e-6 else Vector2(wake._ahead.x,wake._ahead.z)
+	_at[i] = Vector4(s.pos.x,s.pos.z,way.x,way.y)
+	var fin := FIN_TOP*s.long*s.shape.y-s.depth
+	_body[i] = Vector4(s.long,s.depth,fin,0.0 if s.out else 1.0)
 
 func _finish() -> void:
 	_on = false
 	for s: Swimmer in _swim: s.node.visible = false
 	_swim.clear()
+	if wake.sea != null: wake.sea.swimmers(Vector4.ZERO,Vector4.ZERO,Vector4.ZERO,Vector4.ZERO,0)
 
 ## The numbers' line (--numbers).
 func note() -> String:

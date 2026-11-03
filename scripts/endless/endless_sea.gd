@@ -46,6 +46,7 @@ const OTHER_WIDE := 1.8
 var material: ShaderMaterial
 var land_seed := 0
 var _other_on := false
+var _swim_on := false
 var depth := ImageTexture.new()
 var depth_at := Vector4.ZERO
 var _task := -1
@@ -512,6 +513,20 @@ func leaps(marks: PackedVector4Array, clock: float, live: bool) -> void:
 	material.set_shader_parameter("leap_marks",marks)
 	material.set_shader_parameter("leap_count",marks.size() if live else 0)
 	material.set_shader_parameter("leap_now",clock)
+
+## The water over a swimming fish (scripts/endless/swim_fish.gd), one or two:
+## each `at` (x, z of its middle, x, z of its way) and `body` (length m, its
+## middle's depth m, how far its fin stands out of the water m, strength 0..1).
+## `count` 0 takes them off.
+func swimmers(at0: Vector4, body0: Vector4, at1: Vector4, body1: Vector4, count: int) -> void:
+	if count == 0 and not _swim_on: return
+	_swim_on = count > 0
+	material.set_shader_parameter("swim_count",count)
+	if count == 0: return
+	material.set_shader_parameter("swim_at0",at0)
+	material.set_shader_parameter("swim_body0",body0)
+	material.set_shader_parameter("swim_at1",at1)
+	material.set_shader_parameter("swim_body1",body1)
 
 ## Waits for a worker still baking (before the sea is freed).
 func finish() -> void:

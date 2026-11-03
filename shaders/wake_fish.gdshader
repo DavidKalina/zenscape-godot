@@ -43,9 +43,17 @@ uniform float shade_lift = 3.2;
 uniform float mirror = 0.9;
 uniform float flash = 3.0;
 uniform float flash_tight = 45.0;
+// Under the water (the swimmer, scripts/endless/swim_fish.gd): how much the
+// water over it takes (0 for a leap), where its top is (world y), and what it
+// turns the body to, more the deeper (per m).
+uniform float under = 0.0;
+uniform float surface_y = 0.0;
+uniform vec3 under_tint : source_color = vec3(0.04, 0.09, 0.11);
+uniform float under_fade = 2.5;
 
 varying float fin;
 varying float eye;
+varying float world_y;
 
 void vertex() {
 	float s = clamp(nose_z - VERTEX.z, 0.0, 0.9999) * 8.0;
@@ -66,6 +74,7 @@ void vertex() {
 	VERTEX = vec3(joint.x + x * cs, y, joint.y + x * sn);
 	vec3 n = NORMAL;
 	NORMAL = vec3(n.x * cs - n.z * sn, n.y, n.x * sn + n.z * cs);
+	world_y = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
 }
 
 void fragment() {
@@ -109,4 +118,18 @@ void fragment() {
 	float sky_luma = dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722));
 	vec3 lift = mix(zs_hemi_sky, vec3(sky_luma), 0.7) * zs_hemi_energy * shade_lift * mix(0.1, 1.0, zs_daylight) * mix(1.0, 0.3, sunward);
 	EMISSION = base * (hemi * fill + lift) + mix(base, vec3(0.85), 0.6) * flank_share * (sky * mirror + vec3(sun_in_it * flash * zs_daylight));
+	// Under the water its colours go to the water's, and the sun's shine with them.
+	if (under > 0.0) {
+		// Most of it at once under the surface (the sun and sky come through it
+		// dim and blue), the rest with depth.
+		float d = surface_y - world_y;
+		float t = under * smoothstep(0.0, 0.08, d) * (0.75 + 0.25 * (1.0 - exp(-max(d, 0.0) * under_fade)));
+		// The sun reaches it dimmed too, or its sunward flank lights up white.
+		ALBEDO = mix(base, under_tint, t) * (1.0 - 0.6 * t);
+		// The sun's glint off a wet flank is the surface's under water, not its.
+		SPECULAR = 0.65 * (1.0 - smoothstep(0.0, 0.5, t));
+		ROUGHNESS = mix(wet_rough, 1.0, t);
+		METALLIC *= 1.0 - t;
+		EMISSION = mix(EMISSION, under_tint * hemi * fill, t);
+	}
 }
