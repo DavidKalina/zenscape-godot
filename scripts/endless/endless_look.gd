@@ -50,6 +50,8 @@ const EndlessPost = preload("res://scripts/endless/endless_post.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const DayCycle = preload("res://scripts/endless/day_cycle.gd")
 const LandHorizon = preload("res://scripts/endless/land_horizon.gd")
+const WindField = preload("res://scripts/endless/wind_field.gd")
+const WindMap = preload("res://scripts/endless/wind_map.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -185,6 +187,20 @@ var _key_arg := 1.0
 var _fill_arg := 1.0
 ## The wind's heading over the ground now (unit xz).
 var wind_direction := Vector2.RIGHT
+## The wind by place and hour (scripts/endless/wind_field.gd: `wind.wind_at(x,
+## z)`), or null: a world whose paint has no "wind": "field" (the doors world
+## takes its home's, the wilderness's), or --wind=off, blows the mood's one
+## wind everywhere as before; so does the land past the field's bake (the
+## doors' amberlands half).
+var wind: WindField
+## The wind's clock (s): from the day's time at the start, then real seconds.
+var _wind_clock := 0.0
+## The eye last frame (the wind's strength there is the view's).
+var _eye := Vector3.ZERO
+## The field's strength at the eye, eased.
+var _wind_here := -1.0
+## The field's map (--wind-map), or null.
+var wind_map: CanvasLayer
 
 ## The season and weather shader globals a title world, isle or study may
 ## have left set (the isle publishes the real date's autumn, its snow, wet
@@ -368,7 +384,16 @@ func setup(land_seed: int) -> void:
 		elif a.begins_with("--haze-height-bias="): haze_bias = a.get_slice("=",1).to_float()
 	ground.set_shader_parameter("haze_height",Vector4(HAZE_RISE,HAZE_SPAN,haze_cut,haze_bias))
 	ground.set_shader_parameter("beach",Field.BEACH)
-	ground.set_shader_parameter("snow_line",Field.new(land_seed).snow_line())
+	var land := Field.new(land_seed)
+	ground.set_shader_parameter("snow_line",land.snow_line())
+	if str(world.paint.get("wind","")) == "field" and WindField.wanted_mode(LaunchArgs.user_args()) != "off":
+		wind = WindField.new()
+		_wind_clock = cycle.t
+		wind.setup(land_seed,land,LaunchArgs.user_args())
+		if "--wind-map" in LaunchArgs.user_args():
+			wind_map = WindMap.new()
+			add_child(wind_map)
+			wind_map.setup(wind)
 	_build_sea()
 	_river_water(land_seed)
 	if EndlessClouds.wanted():
@@ -658,6 +683,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 		sun.light_energy *= _key
 		RenderingServer.global_shader_parameter_set("zs_hemi_energy",float(celestial.state.zs_hemi_energy)*_fill)
 	_sheen_pace = WorldProfile.current().sheen_pace_at(eye.x,eye.z)
+	_eye = eye
 	_publish(delta)
 	_haze(facing)
 	if post != null: post.step(view,self,facing)
@@ -677,7 +703,19 @@ func _publish(delta: float) -> void:
 	# The wind wanders a little round its heading, its strength breathing.
 	var angle := _wind_angle+0.35*sin(_time*0.013)
 	var strength := _wind*(0.85+0.15*sin(_time*0.21)*sin(_time*0.077))
-	var travel := delta*AIR_SPEED*(0.5+0.5*strength/WIND)
+	if wind != null:
+		# The field's: the hour, the day's temper, the place under the eye.
+		_wind_clock += delta
+		wind.step(0.0,_wind_clock,float(celestial.phase)*24.0,cycle.day,cycle.t/cycle.length,delta)
+		# Past the bake (the doors' far half: the amberlands) the mood's one
+		# wind as before.
+		var reach := wind.reach(_eye.x,_eye.z)
+		angle = lerp_angle(angle,wind.heading,reach)
+		var here := lerpf(strength,wind.wind_at(_eye.x,_eye.z),reach)
+		_wind_here = here if _wind_here < 0.0 else lerpf(_wind_here,here,1.0-exp(-delta*1.5))
+		strength = _wind_here
+		if wind_map != null: wind_map.step(delta,_eye)
+	var travel := delta*AIR_SPEED*(0.5+0.5*minf(strength,2.0)/WIND)
 	_gust += travel
 	_sheen += travel*_sheen_pace
 	wind_direction = Vector2(cos(angle),sin(angle))
@@ -831,3 +869,4 @@ func hour() -> float:
 func _exit_tree() -> void:
 	if post != null: post.free_buffers()
 	if water != null: water.finish()
+	if wind != null: wind.finish_bake()

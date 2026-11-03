@@ -24,8 +24,10 @@ func _init() -> void:
 	flora = {"forest":1.0,"forest_meadows":1.0,"tree_weights":PackedFloat32Array(),"grass":1.0,"flowers":true}
 	# The paint: the alpine morning at 8.6 (EndlessLook MOOD, HOUR), the
 	# ground and sea shaders' own defaults (the watercolour meadows, the high
-	# paint, the sea's tints), no shader globals past the season reset.
-	paint = {"mood":"alpine_morning","hour":8.6,"ground":{},"sea":{},"globals":{}}
+	# paint, the sea's tints), no shader globals past the season reset; the
+	# wind by place and hour (scripts/endless/wind_field.gd; absent: the
+	# mood's one wind everywhere).
+	paint = {"mood":"alpine_morning","hour":8.6,"ground":{},"sea":{},"globals":{},"wind":"field"}
 	# Every dressing layer. The rock shapes: sea stacks along the coasts
 	# (--no-rocks turns them off). No hoodoos (taken out 2026-10-27: they
 	# read as clay; --hoodoos=2.5 brings back the pockets they had).
