@@ -12,10 +12,11 @@ extends Node3D
 ## from how far he's past it, so a frame only sets `head_s`. Nothing touches the bore's
 ## own mesh or collision.
 ##
-## His pace (`_pace`): PACE, what the plane does flat out on Boost, so a plane at speed
-## holds him where it is. Crowded inside LEAD.x he pulls away by CROWD_GAIN, so he settles
-## at LEAD.x and anything faster closes on him (a surge). Past LEAD.y he eases off and
-## lets the plane come. A scrape costs the plane speed and he stretches away by that alone.
+## His pace (`_pace`): PACE, what a plane on Boost holds through the spurs, under its level
+## best, so a clean line closes on him and a scrappy one falls back. Crowded inside LEAD.x
+## he pulls away by CROWD_GAIN, so he settles at LEAD.x and anything faster closes on him
+## (a surge). Past LEAD.y he eases off and lets the plane come. A scrape costs the plane
+## speed and he stretches away by that alone.
 
 ## Ended: `why` is "out" (the far mouth), "left" (the plane didn't follow him in),
 ## "lost" (the plane fell back or left the bore) or "down" (a landing or a crash, which
@@ -32,8 +33,9 @@ const RIDGE_SHADER = preload("res://shaders/burrower_bore_ridge.gdshader")
 
 ## How far ahead of the plane he runs (m along the bore): about 2 s at speed.
 const LEAD := Vector2(90.0,150.0)
-## The plane on Boost, level (m/s), and how fast he can go (m/s).
-const PACE := 57.0
+## The plane on Boost through the spurs (m/s; 57.7 level and straight, 52-55 weaving), and
+## how fast he can go (m/s).
+const PACE := 54.0
 const PACE_MOST := 95.0
 const PACE_LEAST := 20.0
 ## Crowded: m/s more for each m inside LEAD.x. Left behind: m/s less for each m past

@@ -29,17 +29,21 @@ const SPUR_SHADER = preload("res://shaders/burrower_bore_spur.gdshader")
 ## One spur about every this many metres of tunnel: the knob flying tunes.
 const SPUR_EVERY := 85.0
 ## None this close to either mouth (m), and how far a spot wanders off its even place
-## (a share of the spacing).
+## (a share of the spacing): at 0.2 no two stand under about 0.9 s apart at his pace.
 const SPUR_ENDS := 130.0
-const SPUR_WANDER := 0.3
+const SPUR_WANDER := 0.2
 ## The way left past a spur's tip, toy width (WorldScale `opening`).
 const TOY_PAST := 4.0
 ## How far it stands out: a share of the way across the bore from its root, and the most
-## and least (m). Its root's radius: a share of that.
+## and least (m). The most is REACH_MOST, or the way to the bore's middle times
+## REACH_MIDDLE if that's further, so a spur in a wide cavern still stands in the way and
+## can't be ignored from the middle. Its root's radius: a share of that, and the most (m).
 const REACH_SHARE := Vector2(0.42,0.72)
 const REACH_MOST := 18.0
+const REACH_MIDDLE := 1.0
 const REACH_LEAST := 5.0
 const GIRTH_SHARE := Vector2(0.17,0.25)
+const GIRTH_MOST := 6.0
 ## Off the bore's middle in the section, and along the path (rad, the most either way).
 const TILT := 0.3
 const LEAN := 0.25
@@ -70,7 +74,7 @@ const TWIST := 0.3
 const BEND := 0.12
 ## The spheres down a spur's axis (the plane's solid), and how far past them a touch
 ## still counts as on the spur (`face`).
-const CHAIN := 9
+const CHAIN := 14
 const FACE_ROOM := 0.8
 
 ## One spur: its place in the layout, then, once laid (`_lay`), where it stands. `laid`
@@ -256,7 +260,8 @@ func _lay(g: Group, sp: Spur) -> void:
 	var along := Vector3(tg.x,0.0,tg.y)
 	var way := (BoreLine.middle(t,sp.s)-root).slide(along).normalized().rotated(along,sp.tilt)
 	var across := BoreLine.across(ring,root,way,along)
-	var long := minf(minf(lerpf(REACH_SHARE.x,REACH_SHARE.y,sp.share)*across,REACH_MOST),across-WorldScale.opening(TOY_PAST))
+	var most := maxf(REACH_MOST,(BoreLine.middle(t,sp.s)-root).dot(way)*REACH_MIDDLE)
+	var long := minf(minf(lerpf(REACH_SHARE.x,REACH_SHARE.y,sp.share)*across,most),across-WorldScale.opening(TOY_PAST))
 	var axis := way.rotated(way.cross(along).normalized(),sp.lean)
 	var tip := root+axis*long
 	if long < REACH_LEAST or Tunnels.shaft_at(t,root.x,root.z,-SHAFT_ROOM) >= 0 or Tunnels.shaft_at(t,tip.x,tip.z,-SHAFT_ROOM) >= 0:
@@ -266,7 +271,7 @@ func _lay(g: Group, sp: Spur) -> void:
 	sp.axis = axis
 	sp.long = long
 	sp.left = across-long
-	sp.girth = long*lerpf(GIRTH_SHARE.x,GIRTH_SHARE.y,sp.thick)
+	sp.girth = minf(long*lerpf(GIRTH_SHARE.x,GIRTH_SHARE.y,sp.thick),GIRTH_MOST)
 	sp.basis = Basis(Quaternion(Vector3.UP,axis))*Basis(Vector3.UP,sp.roll)
 	sp.chain.resize(CHAIN)
 	sp.radii.resize(CHAIN)
