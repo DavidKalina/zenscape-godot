@@ -9,13 +9,13 @@ starts. Branch `iter/burrower-cave`, not merged.
 ## Fly it
 
 ```
-cd /Users/davidkalina/Documents/Projects/zenscape-burrower-cave && python3 tools/play.py -- --pilot-file=/tmp/chase1.json --at=3400,4384 --heading=90 --alt=60
+cd /Users/davidkalina/Documents/Projects/zenscape-burrower-cave && python3 tools/play.py -- --no-title --pilot-file=/tmp/chase1.json --at=3400,4384 --heading=90 --alt=60
 ```
 
 That meets him on the axis of mouth `1_1/a`. The reverse way, out of mouth A's end:
 
 ```
-cd /Users/davidkalina/Documents/Projects/zenscape-burrower-cave && python3 tools/play.py -- --pilot-file=/tmp/chase2.json --at=7300,5545 --heading=-74 --alt=90 --burrower-near=1400
+cd /Users/davidkalina/Documents/Projects/zenscape-burrower-cave && python3 tools/play.py -- --no-title --pilot-file=/tmp/chase2.json --at=7300,5545 --heading=-74 --alt=90 --burrower-near=1400
 ```
 
 You have `FOLLOW_S`, 5 s, from when he goes in to follow him. A mouth comes up once until
