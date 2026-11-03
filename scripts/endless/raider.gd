@@ -18,9 +18,9 @@ extends Node3D
 ## it peels off (`peel`). A ram that misses within NEAR_R m (a barrel roll
 ## through it counts at any distance under NEAR_R) is a dodge: a ball's pass
 ## on the line (NearMiss `shot_pass`) and DODGE_FILL of the meter at once.
-## A hot surge roll (scripts/endless/surge_smash.gd) within KILL_R m kills it
-## (`try_kill`): it breaks apart, and REST s later (`--raider-every=S`) another
-## shows up.
+## A hot surge roll (scripts/endless/surge_smash.gd) within KILL_R m (KILL_FLEE
+## while it runs) kills it (`try_kill`): it breaks apart, and REST s later
+## (`--raider-every=S`) another shows up.
 ##
 ## It flies by the traffic planes' rules (scripts/sky_traffic.gd): the heading
 ## turns at a limited rate, the wings bank with the turn, it keeps CLEAR m
@@ -39,8 +39,9 @@ extends Node3D
 ##   abeam, within MIX_BREAK_M m and flying away from it, and runs (`flee`;
 ##   the marker reads "RUNS" for a moment).
 ## - Sat on its tail (ahead within MIX_TAIL_M m, the plane's nose within
-##   MIX_TAIL_DEG of it) for MIX_TAILED_S s, it runs whatever the count: it
-##   can't ram you from there.
+##   MIX_TAIL_DEG of it, it flying away) for MIX_TAILED_S s, it runs whatever
+##   the count: it can't ram you from there. Turning back for a head-on isn't
+##   counted, so it gets its pass in.
 ## - Lost (the chase's rule: too far, or behind the view, for a while) after
 ##   MIX_GRACE s of running, or after MIX_CHASE_MOST s of running with the
 ##   plane more than MIX_NEAR_M m off, it turns and comes back at you: the
@@ -131,6 +132,11 @@ const ROLL_FILL := 0.08
 const PEEL_S := 3.0
 ## A hot surge roll within KILL_R m of it kills it.
 const KILL_R := 10.0
+## The kill's reach while it runs (`flee`): it flies a few m over the crowns
+## and the plane comes at it from behind and above, so a little more, and
+## height off it counts FLEE_UP of itself (a surge over it reaches it).
+const KILL_FLEE := 14.0
+const FLEE_UP := 0.6
 
 ## The mix: rams before it breaks off and runs (picked between the two each
 ## time), how near ahead it breaks off (m), and the longest run (s).
@@ -146,6 +152,10 @@ const MIX_GRACE := 10.0
 const MIX_ABEAM := 0.2
 const RUNS_S := 1.6
 ## The broken plane: pieces, their speed out (m/s), life (s).
+## Running (`flee`), a faint glow at its tail so it reads far off against
+## the trees (the dark body alone is a speck past about 80 m).
+const FLEE_GLOW := 0.3
+
 const PIECES := 16
 const PIECE_OUT := 22.0
 const PIECE_LIFE := 3.2
@@ -299,7 +309,10 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 				var lost_now: bool = int(chase.stats.rounds) > _rounds_seen
 				_rounds_seen = int(chase.stats.rounds)
 				if (lost_now and t > MIX_GRACE) or run_t > MIX_CHASE_MOST: _fight()
-		&"tell": _tell(delta,p,ps)
+		&"tell":
+			# Down (landed): no ram at a plane on the ground.
+			if flying: _tell(delta,p,ps)
+			else: _go(&"stalk")
 		&"ram": _ram(delta,p,rel,dist,ps)
 		&"over":
 			_fly_to(flight.position+ram_dir*100.0,delta,tuning.turn*0.5,lerpf(speed,ps+STALK_NEAR,minf(t/OVER_S,1.0)))
@@ -419,7 +432,10 @@ func _stalk(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float, flyi
 		return
 	if not flying: return
 	if mode == &"mix":
-		var on_tail := ahead and dist < MIX_TAIL_M and fwd.dot(rel/maxf(dist,0.1)) > cos(deg_to_rad(MIX_TAIL_DEG))
+		# Counted only while it flies away from the plane: turning back for a
+		# head-on through the plane's nose isn't being tailed.
+		var going := flight.forward().dot(rel/maxf(dist,0.1)) > MIX_AWAY
+		var on_tail := ahead and going and dist < MIX_TAIL_M and fwd.dot(rel/maxf(dist,0.1)) > cos(deg_to_rad(MIX_TAIL_DEG))
 		tailed = tailed+delta if on_tail else 0.0
 		if _breaks_off(rel,dist) or tailed > MIX_TAILED_S:
 			_run()
@@ -527,7 +543,10 @@ func try_kill(g: Node3D) -> Vector3:
 	if not alive() or figure == null: return Vector3.INF
 	var p: Vector3 = game.plane.position
 	var d := minf(sweep,flight.position.distance_to(p))
-	if d > KILL_R: return Vector3.INF
+	if state == &"flee":
+		var off := flight.position-p
+		d = minf(d,Vector3(off.x,off.y*FLEE_UP,off.z).length())
+	if d > (KILL_FLEE if state == &"flee" else KILL_R): return Vector3.INF
 	var at: Vector3 = flight.position
 	_break(at)
 	return at
@@ -656,9 +675,12 @@ func _draw_figure(delta: float) -> void:
 	var glow := 0.0
 	if state == &"tell": glow = clampf(t/float(tuning.tell),0.0,1.0)*(0.75+0.25*sin(t*TAU*8.0))
 	elif state == &"ram": glow = 0.45
+	elif state == &"flee": glow = FLEE_GLOW
 	_glow.visible = glow > 0.01
 	if _glow.visible:
-		_glow.global_position = flight.position+flight.forward()*2.0*SIZE
+		# Running, at its tail (an engine's glow, to follow); else at its nose.
+		var end := -1.6 if state == &"flee" else 2.0
+		_glow.global_position = flight.position+flight.forward()*end*SIZE
 		# Never under about a hundredth of the distance, so it reads far off.
 		var far := (game.camera as Camera3D).global_position.distance_to(flight.position)*0.022
 		_glow.scale = Vector3.ONE*maxf(lerpf(1.0,3.5,glow)*SIZE,far*glow)

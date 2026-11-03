@@ -40,7 +40,7 @@ extends RefCounted
 ## the side, at the plane's speed + ROUND_OVER, then runs again.
 ##
 ## Tuning flags: --raider-skim=M/S (SKIM_GAIN), --raider-pace=X (PACE),
-## --raider-low=M (LOW).
+## --raider-low=M (LOW), --raider-dive=RAD (PITCH_DIVE).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
@@ -65,6 +65,17 @@ const TURN := 0.9
 const TURN_GAIN := 1.8
 const PITCH_MAX := 0.55
 const PITCH_DOWN := 0.3
+## High over where it means to fly (more than DIVE_M.x m, fully by DIVE_M.y:
+## breaking off from a dogfight up high), it dives as steep as PITCH_DIVE, so
+## "it runs low" reads in a few seconds, and eases back to PITCH_DOWN near it.
+const PITCH_DIVE := 0.7
+const DIVE_M := Vector2(30.0,80.0)
+## On an arch's line (its height set), over it by DIVE_LINE m it dives as
+## steep: the line comes down DESCENT, and PITCH_DOWN alone never catches it
+## from above. An arch it can't come down to by the run-in at DESCENT_MOST a m
+## (broken off up high) it doesn't take.
+const DIVE_LINE := Vector2(2.0,12.0)
+const DESCENT_MOST := 0.35
 const PITCH_RATE := 1.2
 ## m over what stands ahead it flies; the least over the land (m); the
 ## samples ahead (m) and to each side (m) its height is read from, and the
@@ -163,7 +174,8 @@ var _slope := 0.0
 func _init(r: Node3D) -> void:
 	raider = r
 	tuning = {"skim":r._flag("--raider-skim",SKIM_GAIN),"pace":maxf(r._flag("--raider-pace",PACE),0.3),
-		"low":maxf(r._flag("--raider-low",LOW),FLOOR)}
+		"low":maxf(r._flag("--raider-low",LOW),FLOOR),
+		"dive":clampf(r._flag("--raider-dive",PITCH_DIVE),PITCH_DOWN,1.2)}
 
 ## Shown: ahead of the view, low, facing on along the plane's line.
 func spawn() -> void:
@@ -272,8 +284,13 @@ func _plan(p: Vector3) -> void:
 		var top := -INF
 		for s: float in LOOK:
 			var q := at+dir*s
-			if s <= 180.0 and _pillar(Vector3(q.x,at.y,q.z)): score -= W_BLOCK
 			var land := float(game.field.height(q.x,q.z))
+			# A rock or an arch at its height, or one whose top it can't climb
+			# over by then at CLIMB (an arch's lintel over its line: it isn't
+			# routed through, so `_fly` would climb over it, too late).
+			if s <= 180.0:
+				var solid := _top(game.plane_ground(Vector3(q.x,at.y+PROBE,q.z),SOLID_PAD))
+				if _pillar(Vector3(q.x,at.y,q.z)) or (solid > land+1.0 and solid > at.y+s*CLIMB): score -= W_BLOCK
 			var water := float(game.water_at(q))
 			top = maxf(top,maxf(land,water))
 			if water > land: score -= W_SEA
@@ -351,6 +368,8 @@ func _take_arch(p: Vector3) -> bool:
 			var to := entry-at
 			# Ahead of it, far enough to line up on.
 			if to.dot(flat) < 50.0: continue
+			# Low enough to come down to the line by the run-in.
+			if at.y-c.y > maxf(d-RUN_IN,0.0)*DESCENT_MOST: continue
 			stats.arch_way = int(stats.arch_way)+1
 			if not _clear_way(c,w): continue
 			stats.arch_clear = int(stats.arch_clear)+1
@@ -407,6 +426,15 @@ func _follow(delta: float, pace: float) -> void:
 	# Along the line through the middle: down to the opening's height by RUN_IN
 	# m before it (DESCENT a m on before that), held RUN_OUT m past it.
 	var y := c.y+maxf(-along-RUN_IN,0.0)*DESCENT
+	# Still over the opening's top by the run-in (it shouldn't be): off the
+	# route, over the arch (the look-ahead reads its solids again).
+	var o: Dictionary = _openings.get(arch,{})
+	if along > -RUN_IN and along < 0.0 and not o.is_empty() and f.position.y > float(o.top)-WorldScale.span:
+		stats.aborts = int(stats.get("aborts",0))+1
+		_drop_route()
+		_want = f.heading
+		_fly(_want,delta,pace)
+		return
 	_fly(_heading_to(c+w*maxf(along+LEAD,LEAD*0.5)),delta,pace,y,false)
 	# On rails the last RAILS m in: the miss off the line eased out.
 	off = f.position-c
@@ -531,7 +559,9 @@ func _fly(want: float, delta: float, pace: float, y := NAN, solids := true, reac
 	if not is_nan(_want_y):
 		_slope = lerpf(_slope,clampf((want_y-_want_y)/run,-PITCH_DOWN,PITCH_MAX),raider._ease(0.12,delta))
 	_want_y = want_y
-	var pitch := clampf(atan(_slope)+atan2(want_y-f.position.y,maxf(raider.speed*0.4,15.0)),-PITCH_DOWN,PITCH_MAX)
+	var band := DIVE_M if is_nan(y) else DIVE_LINE
+	var down := lerpf(PITCH_DOWN,float(tuning.dive),smoothstep(band.x,band.y,f.position.y-want_y))
+	var pitch := clampf(atan(_slope)+atan2(want_y-f.position.y,maxf(raider.speed*0.4,15.0)),-down,PITCH_MAX)
 	if f.position.y < under+FLOOR: pitch = maxf(pitch,0.3)
 	f.pitch = move_toward(f.pitch,pitch,PITCH_RATE*delta)
 	raider.speed = lerpf(raider.speed,pace,raider._ease(1.0,delta))
