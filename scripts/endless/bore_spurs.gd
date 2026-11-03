@@ -15,6 +15,10 @@ extends Node3D
 ## `inside`, through LandTunnels `ground`, `inside` and `sight`). FlightContact takes its
 ## normal from `face`. The bore overhead doesn't cancel a graze on one (NearMiss, `holds`).
 ##
+## A surge smashes a spur that's out (`struck`, `smash`; scripts/endless/surge_smash.gd): it
+## bursts into rubble (scripts/endless/bore_rubble.gd), its body goes back to the pool and its
+## crack stays on the rock, and it stays broken for as long as its tunnel stays built.
+##
 ## The gap: a spur stops short of the far rock by at least WorldScale.opening(TOY_PAST),
 ## measured against the bore's real ring at its spot (`_lay`); a spot that can't leave
 ## that and still stand REACH_LEAST m out has no spur.
@@ -23,6 +27,7 @@ const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const BoreLine = preload("res://scripts/endless/bore_line.gd")
 const BoreTell = preload("res://scripts/endless/bore_tell.gd")
+const BoreRubble = preload("res://scripts/endless/bore_rubble.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SPUR_SHADER = preload("res://shaders/burrower_bore_spur.gdshader")
 
@@ -89,6 +94,8 @@ class Spur:
 	var shape := 0
 	var laid := false
 	var fired := false
+	## Smashed by a surge: gone for as long as its tunnel stays built.
+	var broken := false
 	var clock := 0.0
 	## How far out it is (0..1).
 	var out := 0.0
@@ -127,8 +134,9 @@ var _meshes: Array[ArrayMesh] = []
 var _hulls: Array[PackedVector3Array] = []
 var _mat: ShaderMaterial
 var _tell: BoreTell
-## For drivers: the worst frame's work (us), spurs fired, spots dropped.
-var stats := {"worst_us": 0, "fired": 0, "dropped": 0}
+var _rubble: BoreRubble
+## For drivers: the worst frame's work (us), spurs fired, spots dropped, spurs smashed.
+var stats := {"worst_us": 0, "fired": 0, "dropped": 0, "smashed": 0}
 
 func _init() -> void:
 	name = "BoreSpurs"
@@ -141,6 +149,9 @@ func setup(tunnels: Node3D) -> void:
 	_tell = BoreTell.new()
 	add_child(_tell)
 	_tell.setup(HOLD_S,SNAP_S)
+	_rubble = BoreRubble.new()
+	add_child(_rubble)
+	_rubble.setup()
 	var rng := RandomNumberGenerator.new()
 	for i in SHAPES:
 		rng.seed = hash(["bore spur",i])
@@ -217,6 +228,7 @@ func passing(at: float) -> void:
 
 ## One frame, `at` the plane: the spurs under way, those near it, tunnels gone.
 func step(delta: float, at: Vector3, sound: Node) -> void:
+	_rubble.step(delta)
 	if _groups.is_empty(): return
 	_tell.step(delta)
 	_mat.set_shader_parameter("now",_tell.now)
@@ -320,8 +332,8 @@ func _take() -> StaticBody3D:
 ## Tunnel `g` is gone, and its spurs with it.
 func _let_go(g: Group) -> void:
 	for sp: Spur in g.spurs:
-		if sp.body == null: continue
 		_tell.drop(sp)
+		if sp.body == null: continue
 		sp.body.visible = false
 		sp.body.collision_layer = 0
 		_spare.append(sp.body)
@@ -419,6 +431,37 @@ func face(p: Vector3, grow: float) -> Vector3:
 				best = d
 				out = (p-c).normalized()
 	return out
+
+## The spur near the plane that's out (snapping or snapped; one still in its tell isn't
+## there) and within `pad` m of the way from `p` along `way` (unit) for `look` m, or null.
+func struck(p: Vector3, way: Vector3, look: float, pad: float) -> Spur:
+	for sp: Spur in _near:
+		if sp.body == null or sp.out <= 0.0: continue
+		var to := sp.bound_at-p
+		var t := clampf(to.dot(way),0.0,look)
+		if (p+way*t).distance_to(sp.bound_at) > sp.bound+pad: continue
+		var from := sp.root+sp.axis*(sp.long*(sp.out-1.0))
+		for i in CHAIN:
+			var c := from+sp.chain[i]
+			var k := clampf((c-p).dot(way),0.0,look)
+			var r := sp.radii[i]+pad
+			if (p+way*k).distance_squared_to(c) < r*r: return sp
+	return null
+
+## Spur `sp` smashed by the plane going `blast` (m/s): it bursts, and it's gone.
+func smash(sp: Spur, blast: Vector3) -> void:
+	if sp.body == null: return
+	var from := sp.root+sp.axis*(sp.long*(sp.out-1.0))
+	_rubble.burst(from,sp.axis*(sp.long*sp.out),sp.girth,blast)
+	sp.broken = true
+	sp.out = 0.0
+	sp.body.visible = false
+	sp.body.collision_layer = 0
+	_spare.append(sp.body)
+	sp.body = null
+	_moving.erase(sp)
+	_near.erase(sp)
+	stats.smashed = int(stats.smashed)+1
 
 ## Whether `body` is a spur's.
 func holds(body: Object) -> bool:

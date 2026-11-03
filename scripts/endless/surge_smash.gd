@@ -14,6 +14,10 @@ extends Node3D
 ## - the pirate ship's plates (scripts/endless/pirate_ship.gd), a record's `strike`.
 ## - a burrower on a run can't keep ahead, and flown into he's caught
 ##   (scripts/endless/burrower_flight.gd `try_catch`, signal `caught`).
+## - the spurs he leaves in a bore that are out (scripts/endless/bore_spurs.gd
+##   `struck`, `smash`) burst into rubble, and the plugs he brings down will too;
+##   each is a `smash` moment on the line (LineMoves `smash`). The bore itself
+##   stays stone.
 ##
 ## Below a full meter the roll button is the clean roll and `fly_surge` the plain
 ## surge, as before.
@@ -36,13 +40,16 @@ const HIT_SPIN_S := 0.4
 const LUNGE := 18.0
 const KICK := Vector2(0.014,7.0)
 ## A hit: the view's kick, the hit-stop (frames, time scale), the breaker's
-## strength and reach (m), how far it looks ahead (s of flight, least m).
+## strength and reach (m), how far it looks ahead (s of flight, least m). A
+## spur or plug's burst: the view's kick and the hit-stop, bigger.
 const HIT_KICK := Vector2(0.03,11.0)
 const HIT_STOP := Vector2(5.0,0.12)
 const STRENGTH := 1.0
 const HIT_R := 3.5
 const LOOK_S := 0.1
 const LOOK_LEAST := 6.0
+const SPUR_KICK := Vector2(0.045,14.0)
+const SPUR_STOP := Vector2(6.0,0.1)
 ## How long the wingtip vapour stays hard on (s).
 const VAPOUR_S := 0.7
 ## While full or hot, every SCAN_S s, ruins within SCAN_M m ahead get their
@@ -61,6 +68,7 @@ var vapour := 0.0
 ## Counted, for the drivers.
 var rolls := 0
 var hits := 0
+var spurs := 0
 var catches := 0
 var _held_was := false
 var _hold := 0.0
@@ -147,6 +155,7 @@ func _strike() -> void:
 	var way := v.normalized()
 	var pad := WorldScale.span*0.5+0.3
 	var look := maxf(v.length()*LOOK_S,LOOK_LEAST)
+	if _spur(p,way,look,pad,v): return
 	var s := 0.0
 	while s <= look:
 		var q := p+way*s
@@ -169,6 +178,22 @@ func _hit(r: Dictionary, q: Vector3, way: Vector3, v: Vector3) -> bool:
 		_hole(r,q)
 	hub.hit(q,HIT_R,-1.0,&"plane")
 	_felt(q,way)
+	return true
+
+## A burrower's spur on the way, smashed: true if one was.
+func _spur(p: Vector3, way: Vector3, look: float, pad: float, v: Vector3) -> bool:
+	var bore_spurs = game.tunnels.spurs if game.tunnels != null else null
+	if bore_spurs == null: return false
+	var sp: RefCounted = bore_spurs.struck(p,way,look,pad)
+	if sp == null: return false
+	var q: Vector3 = sp.root+sp.axis*(sp.long*sp.out*0.5)
+	bore_spurs.smash(sp,v)
+	spurs += 1
+	_felt(q,way)
+	hub.pause(int(SPUR_STOP.x),SPUR_STOP.y)
+	game.feel_hit(SPUR_KICK.x,SPUR_KICK.y)
+	game.sound.shot("thump",1.3,0.55,q)
+	game.near.moves.smash(game,"spur",q,hash([sp.root,sp.s]))
 	return true
 
 ## The hit in the eye and the ear.
