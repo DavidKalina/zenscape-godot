@@ -660,31 +660,41 @@ float zs_surge_cells(vec2 p) {
 	return sqrt(next) - sqrt(near);
 }
 
-// Foam of `density` 0..1 as the bubbles' walls: thin foam is a broken net of
-// them, gathered in patches, thick foam closes the cells down to holes, and a
-// cell finer than the pixel evens out into the share it would cover. `inner`:
-// how far in from a wall this is, the shade inside thick foam.
+// Foam of `density` 0..1 as a mat of bubbles eaten away: rounded cell walls, a
+// blotchy noise and a grain add up to a height, and the foam covers what stands
+// above the line `density` sets. Thin foam is that height's broken tops, soft
+// edged and part clear, gathered in patches over a milky veil; thick foam is
+// crisper and closes down to holes. No wall is drawn as a line: drawn ones read
+// as cracked glass from a low eye. Finer than the pixel it evens out into its
+// share. `inner`: how far down from the mat's top, the shade inside thick foam.
 float zs_surge_lace(vec2 p, float density, float footprint, out float inner) {
 	vec2 q = vec2(p.x, p.y * 0.8);
 	q += (vec2(zs_body_noise(p / 2.7 + vec2(4.1, 1.3)), zs_body_noise(p / 2.7 + vec2(0.9, 6.7))) - 0.5) * 1.6;
 	float gather = zs_body_noise(p / 11.0 + vec2(6.6, 2.4)) * 0.6 + zs_body_noise(p / 4.1 + vec2(1.2, 5.5)) * 0.4;
-	float thin = density * (0.35 + 0.8 * smoothstep(0.32, 0.68, gather)) - 0.1;
-	float wall = max(thin, 0.0);
-	wall = wall * wall * 0.8 + wall * 0.14;
-	float vary = mix(1.0, 0.45 + 1.1 * zs_body_noise(p / 1.6 + vec2(3.7, 9.2)), 1.0 - smoothstep(0.1, 0.5, footprint));
-	vec2 cell = vec2(4.4, 1.5);
-	float big = zs_surge_cells(q / cell.x + vec2(2.3, 8.8));
-	inner = clamp(big * 2.2, 0.0, 1.0) * (1.0 - smoothstep(0.2, 0.6, footprint / cell.x));
-	float edge = max(0.025, footprint / cell.x);
-	float cover = mix(1.0 - smoothstep(wall * vary - edge, wall * vary + edge, big), min(wall * 1.6, 1.0), smoothstep(0.2, 0.6, footprint / cell.x));
-	float fine_held = 1.0 - smoothstep(0.2, 0.6, footprint / cell.y);
-	float fine_wall = (wall * 0.9 + 0.012) * smoothstep(0.02, 0.2, thin);
-	if (fine_held > 0.0 && fine_wall > 0.0) {
-		float fine = zs_surge_cells(q / cell.y + vec2(7.7, 3.1));
-		edge = max(0.03, footprint / cell.y);
-		cover = max(cover, (1.0 - smoothstep(fine_wall - edge, fine_wall + edge, fine)) * fine_held);
+	float thin = density * (0.35 + 0.8 * smoothstep(0.32, 0.68, gather));
+	vec2 cell = vec2(2.3, 0.9);
+	float seen = 1.0 - smoothstep(0.15, 0.5, footprint / cell.x);
+	float seen_fine = 1.0 - smoothstep(0.15, 0.5, footprint / cell.y);
+	float top = 0.5;
+	inner = 0.0;
+	if (seen > 0.0) {
+		float big = 1.0 - smoothstep(0.0, 0.6, zs_surge_cells(q / cell.x + vec2(2.3, 8.8)));
+		inner = (1.0 - big) * seen;
+		top = mix(0.5, big, seen);
 	}
-	return cover * step(0.0, thin);
+	float fine = 0.5;
+	if (seen_fine > 0.0) {
+		fine = zs_body_noise(q / cell.y + vec2(7.7, 3.1)) * 0.6 + zs_body_noise(q / (cell.y * 0.47) + vec2(2.1, 7.3)) * 0.4;
+		fine = mix(0.5, clamp((fine - 0.5) * 2.2 + 0.5, 0.0, 1.0), seen_fine);
+	}
+	float grain = mix(0.5, zs_body_noise(p / 0.34 + vec2(3.7, 9.2)) * 0.65 + zs_body_noise(p / 0.13 + vec2(8.2, 1.6)) * 0.35, 1.0 - smoothstep(0.04, 0.16, footprint));
+	float height = top * 0.44 + fine * 0.36 + clamp((grain - 0.5) * 1.6 + 0.5, 0.0, 1.0) * 0.2;
+	float soft = mix(mix(0.42, 0.1, smoothstep(0.4, 1.0, thin)), 0.75, 1.0 - seen);
+	float line = 1.0 - thin * 0.92;
+	float cover = smoothstep(line - soft * 0.5, line + soft * 0.5, height);
+	float veil = smoothstep(0.02, 0.7, thin) * (0.4 + 0.6 * grain) * 0.42;
+	cover *= mix(0.6, 1.0, smoothstep(0.25, 0.7, thin)) * smoothstep(0.0, 0.14, thin);
+	return 1.0 - (1.0 - cover) * (1.0 - veil);
 }
 
 // The surge's breakers at rest xz `p`, from `crest` (zs_surge): only tall
@@ -730,10 +740,10 @@ void zs_surge_foam(vec2 p, float t, float footprint, vec3 crest, out float cap, 
 	// the wave ran, bent.
 	float left = back <= 0.0 ? 0.0 : breaks * pow(max(1.0 - back / 58.0, 0.0), 1.4);
 	if (left > 0.004) {
-		vec2 bend = vec2(zs_body_noise(p / 37.0 + vec2(2.2, 8.1)), zs_body_noise(p / 13.0 + vec2(6.4, 0.3))) - 0.5;
-		vec2 down = vec2(along + bend.x * 44.0 + bend.y * 15.0, off);
-		float streak = zs_body_noise(down / vec2(6.5, 52.0) + vec2(1.9, 4.4)) * 0.6 + zs_body_noise(down / vec2(2.3, 21.0) + vec2(8.8, 3.3)) * 0.4;
-		left *= mix(0.55, 0.1 + 1.4 * smoothstep(0.34, 0.68, streak), keep);
+		vec2 bend = vec2(zs_body_noise(p / 46.0 + vec2(2.2, 8.1)), zs_body_noise(p / 15.0 + vec2(6.4, 0.3))) - 0.5;
+		vec2 down = vec2(along + bend.x * 24.0 + bend.y * 7.0, off);
+		float streak = zs_body_noise(down / vec2(9.0, 30.0) + vec2(1.9, 4.4)) * 0.72 + zs_body_noise(down / vec2(3.4, 13.0) + vec2(8.8, 3.3)) * 0.28;
+		left *= mix(0.55, 0.1 + 1.4 * smoothstep(0.26, 0.74, streak), keep);
 	}
 	float density = max(thick, left);
 	if (density <= 0.004) return;
