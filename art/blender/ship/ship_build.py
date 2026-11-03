@@ -9,11 +9,15 @@ name at its .tres), then reads the glb back and proves the corridor clear
 edit there and a rerun, then a headless import. --fast halves the textures.
 
 Origin on the waterline at the corridor's midpoint. Bow toward Blender +Y
-(Godot -Z), up +Z (Godot +Y), 1 unit = 1 m. Both ends are breakable: a flat
-transom aft and a flat beakhead bulkhead forward, each with a plug of shards
-filling the corridor's end, so the numbers follow "Contract for the model" in
-the gray box's docs/design/endless-flight/pirate-ship-handoff.md. Blender
-(x, y, z) is the contract's (x, -z, y).
+(Godot -Z), up +Z (Godot +Y), 1 unit = 1 m. The hull is the concept's
+(ship_concept_build.py, ship-look-concept.md): a sheer up to the stern castle
+and the forecastle, a round bilge with tumblehome, a raked counter aft and a
+pointed prow forward. Both ends are breakable, each with a plug of shards
+filling the corridor's end at y +-56.5: the transom aft, upright round the
+exit, and a bulkhead forward at the back of a short tunnel cut through the
+prow, out under its upper lip and over its lower one. The numbers follow
+"Contract for the model" in docs/design/endless-flight/pirate-ship-handoff.md.
+Blender (x, y, z) is the contract's (x, -z, y).
 
 Textures are painted here in numpy: `hull` and `stern` are unique maps (one
 for a side's elevation, shared by both sides, one for both flat ends),
@@ -39,22 +43,39 @@ RES = "res://assets/models/pirate_ship"
 
 # --- The numbers --------------------------------------------------------------
 
-# The hull (m). Y of the bow's flat and of the transom at the corridor's height;
-# the corridor is centred on y = 0.
-LENGTH = 113.0
-BEAM = 24.75
-WIDEN = BEAM / 22.0       # hand-set x numbers below were set on a 22 m beam
-KEEL_Z = -5.75            # the strakes' first line; the keel's timber reaches -6
-Y_BOW = LENGTH * 0.5
-Y_STERN = -LENGTH * 0.5
-Y_STEM = 72.5             # the beak's tip: only below HEAD_Z
-HEAD_Z = 3.0              # the beak's platform, never above the corridor's floor
-STERN_RAKE = 0.05         # the transom leans out aft, m a metre up
-Z_WIDE = 4.0              # the widest waterline, above it the tumblehome
-TUMBLE = 0.27             # how much of the beam is lost by 30 m over Z_WIDE
-TUCK_FROM = 3.0           # below this the run tucks in to the sternpost
-TUCK_TO = -4.0
-END_NARROW = 0.12         # the plan's narrowing at each flat end
+# The hull (m), the concept's shape (ship_concept_build.py, its numbers turned into
+# this frame: y = -its z, z = its y). The plates stay at y +-56.5: the transom round
+# the stern's exit, and the bulkhead at the back of the prow's tunnel.
+LENGTH = 113.0            # plate to plate
+STERN_U = LENGTH * 0.5    # the transom round the exit, upright at the plate
+Y_BOW = LENGTH * 0.5      # the bow's plate, at the back of the tunnel
+Y_STERN = -STERN_U
+BEAM = 29.0               # 14.5 m half breadth at 8 m up
+WIDEN = 24.75 / 22.0      # hand-set x numbers below were set on a 22 m beam (the corridor kept 18)
+KEEL_Z = -5.8             # the strakes' first line: 2.6 and 13.4 fall on strake lines
+# The midship section's half breadth by height: a round belly, tumblehome above.
+SECTION = ((-6.0, 1.5), (-5.0, 4.5), (-4.0, 7.2), (-2.5, 10.0), (-1.0, 11.8), (0.5, 13.0), (2.5, 13.9),
+	(5.0, 14.4), (8.0, 14.5), (11.0, 14.0), (13.4, 13.3), (15.0, 12.6), (17.0, 11.8), (24.0, 10.4), (32.0, 9.2), (40.0, 8.4))
+# The sheer: the rail's height along her (y, z), up to the stern castle and the forecastle.
+SHEER = ((-STERN_U, 32.0), (-48.5, 30.5), (-40.0, 27.5), (-30.0, 23.0), (-22.0, 19.5), (-12.0, 17.5), (0.0, 17.0),
+	(15.0, 17.6), (30.0, 19.5), (40.0, 22.5), (48.0, 24.0), (57.0, 25.0))
+RUN_FROM = 34.0           # aft of this the run narrows: the bottom tucks in, the castle squares off
+PROW_FROM = 40.0          # forward of this the prow closes to the stem
+STEM_Y0 = 72.0            # the stem at the waterline; it rakes forward STEM_RAKE a metre up
+STEM_RAKE = 0.25
+RAKE_FROM = 40.0          # aft of this the counter leans out over the exit, the sternpost tucks in
+COUNTER = 0.32            # m out a metre up, above COUNTER_Z
+COUNTER_Z = 14.0
+TUCK = 0.45               # m in a metre down, below TUCK_Z
+TUCK_Z = 2.6
+KEEL_RISE = 0.5           # the keel's depth lost at each end
+WOBBLE = 0.12             # strake lines wander this much: by hand, not by rule
+# The prow's tunnel: the corridor runs on past the bow's plate between walls lined in
+# dark wood, under the upper lip and over the lower one, out where the sides close in.
+TUNNEL_X = 10.4
+TUNNEL_LO = 2.6
+TUNNEL_HI = 13.4
+CUT_R = 0.6               # the framing timbers round the cut, centred this far outside it
 
 # The corridor: straight along the keel line, a clear box, nothing in it.
 COR_LEN = 110.0
@@ -93,7 +114,7 @@ PLUG_TONE = 1.0           # the plug's planks against the hull's: shadowed, soot
 BROKE = (0.86, 0.74, 0.62)   # a broken face, over the stern's own weathered map
 
 # The hull's shell and frame.
-STRAKE = 1.25             # a plank's height; the ports and decks fall on these lines
+STRAKE = 1.2              # a plank's height; the ports, the tunnel's lips and decks fall on these lines
 LINER_T = 0.7             # the shell's thickness, outer plank to inner
 RIB_PITCH = 4.0
 RIB_FIRST = 2.0           # ribs fall at +-2, +-6...: between the ports
@@ -101,29 +122,24 @@ PLANK_LIP = 0.11          # each strake stands this proud of the one above
 WALE_LIP = 0.34
 CEIL = COR_TOP + 1.8      # the underside of the upper deck's planks
 DECK_Z = 15.0             # the upper deck (waist)
-BULWARK = 3.0             # the waist's rail over the deck
 
-# Decks along the ship: y of the break, and the deck and rail aft or forward of it.
-BREAK_POOP = -30.0
+# Decks along the ship: the waist, the quarterdeck and poop aft, the forecastle.
+BREAK_POOP = -30.0        # the quarterdeck's break
+BREAK_HIGH = -44.0        # the poop's, over the quarterdeck
 BREAK_FORE = 38.0
-RAIL_POOP = 25.5
-RAIL_FORE = 21.75
-DECK_POOP = 24.0
-DECK_FORE = 20.0
-SHEER_STERN = 1.8         # the rails' lift at the ends (m)
-SHEER_BOW = 1.3
-SHEER_FROM = 15.0         # base heights over which the lift comes in
-SHEER_TO = 22.0
+DECK_POOP = 22.0          # the quarterdeck
+DECK_HIGH = 28.0          # the poop
+DECK_FORE = 21.0
 CROWN = 3.2               # the transom's arc over the poop rail
 
 # Guns: six a side, on a ledge along each wall, muzzles out past the hull.
 PORTS = (-40.0, -24.0, -8.0, 8.0, 24.0, 40.0)    # y; stern first
 DUMMIES = (-48.0, -32.0, -16.0, 0.0, 16.0, 32.0)  # shut ports between, no gun behind
-PORT_W = 2.7
-PORT_ROWS = 2             # strakes tall
-PORT_ROW = 10             # strake index of the port's sill
+PORT_W = 3.0
+PORT_ROWS = 3             # strakes tall
+PORT_ROW = 10             # strake index of the port's sill: 6.2 to 9.8, round the bore
 GUN_Z = 8.0
-GUN_X = BEAM * 0.5 + 3.0  # the muzzle's reach
+GUN_X = 16.25             # the muzzle's reach
 GUN_LEN = 5.5
 GUN_BORE_R = 0.5          # the barrel's reach at the muzzle
 LEDGE_Z = 5.9             # the gun ledge along each wall
@@ -182,58 +198,104 @@ def frange(a, b, step):
 
 
 # --- The hull's shape ---------------------------------------------------------
+# A station u along her (u = y off the rake), a base height z (the strake lines);
+# `Side.p` lifts, rakes and wobbles them into the real surface.
 
-def sheer(y):
-	t = y / (LENGTH * 0.5)
-	return SHEER_STERN * max(0.0, -t) ** 2.4 + SHEER_BOW * max(0.0, t) ** 2.6
+def table(t, x):
+	if x <= t[0][0]:
+		return t[0][1]
+	for (x0, y0), (x1, y1) in zip(t, t[1:]):
+		if x <= x1:
+			return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+	return t[-1][1]
 
 
-def lift(y, z):
-	"""A base height at station y, risen with the sheer."""
-	return z + sheer(y) * sstep(SHEER_FROM, SHEER_TO, z)
+def rail(u):
+	"""The rail's height at station u: the sheer."""
+	return table(SHEER, u)
 
 
 def stem_y(z):
-	"""How far forward the hull runs at height z: the flat, or the beak below it."""
-	if z >= HEAD_Z:
-		return Y_BOW - (z - COR_Z) * -STERN_RAKE
-	d = HEAD_Z - z
-	return Y_STEM - 0.1 * d * d
+	"""The stem, raked: further forward the higher it goes."""
+	return STEM_Y0 + STEM_RAKE * z
+
+
+def ends(u):
+	"""0 amidships, 1 at the stern's plate and the stem: how far the keel has risen."""
+	return max(min(1.0, (-u - 30.0) / (STERN_U - 30.0)), min(1.0, (u - 30.0) / 42.0), 0.0) ** 2
+
+
+def lift(u, z):
+	"""A base height at station u, the keel risen toward both ends."""
+	return z * (1.0 - KEEL_RISE * ends(u)) if z < 0.0 else z
+
+
+def rake(u, z):
+	"""How far aft (+) the counter leans out at station u, real height z; the sternpost
+	tucks forward (-) under the exit."""
+	if u >= -RAKE_FROM:
+		return 0.0
+	t = min(1.0, (-u - RAKE_FROM) / (STERN_U - RAKE_FROM)) ** 2
+	return t * (COUNTER * max(0.0, z - COUNTER_Z) - TUCK * max(0.0, TUCK_Z - z))
 
 
 def stern_y(z):
-	return Y_STERN - (z - COR_Z) * STERN_RAKE if z > 1.0 else Y_STERN + 7.0 * STERN_RAKE + (1.0 - z) * 0.55
+	"""The transom at real height z: upright round the exit, raked above and below."""
+	return -STERN_U - rake(-STERN_U, z)
 
 
-def section(z):
-	if z >= Z_WIDE:
-		return 1.0 - TUMBLE * ((z - Z_WIDE) / 30.0) ** 1.25
-	return max(0.0, 1.0 - ((Z_WIDE - z) / (Z_WIDE - KEEL_Z + 0.25)) ** 2.6) ** 0.55
+def half_beam(u, z):
+	"""The hull's half width at station u, base height z (m): a plan that narrows all
+	along, a run aft, and a prow that closes to the raked stem."""
+	u = max(u, -STERN_U)
+	w = table(SECTION, z) * (1.0 - 0.06 * (u / 58.0) ** 2)
+	if u < -RUN_FROM:
+		t = (-u - RUN_FROM) / (STERN_U - RUN_FROM)
+		w *= 1.0 - lerp(0.55, 0.12, sstep(1.0, 3.8, z)) * t * t
+		if z < 3.0:
+			w = max(w, 1.0)
+	if u > PROW_FROM:
+		t = min(1.0, (u - PROW_FROM) / (stem_y(z) - PROW_FROM))
+		w *= max(0.0, 1.0 - t ** 2.2) ** 0.5
+	return w
 
 
-def half_beam(y, z):
-	"""The hull's half width at station y, height z (m)."""
-	if y >= 0.0:
-		t = min(1.0, y / stem_y(z))
-		plan = 1.0 - END_NARROW * t ** 6 if z >= HEAD_Z else (1.0 - t ** 6) ** 0.8
-	else:
-		t = min(1.0, y / stern_y(z))
-		w = sstep(TUCK_FROM, TUCK_TO, z)
-		plan = lerp(1.0 - END_NARROW * t ** 6, (1.0 - t ** 2.2) ** 0.75, w)
-	return BEAM * 0.5 * section(z) * plan
+def u_at(y, z):
+	"""The station whose raked side stands at y, at real height z."""
+	u = y
+	for _ in range(4):
+		u = y + rake(u, z)
+	return u
 
 
-def base_rail(y):
-	if y < BREAK_POOP:
-		z = RAIL_POOP
-	elif y > BREAK_FORE:
-		z = RAIL_FORE
-	else:
-		z = DECK_Z + BULWARK
-	return KEEL_Z + STRAKE * round((z - KEEL_Z) / STRAKE)
+def half_at(y, z):
+	"""The hull's half width at a real y and height z (decks, galleries, dress)."""
+	return half_beam(u_at(y, z), z)
+
+
+def cross_y(z, x=TUNNEL_X):
+	"""Where the prow's side at base height z comes in to x: the tunnel's mouth."""
+	lo, hi = Y_BOW, stem_y(z)
+	for _ in range(40):
+		mid = (lo + hi) * 0.5
+		if half_beam(mid, z) > x:
+			lo = mid
+		else:
+			hi = mid
+	return lo
+
+
+def wobble(u, z):
+	"""The hand-laid wander of strake line z, none at the cut's lips, the rail or the keel."""
+	j = (z - KEEL_Z) / STRAKE
+	k = sstep(0.4, 1.4, z) * min(1.0, abs(z - TUNNEL_LO) / STRAKE) * min(1.0, abs(z - TUNNEL_HI) / STRAKE)
+	k *= min(1.0, max(0.0, rail(u) - z) / STRAKE)
+	return WOBBLE * k * math.sin(u * 0.23 + j * 1.3)
 
 
 def base_deck(y):
+	if y < BREAK_HIGH:
+		return DECK_HIGH
 	if y < BREAK_POOP:
 		return DECK_POOP
 	if y > BREAK_FORE:
@@ -265,8 +327,8 @@ class Surface:
 		return frange(u0, u1, 2.5)
 
 
-Z_BOT, Z_TOP = -8.0, 34.0
-Y_BACK, Y_FORE = -76.0, 76.0
+Z_BOT, Z_TOP = -8.0, 38.0
+Y_BACK, Y_FORE = -76.0, 80.0
 
 
 def hull_uv(pt):
@@ -274,40 +336,56 @@ def hull_uv(pt):
 
 
 class Side(Surface):
-	def __init__(self, side):
+	"""A side of the hull, u from the transom to the stem, its top clipped to the rail."""
+
+	def __init__(self, side, clip=True):
 		self.s = side
+		self.clip = clip
 		self.out = (side, 0.0, 0.0)
 
 	def p(self, u, z):
-		zz = lift(u, z)
-		return Vector((self.s * half_beam(u, zz), u, zz))
+		u = min(u, stem_y(z))
+		if self.clip:
+			z = min(z, rail(u))
+		zz = lift(u, z) + wobble(u, z)
+		return Vector((self.s * half_beam(u, z), u + -rake(u, zz), zz))
 
 	def uv(self, pt):
 		return hull_uv(pt)
 
 	def stations(self, u0, u1):
-		# Close together round the bow and the stern's turn.
+		# Close together round the prow and the stern's turn, closer still at the stem.
 		out = [u0]
 		y = u0
 		while True:
 			t = abs(y) / Y_BOW
-			y += 1.1 if (y > 0 and t > 0.84) else (2.0 if t > 0.62 else 4.0)
+			y += 1.1 if (y > 0 and t > 0.72) else (2.0 if t > 0.62 else 4.0)
 			if y >= u1 - 0.3:
 				break
 			out.append(y)
 		out.append(u1)
+		if u1 > PROW_FROM + 20.0:
+			out = sorted(set(q for q in out if q < u1 - 3.6) | {u1 - d for d in (3.4, 2.4, 1.6, 1.0, 0.55, 0.25, 0.08)} | {u1})
+			out = [q for q in out if q >= u0]
 		return out
 
 
 class End(Surface):
-	"""u is x. A flat end of the ship: the transom (-1) or the beakhead (+1)."""
+	"""u is x. A flat end of the ship: the transom (-1), raked, or the bow's plate (+1)
+	at the back of the tunnel."""
 
 	def __init__(self, sign):
 		self.sign = sign
 		self.out = (0.0, sign, 0.0)
 
 	def p(self, u, z):
-		return Vector((u, stem_y(z) if self.sign > 0 else stern_y(z), z))
+		if self.sign > 0:
+			return Vector((u, Y_BOW, z))
+		zz = lift(-STERN_U, z)
+		return Vector((u, stern_y(zz), zz))
+
+	def half_w(self, z):
+		return half_beam(Y_BOW if self.sign > 0 else -STERN_U, z)
 
 	def uv(self, pt):
 		return stern_uv(pt.x, pt.z)
@@ -358,7 +436,7 @@ class Opening:
 		hit = None
 		hw = CRACK_W * 0.5
 		if z1 > COR_Z - CRACK_H * 0.5 + 0.01 and z0 < COR_Z + CRACK_H * 0.5 - 0.01:
-			w = half_beam(self.surf.p(0.0, zm).y * 0.999, zm) - 0.25
+			w = min(self.surf.half_w(zm), TUNNEL_X) - 0.25
 			hit = (-min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)), min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)))
 		self.memo[j] = hit
 		return hit
@@ -389,7 +467,7 @@ def row_z(j):
 	return KEEL_Z + j * STRAKE
 
 
-ROWS = int((RAIL_POOP - KEEL_Z) / STRAKE) + 1
+ROWS = int((rail(-STERN_U) - KEEL_Z) / STRAKE) + 1
 
 
 def inner_light(p):
@@ -591,17 +669,39 @@ def spans_of(cuts, a, b):
 	return out
 
 
-def rail_spans(z1):
-	"""Stretches of the ship where base height z1 is under the rail."""
-	breaks = [-999.0, BREAK_POOP, BREAK_FORE, 999.0]
+def rail_spans(z0, u0=-STERN_U, u1=90.0):
+	"""Stretches of stations where a strake from base height z0 stands under the rail:
+	each runs out to a sliver where the sheer comes down to it."""
+	def under(u):
+		return rail(u) > z0 + 0.05
+	us = frange(u0, u1, 0.5)
 	out = []
-	for a, b in zip(breaks, breaks[1:]):
-		if base_rail((a + b) * 0.5) >= z1 - 1e-3:
-			if out and abs(out[-1][1] - a) < 1e-6:
-				out[-1] = (out[-1][0], b)
+	start = u0 if under(u0) else None
+	for a, b in zip(us, us[1:]):
+		if under(a) != under(b):
+			lo, hi = a, b
+			for _ in range(30):
+				m = (lo + hi) * 0.5
+				if under(m) == under(a):
+					lo = m
+				else:
+					hi = m
+			x = (lo + hi) * 0.5
+			if start is None:
+				start = x
 			else:
-				out.append((a, b))
+				out.append((start, x))
+				start = None
+	if start is not None:
+		out.append((start, u1))
 	return out
+
+
+def strake_end(z0, z1):
+	"""How far forward strake z0..z1 runs: to the stem, or to the tunnel's mouth."""
+	if z0 >= TUNNEL_LO - 0.01 and z1 <= TUNNEL_HI + 0.01:
+		return cross_y((z0 + z1) * 0.5)
+	return stem_y(max(z0, z1))
 
 
 def shot_holes(rng):
@@ -619,17 +719,19 @@ def shot_holes(rng):
 
 
 def build_end(g, teeth, shards, sign, op, rng):
-	"""A flat end across the ship, strake by strake, round the plug."""
+	"""A flat end across the ship, strake by strake, round the plug: the whole transom
+	aft, the tunnel's back forward."""
 	T = op.surf
-	top = RAIL_POOP + sheer(-LENGTH * 0.5) if sign < 0 else RAIL_FORE + sheer(LENGTH * 0.5)
-	crown = CROWN if sign < 0 else 0.0
-	bottom = KEEL_Z if sign < 0 else HEAD_Z
+	if sign < 0:
+		top, crown, bottom = rail(-STERN_U), CROWN, KEEL_Z
+	else:
+		top, crown, bottom = TUNNEL_HI, 0.0, TUNNEL_LO
 	for j in range(ROWS + 4):
 		z0, z1 = row_z(j), row_z(j + 1)
 		zm = (z0 + z1) * 0.5
-		if z0 < bottom - 0.01 or z0 > top + crown:
+		if z0 < bottom - 0.01 or z0 > top + crown - 0.01 or (sign > 0 and z1 > top + 0.01):
 			continue
-		w = half_beam(T.p(0.0, zm).y * 0.999, zm)
+		w = T.half_w(zm)
 		if w < 0.5:
 			continue
 		if zm > top:
@@ -792,10 +894,9 @@ def build_hull(crack_s, crack_b, shards):
 		S = Side(side)
 		for j in range(ROWS):
 			z0, z1 = row_z(j), row_z(j + 1)
-			zm = (z0 + z1) * 0.5
-			for ra, rb in rail_spans(z1):
-				y0 = max(ra, stern_y(lift(-56.0, zm)))
-				y1 = min(rb, stem_y(lift(56.0, zm)))
+			for ra, rb in rail_spans(z0):
+				y0 = max(ra, -STERN_U)
+				y1 = min(rb, strake_end(z0, z1))
 				if y1 - y0 < 0.1:
 					continue
 				cuts = []
@@ -805,37 +906,89 @@ def build_hull(crack_s, crack_b, shards):
 				for hs, hj, h0, h1 in holes:
 					if hs == side and hj == j:
 						cuts.append((h0, h1))
-				wale = j in (7, 8, PORT_ROW + PORT_ROWS + 1, PORT_ROW + PORT_ROWS + 5)
+				wale = j in (ROW_LO, ROW_HI - 1, ROW_RAIL - 1)
 				lip = WALE_LIP if wale else PLANK_LIP
 				for a, b, t0, t1 in spans_of(cuts, y0, y1):
 					near_port = PORT_ROW <= j < PORT_ROW + PORT_ROWS
 					plank(g, S, a, b, z0, z1, "hull", lip=lip, jag=(t0 and not near_port, t1 and not near_port), rng=rng, teeth=teeth)
 	build_end(g, teeth, shards[0], -1.0, crack_s, rng)
 	build_end(g, teeth, shards[1], 1.0, crack_b, rng)
+	build_bottom(g)
 	return g, teeth
 
 
-def build_timbers(g):
-	"""Keel, stem, sternpost, rudder, the corner posts of both flat ends."""
-	dk = (0.05, 0.036, 0.027)
-	# The stem, up the front of the beak, its head under the corridor's floor.
-	zs = frange(-5.8, HEAD_Z - 0.2, 1.0)
-	pts = [(0.0, stem_y(z) - 0.2, z) for z in zs]
-	for a, b in zip(pts, pts[1:]):
-		g.beam(a, b, 0.8, 0.8, "wood", (0.34, 0.28, 0.22), up=(1.0, 0.0, 0.0))
-	g.beam((0.0, stern_y(KEEL_Z) - 1.0, -5.75), (0.0, stem_y(KEEL_Z), -5.75), 1.0, 0.5, "wood", (0.34, 0.28, 0.22))
-	# The rudder: its head stops short of the plug.
-	ry = stern_y(0.0) - 1.6
-	for z0, z1, w in ((KEEL_Z, -2.0, 4.0), (-2.0, COR_FLOOR - 0.6, 2.6)):
-		g.beam((0.0, ry + 0.9 - w * 0.5, z0), (0.0, ry + 0.9 - w * 0.5, z1), 0.7, w, "wood", (0.34, 0.28, 0.22), up=(0.0, 1.0, 0.0))
-	# Corner posts.
+ROW_LO = int(round((TUNNEL_LO - KEEL_Z) / STRAKE))     # the strake on the tunnel's floor
+ROW_HI = int(round((TUNNEL_HI - KEEL_Z) / STRAKE))     # the one over its roof
+ROW_RAIL = int(round((17.0 - KEEL_Z) / STRAKE))        # the waist's rail
+
+
+def build_bottom(g):
+	"""The flat of her floor between the garboards, the keel's line risen at the ends."""
+	S0, S1 = Side(-1.0), Side(1.0)
+	z = KEEL_Z
+	us = frange(-STERN_U, stem_y(z), 2.0)
+	for a, b in zip(us, us[1:]):
+		g.quad(S0.p(a, z), S1.p(a, z), S1.p(b, z), S0.p(b, z), "hull", (0.5, 0.45, 0.4), hint=Vector((0, 0, -1)), uvs=[hull_uv(S0.p(a, z)), hull_uv(S1.p(a, z)), hull_uv(S1.p(b, z)), hull_uv(S0.p(b, z))])
+
+
+def build_tunnel(g):
+	"""The prow's cut: walls back to the bow's plate, the lips' faces over and under the
+	way out, and timbers round the opening, all outside the exit's rectangle."""
+	lining = (0.16, 0.12, 0.095)
+	rng = random.Random(71)
 	for s in (-1.0, 1.0):
-		zs = frange(-1.0, RAIL_POOP + sheer(-LENGTH * 0.5), 2.5)
-		pts = [(s * half_beam(stern_y(z) * 0.999, z), stern_y(z), z) for z in zs]
+		# The walls: planks along her at x +-TUNNEL_X, from the plate to the mouth.
+		for j in range(ROW_LO, ROW_HI):
+			z0, z1 = row_z(j), row_z(j + 1)
+			y1 = cross_y((z0 + z1) * 0.5)
+			t = rng.uniform(0.75, 1.1)
+			a, b = Vector((s * TUNNEL_X, Y_BOW - 0.3, z0)), Vector((s * TUNNEL_X, y1 + 0.2, z0))
+			c, d = Vector((s * TUNNEL_X, y1 + 0.2, z1 - 0.03)), Vector((s * TUNNEL_X, Y_BOW - 0.3, z1 - 0.03))
+			g.quad(a, b, c, d, "wood", (lining[0] * t, lining[1] * t, lining[2] * t), hint=Vector((-s, 0, 0)))
+		# The cut's edge up the side, a timber, and one along each lip to the stem.
+		side = [(s * TUNNEL_X + s * 0.2, cross_y(z), z) for z in frange(TUNNEL_LO - 0.3, TUNNEL_HI + 0.3, 1.2)]
+		g.tube(side, [CUT_R] * len(side), 8, "wood", (0.2, 0.15, 0.11))
+		for z, zt in ((TUNNEL_LO, TUNNEL_LO - CUT_R), (TUNNEL_HI, TUNNEL_HI + CUT_R)):
+			edge = [(s * (half_beam(y, z) + 0.1), y, zt) for y in frange(cross_y(z), stem_y(z) - 0.6, 1.4)]
+			g.tube(edge, [CUT_R] * len(edge), 8, "wood", (0.2, 0.15, 0.11))
+	# The lips' faces: the floor up, the roof down, the hull's width to the stem.
+	for z, up, col in ((TUNNEL_LO, 1.0, (0.2, 0.165, 0.13)), (TUNNEL_HI, -1.0, lining)):
+		ys = frange(Y_BOW - 0.3, stem_y(z) - 0.02, 1.0)
+		for a, b in zip(ys, ys[1:]):
+			wa, wb = half_beam(a, z), half_beam(b, z)
+			g.quad(Vector((-wa, a, z)), Vector((wa, a, z)), Vector((wb, b, z)), Vector((-wb, b, z)), "wood", col, hint=Vector((0, 0, up)))
+	# A stone boss at the stem's head, over the cut.
+	y = stem_y(14.0)
+	g.box(-1.6, 1.6, y - 2.4, y + 0.6, 13.6, 16.6, "paint", STONE)
+
+
+STONE = (0.14, 0.138, 0.134)
+
+
+def build_timbers(g):
+	"""Keel, stem, sternpost, rudder, the transom's corner posts."""
+	dk = (0.05, 0.036, 0.027)
+	tim = (0.34, 0.28, 0.22)
+	# The stem, up the prow's edge: under the cut, and from over it to the rail.
+	for z0, z1 in ((KEEL_Z, TUNNEL_LO - 0.2), (TUNNEL_HI + 0.2, rail(Y_BOW) + 0.8)):
+		zs = frange(z0, z1, 1.0)
+		pts = [(0.0, stem_y(z) - 0.15, lift(stem_y(z), z)) for z in zs]
 		for a, b in zip(pts, pts[1:]):
-			g.beam(a, b, 1.0, 1.0, "paint", dk, up=(0.0, 1.0, 0.0))
-		zs = frange(HEAD_Z, RAIL_FORE + sheer(LENGTH * 0.5), 2.5)
-		pts = [(s * half_beam(stem_y(z) * 0.999, z), stem_y(z), z) for z in zs]
+			g.beam(a, b, 0.8, 0.8, "wood", tim, up=(1.0, 0.0, 0.0))
+	# The keel, rising to both ends.
+	us = frange(-STERN_U + 1.0, stem_y(KEEL_Z), 4.0)
+	pts = [(0.0, u, lift(u, KEEL_Z) - 0.2) for u in us]
+	for a, b in zip(pts, pts[1:]):
+		g.beam(a, b, 1.0, 0.5, "wood", tim)
+	# The rudder, hung on the tucked sternpost: its head stops short of the plug.
+	for z0, z1, w in ((lift(-STERN_U, KEEL_Z), -0.5, 4.0), (-0.5, COR_FLOOR - 0.6, 2.6)):
+		zm = (z0 + z1) * 0.5
+		ry = stern_y(zm) - 0.15
+		g.beam((0.0, ry - w * 0.5, z0), (0.0, ry - w * 0.5, z1), 0.7, w, "wood", tim, up=(0.0, 1.0, 0.0))
+	# The transom's corner posts, up the counter's lean.
+	for s in (-1.0, 1.0):
+		zs = frange(3.8, rail(-STERN_U), 1.5)    # above the tuck's flare, clear of the exit
+		pts = [(s * half_beam(-STERN_U, z), stern_y(lift(-STERN_U, z)), lift(-STERN_U, z)) for z in zs]
 		for a, b in zip(pts, pts[1:]):
 			g.beam(a, b, 1.0, 1.0, "paint", dk, up=(0.0, 1.0, 0.0))
 
@@ -900,7 +1053,7 @@ def build_lids():
 			corners = [along2 * -w, along2 * w, along2 * w + down * h, along2 * -w + down * h]
 			t = nn * 0.2
 			outer = (0.13, 0.095, 0.07)
-			red = (0.2, 0.04, 0.03)
+			red = (0.09, 0.085, 0.08)
 			g.quad(*corners, "wood", outer, hint=nn + Vector((0, 0, 0.001)))
 			back = [p - t for p in corners]
 			g.quad(*back, "paint", red, hint=-nn)
@@ -924,9 +1077,9 @@ def liner(g, upper):
 			if z1 < COR_FLOOR - 0.1:
 				continue
 			gun_deck = z0 < DECK_Z
-			for ra, rb in rail_spans(z1):
-				y0 = max(ra, stern_y(lift(-56.0, zm))) + 0.3
-				y1 = min(rb, stem_y(lift(56.0, zm))) - 0.3
+			for ra, rb in rail_spans(z0):
+				y0 = max(ra, -STERN_U) + 0.3
+				y1 = min(rb, Y_BOW if TUNNEL_LO - 0.01 <= z0 and z1 <= TUNNEL_HI + 0.01 else strake_end(z0, z1)) - 0.3
 				if y1 - y0 < 0.1:
 					continue
 				cuts = []
@@ -1118,50 +1271,49 @@ def build_guns():
 def build_decks(g):
 	col_d = (0.74, 0.64, 0.52)
 	def dw(z):
-		return lambda y: half_beam(y, z) - 0.1
-	# Waist, poop, forecastle: flat, at the collision boxes' tops.
+		return lambda y: half_at(y, z) - 0.1
+	# Waist, quarterdeck, poop, forecastle: flat, each a step up the sheer.
 	deck_strip(g, lambda y: DECK_Z, BREAK_POOP - 0.2, BREAK_FORE + 0.2, dw(DECK_Z), col_d, 4.0)
-	deck_strip(g, lambda y: DECK_POOP, stern_y(DECK_POOP) + 0.1, BREAK_POOP, dw(DECK_POOP), col_d, 3.0)
-	deck_strip(g, lambda y: DECK_FORE, BREAK_FORE, stem_y(DECK_FORE) - 0.1, dw(DECK_FORE), col_d, 2.0)
+	deck_strip(g, lambda y: DECK_POOP, BREAK_HIGH - 0.2, BREAK_POOP, dw(DECK_POOP), col_d, 3.0)
+	deck_strip(g, lambda y: DECK_HIGH, stern_y(DECK_HIGH) + 0.1, BREAK_HIGH, dw(DECK_HIGH), col_d, 3.0)
+	deck_strip(g, lambda y: DECK_FORE, BREAK_FORE, stem_y(DECK_FORE) - 0.4, dw(DECK_FORE), col_d, 2.0)
 	bulk = (0.42, 0.31, 0.22)
 	def bulkhead(y, z0, z1, face):
 		n = max(1, int((z1 - z0) / STRAKE))
 		rng = random.Random(int(y * 3 + 91))
 		for i in range(n):
 			a, b = lerp(z0, z1, i / n), lerp(z0, z1, (i + 1) / n)
-			w = half_beam(y, (a + b) * 0.5) - 0.2
+			w = half_at(y, (a + b) * 0.5) - 0.2
 			t = rng.uniform(0.75, 1.1)
 			g.beam((-w, y, (a + b) * 0.5), (w, y, (a + b) * 0.5), 0.3, b - a - 0.05, "wood", (bulk[0] * t, bulk[1] * t, bulk[2] * t), up=(0.0, 0.0, 1.0))
 		# The door and windows of a cabin front; a dark rail along its head.
-		w = half_beam(y, z1) - 0.4
+		w = half_at(y, z1) - 0.4
 		for x in (-w * 0.72, -w * 0.32, w * 0.32, w * 0.72):
 			g.box(x - 0.8, x + 0.8, y + face * 0.3 - 0.06, y + face * 0.3 + 0.06, z0 + (z1 - z0) * 0.42, z0 + (z1 - z0) * 0.78, "dark", (0.012, 0.014, 0.018))
 			g.box(x - 1.0, x + 1.0, y + face * 0.28 - 0.1, y + face * 0.28 + 0.1, z0 + (z1 - z0) * 0.39, z0 + (z1 - z0) * 0.42, "wood", (0.2, 0.15, 0.1))
 		g.box(-1.3, 1.3, y + face * 0.3 - 0.07, y + face * 0.3 + 0.07, z0, z0 + (z1 - z0) * 0.74, "dark", (0.02, 0.016, 0.014))
-		g.beam((-w, y + face * 0.2, z1), (w, y + face * 0.2, z1), 0.8, 0.5, "paint", (0.09, 0.028, 0.02))
+		g.beam((-w, y + face * 0.2, z1), (w, y + face * 0.2, z1), 0.8, 0.5, "paint", TRIM)
 	bulkhead(BREAK_POOP, DECK_Z, DECK_POOP, 1.0)
+	bulkhead(BREAK_HIGH, DECK_POOP, DECK_HIGH, 1.0)
 	bulkhead(BREAK_FORE, DECK_Z, DECK_FORE, -1.0)
-	# Cap rail: a heavy timber along the top of the bulwark, up and down the steps.
 	cap = (0.045, 0.032, 0.024)
 	for side in (-1.0, 1.0):
-		ys = sorted(set(frange(stern_y(lift(-56.0, RAIL_POOP)) + 0.1, stem_y(lift(56.0, RAIL_FORE)) - 0.1, 4.0)) | {BREAK_POOP - 0.01, BREAK_POOP + 0.01, BREAK_FORE - 0.01, BREAK_FORE + 0.01})
-		pts = []
-		for y in ys:
-			z = lift(y, base_rail(y))
-			pts.append((side * half_beam(y, z), y, z + 0.1))
-		for a, b in zip(pts, pts[1:]):
-			if (Vector(a) - Vector(b)).length > 0.05:
-				g.beam(a, b, 0.8, 0.4, "paint", cap, up=(0.0, 0.0, 1.0))
-		# Timberheads at the steps.
-		for y in (BREAK_POOP, BREAK_FORE):
-			z0 = lift(y, min(base_rail(y - 0.1), base_rail(y + 0.1)))
-			z1 = lift(y, max(base_rail(y - 0.1), base_rail(y + 0.1))) + 0.8
-			g.beam((side * half_beam(y, z0), y, z0 - 2.0), (side * half_beam(y, z1), y, z1), 1.0, 1.0, "paint", (0.055, 0.036, 0.026), up=(0.0, 1.0, 0.0))
+		S = Side(side)
+		# Cap rail: a heavy timber along the sheer, stern to stem; a sheer wale under it.
+		us = frange(-STERN_U, stem_y(rail(Y_BOW)) - 0.3, 2.0)
+		for drop, w, h, col in ((0.0, 0.8, 0.4, cap), (2.2, 0.5, 0.5, (0.06, 0.045, 0.034))):
+			pts = []
+			for u in us:
+				q = S.p(u, rail(u) - drop)
+				pts.append((q.x + side * (0.15 if drop else 0.0), q.y, q.z + (0.1 if not drop else 0.0)))
+			for a, b in zip(pts, pts[1:]):
+				if (Vector(a) - Vector(b)).length > 0.05:
+					g.beam(a, b, w, h, "paint", col, up=(0.0, 0.0, 1.0))
 		# The channels: plank shelves outboard of the masts that spread the shrouds.
 		for my, _, _, _ in MASTS:
 			c0, c1 = my - 5.5, my + 5.5
 			z = DECK_Z + 1.9
-			g.beam((side * (half_beam(c0, z) + 0.9), c0, z), (side * (half_beam(c1, z) + 0.9), c1, z), 1.9, 0.3, "wood", (0.2, 0.15, 0.11))
+			g.beam((side * (half_at(c0, z) + 0.9), c0, z), (side * (half_at(c1, z) + 0.9), c1, z), 1.9, 0.3, "wood", (0.2, 0.15, 0.11))
 	hatch = (0.2, 0.15, 0.11)
 	for y, w, l in ((-18.0, 6.0, 8.0), (8.0, 7.0, 10.0), (29.0, 5.0, 6.0)):
 		g.box(-w * 0.5 - 0.3, w * 0.5 + 0.3, y - l * 0.5 - 0.3, y + l * 0.5 + 0.3, DECK_Z, DECK_Z + 0.7, "wood", (0.3, 0.23, 0.17))
@@ -1196,11 +1348,11 @@ def build_decks(g):
 
 def build_stern(g):
 	"""The transom's dress: gallery windows, balconies, the crown, the lanterns."""
-	trim = (0.2, 0.135, 0.065)
+	trim = (0.16, 0.15, 0.14)
 	dark_wood = (0.05, 0.036, 0.028)
-	oxblood = (0.1, 0.03, 0.022)
-	top = RAIL_POOP + sheer(-LENGTH * 0.5)
-	for rz in (15.7, 20.7):
+	oxblood = TRIM
+	top = rail(-STERN_U)
+	for rz in GALLERIES:
 		h = 3.5
 		wtop = half_beam(stern_y(rz + h) * 0.999, rz + h) - 0.4
 		wbot = half_beam(stern_y(rz) * 0.999, rz) - 0.4
@@ -1249,36 +1401,40 @@ def build_stern(g):
 		y = stern_y(top) + 0.2
 		g.tube([(x, y, z), (x, y, z + 1.0 * r)], [0.22 * r, 0.3 * r], 6, "iron", (0.09, 0.09, 0.09))
 		g.tube([(x, y, z + 1.0 * r), (x, y, z + 1.15 * r), (x, y, z + 3.4 * r), (x, y, z + 3.55 * r), (x, y, z + 4.3 * r), (x, y, z + 5.0 * r)], [0.3 * r, 1.0 * r, 1.25 * r, 1.25 * r, 0.5 * r, 0.1 * r], 6, "iron", (0.075, 0.075, 0.08))
-	# Quarter galleries: the stern's corners, a bulge of windows on each side.
+	# Quarter galleries: the stern's corners, a bulge of windows on each side, leaning
+	# out with the counter.
 	for s in (-1.0, 1.0):
-		y0, y1 = stern_y(top) + 1.5, stern_y(top) + 11.0
-		zs = (15.6, 20.2, 24.8)
+		S = Side(s)
+		u0, u1 = -STERN_U + 1.5, -STERN_U + 11.0
+		zs = (GALLERIES[0] - 0.4, GALLERIES[1] - 0.6, GALLERIES[1] + 4.0)
 		for k in range(2):
 			z0, z1 = zs[k], zs[k + 1] - 0.6
-			xa = half_beam((y0 + y1) * 0.5, z0)
-			xb = half_beam((y0 + y1) * 0.5, z1)
-			p = 1.1
-			a0, b0 = Vector((s * (xa + p), y0, z0)), Vector((s * (xa + p), y1, z0))
-			a1, b1 = Vector((s * (xb + p), y0, z1)), Vector((s * (xb + p), y1, z1))
+			h0, i0, h1, i1 = S.p(u0, z0), S.p(u1, z0), S.p(u0, z1), S.p(u1, z1)
+			o = Vector((s * 1.1, 0.0, 0.0))
+			a0, b0, a1, b1 = h0 + o, i0 + o, h1 + o, i1 + o
 			g.quad(a0, b0, b1, a1, "glass", (0.075, 0.09, 0.1), hint=Vector((s, 0, 0)))
 			for t in frange(0.0, 1.0, 0.25):
 				g.beam(a0.lerp(b0, t) + Vector((s * 0.1, 0, 0)), a1.lerp(b1, t) + Vector((s * 0.1, 0, 0)), 0.5, 0.26, "paint", trim, up=(1.0, 0.0, 0.0))
 			# The sill, the head, and the skirt of planks back to the hull.
 			for q0, q1, hz in ((a0, b0, -0.3), (a1, b1, 0.3)):
 				g.beam(q0 + Vector((s * 0.2, 0, hz)), q1 + Vector((s * 0.2, 0, hz)), 0.6, 0.6, "paint", oxblood)
-			for p0, p1 in ((Vector((s * xa, y0, z0)), a0), (Vector((s * xa, y1, z0)), b0)):
+			for p0, p1 in ((h0, a0), (i0, b0)):
 				g.beam(p0, p1, 0.2, 0.3, "paint", dark_wood)
-			g.quad(Vector((s * (xb - 0.2), y0, z1 + 0.6)), Vector((s * (xb - 0.2), y1, z1 + 0.6)), b1 + Vector((s * 0.6, 0, 0.6)), a1 + Vector((s * 0.6, 0, 0.6)), "wood", (0.17, 0.12, 0.09), hint=Vector((0, 0, 1)))
-			g.quad(Vector((s * (xa - 0.2), y0, z0 - 1.6)), Vector((s * (xa - 0.2), y1, z0 - 1.6)), b0 + Vector((s * 0.4, 0, -0.5)), a0 + Vector((s * 0.4, 0, -0.5)), "wood", (0.14, 0.1, 0.08), hint=Vector((s, 0, -1)))
+			g.quad(h1 + Vector((-s * 0.2, 0, 0.6)), i1 + Vector((-s * 0.2, 0, 0.6)), b1 + Vector((s * 0.6, 0, 0.6)), a1 + Vector((s * 0.6, 0, 0.6)), "wood", (0.17, 0.12, 0.09), hint=Vector((0, 0, 1)))
+			g.quad(h0 + Vector((-s * 0.2, 0, -1.6)), i0 + Vector((-s * 0.2, 0, -1.6)), b0 + Vector((s * 0.4, 0, -0.5)), a0 + Vector((s * 0.4, 0, -0.5)), "wood", (0.14, 0.1, 0.08), hint=Vector((s, 0, -1)))
 			# Ends.
-			g.quad(Vector((s * xa, y0, z0)), a0, a1, Vector((s * xb, y0, z1)), "wood", (0.14, 0.1, 0.08), hint=Vector((0, -1, 0)))
-			g.quad(Vector((s * xa, y1, z0)), b0, b1, Vector((s * xb, y1, z1)), "wood", (0.14, 0.1, 0.08), hint=Vector((0, 1, 0)))
+			g.quad(h0, a0, a1, h1, "wood", (0.14, 0.1, 0.08), hint=Vector((0, -1, 0)))
+			g.quad(i0, b0, b1, i1, "wood", (0.14, 0.1, 0.08), hint=Vector((0, 1, 0)))
+
+
+GALLERIES = (16.6, 23.4)      # the sills of the transom's two window rows
+TRIM = (0.13, 0.125, 0.12)    # dark iron-grey paint where the old build had oxblood
 
 
 def build_backing(g):
 	"""Dark sheets behind each end, over and under the corridor, so a gap reads as depth."""
 	dark = (0.012, 0.011, 0.01)
-	for y, face, top in ((stern_y(COR_Z) + 1.3, -1.0, DECK_POOP), (stem_y(COR_Z) - 1.3, 1.0, DECK_FORE)):
+	for y, face, top in ((stern_y(COR_Z) + 1.3, -1.0, DECK_POOP), (Y_BOW - 1.3, 1.0, DECK_FORE)):
 		for z0, z1 in ((COR_TOP + 0.05, top), (0.0, COR_FLOOR - 0.05)):
 			w = min(half_beam(y, z0), half_beam(y, z1)) - 0.2
 			if w > 0.5:
@@ -1286,53 +1442,19 @@ def build_backing(g):
 
 
 def build_beak(g):
-	"""The head: a grated platform on the beak, under the exit; catheads and anchors beside it."""
+	"""The prow's dress: catheads off the forecastle, an anchor hanging from each, clear
+	of the cut."""
 	dk = (0.05, 0.036, 0.027)
-	red = (0.1, 0.03, 0.022)
-	z = HEAD_Z - 0.3
-	y0, y1 = Y_BOW - 0.2, Y_STEM - 1.0
-	w_at = lambda y: max(0.2, half_beam(y, HEAD_Z - 0.2) - 0.1)
-	for y in frange(y0, y1, 1.1):
-		w = w_at(y)
-		g.beam((-w, y, z), (w, y, z), 0.5, 0.22, "wood", (0.22, 0.16, 0.115))
-	for x in frange(-7.0 * WIDEN, 7.0 * WIDEN, 1.4):
-		if abs(x) < w_at(y0):
-			g.beam((x, y0, z + 0.07), (x, y0 + 15.0 * (1.0 - abs(x) / (8.0 * WIDEN)), z + 0.07), 0.2, 0.14, "wood", (0.16, 0.12, 0.085))
-	# The upper beak: a pointed grating over the exit, swept up to the bowsprit,
-	# the line the eye wants off a flat bow. All of it above the corridor's roof.
-	tip = Vector((0.0, Y_BOW + 13.0, 18.6))
-	root = Y_BOW + 0.3
 	for s in (-1.0, 1.0):
-		a = Vector((s * 7.6 * WIDEN, root, 14.7))
-		b = Vector((s * 3.2 * WIDEN, Y_BOW + 7.0, 15.8))
-		for p0, p1 in ((a, b), (b, tip)):
-			g.beam(p0, p1, 0.5, 0.6, "paint", red)
-		a2, b2 = a + Vector((0, 0, 2.9)), b + Vector((0, 0, 2.2))
-		for p0, p1 in ((a2, b2), (b2, tip + Vector((0, 0, 0.4)))):
-			g.beam(p0, p1, 0.32, 0.4, "paint", dk)
-		for t in (0.0, 0.4, 0.8):
-			g.beam(a.lerp(b, t), a2.lerp(b2, t), 0.28, 0.28, "paint", dk)
-	for y in frange(root, Y_BOW + 11.0, 0.9):
-		t = (y - root) / 13.0
-		w = 7.3 * WIDEN * (1.0 - t) ** 0.9
-		g.beam((-w, y, lerp(14.8, 18.0, t ** 1.6)), (w, y, lerp(14.8, 18.0, t ** 1.6)), 0.42, 0.18, "wood", (0.22, 0.16, 0.115))
-	g.beam((0.0, root, 14.45), (0.0, tip.y - 1.0, 17.9), 1.1, 0.6, "wood", dk, up=(0.0, 0.0, 1.0))
-	g.beam((0.0, tip.y - 1.0, 17.9), tip + Vector((0, 1.2, 1.6)), 0.8, 0.7, "paint", red, up=(0.0, 0.0, 1.0))
-	# Head rails, low, either side: under the corridor's floor.
-	for s in (-1.0, 1.0):
-		ys = frange(y0, y1 + 0.5, 3.0)
-		pts = [(s * (w_at(y) - 0.1), y, HEAD_Z - 0.7 + 0.3 * (y - y0) / 16.0) for y in ys]
-		for a, b in zip(pts, pts[1:]):
-			g.beam(a, b, 0.4, 0.5, "paint", red)
-		# Catheads through the bulkhead, an anchor hanging from each, beside the exit.
-		x = half_beam(Y_BOW, 14.0)
-		g.beam((s * (x - 1.5), Y_BOW - 2.0, 14.8), (s * (x + 1.6), Y_BOW + 2.0, 14.4), 0.8, 0.8, "paint", dk, up=(0.0, 0.0, 1.0))
-		ax, ay = s * (x + 1.2), Y_BOW + 1.5
-		g.tube([(ax, ay, 14.0), (ax, ay, 13.4)], [0.06, 0.06], 3, "iron", (0.03, 0.03, 0.03), cap=False)
-		g.beam((ax, ay, 13.5), (ax, ay, 6.3), 0.34, 0.34, "iron", (0.035, 0.035, 0.035), up=(0.0, 1.0, 0.0))
-		g.beam((ax - s * 0.0, ay - 1.7, 7.5), (ax, ay, 6.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
-		g.beam((ax, ay + 1.7, 7.5), (ax, ay, 6.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
-		g.beam((ax - 1.0, ay, 13.0), (ax + 1.0, ay, 13.0), 0.3, 0.3, "wood", (0.2, 0.15, 0.1))
+		y0, y1, z = 49.0, 52.5, 19.0
+		x = half_at(y0, z)
+		g.beam((s * (x - 1.2), y0, z), (s * (x + 3.0), y1, z + 0.4), 0.8, 0.8, "paint", dk, up=(0.0, 0.0, 1.0))
+		ax, ay = s * (half_at(y1, z) + 2.4), y1 - 0.4
+		g.tube([(ax, ay, z - 0.3), (ax, ay, z - 1.0)], [0.06, 0.06], 3, "iron", (0.03, 0.03, 0.03), cap=False)
+		g.beam((ax, ay, z - 0.9), (ax, ay, z - 8.1), 0.34, 0.34, "iron", (0.035, 0.035, 0.035), up=(0.0, 1.0, 0.0))
+		g.beam((ax, ay - 1.7, z - 6.9), (ax, ay, z - 8.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
+		g.beam((ax, ay + 1.7, z - 6.9), (ax, ay, z - 8.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
+		g.beam((ax - 1.0, ay, z - 1.4), (ax + 1.0, ay, z - 1.4), 0.3, 0.3, "wood", (0.2, 0.15, 0.1))
 
 
 # --- Masts, sails, rigging ----------------------------------------------------
@@ -1478,7 +1600,7 @@ def build_rigging(g, stays, yards):
 				rope(g, arm, (0.0, y + 0.5, c.z + 5.0), 0.12)
 				if rng.random() < 0.7:
 					yy = max(y - 18.0, -54.0)
-					to = Vector((s * half_beam(yy, 20.0), yy, lift(yy, base_rail(yy))))
+					to = Vector((s * half_at(yy, 20.0), yy, rail(yy)))
 					rope(g, arm, to, 0.11, 1.4)
 				else:
 					# A brace shot away: it hangs.
@@ -1563,11 +1685,15 @@ def paint_hull(W):
 	ys = np.linspace(Y_BACK, Y_FORE, W, dtype=np.float32)
 	zs = np.linspace(Z_TOP, Z_BOT, H, dtype=np.float32)
 	Y, Z = np.meshgrid(ys, zs)
-	t = Y / (LENGTH * 0.5)
-	sh = SHEER_STERN * np.clip(-t, 0, None) ** 2.4 + SHEER_BOW * np.clip(t, 0, None) ** 2.6
-	base = Z.copy()
-	for _ in range(3):
-		base = Z - sh * sst(SHEER_FROM, SHEER_TO, base)
+	# Back to base heights: the keel's rise at the ends, the strakes' wobble.
+	e = np.clip(np.maximum(np.minimum(1.0, (-Y - 30.0) / (STERN_U - 30.0)), np.minimum(1.0, (Y - 30.0) / 42.0)), 0.0, None) ** 2
+	base = np.where(Z < 0.0, Z / (1.0 - KEEL_RISE * e), Z)
+	rl = np.interp(Y, [q[0] for q in SHEER], [q[1] for q in SHEER]).astype(np.float32)
+	for _ in range(2):
+		k = sst(0.4, 1.4, base) * np.minimum(1.0, np.abs(base - TUNNEL_LO) / STRAKE) * np.minimum(1.0, np.abs(base - TUNNEL_HI) / STRAKE)
+		k *= np.minimum(1.0, np.clip(rl - base, 0.0, None) / STRAKE)
+		base = Z - WOBBLE * k * np.sin(Y * 0.23 + (base - KEEL_Z) / STRAKE * 1.3)
+	base = np.where(Z < 0.0, Z / (1.0 - KEEL_RISE * e), base)
 	rows_f = (base - KEEL_Z) / STRAKE
 	tint, seam, butt, frac, pf = planks(rows_f, Y, 3)
 	grain = spectral(H, W, 0.9, 1, sx=26.0)
@@ -1577,20 +1703,16 @@ def paint_hull(W):
 	drip = spectral(H, W, 1.1, 5, sy=30.0)
 	drip2 = spectral(H, W, 0.8, 6, sy=60.0)
 	fine = spectral(H, W, 0.45, 7)
-	# Bare weathered wood under everything.
-	wood = mix(C(0.27, 0.205, 0.145)[None, None], C(0.47, 0.40, 0.31)[None, None], np.clip(0.2 + 0.7 * tint * 0.7 + 0.5 * (grain - 0.5), 0, 1))
-	# Tar below the wale, oxblood on the gun strakes, tarred umber above.
-	tar = mix(C(0.15, 0.115, 0.09)[None, None], C(0.26, 0.2, 0.15)[None, None], tint * 0.8 + 0.2 * grain)
-	ox = mix(C(0.27, 0.085, 0.06)[None, None], C(0.42, 0.15, 0.09)[None, None], np.clip(tint * 0.5 + wash * 0.6 - 0.05, 0, 1))
-	upper = mix(C(0.24, 0.175, 0.13)[None, None], C(0.40, 0.30, 0.22)[None, None], tint * 0.75 + 0.25 * wash)
-	z0, z1 = row_z(PORT_ROW) - STRAKE, row_z(PORT_ROW + PORT_ROWS) + STRAKE
-	band = (base > z0) & (base < z1)
-	col = np.where(band[..., None], ox, tar)
-	high = base >= z1 + 2.0 * STRAKE
-	col = np.where(high[..., None], upper, col)
-	col = col * 1.25
-	grey = col.mean(axis=2, keepdims=True)
-	col = col * 0.72 + grey * C(0.98, 0.98, 1.02)[None, None] * 0.28
+	# Bare weathered wood under everything: dark, grey-brown.
+	wood = mix(C(0.19, 0.165, 0.14)[None, None], C(0.33, 0.29, 0.25)[None, None], np.clip(0.2 + 0.7 * tint * 0.7 + 0.5 * (grain - 0.5), 0, 1))
+	# Tar and slate: near-black tar on the gun strakes and below, a step lighter above
+	# the deck, a grey boot-top over the waterline. No colour.
+	tar = mix(C(0.095, 0.082, 0.074)[None, None], C(0.17, 0.148, 0.132)[None, None], tint * 0.8 + 0.2 * grain)
+	upper = mix(C(0.115, 0.1, 0.09)[None, None], C(0.2, 0.175, 0.157)[None, None], tint * 0.75 + 0.25 * wash)
+	boot = mix(C(0.27, 0.255, 0.235)[None, None], C(0.38, 0.36, 0.335)[None, None], tint * 0.6 + 0.4 * wash)
+	col = np.where((base >= DECK_Z)[..., None], upper, tar)
+	col = np.where(((base > 0.8) & (base < TUNNEL_LO))[..., None], boot, col)
+	band = (base > row_z(PORT_ROW) - STRAKE) & (base < row_z(PORT_ROW + PORT_ROWS) + STRAKE)
 	# Paint worn through to wood: patches, plank edges, and more at the band.
 	edge = np.maximum(sst(0.22, 0.0, frac), sst(0.82, 1.0, frac))
 	wear = (blot * 0.75 + fine * 0.5 + edge * 0.2) + grain2 * 0.3
@@ -1615,9 +1737,9 @@ def paint_hull(W):
 		col = mix(col, C(0.03, 0.028, 0.026)[None, None], fan * (0.45 + 0.6 * fine) * 0.8)
 	col = mix(col, col * 0.35 + C(0.05, 0.03, 0.02)[None, None], np.clip(run * (0.35 + 1.0 * drip), 0, 1) * 0.85)
 	# Fouling at the waterline: weed black-green, a ragged edge, barnacle specks.
-	wl = 0.9 + 1.9 * (blot - 0.5) + 1.8 * (drip - 0.5)
+	wl = 0.3 + 1.0 * (blot - 0.5) + 0.9 * (drip - 0.5)
 	foul = sst(wl + 0.6, wl - 0.5, Z)
-	col = mix(col, mix(C(0.03, 0.05, 0.035)[None, None], C(0.09, 0.115, 0.06)[None, None], grain), foul * 0.92)
+	col = mix(col, mix(C(0.03, 0.04, 0.032)[None, None], C(0.08, 0.095, 0.06)[None, None], grain), foul * 0.92)
 	spots = spectral(H, W, 0.2, 8)
 	bar = sst(0.74, 0.8, spots) * sst(3.0, 0.8, Z) * sst(0.32, 0.6, blot)
 	col = mix(col, C(0.46, 0.45, 0.4)[None, None], bar * 0.7)
@@ -1643,8 +1765,8 @@ def paint_stern(W):
 	blot = spectral(H, W, 1.4, 14)
 	drip = spectral(H, W, 1.1, 15, sy=26.0)
 	fine = spectral(H, W, 0.45, 16)
-	wood = mix(C(0.24, 0.18, 0.125)[None, None], C(0.42, 0.35, 0.27)[None, None], np.clip(0.2 + 0.5 * tint + 0.5 * (grain - 0.5), 0, 1))
-	tar = mix(C(0.17, 0.13, 0.10)[None, None], C(0.34, 0.27, 0.205)[None, None], tint * 0.8 + 0.2 * grain)
+	wood = mix(C(0.19, 0.165, 0.14)[None, None], C(0.33, 0.29, 0.25)[None, None], np.clip(0.2 + 0.5 * tint + 0.5 * (grain - 0.5), 0, 1))
+	tar = mix(C(0.11, 0.095, 0.085)[None, None], C(0.2, 0.175, 0.157)[None, None], tint * 0.8 + 0.2 * grain)
 	wear = blot * 0.75 + fine * 0.5 + grain2 * 0.3
 	col = mix(tar, wood, sst(0.8, 1.0, wear))
 	col *= (0.8 + 0.4 * grain)[..., None]
@@ -2244,6 +2366,7 @@ def build(fast):
 	build_stern(upper)
 	build_backing(inside)
 	build_beak(upper)
+	build_tunnel(hull)
 	emit("Hull", hull, mats, extra=(teeth,))
 	emit("Upperworks", upper, mats)
 	emit("Interior", inside, mats)
@@ -2252,7 +2375,7 @@ def build(fast):
 	for name, g, hinge in build_lids():
 		emit(name, g, mats, group="PortLids", origin=hinge, local=True)
 	# The plugs: a parent each at the end, shards round their own centres.
-	for label, y, gs, tag in (("CrackPlug_Stern", stern_y(COR_Z), shard_s, "S"), ("CrackPlug_Bow", stem_y(COR_Z), shard_b, "B")):
+	for label, y, gs, tag in (("CrackPlug_Stern", stern_y(COR_Z), shard_s, "S"), ("CrackPlug_Bow", Y_BOW, shard_b, "B")):
 		par = empty(label, Vector((0.0, y, COR_Z)))
 		bpy.context.view_layer.update()
 		for i, g in enumerate(gs):
