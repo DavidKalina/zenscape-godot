@@ -9,15 +9,15 @@ extends RefCounted
 ## have (the rectangles hold everything each owner's own quick reject lets
 ## through), so the answers are the owners' own, bit for bit.
 ##
-## Owners `bump` when what they stand on changes (a cell of arches
-## committed or freed, a pillar indexed, a tower or a flight built); the next
-## `mask` republishes. The loose arches `bump_loose` (the ships move them each
+## Owners say what changed: the arches and rocks `touch` the cell or grid
+## square (only its squares are re-marked, so a commit costs little), the
+## towers and the stair `bump` their part; the next `mask` republishes it. The loose arches `bump_loose` (the ships move them each
 ## frame): they are kept apart from the hash, so a move costs little. Main thread only. Off (every bit set: ask them all, as
 ## before) with --ground-native=0, --gdscript-kernels, no library or a stale
 ## one. Spec: docs/design/endless-flight/spec-ground-native.md.
 
 const CLASS := &"ZenScapeGround"
-const VERSION := 1
+const VERSION := 2
 ## The hash's square (m).
 const CELL := 8.0
 ## The most pad (m) the published rectangles are grown for, where an owner's
@@ -32,15 +32,37 @@ const STAIR := 4
 const ICE := 8
 const ALL := 0xffff
 
-## Bumped by the owners on change (any instance republishes).
-static var changed := 0
+## `bump`'s parts: everything, the Peak's towers, the Peak's stair.
+const PART_ALL := 1
+const PART_TOWERS := 2
+const PART_STAIR := 4
+## The towers' id in the rocks' layer (a grid square's is its packed key).
+const TOWERS_ID := 1 << 62
+
+## The parts to republish at the next `mask`.
+static var parts := PART_ALL
+## The arches' cells and the rocks' grid squares touched since the last `mask`.
+static var touched_arches := {}
+static var touched_rocks := {}
 
 ## Bumped when the loose arches move or come and go (cheap: only they republish).
 static var moved := 0
 
-## An owner's stand changed: the next `mask` republishes.
-static func bump() -> void:
-	changed += 1
+## An owner's stand changed: the next `mask` republishes `part` (all of it
+## by default).
+static func bump(part := PART_ALL) -> void:
+	parts |= part
+
+## LandArches' cell `key` committed an arch or was freed.
+static func touch_arch(key: Vector2i) -> void:
+	touched_arches[key] = true
+
+## LandRocks' grid square `key` was filled or emptied.
+static func touch_rock(key: Vector2i) -> void:
+	touched_rocks[key] = true
+
+static func _id(k: Vector2i) -> int:
+	return (k.x << 32) | (k.y & 0xffffffff)
 
 ## The loose arches (LandArches `loose`: cracked walls, way towers, the
 ## ships' hulls and plates) moved, came or went.
@@ -49,7 +71,6 @@ static func bump_loose() -> void:
 
 var on := false
 var _g: Object
-var _seen := -1
 var _moved_seen := -1
 var _loose_n := -1
 var arches: Node3D
@@ -59,6 +80,8 @@ var stair: Node3D
 var ice: Node3D
 ## Bits always set (an owner whose stand can't be bounded right now).
 var _force := 0
+var _force_rocks := 0
+var _force_stair := 0
 
 static func wanted() -> bool:
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
@@ -78,14 +101,14 @@ func setup(p_arches: Node3D, p_rocks: Node3D, p_towers: Node3D, p_stair: Node3D,
 		_g = null
 		return
 	_g.setup(CELL)
-	_seen = -1
+	parts |= PART_ALL
 	_moved_seen = -1
 	on = true
 
 ## The bits of the owners that may answer at `p` with stone grown by `pad`.
 func mask(p: Vector3, pad: float) -> int:
 	if not on or pad > MOST_PAD: return ALL
-	if _seen != changed: _publish()
+	if parts != 0 or not touched_arches.is_empty() or not touched_rocks.is_empty(): _publish()
 	if _moved_seen != moved or (arches != null and (arches.loose as Array).size() != _loose_n): _publish_loose()
 	return int(_g.near(p.x,p.z)) | _force
 
@@ -106,39 +129,55 @@ static func _reach_rect(r: Dictionary) -> PackedFloat32Array:
 	return PackedFloat32Array([o.x-e,o.z-e,o.x+e,o.z+e])
 
 func _publish() -> void:
-	_seen = changed
-	_force = 0
-	_g.publish(0,_arch_rects())
-	_g.publish(1,_rock_rects())
-	_g.publish(2,_stair_rects())
-	_g.publish(3,_ice_rects())
+	var whole := parts & PART_ALL != 0
+	if whole:
+		touched_arches.clear()
+		touched_rocks.clear()
+		_g.publish(0,PackedFloat32Array())
+		_g.publish(1,PackedFloat32Array())
+		if arches != null:
+			for key: Vector2i in arches._cells: _put_arches(key)
+		if rocks != null:
+			for k: Vector2i in rocks._grid: _put_rock(k)
+		_g.publish(3,_ice_rects())
+	if whole or parts & PART_TOWERS: _g.put(1,TOWERS_ID,_tower_rects())
+	if whole or parts & PART_STAIR: _g.publish(2,_stair_rects())
+	parts = 0
+	for key: Vector2i in touched_arches: _put_arches(key)
+	touched_arches.clear()
+	for k: Vector2i in touched_rocks: _put_rock(k)
+	touched_rocks.clear()
+	_force = _force_rocks | _force_stair
 
-## Each committed arch's square of reach round its foot (`_reach_rect`).
-func _arch_rects() -> PackedFloat32Array:
+## Arch cell `key`'s records' squares of reach (`_reach_rect`), or none.
+func _put_arches(key: Vector2i) -> void:
 	var out := PackedFloat32Array()
-	if arches == null: return out
-	for key: Vector2i in arches._cells:
-		for r: Dictionary in arches._cells[key]: out.append_array(_reach_rect(r))
-	return out
+	if arches != null:
+		for r: Dictionary in arches._cells.get(key,[]): out.append_array(_reach_rect(r))
+	_g.put(0,_id(key),out)
 
-## The rocks' grid squares (LandRocks `_near` reads only the square holding
-## the point), and each tower's disc of reach grown by MOST_PAD.
-func _rock_rects() -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	if rocks == null: return out
+## A rocks' grid square (LandRocks `_near` reads only the square holding
+## the point), shrunk a hair inside so it never marks the next; none once empty.
+func _put_rock(k: Vector2i) -> void:
+	if rocks == null or not rocks._grid.has(k):
+		_g.drop(1,_id(k))
+		return
 	var g: float = rocks.GRID
-	for k: Vector2i in rocks._grid:
-		# Shrunk a hair inside its square so a rectangle never marks the next.
-		out.append_array([k.x*g+0.01,k.y*g+0.01,(k.x+1)*g-0.01,(k.y+1)*g-0.01])
-	if rocks.extra != null:
-		if rocks.extra != towers or towers == null:
-			_force |= ROCKS
-			return out
-		if float(towers._pad) > MOST_PAD: _force |= ROCKS
-		for s: Dictionary in towers._solids:
-			var c: Vector2 = s.mid
-			var e := float(s.reach)+MOST_PAD+SLACK
-			out.append_array([c.x-e,c.y-e,c.x+e,c.y+e])
+	_g.put(1,_id(k),PackedFloat32Array([k.x*g+0.01,k.y*g+0.01,(k.x+1)*g-0.01,(k.y+1)*g-0.01]))
+
+## Each of the Peak's towers' disc of reach grown by MOST_PAD (rocks.extra).
+func _tower_rects() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	_force_rocks = 0
+	if rocks == null or rocks.extra == null: return out
+	if rocks.extra != towers or towers == null:
+		_force_rocks = ROCKS
+		return out
+	if float(towers._pad) > MOST_PAD: _force_rocks = ROCKS
+	for s: Dictionary in towers._solids:
+		var c: Vector2 = s.mid
+		var e := float(s.reach)+MOST_PAD+SLACK
+		out.append_array([c.x-e,c.y-e,c.x+e,c.y+e])
 	return out
 
 ## Each built flight's footprint grown by MOST_PAD, as a world box round its
@@ -146,6 +185,7 @@ func _rock_rects() -> PackedFloat32Array:
 ## tilts (a moved flight) can't be boxed in XZ: the stair is always asked.
 func _stair_rects() -> PackedFloat32Array:
 	var out := PackedFloat32Array()
+	_force_stair = 0
 	if stair == null: return out
 	var scale: float = stair.SCALE
 	var pk := MOST_PAD/scale
@@ -153,7 +193,7 @@ func _stair_rects() -> PackedFloat32Array:
 		if not bool(f.built): continue
 		var xf: Transform3D = f.xf
 		if absf(xf.basis.y.normalized().dot(Vector3.UP)) < 0.9999:
-			_force |= STAIR
+			_force_stair = STAIR
 			continue
 		var half := float(f.half)+pk
 		var front := float(f.front)+pk

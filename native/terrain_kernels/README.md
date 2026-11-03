@@ -66,6 +66,18 @@ reads the 3 x 3 buckets in C++ in double, bit for bit the GDScript's. Main
 thread only. `version` (LandTrees `SOLID_VERSION`) gates a stale library;
 `--ground-native=0` (or `--gdscript-kernels`) asks the GDScript.
 
+`ground_bind.h` (`ZenScapeGround`) is the flight's ground queries' broad
+phase (scripts/endless/ground_native.gd): the arches, rocks, the Peak's
+towers and stair and the ice tunnel publish world XZ rectangles by an id
+of their own (hashed in 8 m squares with a count per layer, so a change
+re-marks only its squares; the ships' moving arches in a short list), and
+`mask` says which owners may answer at a point, so the study's
+`plane_ground`, `floor_at`, `eye_floor`, `_blocked`, `_solid` and `_sight`
+skip the rest. The owners' own narrow tests stay GDScript. Main thread only.
+`version` (GroundNative `VERSION`) gates a stale library; `--ground-native=0`
+(or `--gdscript-kernels`) asks every owner. The handoff:
+docs/design/endless-flight/ground-native-handoff.md.
+
 ## The endless grass
 
 `grass_cell.h` is `scripts/endless/endless_grass.gd` `grow_cell` past its
