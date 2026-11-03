@@ -205,6 +205,9 @@ func turn_rate() -> float:
 func step(delta: float, game: Node3D, near: RefCounted) -> void:
 	_clock += delta
 	var plane = game.plane
+	# A frame a hit-stop froze (Engine.time_scale 0, e.g. the HUD's after a
+	# scrape): nothing moved, so nothing under way is dropped.
+	if delta <= 0.0 and bool(game.hand_landing.flying()): return
 	if not bool(game.hand_landing.flying()) or delta <= 0.0:
 		drop()
 		_last_p = Vector3.INF
