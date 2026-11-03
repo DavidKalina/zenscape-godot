@@ -49,6 +49,16 @@ multiply-add, three spots in four move, by up to 3 cm.
 machines. Any change to one field must be made to the other; check with
 `scratch/`'s comparison (the handoff, docs/design/endless-flight/native-land-handoff.md).
 
+`land_carve.h` is LandField `sample`'s carve layers over the native field:
+the ponds, the slot halls and the split mountains (land_ponds.gd,
+hall_sites.gd, split_sites.gd), cut in by the field's `carve_sample` in one
+call. GDScript still finds the sites and publishes each square's to the
+field as it finds it (`carve_put`); a square not yet published, or one a
+tunnel may touch, is worked in GDScript. The tunnels, the Peak and the isles
+stay GDScript. `carve_version` (LandField `CARVE_VERSION`) gates a stale
+library; `--ground-native=0` (or `--gdscript-kernels`) cuts them in GDScript.
+Like the field it uses land_math.h's sin/cos/atan2 unless `--land-libm`.
+
 ## The endless grass
 
 `grass_cell.h` is `scripts/endless/endless_grass.gd` `grow_cell` past its
