@@ -88,6 +88,11 @@ cd /Users/davidkalina/Documents/Projects/zenscape-ship-build && python3 tools/pl
    both ships, stern to bow and bow to stern, the wall and roof glances, a sink, the
    camera through the tunnel. Drivers are in `scratch/ship_rock/` (`rock_fly.gd`,
    `ship.gd`, `ship_wall.gd`, `ship_sink.gd`, `ship_two.gd`).
+   **Spec change (coordinator, after 268f116b):** the tunnel (x ±10.4) is wider than
+   the gun deck (±9), so a 1.4 m ring round the bow plate faces a plane coming in from
+   the bow, and an off-centre plane glancing along the tunnel wall crashes on it. Funnel
+   it: chamfer that ring in the model and in the collision so the plane is guided into
+   the gun deck and glances, not crashes. Prove it with an off-centre bow-to-stern pass.
 5. **Guns.** Only after the `merge ship-guns` commit is in the trail; until then skip
    to the next task. Three hull guns a side at the new muzzles (`Gun_*_01..03`) and
    the deck guns modelled to the guns handoff's contract (`DeckGun_*_01..02`).
