@@ -119,10 +119,12 @@ func _commit(site: Dictionary) -> void:
 	site.record = {"name":str(site.name),"kind":"way","node":root,"pos":xf.origin,"cos":cos(yaw),"sin":sin(yaw),
 		"solid":BoxSolid.build(boxes),"reach":float(STAGES[0][0])+BoxSolid.grow_most()+10.0,"spec":{},"no_break":true}
 	game.arches.loose.append(site.record)
+	GroundNative.bump_loose()
 	site.state = "up"
 
 func _free(site: Dictionary) -> void:
 	game.arches.loose.erase(site.record)
+	GroundNative.bump_loose()
 	site.erase("record")
 	if site.has("node") and is_instance_valid(site.node): (site.node as Node).queue_free()
 	LayoutOverrides.entries.erase(site.name)

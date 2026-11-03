@@ -420,6 +420,7 @@ func _place(r: Dictionary) -> void:
 	r.pos = position
 	r.cos = cos(yaw)
 	r.sin = sin(yaw)
+	GroundNative.bump_loose()
 
 ## The world's moment in her frame.
 func local(p: Vector3) -> Vector3:
@@ -726,6 +727,7 @@ func _strike(r: Dictionary, q: Vector3) -> void:
 	_last = part
 	plate.open = true
 	game.arches.loose.erase(r)
+	GroundNative.bump_loose()
 	(plate.shape as CollisionShape3D).disabled = true
 	game.smash.keep_hot(LONG/maxf(float(game.plane.velocity.length()),30.0)+0.5)
 	if _model != null:
@@ -744,6 +746,7 @@ func _reseal() -> void:
 		was = true
 		plate.open = false
 		game.arches.loose.push_front(plate.record)
+		GroundNative.bump_loose()
 		_place(plate.record)
 		(plate.shape as CollisionShape3D).disabled = false
 		if _model == null:
@@ -800,6 +803,7 @@ func _sink() -> void:
 	var l := local(game.plane.position)
 	_list = -1.0 if l.x > 0.0 else 1.0
 	game.arches.loose.erase(_hull)
+	GroundNative.bump_loose()
 	for t: Dictionary in _tells: (t.gun.flash as Node3D).visible = false
 	_tells.clear()
 	game.feel_hit(0.045,12.0)
@@ -997,6 +1001,7 @@ func _come_back(s: float) -> void:
 	_pose()
 	_hull_body.collision_layer = game.arches.LAYER
 	game.arches.loose.append(_hull)
+	GroundNative.bump_loose()
 	_place(_hull)
 	_reseal()
 	returns += 1
@@ -1226,6 +1231,7 @@ func _build() -> void:
 	_hull["no_break"] = true
 	_hull["adopted"] = 0
 	game.arches.loose.append(_hull)
+	GroundNative.bump_loose()
 	_hull_body = _body("Hull",all.hull)
 	_wake = Node3D.new()
 	_wake.name = "ShipWake"
@@ -1238,6 +1244,7 @@ func _build() -> void:
 		record["strike"] = Callable(self,"_strike")
 		record["part"] = part
 		game.arches.loose.push_front(record)
+		GroundNative.bump_loose()
 		var body := _body(part.capitalize(),[box])
 		var plate := {"record":record,"body":body,"shape":body.get_child(0),"open":false}
 		if blocks: plate["look"] = _plate(box,part)

@@ -264,6 +264,7 @@ func _commit_towers() -> void:
 		add_child(node)
 		LayoutOverrides.track(String(t.name),node,"piece",t.coded)
 		_solids.append(_world_solid(b.solid,node.position))
+		GroundNative.bump()
 		stats.towers = int(stats.towers)+1
 		stats.tris = int(stats.tris)+int(b.tris[0])
 		stats["levels"] = b.tris

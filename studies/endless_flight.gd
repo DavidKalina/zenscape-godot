@@ -342,6 +342,8 @@ var burrower: Node
 var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
 var smash: Node3D
+## The ground queries' broad phase (GroundNative), or null before the land stands.
+var ground_native: GroundNative
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's sky of its own hour stands over this band (m over the sea: up
@@ -800,6 +802,9 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
+	ground_native = GroundNative.new()
+	ground_native.setup(arches,rocks,towers,stair)
 	# --full-meter: a surge roll ready at once; again whenever the ship's plates
 	# come back (pirate_ship.gd `refill`).
 	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
@@ -1132,10 +1137,15 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if pad < 0.0:
 		pad = solid_pad
 		p += solid_shift
-	var g: Variant = ice.ground(p,tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad),pad)
+	# Only the arches, rocks and stair standing near `p` are asked (GroundNative).
+	var m: int = ground_native.mask(p,pad) if ground_native != null else GroundNative.ALL
+	var g: Variant = field.height(p.x,p.z)
+	if m & GroundNative.ARCHES: g = arches.ground(p,g,pad)
+	if m & GroundNative.ROCKS: g = rocks.ground(p,g,pad)
+	g = ice.ground(p,tunnels.ground(p,halls.ground(p,trees.ground(p,g),pad),pad),pad)
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
-	if stair != null: g = stair.ground(p,g,pad)
+	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
 ## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
@@ -1152,7 +1162,8 @@ func bore_keep(p: Vector3) -> Vector3:
 func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
+	var m := _stone_near(p)
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1190,11 +1201,17 @@ func eye_floor(p: Vector3) -> float:
 	if tunnels.dry(p): return h
 	return maxf(h,Field.SEA_Y+sea_height(p))
 
+## Which of the arches and rocks may hold `p` at their own pads (`inside`'s
+## default; GroundNative `mask`).
+func _stone_near(p: Vector3) -> int:
+	return ground_native.mask(p,0.0) if ground_native != null else GroundNative.ALL
+
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_solid")
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	var m := _stone_near(p)
+	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1225,7 +1242,8 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		var p := from.lerp(to,t)
 		# In a bore's tube the fine march has answered.
 		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0: continue
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p): return float(i-1)/STEPS
+		var m := _stone_near(p)
+		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p): return float(i-1)/STEPS
 	return bore
 
 func _process(delta: float) -> void:

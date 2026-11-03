@@ -203,6 +203,7 @@ func _commit(site: Dictionary) -> void:
 	_body(root,"Room",boxes)
 	site.records = [_record(site,"room",boxes)]
 	game.arches.loose.append(site.records[0])
+	GroundNative.bump_loose()
 	if bool(site.open):
 		(made.front as Node).free()
 		(made.back as Node).free()
@@ -223,6 +224,7 @@ func _commit(site: Dictionary) -> void:
 		var body := _body(root,part,[box])
 		var record := _record(site,part,[box])
 		game.arches.loose.append(record)
+		GroundNative.bump_loose()
 		var rebuild := func() -> Node3D: return build_wall(int(site.seed)+(1 if part == "front" else 2),WEATHERED,w,h)
 		var target: int = smash.breaks.add(wall,"cracked",rebuild,int(site.seed))
 		smash.breaks.targets[target].threaded = true
@@ -265,6 +267,7 @@ func _drop_solid(site: Dictionary, part: String) -> void:
 	var wall: Dictionary = (site.walls as Dictionary).get(part,{})
 	if wall.is_empty(): return
 	game.arches.loose.erase(wall.record)
+	GroundNative.bump_loose()
 	if is_instance_valid(wall.body): (wall.body as Node).queue_free()
 
 ## A wall gone altogether.
@@ -277,6 +280,7 @@ func _drop_wall(site: Dictionary, part: String) -> void:
 func _free(site: Dictionary) -> void:
 	for part: String in (site.walls as Dictionary).keys(): _drop_solid(site,part)
 	for r: Dictionary in site.records: game.arches.loose.erase(r)
+	GroundNative.bump_loose()
 	site.records = []
 	site.walls = {}
 	site.erase("cutting")
