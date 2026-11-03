@@ -126,15 +126,33 @@ const ROUTE2_TURN := -PI*0.25
 const TOY_WIDE := 9.0
 const TOY_HIGH := 5.0
 const LONG := 110.0
-## Over the waterline: the gun deck's floor; the hull's draught; the plates', the
-## side walls' and the top deck's thickness (m).
+## Over the waterline: the gun deck's floor; the hull's draught; the plates' and
+## the top deck's thickness (m).
 const FLOOR_Y := 3.0
 const DRAUGHT := 6.0
 const PLATE := 1.5
-## How far from the gun deck's ends a touch stops being a glance.
+## How far from a plate a touch stops being a glance.
 const END_ROOM := 2.0
-const WALL := 3.375
 const DECK := 2.0
+## The hull's half breadth at its widest, by the guns (ship_build.py BEAM), and at
+## the waterline amidships.
+const BEAM := 14.5
+const BEAM_WET := 12.9
+## Her solid but the plates: the model's own boxes, fitted to its shape by
+## ship_build.py (`fit_solids`), the gun deck cut at its 18 m (a corridor sized
+## otherwise keeps the model's walls).
+const SOLIDS := preload("res://assets/models/pirate_ship/ship_solids.gd")
+## The prow's tunnel past the bow's plate (ship_build.py TUNNEL_*): its walls' half
+## width and where they end, its floor on the lower lip and roof under the upper,
+## and where each lip ends at the stem (m, her frame's -z).
+const TUNNEL_X := 10.4
+const TUNNEL_MOUTH := 60.5
+const TUNNEL_LO := 2.6
+const TUNNEL_HI := 13.4
+const LIP_LO := 72.65
+const LIP_HI := 75.35
+## Over the stern's exit, the lower balcony's underside, out to how far aft.
+const BALCONY := Vector2(15.8,59.4)
 const GUNS_Z := [-40.0,-24.0,-8.0,8.0,24.0,40.0]
 ## Hull guns a side. Of a glb with six a side (`Gun_L_01..06`, 01 the sternmost),
 ## the numbers that fire (z 40, 8, -24; the rest are cut out of the look); a glb
@@ -144,6 +162,8 @@ const HULL_PICK := [1,3,5]
 ## Hull guns: over the waterline (m); firing from MIN to MAX m off, within ARC rad
 ## of abeam; a shot every EVERY s; TELL s of flash before it; a gun rests REST s.
 const GUN_Y := 8.0
+## The hull guns' muzzles off her middle (ship_build.py GUN_X), for the gray box.
+const GUN_X := 16.25
 const RANGE := Vector2(60.0,520.0)
 const ARC := 1.05
 const EVERY := 1.4
@@ -418,24 +438,18 @@ static func start_pose() -> Dictionary:
 	var at := ROUTE_AT+(route_pose(0.0)[0] as Vector2)+Vector2(0.0,START_OFF)
 	return {"at":at,"heading":atan2(-1.0,0.0),"alt":START_ALT}
 
-## The ship's solids, in her frame: the hull's, then each plate's.
+## The ship's solids, in her frame: the hull's (the model's, SOLIDS: the hull in
+## bands round the gun deck and the prow's tunnel, the castles, bulwarks, masts,
+## the staff and the stern's dress), then each plate's.
 static func solids(w: float, h: float) -> Dictionary:
 	var half := w*0.5
-	var beam := half+WALL
 	var roof := FLOOR_Y+h
-	var top := roof+DECK
 	var end := LONG*0.5+PLATE
-	var hull: Array[AABB] = [
-		_box(-beam,-DRAUGHT,-end, beam,FLOOR_Y,end),
-		_box(-beam,FLOOR_Y,-end, -half,roof,end), _box(half,FLOOR_Y,-end, beam,roof,end),
-		_box(-beam,roof,-end, beam,top,end),
-		# The poop and the forecastle, the stem under the bow's exit, the masts.
-		_box(-beam,top,30.0, beam,top+9.0,end), _box(-beam,top,-end, beam,top+5.0,-38.0),
-		_box(-half,-DRAUGHT,-end-8.0, half,FLOOR_Y,-end), _box(-half*0.5,-DRAUGHT,-end-16.0, half*0.5,FLOOR_Y,-end-8.0),
-		# The masts (ship_build.py MASTS): fore, main, mizzen on the quarterdeck, to their trucks.
-		_box(-1.2,top,-31.2, 1.2,92.0,-28.8), _box(-1.35,top,0.65, 1.35,104.0,3.35), _box(-1.05,top+7.0,31.95, 1.05,80.0,34.05),
-	]
-	return {"hull":hull,"stern":[_box(-half,FLOOR_Y,LONG*0.5, half,roof,end)],"bow":[_box(-half,FLOOR_Y,-end, half,roof,-LONG*0.5)]}
+	if _hull_boxes.is_empty():
+		for b: Array in SOLIDS.BOXES: _hull_boxes.append(_box(b[0],b[1],b[2],b[3],b[4],b[5]))
+	return {"hull":_hull_boxes,"stern":[_box(-half,FLOOR_Y,LONG*0.5, half,roof,end)],"bow":[_box(-half,FLOOR_Y,-end, half,roof,-LONG*0.5)]}
+
+static var _hull_boxes: Array[AABB] = []
 
 static func _box(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float) -> AABB:
 	return AABB(Vector3(x0,y0,z0),Vector3(x1-x0,y1-y0,z1-z0))
@@ -569,22 +583,33 @@ func sea_under() -> Vector3:
 func local(p: Vector3) -> Vector3:
 	return _inv*p
 
-## Within the gun deck's walls, and between its ends (`pad` m past them).
+## Within the gun deck's walls, and between its ends (`pad` m past the stern's),
+## or forward of it in the prow's tunnel and under its lips (`pad` m past the stem).
 func in_corridor(p: Vector3, pad := 0.0) -> bool:
 	var l := local(p)
-	return absf(l.z) < LONG*0.5+pad and absf(l.x) < wide*0.5 and l.y > FLOOR_Y-1.0 and l.y < FLOOR_Y+high+1.0
+	if l.z > -LONG*0.5: return l.z < LONG*0.5+pad and absf(l.x) < wide*0.5 and l.y > FLOOR_Y-1.0 and l.y < FLOOR_Y+high+1.0
+	return l.z > -LIP_HI-pad and absf(l.x) < TUNNEL_X and l.y > TUNNEL_LO-1.0 and l.y < TUNNEL_HI+1.0
 
-## The way off the gun deck's nearest wall, roof or floor, in the world, for
-## FlightContact: a touch in there is glanced off, never a crash. ZERO outside
-## it, or within END_ROOM of its ends, where a shut plate still stops the plane.
+## The way through at `z` (her frame): Vector3(the walls' half width, the floor, the
+## roof); the gun deck's, or the prow's tunnel's, open at the sides past its mouth
+## and underneath past the lower lip.
+func _way_at(z: float) -> Vector3:
+	if z > -LONG*0.5: return Vector3(wide*0.5,FLOOR_Y,FLOOR_Y+high)
+	return Vector3(TUNNEL_X if z > -TUNNEL_MOUTH else INF,TUNNEL_LO if z > -LIP_LO else -INF,TUNNEL_HI)
+
+## The way off the gun deck's (or the prow tunnel's) nearest wall, roof or floor,
+## in the world, for FlightContact: a touch in there is glanced off, never a
+## crash. ZERO outside it, or within END_ROOM of a plate, where a shut plate still
+## stops the plane.
 func deck_way_off(p: Vector3, what := "") -> Vector3:
 	var l := local(p)
 	if state == SINKING and not in_corridor(p): return _wreck_way_off(p,l,what)
 	if state == GONE: return Vector3.ZERO
-	if not in_corridor(p) or (state == AFLOAT and absf(l.z) > LONG*0.5-END_ROOM): return Vector3.ZERO
-	var side := wide*0.5-absf(l.x)
-	var roof := FLOOR_Y+high-l.y
-	var floor_gap := l.y-FLOOR_Y
+	if not in_corridor(p) or (state == AFLOAT and absf(absf(l.z)-LONG*0.5-PLATE*0.5) < END_ROOM+PLATE*0.5): return Vector3.ZERO
+	var w := _way_at(l.z)
+	var side := w.x-absf(l.x)
+	var roof := w.z-l.y
+	var floor_gap := l.y-w.y
 	var off := Vector3(-signf(l.x),0.0,0.0)
 	if roof < side and roof <= floor_gap: off = Vector3.DOWN
 	elif floor_gap < side: off = Vector3.UP
@@ -1123,8 +1148,8 @@ func _under() -> bool:
 
 ## Where a hull side's line at `z` on `side` crosses the sea, or INF.
 func _waterline(z: float, side: float) -> Vector3:
-	var a: Vector3 = transform*Vector3(side*(wide*0.5+WALL),-DRAUGHT,z)
-	var b: Vector3 = transform*Vector3(side*(wide*0.5+WALL),FLOOR_Y+high+DECK,z)
+	var a: Vector3 = transform*Vector3(side*BEAM_WET,-DRAUGHT,z)
+	var b: Vector3 = transform*Vector3(side*BEAM_WET,FLOOR_Y+high+DECK,z)
 	var sea := float(game.water_at(a))
 	if (a.y-sea)*(b.y-sea) > 0.0: return Vector3.INF
 	return a.lerp(b,(sea-a.y)/(b.y-a.y))
@@ -1258,8 +1283,8 @@ func wreck_inside(p: Vector3, pad: float) -> bool:
 ## the sea). Up for a touch of the water right beside her; ZERO away from her.
 func _wreck_way_off(p: Vector3, l: Vector3, what: String) -> Vector3:
 	if _ghost or p.distance_squared_to(position) > WRECK_REACH*WRECK_REACH: return Vector3.ZERO
-	var beam := wide*0.5+WALL
-	var end := LONG*0.5+PLATE
+	var beam := BEAM
+	var end := LIP_HI if l.z < 0.0 else LONG*0.5+PLATE
 	if absf(l.x) > beam+10.0 or absf(l.z) > end+20.0 or l.y > 70.0 or l.y < -DRAUGHT-4.0: return Vector3.ZERO
 	if what == "water": return Vector3.UP
 	var off := Vector3.UP
@@ -1383,6 +1408,26 @@ func _shards_step(delta: float) -> void:
 				v.y = absf(v.y)*SHARD_BOUNCE
 				v *= maxf(1.0-SHARD_RUB*delta,0.0)
 				low = true
+		elif at.z < -LONG*0.5 and at.z > -LIP_HI:
+			# Out the prow: its tunnel's walls to the mouth, its lips over and under,
+			# each narrowing to the stem.
+			if at.z > -TUNNEL_MOUTH and absf(at.x) > TUNNEL_X-SHARD_ROOM and absf(at.x) < TUNNEL_X+2.0:
+				at.x = signf(at.x)*(TUNNEL_X-SHARD_ROOM)
+				v.x *= -SHARD_BOUNCE
+			var lip := TUNNEL_X*sqrt(clampf((LIP_HI+at.z)/(LIP_HI-TUNNEL_MOUTH),0.0,1.0))
+			if absf(at.x) < lip and at.y > TUNNEL_HI-SHARD_ROOM and at.y < TUNNEL_HI+3.0:
+				at.y = TUNNEL_HI-SHARD_ROOM
+				v.y = -absf(v.y)*SHARD_BOUNCE
+			lip = TUNNEL_X*sqrt(clampf((LIP_LO+at.z)/(LIP_LO-TUNNEL_MOUTH),0.0,1.0))
+			if absf(at.x) < lip and at.y < TUNNEL_LO+SHARD_ROOM and at.y > TUNNEL_LO-3.0:
+				at.y = TUNNEL_LO+SHARD_ROOM
+				v.y = absf(v.y)*SHARD_BOUNCE
+				v *= maxf(1.0-SHARD_RUB*delta,0.0)
+				low = true
+		elif at.z > LONG*0.5+PLATE and at.z < BALCONY.y and absf(at.x) < wide*0.5 and at.y > BALCONY.x-SHARD_ROOM and at.y < BALCONY.x+2.0:
+			# Out the stern, under the balcony over the exit.
+			at.y = BALCONY.x-SHARD_ROOM
+			v.y = -absf(v.y)*SHARD_BOUNCE
 		s.v = v
 		n.position = at-(s.off as Vector3)
 		var spin: Vector3 = s.spin
@@ -1496,23 +1541,26 @@ func _plug(plate: Dictionary, part: String) -> void:
 
 func _blocks(all: Dictionary) -> void:
 	var half := wide*0.5
-	var beam := half+WALL
+	var beam := GUN_X-3.0
 	var roof := FLOOR_Y+high
 	var top := roof+DECK
 	var end := LONG*0.5+PLATE
-	var hull_m := _mat(HULL_C)
 	var inside := _mat(GUNDECK_C,GUNDECK_C,0.4)
-	# The hull's shell, and the gun deck's own lining so its inside reads.
-	_look(_box(-beam,-DRAUGHT,-end, beam,FLOOR_Y,end),hull_m)
-	_look(_box(-beam,FLOOR_Y,-end, -half,roof,end),hull_m)
-	_look(_box(half,FLOOR_Y,-end, beam,roof,end),hull_m)
-	_look(_box(-beam,roof,-end, beam,top,end),_mat(DECK_C))
+	# Her solid itself, box for box, in one mesh; the gun deck's own lining so its
+	# inside reads.
+	var st := SurfaceTool.new()
+	var unit := BoxMesh.new()
+	for box: AABB in all.hull: st.append_from(unit,0,Transform3D(Basis.from_scale(box.size),box.get_center()))
+	var shell := MeshInstance3D.new()
+	shell.name = "Shell"
+	shell.mesh = st.commit()
+	shell.material_override = _mat(HULL_C)
+	add_child(shell)
 	var skin := 0.04
 	_look(_box(-half,FLOOR_Y,-end, half,FLOOR_Y+skin,end),inside)
 	_look(_box(-half,FLOOR_Y,-end, -half+skin,roof,end),inside)
 	_look(_box(half-skin,FLOOR_Y,-end, half,roof,end),inside)
 	_look(_box(-half,roof-skin,-end, half,roof,end),_mat(RIB_C,RIB_C,0.5))
-	for i in range(4,11): _look(all.hull[i],hull_m if i < 8 else _mat(RIB_C))
 	# Sails: gray box, drawn only; the plane goes through them.
 	var sail := _mat(SAIL_C,SAIL_C,0.15)
 	for row: Array in [[-30.0,top+8.0,44.0],[2.0,top+9.0,50.0],[33.0,top+17.0,32.0]]:

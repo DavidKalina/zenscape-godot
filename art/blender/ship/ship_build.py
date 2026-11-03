@@ -3038,6 +3038,185 @@ def tri_hits_box(tris, lo, hi):
 	return ids[ok]
 
 
+# --- The solid ----------------------------------------------------------------
+# What the plane meets (pirate_ship.gd `solids`, BoxSolid and a StaticBody): boxes
+# fitted to the shape above in horizontal bands, each band's half breadth stepped
+# along her to within SOLID_TOL of the skin, open where the gun deck, the prow's
+# tunnel and the open decks are; the masts, the staff and the stern's dress on top.
+# Written to ship_solids.gd in Godot's frame (x, y up, z = -Blender y); the plates
+# are pirate_ship.gd's own.
+
+SOLID_TOL = 0.45          # m either way of the skin's half breadth, where the plane flies
+SOLID_WET = 1.25          # under the waterline, where it can't
+SOLID_STEP = 1.0          # the stations it's read at along her (m), at most
+SOLID_FROM, SOLID_TO = -63.0, 79.0
+SOLID_PROUD = 0.15        # the strakes' lips and wales stand this proud of the shape's line
+BULWARK = 0.8             # the bulwarks' thickness over the open decks
+RAIL_TOL = 0.5            # their tops stepped to within this of the cap rail's
+CAP_TOP = 0.45            # the cap rail's top over the sheer
+# The bands: under the decks; the castles' and the forecastle's insides in a few more;
+# the bulwarks' over the decks.
+SOLID_BANDS = (KEEL_Z, -2.5, 0.0, 1.3, TUNNEL_LO, COR_FLOOR, 5.5, 10.5, COR_TOP, TUNNEL_HI, DECK_Z, 18.0, DECK_FORE, DECK_POOP, 25.0, DECK_HIGH)
+WALL_BANDS = tuple(float(z) for z in range(15, 35, 2))
+
+
+def skin_half(y, z):
+	"""The hull's half breadth at a real station y and height z, her planks' faces;
+	0 past her ends."""
+	if y < stern_y(z) or y > stem_y(z):
+		return 0.0
+	return half_beam(u_at(y, z), z) + SOLID_PROUD
+
+
+def solid_cut(y, z):
+	"""What's open at station y, height z: 0 none, an inner half width (the gun deck,
+	the tunnel), or None (over the deck: the bulwarks are their own)."""
+	if z >= base_deck(y):
+		return None
+	if COR_FLOOR <= z < COR_TOP and abs(y) < Y_BOW:
+		return COR_W * 0.5
+	if TUNNEL_LO <= z < TUNNEL_HI and y >= Y_BOW:
+		return TUNNEL_X
+	return 0.0
+
+
+def solid_stations():
+	"""Along her, SOLID_STEP at most, on every place the solid's makeup changes."""
+	cuts = sorted({SOLID_FROM, SOLID_TO, -Y_BOW, Y_BOW, BREAK_HIGH, BREAK_POOP, BREAK_FORE})
+	out = [SOLID_FROM]
+	for a, b in zip(cuts, cuts[1:]):
+		n = max(1, int(math.ceil((b - a) / SOLID_STEP - 1e-6)))
+		out += [a + (b - a) * (i + 1) / n for i in range(n)]
+	return out
+
+
+def fit_solids():
+	"""The solid's boxes, Godot frame: [(x0, y0, z0, x1, y1, z1)]."""
+	out = []
+
+	def box(x0, x1, z0, z1, y0, y1):
+		if x1 - x0 > 0.05 and z1 - z0 > 0.05 and y1 - y0 > 0.05:
+			out.append((x0, z0, -y1, x1, z1, -y0))
+
+	def emit(run, z0, z1):
+		a, b, cut, lo, hi = run
+		w = (lo + hi) * 0.5
+		if cut == 0.0:
+			box(-w, w, z0, z1, a, b)
+			return
+		if w > cut + 0.1:
+			box(-w, -cut, z0, z1, a, b)
+			box(cut, w, z0, z1, a, b)
+
+	ys = solid_stations()
+	for z0, z1 in zip(SOLID_BANDS, SOLID_BANDS[1:]):
+		tol = SOLID_WET if z1 <= -2.5 else SOLID_TOL
+		zs = (z0 + 0.01, (z0 + z1) * 0.5, z1 - 0.01)
+		run = None
+		for a, b in zip(ys, ys[1:]):
+			cut = solid_cut((a + b) * 0.5, (z0 + z1) * 0.5)
+			ws = [sum(skin_half(y, z) for z in zs) / 3.0 for y in (a, (a + b) * 0.5, b)]
+			# A station half past her end is hers only if its middle is: no half widths.
+			lo, hi = min(w for w in ws if w > 0.0) if max(ws) > 0.0 else 0.0, max(ws)
+			if cut is None or ws[1] < 0.3:
+				if run:
+					emit(run, z0, z1)
+				run = None
+				continue
+			if run and run[2] == cut and max(run[4], hi) - min(run[3], lo) <= 2.0 * tol:
+				run = (run[0], b, cut, min(run[3], lo), max(run[4], hi))
+			else:
+				if run:
+					emit(run, z0, z1)
+				run = (a, b, cut, lo, hi)
+		if run:
+			emit(run, z0, z1)
+	# The bulwarks round the open decks, up to the cap rail, in bands of their own:
+	# a run goes on while its foot and head and its skin stay within tolerance.
+	def wall(run, z0, z1):
+		a, b, f0, f1, h0, h1, w0, w1 = run
+		w = (w0 + w1) * 0.5
+		foot, head = max(z0, (f0 + f1) * 0.5), min(z1, (h0 + h1) * 0.5)
+		box(-w, -w + BULWARK, foot, head, a, b)
+		box(w - BULWARK, w, foot, head, a, b)
+
+	for z0, z1 in zip(WALL_BANDS, WALL_BANDS[1:]):
+		run = None
+		for a, b in zip(ys, ys[1:]):
+			m = (a + b) * 0.5
+			d = base_deck(m)
+			heads = [min(z1, rail(y) + CAP_TOP) for y in (a, m, b)]
+			foot = max(z0, d)
+			ws = [skin_half(y, (foot + min(heads)) * 0.5) for y in (a, m, b)]
+			if min(heads) <= foot + 0.2 or ws[1] < 0.3:
+				if run:
+					wall(run, z0, z1)
+				run = None
+				continue
+			ws = [w for w in ws if w > 0.0]
+			if run and run[2] == foot and max(run[5], max(heads)) - min(run[4], min(heads)) <= 2.0 * RAIL_TOL and max(run[7], max(ws)) - min(run[6], min(ws)) <= 2.0 * SOLID_TOL:
+				run = (run[0], b, foot, foot, min(run[4], min(heads)), max(run[5], max(heads)), min(run[6], min(ws)), max(run[7], max(ws)))
+			else:
+				if run:
+					wall(run, z0, z1)
+				run = (a, b, foot, foot, min(heads), max(heads), min(ws), max(ws))
+		if run:
+			wall(run, z0, z1)
+	# The channels outboard of the masts, and the rails across the castles' edges.
+	for my, _, _, _ in MASTS:
+		z = chain_z(my)
+		w = half_at(my, z)
+		box(w - 0.2, w + 1.85, z - 0.2, z + 0.2, my - 5.5, my + 5.5)
+		box(-w - 1.85, -w + 0.2, z - 0.2, z + 0.2, my - 5.5, my + 5.5)
+	for y, z, face in ((BREAK_POOP, DECK_POOP, 1.0), (BREAK_HIGH, DECK_HIGH, 1.0), (BREAK_FORE, DECK_FORE, -1.0)):
+		w = half_at(y, z + 1.0) - 0.5
+		box(-w, w, z, z + 1.6, y + face * 0.05 - 0.25, y + face * 0.05 + 0.25)
+	# The rudder on the tucked sternpost.
+	for z0, z1, w in ((lift(-STERN_U, KEEL_Z), -0.5, 4.0), (-0.5, COR_FLOOR - 0.6, 2.6)):
+		ry = stern_y((z0 + z1) * 0.5) - 0.15
+		box(-0.35, 0.35, z0, z1, ry - w, ry)
+	# The bowsprit, stepped along its rise.
+	a, b = Vector(BOWSPRIT[0]), Vector(BOWSPRIT[1])
+	n = 16
+	for i in range(n):
+		p, q = a.lerp(b, i / n), a.lerp(b, (i + 1) / n)
+		r = lerp(1.05, 0.45, (i + 0.5) / n)
+		box(-r, r, min(p[2], q[2]) - r, max(p[2], q[2]) + r, p[1], q[1])
+	# The masts, lower mast, topmast and topgallant, each its own girth.
+	for i, (y, top1, top2, truck) in enumerate(MASTS):
+		for (za, zb), r in zip(((base_deck(y), top1), (top1, top2), (top2, truck)), mast_radii(i)):
+			box(-r, r, za, zb, y - r, y + r)
+	(x, y0, z0), (_, y1, z1) = ENSIGN_STAFF
+	box(-0.34, 0.34, z0, z1, min(y0, y1) - 0.34, max(y0, y1) + 0.34)
+	# The stern's dress: the crown's arc over the transom, the balconies, the quarter
+	# galleries bulging out of the sides.
+	top = rail(-STERN_U)
+	wc = half_beam(stern_y(top) * 0.999, top)
+	box(-wc * 0.85, wc * 0.85, top, top + CROWN * 0.8, stern_y(top) - 0.45, stern_y(top) + 0.25)
+	# The transom over the poop, its bulwark across her stern, leaning with the counter.
+	box(-wc, wc, DECK_HIGH, top + CAP_TOP, stern_y(top), stern_y(DECK_HIGH) + 0.3)
+	for rz in GALLERIES:
+		w = half_beam(stern_y(rz) * 0.999, rz)
+		box(-w, w, rz - 0.8, rz + 1.25, stern_y(rz) - 2.0, stern_y(rz))
+	zq = (GALLERIES[0] - 0.4 + GALLERIES[1] + 4.0) * 0.5
+	wq = half_at(-STERN_U + 6.0, zq)
+	aft = -STERN_U + 1.5 - rake(-STERN_U + 1.5, zq)
+	for s in (-1.0, 1.0):
+		box(*sorted((s * (wq - 0.6), s * (wq + 1.7))), GALLERIES[0] - 0.7, GALLERIES[1] + 3.7, aft, -STERN_U + 11.0)
+	return out
+
+
+def write_solids():
+	boxes = fit_solids()
+	rows = ",\n".join("\t[%s]" % ", ".join("%.2f" % v for v in b) for b in boxes)
+	(TEX / "ship_solids.gd").write_text(
+		"## Written by art/blender/ship/ship_build.py (fit_solids): the ship's solid, her\n"
+		"## hull's boxes fitted to its shape (x0, y0, z0, x1, y1, z1 in her frame, -z the\n"
+		"## bow), the plates left out (pirate_ship.gd `solids`). Don't edit: rebuild.\n\n"
+		"const BOXES := [\n" + rows + ",\n]\n")
+	print(f"solid: {len(boxes)} boxes")
+
+
 def prove():
 	"""Off the glb: the corridor is empty, the mouths clear, the nodes all there."""
 	doc, bin_ = read_glb(OUT)
@@ -3090,6 +3269,7 @@ def main():
 	args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 	build("--fast" in args)
 	export()
+	write_solids()
 	sys.exit(1 if prove() else 0)
 
 
