@@ -5,7 +5,7 @@ out to either side of the line. `--wake-fish=0` turns all of it off.
 
 ## Fly it
 
-`.\run-endless-flight.cmd -- --at=87,250 --heading=180 --alt=3` starts on the
+`.\run-endless-flight.cmd --at=87,250 --heading=180 --alt=3` starts on the
 south shore of the lake nearest the start, 1.1 km across, about 40 m of water
 to the ground. Hold Boost and let the plane settle onto the water. Other lakes
 on seed 1: (2334,-2014) 2.8 km, (1344,-4857) 1.7 km, (-6841,3527) 1.7 km,
