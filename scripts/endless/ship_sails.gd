@@ -5,8 +5,9 @@ extends RefCounted
 ## share the one material: her bow, her speed, her turn, and how slack she's gone.
 ## The cloth's shape, wind and gusts all live in the shader.
 
-## How far the shader may throw the cloth past its flat sheet (m), for culling.
-const REACH := 16.0
+## How far the shader may throw the cloth past its flat sheet (m), for culling:
+## the belly of the 20 m deep courses, or their swing in a sink.
+const REACH := 22.0
 ## Past this generated LODs would flatten the sheet the shader shapes.
 const NO_LOD := 1000.0
 ## Seconds for the turn the cloth feels to follow hers, and for her to go slack.

@@ -34,7 +34,7 @@ from pathlib import Path
 
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 ROOT = Path(__file__).resolve().parents[3]
 OUT = ROOT / "assets/models/pirate_ship.glb"
@@ -153,21 +153,32 @@ LAMP_Z = COR_TOP - 1.2
 LAMP_BAYS = (-48.0, -32.0, -16.0, 16.0, 32.0, 48.0)
 LAMP_PITCH = 16.0
 
-# The masts: y, lower top, topmast top, truck. Trucks at the collision boxes' tops.
+# The masts: y, lower top, topmast's head (the crosstrees), truck. pirate_ship.gd's
+# solids() stands a box on each, to the truck (Godot z = -y), and HIGH_POINTS has
+# the trucks: keep them in step.
 MASTS = (
-	(22.0, 36.0, 48.0, 55.0),    # Mast_1, fore
-	(-6.0, 38.0, 51.0, 59.0),    # Mast_2, main
-	(-42.0, 39.0, 51.0, 51.0),   # Mast_3, mizzen, its topgallant shot away
+	(30.0, 43.0, 64.0, 92.0),     # Mast_1, fore
+	(-2.0, 47.0, 70.0, 104.0),    # Mast_2, main
+	(-33.0, 51.0, 69.0, 80.0),    # Mast_3, mizzen, on the quarterdeck
 )
-MAST_R = 1.0
-BRACE = -24.0             # the yards swung round (deg), so sails show from abeam
+MAST_R = 1.35             # the main's lower mast; the fore's and mizzen's are thinner (MAST_K)
+MAST_K = (0.9, 1.0, 0.78)
+BRACES = (-34.0, -34.0, -27.0)   # each mast's yards swung round (deg), so sails show from abeam
 # Each mast's sails: (name, yard z, yard length, foot z, foot width, atlas cell, tilt deg).
+# A topsail's foot clears the top's rail (top + 2.2), a topgallant's the crosstrees.
 SAILS = (
-	(("1a", 34.0, 34.0, 21.5, 36.0, 0, 1.5), ("1b", 46.0, 26.0, 36.0, 33.0, 1, -3.0), ("1c", 54.0, 16.0, 47.0, 24.0, 2, 4.0)),
-	(("2a", 36.0, 38.0, 19.5, 41.0, 1, -1.0), ("2b", 49.0, 30.0, 38.0, 37.0, 2, 2.0), ("2c", 57.5, 18.0, 50.0, 28.0, 0, -6.0)),
-	(("3a", 37.0, 28.0, 27.0, 30.0, 2, 3.0), ("3b", 49.0, 22.0, 40.0, 27.0, 0, -9.0)),
+	(("1a", 40.0, 42.0, 23.0, 47.0, 0, 0.6), ("1b", 61.0, 34.0, 45.2, 41.0, 2, -1.2), ("1c", 78.0, 25.0, 64.6, 31.0, 3, 1.5)),
+	(("2a", 44.0, 47.0, 24.0, 53.0, 1, -0.4), ("2b", 67.0, 39.0, 49.2, 46.0, 3, 0.9), ("2c", 86.0, 29.0, 70.6, 36.0, 2, -1.4),
+		("2d", 100.0, 20.0, 89.0, 26.0, 3, 2.0)),
+	(("3a", 48.0, 31.0, 32.0, 35.0, 2, 1.0), ("3b", 66.0, 24.0, 53.2, 29.0, 3, -1.6)),
 )
-BOWSPRIT = ((0.0, 47.0, 19.0), (0.0, 88.0, 35.0))
+BOWSPRIT = ((0.0, 50.0, 21.0), (0.0, 100.0, 44.0))
+# The jib, Sail_0a, hangs from the fore topmast stay (the fore's crosstrees to the
+# bowsprit's end) between these two y's, its clew JIB_DROP under the stay.
+JIB_SPAN = (53.0, 95.0)
+JIB_DROP = 15.0
+JIB_FOOT = 1.2
+JIB_SKEW = -0.55          # the clew aft, toward the head (sail_geo)
 
 # Textures (px wide).
 HULL_TEX = 4096
@@ -175,9 +186,9 @@ STERN_TEX = 2048
 WOOD_TEX = 1024
 WOOD_TILE = 6.0           # the tile's size (m)
 SAIL_TEX = 2048
-SAIL_CELL = (1.6, 0.9)    # a sail's mesh at most this coarse (m across, m down), before crowding to its edges
+SAIL_CELL = (2.0, 1.2)    # a sail's mesh at most this coarse (m across, m down), before crowding to its edges
 SAIL_MIN = (12, 8)        # and at least this many columns and rows
-SAIL_SIZE = 64.0          # the vertex colour's scale: a sail's size (m) / this
+SAIL_SIZE = 64.0          # the vertex colour's scale: a sail's size (m) / this; the main course is 53 wide
 
 WHITE = (1.0, 1.0, 1.0)
 RAW = (0.95, 0.76, 0.54)    # fresh-broken wood, on the wood tile
@@ -1341,7 +1352,7 @@ def build_decks(g):
 		# The channels: plank shelves outboard of the masts that spread the shrouds.
 		for my, _, _, _ in MASTS:
 			c0, c1 = my - 5.5, my + 5.5
-			z = DECK_Z + 1.9
+			z = chain_z(my)
 			g.beam((side * (half_at(c0, z) + 0.9), c0, z), (side * (half_at(c1, z) + 0.9), c1, z), 1.9, 0.3, "wood", (0.2, 0.15, 0.11))
 	hatch = (0.2, 0.15, 0.11)
 	for y, w, l in ((-18.0, 6.0, 8.0), (8.0, 7.0, 10.0), (29.0, 5.0, 6.0)):
@@ -1537,70 +1548,109 @@ def build_beak(g):
 
 # --- Masts, sails, rigging ----------------------------------------------------
 
-def yard_axis(tilt):
-	b = math.radians(BRACE)
+MAST_WOOD = (0.2, 0.165, 0.135)    # on the wood tile: weathered spars, grey-brown over the tar
+SPAR_DARK = (0.07, 0.058, 0.05)    # the tops, caps and yards: tarred
+ROPE = (0.05, 0.042, 0.035)
+BAND = (0.09, 0.09, 0.09)
+
+
+def chain_z(y):
+	"""The chains' height at y: the shrouds' feet, a little under the rail."""
+	return rail(y) - 1.2
+
+
+def yard_axis(tilt, brace):
+	b = math.radians(brace)
 	return Vector((math.cos(tilt) * math.cos(b), math.cos(tilt) * math.sin(b), math.sin(tilt)))
 
 
-def mast_geo(index, spec, sails):
+def mast_radii(index):
+	r0 = MAST_R * MAST_K[index]
+	r1 = r0 * 0.6
+	return r0, r1, r1 * 0.55
+
+
+def mast_r(index, z):
+	"""The mast's radius at height z: the lower mast, the topmast, the topgallant."""
+	y, top1, top2, truck = MASTS[index]
+	r0, r1, r2 = mast_radii(index)
+	foot = base_deck(y)
+	if z < top1:
+		return lerp(r0, r0 * 0.75, max(0.0, z - foot - 12.0) / max(top1 - foot - 12.0, 1.0))
+	if z < top2:
+		return lerp(r1, r1 * 0.68, (z - top1) / (top2 - top1))
+	return lerp(r2, r2 * 0.45, (z - top2) / (truck - top2))
+
+
+def jib_stay():
+	"""The fore topmast stay, the fore's crosstrees to the bowsprit's end: the jib's head."""
+	y, top1, top2, truck = MASTS[0]
+	return Vector((0.0, y + 0.5, top2 + 0.5)), Vector(BOWSPRIT[1])
+
+
+def mast_geo(index, spec, sails, brace):
+	"""A mast in three: the lower mast to its top, the topmast to the crosstrees, the
+	topgallant to the truck, and its yards, forward of it."""
 	y, top1, top2, truck = spec
 	g = Geo()
-	wood = (0.28, 0.2, 0.135)
-	dark = (0.1, 0.075, 0.06)
 	foot = base_deck(y)
-	r0 = MAST_R * (1.0 if index == 1 else 0.88)
-	# The lower mast, doubled at the top by the topmast's heel.
-	g.tube([(0.0, y, 0.0 + foot), (0.0, y, foot + 12.0), (0.0, y, top1 - 1.0), (0.0, y, top1 + 2.0)], [r0, r0 * 1.0, r0 * 0.72, r0 * 0.68], 12, "wood", wood)
-	# Iron bands, the partners.
-	for z in frange(foot + 3.0, top1 - 5.0, 7.0):
-		g.tube([(0.0, y, z - 0.18), (0.0, y, z + 0.18)], [lerp(r0, r0 * 0.7, (z - foot) / (top1 - foot)) + 0.04] * 2, 12, "iron", (0.09, 0.09, 0.09), cap=False)
-	g.box(-r0 - 0.7, r0 + 0.7, y - r0 - 0.7, y + r0 + 0.7, foot, foot + 0.6, "wood", dark)
-	# The top: a round platform with a rail, the crosstrees under it.
-	pr = r0 * 3.1
-	g.tube([(0.0, y, top1 - 1.3), (0.0, y, top1 - 0.4), (0.0, y, top1 - 0.2), (0.0, y, top1 + 0.05)], [pr * 0.45, pr * 0.88, pr, pr], 12, "wood", dark)
-	g.tube([(0.0, y, top1 + 0.05), (0.0, y, top1 + 1.5), (0.0, y, top1 + 1.8)], [pr * 0.98, pr * 1.06, pr * 1.06], 12, "wood", (0.13, 0.095, 0.07))
-	# The topmast, and the topgallant unless she has lost it.
-	r1 = r0 * 0.62
-	z2 = top2 + 2.0 if truck > top2 else top2
-	if truck > top2:
-		g.tube([(r0 * 0.9, y, top1 - 3.5), (r0 * 0.9 * 0.8, y, top1 + 8.0), (0.0, y, top2 - 2.0), (0.0, y, top2 + 1.5)], [r1, r1 * 0.95, r1 * 0.58, r1 * 0.55], 10, "wood", wood)
-		r2 = r1 * 0.5
-		g.tube([(r1 * 0.6, y, top2 - 3.0), (0.0, y, top2 + 2.0), (0.0, y, truck)], [r2, r2 * 0.92, r2 * 0.32], 8, "wood", wood)
-		g.tube([(0.0, y, top2 - 0.3), (0.0, y, top2 + 0.2)], [r1 * 1.7, r1 * 1.7], 8, "wood", dark)
-	else:
-		# Shot through: a splintered stump, its broken top leaning off.
-		g.tube([(r0 * 0.9, y, top1 - 3.5), (r0 * 0.7, y, top1 + 8.0), (0.5, y, top2 - 2.0), (0.8, y, top2 + 0.2)], [r1, r1 * 0.95, r1 * 0.62, r1 * 0.2], 10, "wood", wood)
-		rng = random.Random(index + 7)
-		for k in range(7):
-			a = k * math.tau / 7
-			p = Vector((0.5 + math.cos(a) * r1 * 0.5, y + math.sin(a) * r1 * 0.5, top2 - 2.6))
-			tip = p + Vector((math.cos(a) * 0.6, math.sin(a) * 0.6, rng.uniform(1.0, 3.8)))
-			g.tube([p, tip], [r1 * 0.28, 0.02], 4, "wood", (0.8, 0.62, 0.42), cap=False)
-	# The yards, cross the mast forward of it.
+	r0, r1, r2 = mast_radii(index)
+	rng = random.Random(index + 7)
+	# The lower mast, its head running up through the top.
+	g.tube([(0.0, y, foot), (0.0, y, foot + 12.0), (0.0, y, top1 - 1.0), (0.0, y, top1 + 2.6)], [r0, r0, r0 * 0.75, r0 * 0.72], 12, "wood", MAST_WOOD)
+	# Iron hoops up it, a little uneven; the partners at the deck.
+	for z in frange(foot + 3.0, top1 - 4.0, 6.5):
+		z += rng.uniform(-0.6, 0.6)
+		g.tube([(0.0, y, z - 0.2), (0.0, y, z + 0.2)], [mast_r(index, z) + 0.05] * 2, 12, "iron", BAND, cap=False)
+	g.box(-r0 - 0.7, r0 + 0.7, y - r0 - 0.7, y + r0 + 0.7, foot, foot + 0.6, "wood", SPAR_DARK)
+	# The top: a round platform with a rail, its trestles under it.
+	pr = r0 * 3.2
+	g.tube([(0.0, y, top1 - 1.3), (0.0, y, top1 - 0.4), (0.0, y, top1 - 0.2), (0.0, y, top1 + 0.05)], [pr * 0.45, pr * 0.88, pr, pr], 14, "wood", SPAR_DARK)
+	g.tube([(0.0, y, top1 + 0.05), (0.0, y, top1 + 1.5), (0.0, y, top1 + 1.8)], [pr * 0.98, pr * 1.06, pr * 1.06], 14, "wood", (0.1, 0.08, 0.065), cap=False)
+	# The cap, binding the lower mast's head to the topmast's heel.
+	g.tube([(0.0, y, top1 + 2.6), (0.0, y, top1 + 3.3)], [r0 * 0.95, r0 * 0.95], 10, "wood", SPAR_DARK)
+	# The topmast, the crosstrees at its head.
+	g.tube([(0.0, y, top1 - 1.5), (0.0, y, top1 + 8.0), (0.0, y, top2 - 1.0), (0.0, y, top2 + 1.8)], [r1, r1 * 0.95, r1 * 0.7, r1 * 0.66], 10, "wood", MAST_WOOD)
+	for z in frange(top1 + 5.0, top2 - 3.0, 6.0):
+		g.tube([(0.0, y, z - 0.16), (0.0, y, z + 0.16)], [mast_r(index, z) + 0.04] * 2, 10, "iron", BAND, cap=False)
+	cx = r1 * 4.6
+	g.beam((-cx, y - r1 * 1.2, top2), (cx, y - r1 * 1.2, top2), 0.34, 0.3, "wood", SPAR_DARK)
+	g.beam((-cx, y + r1 * 1.2, top2), (cx, y + r1 * 1.2, top2), 0.34, 0.3, "wood", SPAR_DARK)
+	g.beam((-r1 * 1.1, y - r1 * 2.6, top2 + 0.3), (-r1 * 1.1, y + r1 * 2.6, top2 + 0.3), 0.3, 0.34, "wood", SPAR_DARK, up=(0.0, 0.0, 1.0))
+	g.beam((r1 * 1.1, y - r1 * 2.6, top2 + 0.3), (r1 * 1.1, y + r1 * 2.6, top2 + 0.3), 0.3, 0.34, "wood", SPAR_DARK, up=(0.0, 0.0, 1.0))
+	g.tube([(0.0, y, top2 + 1.8), (0.0, y, top2 + 2.4)], [r1 * 0.95, r1 * 0.95], 8, "wood", SPAR_DARK)
+	# The topgallant, a pole to the truck.
+	g.tube([(0.0, y, top2 - 1.0), (0.0, y, lerp(top2, truck, 0.5)), (0.0, y, truck)], [r2, r2 * 0.75, r2 * 0.45], 8, "wood", MAST_WOOD)
+	g.tube([(0.0, y, truck - 0.05), (0.0, y, truck + 0.4)], [r2 * 1.05, r2 * 0.9], 8, "wood", SPAR_DARK)
+	# The yards, slung forward of the mast.
 	yard_out = []
 	for name, zy, w, zb, wb, cell, tilt in sails:
 		t = math.radians(tilt)
-		ax = yard_axis(t)
-		c = Vector((0.0, y + r0 + 0.4, zy))
-		half = w * 0.5 + 1.5
+		ax = yard_axis(t, brace)
 		r = 0.62 * (w / 40.0) ** 0.5
+		c = Vector((0.0, y + mast_r(index, zy) + r + 0.15, zy))
+		half = w * 0.5 + 1.5
 		pts = [c - ax * half, c - ax * half * 0.5, c, c + ax * half * 0.5, c + ax * half]
-		g.tube(pts, [r * 0.42, r * 0.84, r, r * 0.84, r * 0.42], 8, "wood", (0.16, 0.115, 0.08), up=(0.0, 1.0, 0.0))
+		g.tube(pts, [r * 0.42, r * 0.84, r, r * 0.84, r * 0.42], 8, "wood", SPAR_DARK, up=(0.0, 1.0, 0.0))
+		# The truss's band at the slings.
+		g.tube([c - ax * 1.0, c + ax * 1.0], [r * 1.12, r * 1.12], 8, "iron", BAND, cap=False, up=(0.0, 1.0, 0.0))
 		yard_out.append((name, c.copy(), w, zb, wb, cell, tilt))
 	return g, yard_out
 
 
-def sail_geo(w, h, wb, cell):
+def sail_geo(w, h, wb, cell, skew=0.0):
 	"""A flat sheet hanging from the yard (the origin) down -Z; `ship_cloth.gdshader` bellies it.
 
 	Rows and columns crowd toward the foot and the leeches, where the cloth ripples.
-	The vertex colour is the sheet's size for the shader: h, head and foot width over SAIL_SIZE.
+	The vertex colour is the sheet's size for the shader: h, head and foot width over SAIL_SIZE;
+	its alpha 1 + skew, how far the foot's middle stands off the head's (a share of the
+	head's half width, negative toward -X): the jib's clew sits under its head, not mid-stay.
 	"""
 	g = Geo()
 	nx = max(SAIL_MIN[0], round(max(w, wb) / SAIL_CELL[0]))
 	ny = max(SAIL_MIN[1], round(h / SAIL_CELL[1]))
 	cu, cv = (cell % 2) * 0.5, (1 - (cell // 2)) * 0.5
-	size = (h / SAIL_SIZE, w / SAIL_SIZE, wb / SAIL_SIZE)
+	size = (h / SAIL_SIZE, w / SAIL_SIZE, wb / SAIL_SIZE, 1.0 + skew)
 	ids = []
 	for j in range(ny + 1):
 		t = 1.0 - (1.0 - j / ny) ** 1.3
@@ -1608,7 +1658,7 @@ def sail_geo(w, h, wb, cell):
 		for i in range(nx + 1):
 			a = i / nx * 2.0 - 1.0
 			s = math.copysign(1.0 - (1.0 - abs(a)) ** 1.35, a)
-			x = s * lerp(w, wb, t) * 0.5
+			x = s * lerp(w, wb, t) * 0.5 + skew * w * 0.5 * t
 			uv = (cu + (s * 0.5 + 0.5) * 0.5, cv + (1.0 - t) * 0.5)
 			row.append(g.vert((x, 0.35, -h * t), uv, size))
 		ids.append(row)
@@ -1621,85 +1671,110 @@ def sail_geo(w, h, wb, cell):
 def rope(g, a, b, r=0.17, sag=0.0, n=3):
 	a, b = Vector(a), Vector(b)
 	if sag <= 0.0:
-		g.tube([a, b], [r, r], n, "rope", (0.05, 0.042, 0.035), cap=False)
+		g.tube([a, b], [r, r], n, "rope", ROPE, cap=False)
 		return
 	pts = []
 	for t in frange(0.0, 1.0, 0.2):
 		p = a.lerp(b, t)
 		p.z -= sag * 4.0 * t * (1.0 - t)
 		pts.append(p)
-	g.tube(pts, [r] * len(pts), n, "rope", (0.05, 0.042, 0.035), cap=False)
+	g.tube(pts, [r] * len(pts), n, "rope", ROPE, cap=False)
 
 
 def build_rigging(g, stays, yards):
-	"""Shrouds, ratlines, stays. Fine lines are `g`; `stays` are thick and stay on at a distance."""
+	"""Shrouds, ratlines, backstays, lifts and braces in `g` (they hide at a distance);
+	the stays down her middle in `stays`, thick, and they stay on."""
 	rng = random.Random(5)
 	for idx, (y, top1, top2, truck) in enumerate(MASTS):
-		foot = DECK_Z + 1.9
+		r0, r1, r2 = mast_radii(idx)
+		foot = chain_z(y)
+		pr = r0 * 3.2
 		for side in (-1.0, 1.0):
-			hb = half_beam(y, foot) + 1.3
-			feet = [Vector((side * hb, y + d, foot)) for d in (-5.0, -3.0, -1.0, 1.0)]
-			head = Vector((side * 1.0, y - 0.2, top1 - 0.6))
+			# The lower shrouds, from the chains to the masthead, a little aft of the mast.
+			feet = [Vector((side * (half_at(y + d, foot) + 1.3), y + d, foot)) for d in (-5.5, -3.8, -2.1, -0.4)]
+			head = Vector((side * r0 * 0.8, y - 0.4, top1 - 0.6))
 			for f in feet:
 				rope(g, f, head, 0.19)
 			# Ratlines: one rod across the shrouds per rung.
 			rungs = int((head.z - foot) / 1.8)
-			for k in range(2, rungs):
+			for k in range(2, rungs - 1):
 				t = k / rungs
 				rope(g, feet[0].lerp(head, t), feet[-1].lerp(head, t), 0.08)
-			# Topmast shrouds to the top's rim.
-			rim = Vector((side * MAST_R * 3.0, y, top1 + 1.0))
-			t2 = Vector((side * 0.6, y, top2 - 1.0))
-			for d in (-1.8, 0.0, 1.8):
-				rope(g, rim + Vector((0.0, d, 0.0)), t2, 0.13)
-			# A backstay down to the rail.
-			rope(g, Vector((side * 0.8, y - 0.5, top2 + 0.5)), Vector((side * hb, y - 12.0, foot + 0.3)), 0.14)
-	# The stays: thick, down the ship's middle: the lines that survive distance.
+			# The topmast's shrouds from the top's rim, the topgallant's from the crosstrees.
+			t2 = Vector((side * r1 * 0.7, y - 0.2, top2 - 1.0))
+			for d in (-2.2, -0.6, 1.0):
+				rope(g, Vector((side * pr * 0.92, y + d, top1 + 1.0)), t2, 0.13)
+			t3 = Vector((side * r2 * 0.6, y, lerp(top2, truck, 0.62)))
+			for d in (-0.5, 0.5):
+				rope(g, Vector((side * r1 * 4.4, y + d * r1 * 2.4, top2 + 0.2)), t3, 0.09)
+			# Backstays, from the topmast's head and the topgallant's down aft to the rail.
+			for z0, back, r in ((top2 + 0.5, 12.0, 0.14), (lerp(top2, truck, 0.62), 15.0, 0.11)):
+				yy = y - back
+				zz = chain_z(yy) + 0.2
+				rope(g, Vector((side * 0.6, y - 0.5, z0)), Vector((side * (half_at(yy, zz) + 1.0), yy, zz)), r)
+	# The stays: thick, down her middle, the lines that survive distance. Each runs
+	# from a mast forward to the one before it at about its own height, so none
+	# cuts through the sails forward of the mast it leaves; the fore's to the bowsprit.
 	fy, f1, f2, ft = MASTS[0]
 	my, m1, m2, mt = MASTS[1]
 	zy, z1, z2, zt = MASTS[2]
 	sp_a, sp_b = Vector(BOWSPRIT[0]), Vector(BOWSPRIT[1])
-	sp_mid = sp_a.lerp(sp_b, 0.72)
-	rope(stays, (0.0, fy + 1.0, f1 + 0.5), sp_mid, 0.34, 1.5, 5)
-	rope(stays, (0.0, fy + 0.8, f2 + 0.5), sp_b, 0.26, 1.2, 5)
-	rope(stays, (0.0, my + 1.0, m1 + 0.5), (0.0, fy - 1.0, DECK_Z + 9.0), 0.3, 1.0, 5)
-	rope(stays, (0.0, my + 0.8, m2 + 0.5), (0.0, fy, f1 + 0.3), 0.26, 1.0, 5)
-	rope(stays, (0.0, my + 0.4, mt - 2.0), (0.0, fy, f2 + 0.3), 0.2, 0.8, 5)
-	rope(stays, (0.0, zy + 1.0, z1 + 0.5), (0.0, my - 1.0, DECK_Z + 9.0), 0.28, 1.0, 5)
-	rope(stays, (0.0, zy + 0.6, z2 - 2.0), (0.0, my, m1 + 0.3), 0.22, 0.9, 5)
+	rope(stays, (0.0, fy + 0.6, f1 + 0.5), sp_a.lerp(sp_b, 0.3), 0.34, 1.0, 5)   # under the jib's clew
+	j0, j1 = jib_stay()
+	rope(stays, j0, j1, 0.26)
+	rope(stays, (0.0, fy + 0.3, lerp(f2, ft, 0.62)), sp_b + Vector((0.0, -1.0, 0.4)), 0.2, 0.8, 5)
+	rope(stays, (0.0, my + 0.8, m1 + 0.5), (0.0, fy - 1.4, f1 - 0.5), 0.3, 0.8, 5)
+	rope(stays, (0.0, my + 0.6, m2 + 0.5), (0.0, fy - 0.9, f2 - 0.2), 0.24, 0.7, 5)
+	rope(stays, (0.0, my + 0.3, mt - 1.5), (0.0, fy - 0.4, ft - 1.5), 0.18, 0.6, 5)
+	rope(stays, (0.0, zy + 0.8, z1 + 0.5), (0.0, my - 1.5, m1 - 0.5), 0.28, 0.8, 5)
+	rope(stays, (0.0, zy + 0.5, z2 + 0.5), (0.0, my - 0.9, m2 - 0.5), 0.22, 0.7, 5)
 	# No bobstay: it would cross the bow's way out.
-		# Lifts from the yards to the masts, braces trailing aft, a few cut ends.
+	# Lifts from the yards' arms to the mast over them; braces aft, the courses' to the
+	# rail, the upper yards' to the next mast's top; one or two shot away, hanging.
 	for idx, mast_yards in enumerate(yards):
-		y = MASTS[idx][0]
-		for name, c, w, zb, wb, cell, tilt in mast_yards:
+		y, top1, top2, truck = MASTS[idx]
+		brace = BRACES[idx]
+		for k, (name, c, w, zb, wb, cell, tilt) in enumerate(mast_yards):
 			t = math.radians(tilt)
 			for s in (-1.0, 1.0):
-				arm = c + yard_axis(t) * (s * w * 0.5)
-				rope(g, arm, (0.0, y + 0.5, c.z + 5.0), 0.12)
-				if rng.random() < 0.7:
-					yy = max(y - 18.0, -54.0)
-					to = Vector((s * half_at(yy, 20.0), yy, rail(yy)))
+				arm = c + yard_axis(t, brace) * (s * w * 0.5)
+				rope(g, arm, (0.0, y + 0.5, min(c.z + 5.0, truck - 0.5)), 0.12)
+				if rng.random() < 0.12:
+					rope(g, arm, arm + Vector((rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), -rng.uniform(5.0, 12.0))), 0.11)
+					continue
+				if k == 0:
+					yy = max(y - 16.0, -52.0)
+					to = Vector((s * (half_at(yy, rail(yy)) + 0.4), yy, rail(yy) + 0.6))
 					rope(g, arm, to, 0.11, 1.4)
 				else:
-					# A brace shot away: it hangs.
-					rope(g, arm, arm + Vector((rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), -rng.uniform(5.0, 12.0))), 0.11)
+					aft = MASTS[idx + 1] if idx + 1 < len(MASTS) else MASTS[1]
+					ay = aft[0] + (1.2 if aft[0] < y else -1.2)
+					rope(g, arm, (s * 1.2, ay, aft[1] + 1.2), 0.1, 1.0)
 
 
 def build_bowsprit(g):
 	a, b = Vector(BOWSPRIT[0]), Vector(BOWSPRIT[1])
-	wood = (0.26, 0.19, 0.13)
 	mid = a.lerp(b, 0.62)
-	g.tube([a, a.lerp(b, 0.3), mid], [0.95, 0.85, 0.6], 10, "wood", wood)
-	g.tube([a.lerp(b, 0.52) + Vector((0.3, 0.0, 0.7)), mid, b], [0.58, 0.5, 0.18], 8, "wood", wood)
-	for t in (0.14, 0.3, 0.46):
+	g.tube([a, a.lerp(b, 0.3), mid], [1.05, 0.95, 0.68], 10, "wood", MAST_WOOD)
+	g.tube([a.lerp(b, 0.52) + Vector((0.0, 0.0, 0.85)), mid + Vector((0.0, 0.0, 0.6)), b], [0.6, 0.52, 0.2], 8, "wood", MAST_WOOD)
+	for t in (0.36, 0.46, 0.56):
 		p0 = a.lerp(b, t)
-		r = lerp(0.95, 0.65, t / 0.62) + 0.05
-		g.tube([p0 - (b - a).normalized() * 0.2, p0 + (b - a).normalized() * 0.2], [r, r], 10, "iron", (0.09, 0.09, 0.09), cap=False)
-	# The spritsail's yard, slung under it, at an angle she didn't choose.
-	c = a.lerp(b, 0.74) - Vector((0.0, 0.0, 1.8))
-	ax = Vector((math.cos(0.12), 0.0, math.sin(0.12)))
-	g.tube([c - ax * 11.0, c, c + ax * 11.0], [0.2, 0.42, 0.2], 8, "wood", (0.16, 0.115, 0.08), up=(0.0, 1.0, 0.0))
-	return c, 0.12
+		r = lerp(1.05, 0.68, t / 0.62) + 0.05
+		g.tube([p0 - (b - a).normalized() * 0.2, p0 + (b - a).normalized() * 0.2], [r, r], 10, "iron", BAND, cap=False)
+	g.tube([mid - (b - a).normalized() * 0.4, mid + (b - a).normalized() * 0.4], [0.78, 0.78], 8, "wood", SPAR_DARK)
+
+
+def jib_frame():
+	"""The jib's head (its middle on the stay), its length, and its rotation: x along the
+	stay, forward and down, and z up off it in her middle plane, so it bellies to port."""
+	j0, j1 = jib_stay()
+	p0 = j0.lerp(j1, (JIB_SPAN[0] - j0.y) / (j1.y - j0.y))
+	p1 = j0.lerp(j1, (JIB_SPAN[1] - j0.y) / (j1.y - j0.y))
+	d = (p1 - p0).normalized()
+	up = Vector((0.0, -d.z, d.y))
+	side = up.cross(d)
+	rot = Matrix((d, side, up)).transposed()
+	return (p0 + p1) * 0.5, (p1 - p0).length, rot.to_euler()
 
 
 # --- Textures -----------------------------------------------------------------
@@ -1917,8 +1992,16 @@ def paint_wood(W):
 	return np.clip(col, 0, 1), hgt
 
 
+SAIL_GREY = (C(0.31, 0.345, 0.385), C(0.43, 0.46, 0.5))   # the canvas, weathered to bleached (sRGB-ish map)
+SAIL_INK = C(0.1, 0.1, 0.105)
+SAIL_BORDER = (0.03, 0.04)    # the border's width: share of the half-width, of the depth
+
+
 def paint_sails(W):
-	"""Four whole, weathered cloths in a 2 x 2 atlas: RGB and a hard alpha for shot holes and a frayed hem."""
+	"""Four whole, weathered cloths in a 2 x 2 atlas: RGB and a hard alpha for shot holes and a frayed hem.
+
+	Cool grey canvas with a dark border: the game's sun warms grey toward beige, so it
+	is painted a little blue. Cells 0 and 1 are the fore and main courses'."""
 	cw = W // 2
 	col = np.zeros((W, W, 3), dtype=np.float32)
 	alpha = np.zeros((W, W), dtype=np.float32)
@@ -1933,38 +2016,42 @@ def paint_sails(W):
 		wash2 = spectral(cw, cw, 1.3, 220 + cell, sy=2.4)
 		fray = spectral(cw, cw, 1.15, 230 + cell)
 		blot = spectral(cw, cw, 1.6, 240 + cell)
-		# Cloth: tanned canvas, bleached in great soft patches where the sun has it.
-		base = mix(C(0.47, 0.41, 0.34)[None, None], C(0.66, 0.59, 0.49)[None, None], np.clip(wash * 1.4 - 0.2, 0, 1))
-		base *= (0.84 + 0.32 * grain)[..., None] * (0.92 + 0.16 * weave)[..., None]
+		# Cloth: grey canvas, bleached in great soft patches where the sun has it.
+		base = mix(SAIL_GREY[0][None, None], SAIL_GREY[1][None, None], np.clip(wash * 1.4 - 0.2, 0, 1))
+		base *= (0.9 + 0.2 * grain)[..., None] * (0.93 + 0.14 * weave)[..., None]
 		# The cloths, seam by seam, each a touch different.
 		n = 15
 		idx = np.floor((s * 0.5 + 0.5) * n).astype(np.int32)
-		tone = rng.uniform(0.84, 1.12, n + 1)[np.clip(idx, 0, n)].astype(np.float32)
+		tone = rng.uniform(0.94, 1.05, n + 1)[np.clip(idx, 0, n)].astype(np.float32)
 		base *= tone[..., None]
 		sf = (s * 0.5 + 0.5) * n - idx
 		seamx = np.maximum(sst(0.05, 0.0, sf), sst(0.95, 1.0, sf))
-		base = mix(base, base * 0.55, seamx * 0.65)
+		base = mix(base, base * 0.8, seamx * 0.5)
 		# Reef bands, stitched across, a row of reef points under each.
 		for bz in (0.27, 0.5, 0.74):
-			base = mix(base, base * 0.68, sst(0.014, 0.0, np.abs(t - bz)) * 0.55)
+			base = mix(base, base * 0.84, sst(0.012, 0.0, np.abs(t - bz)) * 0.5)
 			base = mix(base, base * 0.42, sst(0.003, 0.0, np.abs(t - bz - 0.016)) * sst(0.32, 0.5, np.abs(np.sin(s * 72.0))) * 0.8)
 		# Patches sewn on, in another cloth, their stitching dark.
-		for _ in range(11):
+		for _ in range(5):
 			px, pz = rng.uniform(-0.82, 0.82), rng.uniform(0.08, 0.9)
 			w, h = rng.uniform(0.04, 0.13), rng.uniform(0.025, 0.08)
 			d = np.maximum(np.abs(s - px) - w, np.abs(t - pz) - h)
-			tint = rng.choice([0.72, 0.84, 1.08, 1.2]) * np.array((1.0, 0.93, 0.82), dtype=np.float32)
+			tint = rng.choice([0.86, 0.92, 1.06, 1.1]) * np.array((0.98, 0.99, 1.02), dtype=np.float32)
 			base = np.where((d < 0.0)[..., None], np.clip(base * tint, 0, 1), base)
-			base = mix(base, base * 0.62, sst(0.004, 0.0, np.abs(d)) * 0.7)
-		# Rain and salt run down the cloth, tar and rust from the yard, mildew at the foot.
+			base = mix(base, base * 0.72, sst(0.004, 0.0, np.abs(d)) * 0.6)
+		# Rain and salt run down the cloth, tar from the yard, mildew at the foot.
 		streak = spectral(cw, cw, 1.1, 250 + cell, sx=0.1, sy=1.0)
-		base = mix(base, base * 0.6, sst(0.52, 0.8, wash2) * (0.3 + 0.5 * t))
-		base = mix(base, base * C(0.62, 0.48, 0.36)[None, None], sst(0.55, 0.78, streak) * (1.0 - t) ** 1.5 * 0.85)
-		base = mix(base, base * C(0.5, 0.54, 0.44)[None, None], sst(0.5, 0.74, blot) * sst(0.5, 1.0, t) * 0.8)
+		base = mix(base, base * 0.74, sst(0.52, 0.8, wash2) * (0.3 + 0.5 * t))
+		base = mix(base, base * C(0.7, 0.69, 0.68)[None, None], sst(0.55, 0.78, streak) * (1.0 - t) ** 1.5 * 0.6)
+		base = mix(base, base * C(0.6, 0.63, 0.63)[None, None], sst(0.5, 0.74, blot) * sst(0.5, 1.0, t) * 0.8)
 		base = mix(base, base * 0.72, sst(0.82, 1.0, t) * 0.55)
 		# The hem and bolt rope, dark and doubled round the edge.
 		hem = np.minimum(np.minimum(1.0 - np.abs(s), t * 1.4), 1.0 - t)
 		base = mix(base, base * 0.5, sst(0.022, 0.012, hem) * 0.7)
+		# The border: a dark band round the cloth, worn through in places.
+		edge = np.minimum(np.minimum((1.0 - np.abs(s)) / SAIL_BORDER[0], t / SAIL_BORDER[1]), (1.0 - t) / SAIL_BORDER[1])
+		wear = 0.62 + 0.38 * sst(0.35, 0.65, blot * 0.6 + grain * 0.4)
+		base = mix(base, SAIL_INK[None, None] * (0.85 + 0.3 * weave)[..., None], sst(1.1, 0.9, edge) * wear)
 		# What's gone: a frayed foot and leech, a very little, and a few small shot holes.
 		keep = hem - (fray - 0.5) * 0.022 - 0.004
 		soot = np.zeros((cw, cw), dtype=np.float32)
@@ -2186,6 +2273,7 @@ SAIL_CODE = """// A sail: a flat sheet (ship_build.py `sail_geo`) shaped here an
 // from the wind every ship sees and her own heading and speed. Pinned at the
 // yard, it fills forward; it never bulges aft, it goes slack or flogs instead.
 //   COLOR.rgb    the sheet's height, head width and foot width / SAIL_SIZE
+//   COLOR.a      1 + skew: the foot's middle off the head's, a share of its half width (the jib)
 //   ship_way     her bow (x, z), her speed (m/s), her turn (rad/s): per ship, scripts/endless/ship_sails.gd
 //   ship_slack   1 in a sink: no wind in her, the cloth hangs where gravity has it
 global uniform float zs_wind_strength;
@@ -2224,6 +2312,7 @@ struct Cloth {
 	float air;
 	float clock;
 	float slack;
+	float skew;
 	vec3 hang;
 };
 
@@ -2261,7 +2350,7 @@ vec3 sail_at(float s, float t, Cloth c) {
 	float belly = c.depth * breathe * (spine * (1.0 - sh * sh) + leech * sh * sh);
 	// The cloth the belly takes comes off its width and height; the sheets draw
 	// the foot in and the foot arches between them.
-	float x = s * hw * (1.0 - c.fill * (0.2 * t * t + 0.03 * sin(3.14159 * t)));
+	float x = s * hw * (1.0 - c.fill * (0.2 * t * t + 0.03 * sin(3.14159 * t))) + c.skew * c.w * 0.5 * t;
 	x += c.lean * c.fill * 0.05 * hw * sin(3.14159 * t);
 	float take = c.depth / c.h;
 	float y = -c.h * t * (1.0 - 0.9 * take * take) + c.h * 0.1 * c.fill * (1.0 - s2) * t * t * t;
@@ -2291,8 +2380,9 @@ void vertex() {
 	c.w = COLOR.g * SIZE;
 	c.wb = COLOR.b * SIZE;
 	c.seed = fract((c.h * 3.1 + c.w * 0.77 + c.wb * 0.31) * 0.61803);
+	c.skew = COLOR.a - 1.0;
 	float t = clamp(-VERTEX.y / c.h, 0.0, 1.0);
-	float s = clamp(VERTEX.x / max(mix(c.w, c.wb, t) * 0.5, 0.01), -1.0, 1.0);
+	float s = clamp((VERTEX.x - c.skew * c.w * 0.5 * t) / max(mix(c.w, c.wb, t) * 0.5, 0.01), -1.0, 1.0);
 	mat3 m = mat3(MODEL_MATRIX);
 	vec3 side = normalize(m[0]);
 	float gust = sail_gust(MODEL_MATRIX[3].xz);
@@ -2434,7 +2524,7 @@ def emit(name, geo, mats, group=None, parent=None, origin=None, extra=(), local=
 	layer.uv.foreach_set("vector", uvarr)
 	ca = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
 	carr = np.ones((len(vs), 4), dtype=np.float32)
-	carr[:, :3] = np.array(cols, dtype=np.float32)
+	carr[:] = np.array([tuple(c) + (1.0,) * (4 - len(c)) for c in cols], dtype=np.float32)
 	ca.data.foreach_set("color", carr.ravel())
 	me.color_attributes.active_color = ca
 	me.update()
@@ -2501,21 +2591,22 @@ def build(fast):
 	# Masts.
 	yards = []
 	for i, spec in enumerate(MASTS):
-		g, out = mast_geo(i, spec, SAILS[i])
+		g, out = mast_geo(i, spec, SAILS[i], BRACES[i])
 		mast = emit(f"Mast_{i + 1}", g, mats, group="Masts", origin=(0.0, spec[0], base_deck(spec[0])))
 		bpy.context.view_layer.update()
 		yards.append(out)
 		for k, (name, c, w, zb, wb, cell, tilt) in enumerate(out):
 			sg = sail_geo(w, c.z - zb, wb, cell)
 			sob = emit(f"Sail_{name}", sg, mats, group="Sails", parent=mast, origin=c, local=True)
-			sob.rotation_euler = (0.0, -math.radians(tilt), math.radians(BRACE))
-	# Bowsprit and its sail.
+			sob.rotation_euler = (0.0, -math.radians(tilt), math.radians(BRACES[i]))
+	# Bowsprit and the jib, hung from the fore topmast stay.
 	g = Geo()
-	c, tilt = build_bowsprit(g)
+	build_bowsprit(g)
 	sprit = emit("Bowsprit", g, mats, origin=BOWSPRIT[0])
 	bpy.context.view_layer.update()
-	sob = emit("Sail_0a", sail_geo(20.0, 7.0, 21.0, 3), mats, group="Sails", parent=sprit, origin=c, local=True)
-	sob.rotation_euler = (0.0, -tilt, 0.0)
+	c, length, rot = jib_frame()
+	sob = emit("Sail_0a", sail_geo(length, JIB_DROP, JIB_FOOT, 3, JIB_SKEW), mats, group="Sails", parent=sprit, origin=c, local=True)
+	sob.rotation_euler = rot
 	# Rigging: the fine lines hide at a distance, the stays do not.
 	fine, stays = Geo(), Geo()
 	build_rigging(fine, stays, yards)

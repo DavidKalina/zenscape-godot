@@ -252,7 +252,7 @@ const PLANK_TURNS := 5
 ## The wreck's reach from her middle (m): past it nothing of her is met.
 const WRECK_REACH := 125.0
 ## Her far points (her frame), the mast tops and poop, for "all under".
-const HIGH_POINTS := [Vector3(0.0,59.0,6.0),Vector3(0.0,55.0,-22.0),Vector3(0.0,51.0,42.0),Vector3(0.0,24.0,56.0),Vector3(0.0,20.0,-56.0)]
+const HIGH_POINTS := [Vector3(0.0,104.0,2.0),Vector3(0.0,92.0,-30.0),Vector3(0.0,80.0,33.0),Vector3(0.0,32.0,56.0),Vector3(0.0,25.0,-56.0)]
 ## Her return: least seconds after she's gone (--ship-return=S), how often it's tried
 ## (s), how many spots round the route. A spot is good at RETURN_ANY m off the eye,
 ## or at RETURN_NEAR m off and outside the view (RETURN_CONE: the cosine off its axis).
@@ -432,7 +432,8 @@ static func solids(w: float, h: float) -> Dictionary:
 		# The poop and the forecastle, the stem under the bow's exit, the masts.
 		_box(-beam,top,30.0, beam,top+9.0,end), _box(-beam,top,-end, beam,top+5.0,-38.0),
 		_box(-half,-DRAUGHT,-end-8.0, half,FLOOR_Y,-end), _box(-half*0.5,-DRAUGHT,-end-16.0, half*0.5,FLOOR_Y,-end-8.0),
-		_box(-1.0,top,-23.0, 1.0,top+40.0,-21.0), _box(-1.0,top,5.0, 1.0,top+44.0,7.0), _box(-1.0,top+9.0,41.0, 1.0,top+36.0,43.0),
+		# The masts (ship_build.py MASTS): fore, main, mizzen on the quarterdeck, to their trucks.
+		_box(-1.2,top,-31.2, 1.2,92.0,-28.8), _box(-1.35,top,0.65, 1.35,104.0,3.35), _box(-1.05,top+7.0,31.95, 1.05,80.0,34.05),
 	]
 	return {"hull":hull,"stern":[_box(-half,FLOOR_Y,LONG*0.5, half,roof,end)],"bow":[_box(-half,FLOOR_Y,-end, half,roof,-LONG*0.5)]}
 
@@ -1514,7 +1515,7 @@ func _blocks(all: Dictionary) -> void:
 	for i in range(4,11): _look(all.hull[i],hull_m if i < 8 else _mat(RIB_C))
 	# Sails: gray box, drawn only; the plane goes through them.
 	var sail := _mat(SAIL_C,SAIL_C,0.15)
-	for row: Array in [[-22.0,top+14.0,26.0],[6.0,top+16.0,28.0],[42.0,top+21.0,18.0]]:
+	for row: Array in [[-30.0,top+8.0,44.0],[2.0,top+9.0,50.0],[33.0,top+17.0,32.0]]:
 		_look(_box(-float(row[2])*0.5,float(row[1]),float(row[0])-0.3, float(row[2])*0.5,float(row[1])+18.0,float(row[0])+0.3),sail)
 	_look(_box(-0.4,top+1.0,-end-34.0, 0.4,top+1.8,-end),_mat(RIB_C))
 	# Inside: ribs every so often to read the speed by, lamps, the guns at their ports.
