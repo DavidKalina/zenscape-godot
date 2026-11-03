@@ -1589,6 +1589,7 @@ func _react(delta: float) -> void:
 	else: thrust = float(plane.engine)*clampf(0.6+0.4*float(plane.throttle),0.35,1.0)
 	var facing := -camera.global_basis.z
 	if eddies != null:
+		eddies.wind = look.wind
 		eddies.step(delta,camera.global_position,Vector2(facing.x,facing.z),look.wind_direction,1.0,Callable(self,"_grass_at"))
 	FrameLog.mark(&"r_eddies")
 	react.step(delta,camera.global_position,

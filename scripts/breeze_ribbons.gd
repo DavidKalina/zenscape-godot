@@ -115,6 +115,9 @@ var _rng := RandomNumberGenerator.new()
 var _clock := 0.0
 var _carry := 0.0
 var _until_lone := 3.0
+## How often lone ribbons come, x their default rate (the endless eddies
+## set it by the local wind; 0: none).
+var lone_gain := 1.0
 var _next_id := 1
 var _kicks: Array[Dictionary] = []
 var _kicks_stale := true
@@ -202,7 +205,7 @@ func _step(way: Vector2, power: float) -> void:
 		if _clock >= float(p.when):
 			_pending.remove_at(i)
 			_birth(p.at, way, float(p.speed), 0.75 + 0.35 * float(p.power), float(p.get("sweep", -1.0)))
-	_until_lone -= STEP
+	_until_lone -= STEP * lone_gain
 	if _until_lone <= 0.0:
 		_until_lone = _rng.randf_range(LONE_GAP.x, LONE_GAP.y) / clampf(0.7 + 0.75 * power, 0.7, 2.0)
 		var side := Vector2(-way.y, way.x)
