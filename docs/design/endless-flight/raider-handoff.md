@@ -4,6 +4,11 @@ One enemy plane you fight by dodging its rams and ramming it back with the
 surge roll. It's an experiment: the smallest playable build, with no
 committed tests.
 
+> **Later:** the raider combat loop added lock-on with depth of field, a chase
+> through trees and arches, and the dogfight and chase mixed into one
+> encounter. See `raider-combat-handoff.md`. This doc is the dogfight greybox
+> it builds on.
+
 ## What was built
 
 - `scripts/endless/raider.gd`: the raider.
