@@ -105,7 +105,7 @@ WakeFish's splashes and rings. 30% of the time a smaller second fish comes along
   of one.
 - Its slot: 2 m behind to 4 m ahead of the plane's centre, 5-6.5 m out, so 14-18 m
   from the eye on Boost; off Boost the camera's narrower and the slot slides up to
-  5 m further on. Its middle 0.9 m under the swell (it rides `EndlessSea.height_at`),
+  5 m further on. Its middle 0.5 m under the swell (it rides `EndlessSea.height_at`),
   wandering 0.08 m.
 - What shows is a real mesh under the real sea sheet. The sea draws its own water
   over it (`shaders/endless_sea.gdshader`): `zs_swim_hit` finds the pixels whose
@@ -117,11 +117,10 @@ WakeFish's splashes and rings. 30% of the time a smaller second fish comes along
   less sky, and where the fin cuts, spray and two short ripples.
 - The fish shader (`shaders/wake_fish.gdshader`, `under`/`surface_y`) takes the
   water's colour under the surface and dims its sun glint; leaps leave `under` at 0.
-- The fin: while it paces, only the dorsal grows (`dorsal_lift`, its rear nearly
-  as tall as its front, raked back) so its tip stands `FIN_OUT` 0.75 m over the
-  swell; the body stays 0.9 m down (the wander now goes deeper only). Out of the
+- The fin: the body rides 0.5 m down (`DEPTH`) so its own dorsal cuts the surface. The first take grew a stalk from a body 0.9 m down and read as stuck on once the camera panned (the fin was real geometry, the body the sea's refracted stand-in, and the two slid apart). Now `dorsal_lift` only tops the tip up to `FIN_OUT` 0.4 m over the
+  swell (about nothing at 0.5 m); the body stays down (the wander goes deeper only). Out of the
   water the fin keeps the air's light (`under_light` dims only under the
-  surface) with a faint wet sheen (`fin_wet`); it shrinks back to its own size
+  surface) with a faint wet sheen (`fin_wet`, the back's too, so it isn't flat black in a trough); it shrinks back to its own size
   as the fish breaches. Fine spray: up to 72 droplets (`_drops`,
   `shaders/fin_spray.gdshader`, one MultiMesh) off its leading edge, trailing a
   couple of metres; in the sea, a soft bow wave, a finer-grained foam feather
