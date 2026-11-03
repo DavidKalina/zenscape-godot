@@ -31,7 +31,8 @@ extends Node3D
 ## Flags: --birds=0 off, --birds=X how many flocks wait in the trees (1),
 ## --bird-range=X the flush reach over its default (1), --bird-size=X (1),
 ## --bird-ride=S seconds alongside (6), --ambient-birds=X the far flocks
-## (1; 0 none).
+## (1; 0 none). The grass flocks have their own: scripts/endless/grass_birds.gd
+## (--grass-birds=X, --bird-look=dark|song); --birds=0 stops them too.
 ##
 ## Native: with the library built, a flock whose birds all fly (wheeling,
 ## alongside, peeling off or leaving) is flown in C++ (ZenScapeBirds,
@@ -45,6 +46,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Plan = preload("res://scripts/endless/tree_plan.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const Body = preload("res://scripts/songbird_body.gd")
+const GrassBirds = preload("res://scripts/endless/grass_birds.gd")
 const SHADER = preload("res://shaders/endless_birds.gdshader")
 
 ## The most birds drawn at once.
@@ -245,6 +247,8 @@ var _wing_at := [Vector3.ZERO,Vector3.ZERO]
 var _head_at := Vector3.ZERO
 ## The C++ flying and drawing (ZenScapeBirds), or null for the GDScript.
 var native: Object = null
+## The birds down in the meadow grass.
+var grass: Node3D = null
 
 const NATIVE_CLASS := &"ZenScapeBirds"
 const NATIVE_VERSION := 1
@@ -313,6 +317,10 @@ func setup(land_seed: int, field: RefCounted, trees: Node3D) -> void:
 		native = ClassDB.instantiate(NATIVE_CLASS)
 		native.configure({"span": _span, "avoid": WorldScale.span*1.5, "response": RESPONSE, "crouch": CROUCH, "beat": BEAT,
 			"bound": BOUND, "max_birds": MAX_BIRDS, "parts": _mm.size(), "head_at": _head_at, "wing_l": _wing_at[0], "wing_r": _wing_at[1]})
+	grass = GrassBirds.new()
+	grass.name = "GrassBirds"
+	add_child(grass)
+	grass.setup(land_seed,field)
 
 ## The parts, from the songbird's own meshes: sitting (body and folded
 ## wings), the head, the flying body with its wings tucked (the bounds) and
@@ -377,6 +385,7 @@ func step(delta: float, eye: Vector3, plane: RefCounted) -> void:
 	var t_draw := Time.get_ticks_usec()
 	_draw()
 	stats.draw_ms = lerpf(float(stats.draw_ms),(Time.get_ticks_usec()-t_draw)/1000.0,0.05)
+	grass.step(delta,plane)
 	var ms := (Time.get_ticks_usec()-began)/1000.0
 	stats.ms = ms
 	stats.ms_avg = lerpf(float(stats.ms_avg),ms,0.05)
@@ -1167,4 +1176,4 @@ func note() -> String:
 			if b.mode == FLYING or b.mode == LANDING: flying += 1
 			else: perched += 1
 	return "\nbirds: %d flying, %d perched in %d flocks  ·  %d flushed  ·  %.2f ms (avg %.2f, draw %.2f)" % [
-		flying,perched,flocks.size(),int(stats.flushed),float(stats.ms),float(stats.ms_avg),float(stats.draw_ms)]
+		flying,perched,flocks.size(),int(stats.flushed),float(stats.ms),float(stats.ms_avg),float(stats.draw_ms)]+grass.note()
