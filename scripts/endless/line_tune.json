@@ -17,6 +17,6 @@
 	"filler": ["pull-out"], "filler_shows": ["razor", "close"],
 	"line_cap": 4.0,
 	"bank_after": 4.5,
-	"meter_full": 10.0,
+	"meter_full": 16.0,
 	"tag_min": 1.15
 }

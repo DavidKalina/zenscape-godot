@@ -34,10 +34,10 @@ const TOY_PLUG_HOLE := 6.0
 ## How many a tunnel gets (the most; fewer if there's no room), none this close to either
 ## mouth (m), none this close to a spur (m), none this close to another plug (m), none
 ## this close to a hall's ends or a shaft's edge (m).
-const PLUG_COUNT := 1
+const PLUG_COUNT := 2
 const PLUG_ENDS := 170.0
-const PLUG_ROOM := 32.0
-const PLUG_APART := 300.0
+const PLUG_ROOM := 60.0
+const PLUG_APART := 600.0
 const HALL_ROOM := 30.0
 const SHAFT_ROOM := 12.0
 ## Where the hole sits: round the section (a share of a turn off the floor's middle, as
@@ -547,6 +547,8 @@ func struck(p: Vector3, way: Vector3, look: float, pad: float) -> Plug:
 			if pl.broken or pl.body == null or (not pl.solid and pl.down <= 0.0): continue
 			var a0 := (p-pl.mid).dot(pl.along)
 			var a1 := a0+way.dot(pl.along)*look
+			# Past its middle it's behind: a plug just threaded isn't smashed (and scored) too.
+			if a0*way.dot(pl.along) > 0.0: continue
 			var h := pl.half+pad
 			if maxf(a0,a1) < -h or minf(a0,a1) > h: continue
 			var k := 0.0 if absf(a1-a0) < 1e-4 else clampf(-a0/(a1-a0),0.0,1.0)
