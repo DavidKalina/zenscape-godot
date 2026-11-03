@@ -4,6 +4,6 @@
 
 [resource]
 shader = ExtResource("1")
-shader_parameter/roughness_value = 0.5
-shader_parameter/metallic_value = 0.35
+shader_parameter/roughness_value = 0.68
+shader_parameter/metallic_value = 0.3
 shader_parameter/fill = 1.7

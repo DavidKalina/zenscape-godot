@@ -162,12 +162,11 @@ const LIP_LO := 72.65
 const LIP_HI := 75.35
 ## Over the stern's exit, the lower balcony's underside, out to how far aft.
 const BALCONY := Vector2(15.8,59.4)
-const GUNS_Z := [-40.0,-24.0,-8.0,8.0,24.0,40.0]
-## Hull guns a side. Of a glb with six a side (`Gun_L_01..06`, 01 the sternmost),
-## the numbers that fire (z 40, 8, -24; the rest are cut out of the look); a glb
-## with HULL_GUNS a side fires them all.
+## The hull guns' ports along her (z), for the gray box (the glb's `Gun_*` are at
+## ship_build.py PORTS, Godot z = -y).
+const GUNS_Z := [-32.0,0.0,32.0]
+## Hull guns a side (`Gun_L_01..03`, 01 the sternmost).
 const HULL_GUNS := 3
-const HULL_PICK := [1,3,5]
 ## Hull guns: over the waterline (m); firing from MIN to MAX m off, within ARC rad
 ## of abeam; a shot every EVERY s; TELL s of flash before it; a gun rests REST s.
 const GUN_Y := 8.0
@@ -184,20 +183,23 @@ const BALL_DROP := 6.0
 const BALL_R := 1.5
 const BALLS := 24
 const BALL_LIFE := 7.0
-## Deck guns, two a side on the top deck, lob. Where the glb has no `DeckGun_*`
-## empties, stand-ins at these pivots (starboard x, z; port mirrored; on the top
-## deck), their trunnions DECK_LIFT m over the pivot and the muzzle DECK_MUZZLE m
-## on from them, the hull gun's barrel DECK_SIZE times over so they read over the
-## rail from off her beam; laid DECK_REST rad up at rest.
-const DECK_GUNS := [Vector2(7.6,19.0),Vector2(7.6,-11.0)]
+## Deck guns, two a side on the top deck, lob: the glb's `DeckGun_*` (ship_build.py
+## DECK_GUN_*, each on a dais). Where it has none (the gray box), stand-ins at these
+## pivots (starboard x, z; port mirrored; on the top deck), their trunnions
+## DECK_LIFT m over the pivot and the muzzle DECK_MUZZLE m on from them, the hull
+## gun's barrel DECK_SIZE times over so they read over the rail from off her beam;
+## laid DECK_REST rad up at rest.
+const DECK_GUNS := [Vector2(7.6,14.0),Vector2(7.6,-11.0)]
 const DECK_LIFT := 3.1
 const DECK_MUZZLE := 5.6
 const DECK_SIZE := 1.45
 const DECK_REST := 0.22
 ## How far a deck gun swings off abeam, how low and high it lays (rad), how fast
-## it swings and lays (rad/s), and how close to its lay it fires (rad).
+## it swings and lays (rad/s), and how close to its lay it fires (rad). The build
+## checks the barrel clear of her rails and rigging over this swing and lay (a lob
+## never lays under about 0.25).
 const DECK_SWING := 1.05
-const DECK_RAISE := Vector2(-0.05,0.95)
+const DECK_RAISE := Vector2(0.2,0.95)
 const DECK_TURN := Vector2(1.4,1.0)
 const DECK_AIMED := 0.12
 ## Lobs: from MIN to MAX m off; one every LOB_EVERY s; a deck gun rests LOB_REST s;
@@ -1605,7 +1607,7 @@ func _dress() -> void:
 		ball.free()
 		_flash_mesh = _cluster_mesh(FLASH_R,[Color(1.0,0.95,0.7),Color(1.0,0.72,0.28),Color(1.0,0.5,0.1)],1.0,5,0.5,0.0)
 	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
-	for part: String in ["Interior","Cannons"]: (_model.find_child(part,true,false) as GeometryInstance3D).visibility_range_end = INNER_FAR
+	(_model.find_child("Interior",true,false) as GeometryInstance3D).visibility_range_end = INNER_FAR
 	_hull_guns()
 
 ## Plate `part`'s plug in the model, each shard's place kept for the reseal.
@@ -1665,7 +1667,7 @@ func _blocks(all: Dictionary) -> void:
 			_look(AABB(Vector3(side*(half-0.5)-0.2,roof-1.2,gz-0.5),Vector3(0.4,0.9,1.0)),lamp)
 			_look(AABB(Vector3(side*half-0.06,GUN_Y-1.1,gz-1.2),Vector3(0.12,2.2,2.4)),port)
 			_look(AABB(Vector3(side*(half-0.5)-0.5,FLOOR_Y,gz-1.0),Vector3(1.0,1.1,2.0)),gun)
-			if (GUNS_Z.size()-GUNS_Z.find(gz)) in HULL_PICK: _gun(side,gz,beam,gun)
+			_gun(side,gz,beam,gun)
 
 func _record(part: String, boxes: Array) -> Dictionary:
 	return {"name":handle+"/"+part,"kind":"ship","node":self,"pos":position,"cos":cos(yaw),"sin":sin(yaw),
@@ -1738,24 +1740,24 @@ func _tell_flash() -> MeshInstance3D:
 	flash.visible = false
 	return flash
 
-## The hull guns off the glb's `Gun_<side>_<nn>` empties (muzzle, -z out): of six
-## a side the HULL_PICK ones, of HULL_GUNS all. Each recoils as a piece of its
-## own: the glb's `Cannon_<side>_<nn>` if it has one, else cut out of its merged
-## `Cannons` round the empty (ShipGuns.cut), which is then hidden, so the guns
-## that don't fire are gone from the look.
+## The hull guns off the glb's `Gun_<side>_<nn>` empties (muzzle, -z out), HULL_GUNS
+## a side. Each recoils as a piece of its own: the glb's `Cannon_<side>_<nn>`, or
+## (an older glb) cut out of a merged `Cannons` round the empty (ShipGuns.cut),
+## which is then hidden. Hidden past INNER_FAR with the gun deck.
 func _hull_guns() -> void:
-	var six := _model.find_child("Gun_L_%02d" % (HULL_GUNS+1),true,false) != null
 	var cannons: MeshInstance3D = _model.find_child("Cannons",true,false)
+	if cannons != null: cannons.visibility_range_end = INNER_FAR
 	var cuts: Dictionary = _fx.shared.cuts
 	var into := _model.global_transform.affine_inverse()
 	var cut := false
-	for n: int in (HULL_PICK if six else range(1,HULL_GUNS+1)):
+	for n: int in range(1,HULL_GUNS+1):
 		for side: float in [-1.0,1.0]:
 			var key := "%s_%02d" % ["L" if side < 0.0 else "R",n]
 			var empty: Node3D = _model.find_child("Gun_"+key,true,false)
 			if empty == null: continue
 			var frame: Transform3D = into*empty.global_transform
 			var piece: Node3D = _model.find_child("Cannon_"+key,true,false)
+			if piece is GeometryInstance3D: (piece as GeometryInstance3D).visibility_range_end = INNER_FAR
 			if piece == null and cannons != null:
 				if not cuts.has(key):
 					var source: Transform3D = into*cannons.global_transform
@@ -1793,6 +1795,8 @@ func _deck_guns() -> void:
 			var mount := _part(pivot,"_Mount")
 			var barrel := _part(mount,"_Barrel") if mount != null else null
 			var muzzle := _part(barrel,"_Muzzle") if barrel != null else null
+			for part: Node3D in [mount,barrel]:
+				if part is GeometryInstance3D: (part as GeometryInstance3D).visibility_range_end = INNER_FAR*1.3
 			if muzzle == null:
 				var built := _deck_stand_in(pivot)
 				mount = built[0]
@@ -1862,7 +1866,8 @@ func _deck_meshes() -> Array:
 	var mount := st.commit()
 	mount.surface_set_material(0,wood)
 	var barrel: Mesh
-	var cannons: MeshInstance3D = _model.find_child("Cannons",true,false) if _model != null else null
+	var cannons: MeshInstance3D = null
+	if _model != null: cannons = _model.find_child("Cannons",true,false) if _model.find_child("Cannons",true,false) != null else _model.find_child("Cannon_R_01",true,false)
 	var empty: Node3D = _model.find_child("Gun_R_01",true,false) if _model != null else null
 	if cannons != null and empty != null:
 		var into := _model.global_transform.affine_inverse()

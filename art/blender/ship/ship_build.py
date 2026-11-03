@@ -142,9 +142,11 @@ DECK_HIGH = 28.0          # the poop
 DECK_FORE = 21.0
 CROWN = 3.2               # the transom's arc over the poop rail
 
-# Guns: six a side, on a ledge along each wall, muzzles out past the hull.
-PORTS = (-40.0, -24.0, -8.0, 8.0, 24.0, 40.0)    # y; stern first
-DUMMIES = (-48.0, -32.0, -16.0, 0.0, 16.0, 32.0)  # shut ports between, no gun behind
+# Guns: three a side, on a ledge along each wall, muzzles out past the hull
+# (Gun_*_01..03, Cannon_*_01..03; Godot z 32, 0, -32). Evenly spaced: the deck's
+# shader finds the port a sunbeam came through by PORTS' pitch.
+PORTS = (-32.0, 0.0, 32.0)                # y; stern first
+DUMMIES = (-44.0, -16.0, 16.0, 46.0)      # shut ports between, no gun behind
 PORT_W = 3.0
 PORT_ROWS = 3             # strakes tall
 PORT_ROW = 10             # strake index of the port's sill: 6.2 to 9.8, round the bore
@@ -1098,7 +1100,7 @@ def build_lids():
 		label = "R" if side > 0 else "L"
 		for i, y in enumerate(PORTS):
 			roll = rng.random()
-			if side < 0 and i == 3:
+			if side < 0 and i == 2:
 				continue    # torn off
 			z1 = row_z(PORT_ROW + PORT_ROWS)
 			hinge = S.p(y, z1) + S.n(y, z1) * 0.1
@@ -1314,7 +1316,9 @@ def cannon(g, side, y, x_muzzle, z, col_iron, col_wood):
 
 
 def build_guns():
-	g = Geo()
+	"""Each hull gun a mesh of its own, `Cannon_<side>_<nn>` with its origin at the
+	muzzle (it kicks back along the bore), and its `Gun_<side>_<nn>` empty there."""
+	guns = []
 	empties = []
 	ci = inner((0.1, 0.1, 0.105))
 	cw = inner((0.62, 0.34, 0.21))
@@ -1327,9 +1331,119 @@ def build_guns():
 				if abs(p.x) > half_beam(p.y, GUN_Z) - 0.8:
 					return (0.07, 0.07, 0.075)
 				return base(p)
+			g = Geo()
 			cannon(g, side, y, x, GUN_Z, col_i, cw)
-			empties.append((f"Gun_{label}_{i + 1:02d}", (side * x, y, GUN_Z), side))
-	return g, empties
+			key = f"{label}_{i + 1:02d}"
+			guns.append((f"Cannon_{key}", g, Vector((side * x, y, GUN_Z))))
+			empties.append((f"Gun_{key}", (side * x, y, GUN_Z), side))
+	return guns, empties
+
+
+# Deck guns, two a side on the waist, that turn and lob (ship-guns-handoff.md's
+# contract): `DeckGun_<side>_<nn>` at the pivot on the deck (01 the sternmost, at
+# DECK_GUN_Y), its Godot -z outboard; under it the turning `_Mount`, the `_Barrel`
+# laid on its trunnions DECK_LIFT up (modelled level, bore along -z), and the
+# `_Muzzle` DECK_MUZZLE on. In step with pirate_ship.gd DECK_GUNS, DECK_LIFT,
+# DECK_MUZZLE, DECK_SWING and DECK_RAISE. They don't collide (not in the solid).
+DECK_GUN_X = 7.6
+DECK_LIFT = 3.1
+DECK_MUZZLE = 5.6
+DECK_SWING = 1.05
+DECK_RAISE = (0.2, 0.95)      # a lob never lays under about 0.25
+DG_DAIS = 0.9                 # each stands on a round dais, so its barrel clears the rail
+DG_WOOD = (0.26, 0.19, 0.14)
+DG_DARK = (0.15, 0.11, 0.08)
+DG_IRON = (0.05, 0.051, 0.055)
+
+
+def dg_iron(p):
+	"""The deck guns' iron: a cool dark grey, mottled along and round the barrel so the
+	sun doesn't find one clean tube, sooted toward the muzzle."""
+	k = 0.8 + 0.2 * math.sin(p.x * 3.1 + p.y * 1.7) * math.sin(p.z * 2.3 - p.y * 0.9) + 0.12 * math.sin(p.y * 7.3 + p.z * 5.1)
+	soot = sstep(DECK_MUZZLE - 1.4, DECK_MUZZLE, p.y)
+	k *= 1.0 - 0.45 * soot
+	return (DG_IRON[0] * k, DG_IRON[1] * k, DG_IRON[2] * k)
+# The barrel's outline along its bore from the trunnions (m on, radius): the knob,
+# the breech and its ring, two reinforces, the chase and the swell at the muzzle.
+DG_BORE = ((-1.6, 0.12), (-1.48, 0.2), (-1.38, 0.14), (-1.28, 0.42), (-1.12, 0.7), (-0.98, 0.8), (-0.9, 0.86), (-0.8, 0.8),
+	(1.0, 0.75), (1.06, 0.82), (1.2, 0.72), (3.2, 0.62), (3.26, 0.68), (3.36, 0.6), (4.95, 0.52), (5.1, 0.56), (5.3, 0.64),
+	(5.5, 0.64), (5.6, 0.56))
+# A cheek of the carriage, (along the bore, up) from the pivot: stepped down aft,
+# its corners cut, the trunnion seated in its top.
+DG_CHEEK = ((-1.75, 1.05), (1.3, 1.05), (1.3, 2.45), (0.9, 3.0), (-0.5, 3.0), (-0.62, 2.88), (-0.62, 2.45), (-0.75, 2.32),
+	(-1.15, 2.32), (-1.27, 2.2), (-1.27, 1.8), (-1.4, 1.67), (-1.75, 1.67))
+DG_CHEEK_X = (0.9, 1.26)    # its inner and outer face off the bore's line
+
+
+def prism(g, prof, x0, x1, mat, col):
+	"""A slab of outline `prof` ((y, z) round it) from x0 to x1 (x0 < x1), edges hard."""
+	area = sum(prof[i][0] * prof[(i + 1) % len(prof)][1] - prof[(i + 1) % len(prof)][0] * prof[i][1] for i in range(len(prof)))
+	wind = 1.0 if area > 0 else -1.0
+	a = [Vector((x0, y, z)) for y, z in prof]
+	b = [Vector((x1, y, z)) for y, z in prof]
+	for i in range(len(prof)):
+		j = (i + 1) % len(prof)
+		e = a[j] - a[i]
+		g.quad(a[i], a[j], b[j], b[i], mat, col, hint=Vector((0.0, e.z, -e.y)) * wind)
+	for pts, out in ((a, -1.0), (b, 1.0)):
+		ids = [g.vert(q, (q.y / WOOD_TILE, q.z / WOOD_TILE), col) for q in pts]
+		# Counter-clockwise in (y, z) faces +x.
+		g.f.append(tuple(ids if out * wind > 0 else reversed(ids)))
+		g.m.append(M[mat])
+
+
+def deck_gun_geo():
+	"""A deck gun's [mount, barrel] in their own frames (Blender: y along the bore,
+	outboard; z up): the mount from the pivot on the deck, the barrel from its
+	trunnions. One of each serves all four guns."""
+	mount, barrel = Geo(), Geo()
+	# The dais under the pivot, stepped and iron bound: round, so it turns with the
+	# mount unseen and saves a node.
+	mount.tube([(0.0, 0.0, -DG_DAIS - 0.02), (0.0, 0.0, -0.45)], [2.75, 2.65], 18, "wood", DG_DARK)
+	mount.tube([(0.0, 0.0, -0.45), (0.0, 0.0, -0.4), (0.0, 0.0, 0.0)], [2.35, 2.3, 2.25], 18, "wood", DG_WOOD)
+	mount.tube([(0.0, 0.0, -0.08), (0.0, 0.0, 0.02)], [2.12, 2.12], 18, "iron", DG_IRON, cap=False)
+	mount.tube([(0.0, 0.0, -DG_DAIS + 0.1), (0.0, 0.0, -DG_DAIS + 0.24)], [2.77, 2.76], 18, "iron", DG_IRON, cap=False)
+	# The turning drum on the dais, iron bound, and the bed on it.
+	mount.tube([(0.0, 0.0, 0.0), (0.0, 0.0, 0.55), (0.0, 0.0, 1.05)], [2.0, 1.95, 1.85], 18, "wood", DG_DARK)
+	for z0, z1, r in ((0.08, 0.26, 2.02), (0.84, 0.98, 1.89)):
+		mount.tube([(0.0, 0.0, z0), (0.0, 0.0, z1)], [r, r - 0.02], 18, "iron", DG_IRON, cap=False)
+	mount.box(-1.32, 1.32, -1.85, 1.4, 1.0, 1.14, "wood", DG_WOOD)
+	for side in (-1.0, 1.0):
+		x0, x1 = sorted((side * DG_CHEEK_X[0], side * DG_CHEEK_X[1]))
+		prism(mount, DG_CHEEK, x0, x1, "wood", DG_WOOD)
+		# The cap square over the trunnion and the bolts through the cheek.
+		mount.box(x0 - 0.03, x1 + 0.03, -0.42, 0.42, 3.0, 3.16, "iron", DG_IRON)
+		for y, z in ((0.55, 1.55), (-0.95, 1.4), (0.2, 2.5), (-1.5, 1.4), (1.0, 2.2)):
+			xo = side * (DG_CHEEK_X[1] + 0.04)
+			mount.tube([(side * DG_CHEEK_X[1] - side * 0.02, y, z), (xo, y, z)], [0.09, 0.07], 6, "iron", DG_IRON)
+	# Transoms between the cheeks, under the chase and aft of the breech.
+	mount.box(-0.92, 0.92, 0.95, 1.3, 1.1, 2.0, "wood", DG_WOOD)
+	mount.box(-0.92, 0.92, -1.75, -1.45, 1.1, 1.6, "wood", DG_WOOD)
+	# The barrel, its bore's dark, the trunnions and their rimbases.
+	barrel.tube([(0.0, d, 0.0) for d, _ in DG_BORE], [r for _, r in DG_BORE], 14, "iron", dg_iron, up=(1.0, 0.0, 0.0))
+	barrel.tube([(0.0, DECK_MUZZLE - 0.02, 0.0), (0.0, DECK_MUZZLE + 0.005, 0.0)], [0.36, 0.36], 10, "dark", (0.01, 0.01, 0.01), up=(1.0, 0.0, 0.0))
+	barrel.tube([(-DG_CHEEK_X[1] - 0.05, 0.0, 0.0), (DG_CHEEK_X[1] + 0.05, 0.0, 0.0)], [0.28, 0.28], 8, "iron", DG_IRON, up=(0.0, 0.0, 1.0))
+	for side in (-1.0, 1.0):
+		barrel.tube([(side * 0.7, 0.0, 0.0), (side * (DG_CHEEK_X[0] - 0.04), 0.0, 0.0)], [0.4, 0.4], 10, "iron", DG_IRON, up=(0.0, 0.0, 1.0))
+	return mount, barrel
+
+
+def build_deck_guns(mats):
+	"""The four deck guns, each its chain of nodes (see DECK_GUN_X)."""
+	mount_g, barrel_g = deck_gun_geo()
+	for side in (-1.0, 1.0):
+		label = "R" if side > 0 else "L"
+		for i, y in enumerate(DECK_GUN_Y):
+			name = f"DeckGun_{label}_{i + 1:02d}"
+			pivot = empty(name, (side * DECK_GUN_X, y, base_deck(y) + DG_DAIS), rot=(0.0, 0.0, -side * math.pi * 0.5))
+			bpy.context.view_layer.update()
+			parts = []
+			for part, g, at in (("_Mount", mount_g, (0.0, 0.0, 0.0)), ("_Barrel", barrel_g, (0.0, 0.0, DECK_LIFT))):
+				ob = emit(name + part, g, mats, group="DeckGuns", local=True)
+				ob.parent = pivot if not parts else parts[-1]
+				ob.location = at
+				parts.append(ob)
+			empty(name + "_Muzzle", (0.0, DECK_MUZZLE, 0.0), parent=parts[-1])
 
 
 # --- Above the deck -----------------------------------------------------------
@@ -1536,7 +1650,7 @@ def build_stern(g):
 
 RAIL_WOOD = (0.03, 0.022, 0.017)
 STAIR_X = 6.5 * WIDEN        # the stairs up to the quarterdeck and the forecastle
-DECK_GUN_Y = (-19.0, 11.0)    # where the deck guns stand (pirate_ship.gd DECK_GUNS: Godot z = -y)
+DECK_GUN_Y = (-14.0, 11.0)    # where the deck guns stand (pirate_ship.gd DECK_GUNS: Godot z = -y)
 GALLERIES = (16.6, 23.4)      # the sills of the transom's two window rows
 TRIM = (0.028, 0.027, 0.026)   # dark iron-grey paint where the old build had oxblood
 GLASS = (0.06, 0.072, 0.08)
@@ -1607,6 +1721,13 @@ MAST_WOOD = (0.2, 0.165, 0.135)    # on the wood tile: weathered spars, grey-bro
 SPAR_DARK = (0.07, 0.058, 0.05)    # the tops, caps and yards: tarred
 ROPE = (0.05, 0.042, 0.035)
 BAND = (0.09, 0.09, 0.09)
+
+
+# How far aft of each mast its two backstays come down to the rail: the fore's and
+# the main's led clear of the deck guns' swing (DECK_GUN_Y).
+BACKSTAYS = ((8.0, 10.5), (19.0, 22.0), (12.0, 15.0))
+# And how far aft its course's braces come down to the rail, likewise.
+COURSE_BRACE = (12.0, 20.5, 16.0)
 
 
 def chain_z(y):
@@ -1763,7 +1884,7 @@ def build_rigging(g, stays, yards):
 			for d in (-0.5, 0.5):
 				rope(g, Vector((side * r1 * 4.4, y + d * r1 * 2.4, top2 + 0.2)), t3, 0.09)
 			# Backstays, from the topmast's head and the topgallant's down aft to the rail.
-			for z0, back, r in ((top2 + 0.5, 12.0, 0.14), (lerp(top2, truck, 0.62), 15.0, 0.11)):
+			for z0, back, r in ((top2 + 0.5, BACKSTAYS[idx][0], 0.14), (lerp(top2, truck, 0.62), BACKSTAYS[idx][1], 0.11)):
 				yy = y - back
 				zz = chain_z(yy) + 0.2
 				rope(g, Vector((side * 0.6, y - 0.5, z0)), Vector((side * (half_at(yy, zz) + 1.0), yy, zz)), r)
@@ -1798,7 +1919,7 @@ def build_rigging(g, stays, yards):
 					rope(g, arm, arm + Vector((rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), -rng.uniform(5.0, 12.0))), 0.11)
 					continue
 				if k == 0:
-					yy = max(y - 16.0, -52.0)
+					yy = max(y - COURSE_BRACE[idx], -52.0)
 					to = Vector((s * (half_at(yy, rail(yy)) + 0.4), yy, rail(yy) + 0.6))
 					rope(g, arm, to, 0.11, 1.4)
 				else:
@@ -2405,7 +2526,7 @@ MATERIALS = {
 	"wood_in": ("deck", "ship_wood", "ship_wood_n", {"normal_depth": 0.6, "roughness_value": 0.9, "fill": 7.0, "rim": 0.0, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP, "slat_power": DECK_SLAT, "calm": 0.35, "seam": 0.75, "liner": 0.55}),
 	"iron_in": ("deck", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7, "rim": 0.3, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP * 1.6, "slat_power": DECK_SLAT * 0.3, "glint": 0.2, "inside_x": SKIN_X - 0.46}),
 	"lamp": ("lamp", None, None, {}),
-	"iron": ("surface", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7}),
+	"iron": ("surface", None, None, {"roughness_value": 0.68, "metallic_value": 0.3, "fill": 1.7}),
 	"sail": ("cloth", "ship_sail", None, {"fill": 3.6}),
 	"flag": ("flag", "ship_flag", None, {"fill": 3.6}),
 	"rope": ("surface", None, None, {"roughness_value": 0.95, "fill": 1.7, "rim": 0.0}),
@@ -2465,6 +2586,7 @@ const float PORT_HI = %(port_hi)s;
 const float PORT_X = %(port_x)s;
 const float PORT_FIRST = %(port_first)s;
 const float PORT_LAST = %(port_last)s;
+const float PORT_PITCH = %(port_pitch)s;
 const vec3 FLAME = vec3(1.0, 0.58, 0.28);
 varying vec3 at;
 varying vec3 way;
@@ -2521,7 +2643,7 @@ void fragment() {
 		if (sun.y > 0.03 && abs(sun.x) > 0.05) {
 			float t = (sign(sun.x) * PORT_X - at.x) / sun.x;
 			vec3 h = at + sun * t;
-			float pz = clamp(round((h.z + PITCH * 0.5) / PITCH) * PITCH - PITCH * 0.5, PORT_FIRST, PORT_LAST);
+			float pz = clamp(PORT_FIRST + round((h.z - PORT_FIRST) / PORT_PITCH) * PORT_PITCH, min(PORT_FIRST, PORT_LAST), max(PORT_FIRST, PORT_LAST));
 			vec2 q = vec2(abs(h.z - pz) - PORT_W * 0.5, max(PORT_LO - h.y, h.y - PORT_HI));
 			float through = smoothstep(0.1, -0.1, q.x) * smoothstep(0.1, -0.1, q.y);
 			float barrel = smoothstep(0.5, 0.75, length(vec2(h.z - pz, h.y - %(gun)s)));
@@ -2539,7 +2661,7 @@ void fragment() {
 }
 """ % {"gloom": DECK_GLOOM, "lamp_x": LAMP_X, "lamp_y": LAMP_Z, "pitch": LAMP_PITCH, "last": max(LAMP_BAYS) + 0.5,
 	"port_w": PORT_W, "port_lo": row_z(PORT_ROW), "port_hi": row_z(PORT_ROW + PORT_ROWS), "port_x": SKIN_X - 0.56, "deck_x": COR_W * 0.5, "lamp_reach": 140.0 * WIDEN ** 2,
-	"port_first": PORTS[0], "port_last": PORTS[-1], "gun": GUN_Z, "keel": KEEL_Z, "strake": STRAKE}
+	"port_first": PORTS[0], "port_last": PORTS[-1], "port_pitch": PORTS[1] - PORTS[0], "gun": GUN_Z, "keel": KEEL_Z, "strake": STRAKE}
 LAMP_CODE = """shader_type spatial;
 // Written by art/blender/ship/ship_build.py: a lantern's horn pane, and its beat.
 render_mode unshaded, shadows_disabled, fog_disabled;
@@ -2933,7 +3055,9 @@ def build(fast):
 	emit("Upperworks", upper, mats)
 	emit("Interior", inside, mats)
 	guns, gun_empties = build_guns()
-	emit("Cannons", guns, mats)
+	for name, g, at in guns:
+		emit(name, g, mats, group="Cannons", origin=at)
+	build_deck_guns(mats)
 	for name, g, hinge in build_lids():
 		emit(name, g, mats, group="PortLids", origin=hinge, local=True)
 	# The plugs: a parent each at the end, shards round their own centres.
@@ -3291,11 +3415,61 @@ def prove():
 	check("stern mouth", *box(CRACK_W * 0.5 - e, -cl - EXIT_CLEAR, -cl, COR_Z - CRACK_H * 0.5 + e, COR_Z + CRACK_H * 0.5 - e), plugs)
 	check("bow mouth", *box(CRACK_W * 0.5 - e, cl, cl + EXIT_CLEAR, COR_Z - CRACK_H * 0.5 + e, COR_Z + CRACK_H * 0.5 - e), plugs)
 	names = [n.get("name", "") for n in doc["nodes"]]
-	want = ["Hull", "CrackPlug_Stern", "CrackPlug_Bow", "Mast_1", "Mast_2", "Mast_3", "Relic", "CorridorStart", "CorridorEnd", "Gun_L_01", "Gun_R_01"]
+	want = ["Hull", "CrackPlug_Stern", "CrackPlug_Bow", "Mast_1", "Mast_2", "Mast_3", "Relic", "CorridorStart", "CorridorEnd"]
+	for side in "LR":
+		want += [f"{k}_{side}_{i + 1:02d}" for k in ("Gun", "Cannon") for i in range(len(PORTS))]
+		want += [f"DeckGun_{side}_{i + 1:02d}{part}" for i in range(len(DECK_GUN_Y)) for part in ("", "_Mount", "_Barrel", "_Muzzle")]
 	for w in want:
 		if w not in names:
 			print("FAIL missing node", w)
 			bad += 1
+	for w in ("Cannons", f"Gun_L_{len(PORTS) + 1:02d}"):
+		if w in names:
+			print("FAIL a node the guns' contract has no room for:", w)
+			bad += 1
+	# Each deck gun's chain: mount under the pivot, barrel under the mount, muzzle under it.
+	kids = {n.get("name", ""): [doc["nodes"][c].get("name", "") for c in n.get("children", ())] for n in doc["nodes"]}
+	for w in [x for x in want if x.startswith("DeckGun_") and x.count("_") == 2]:
+		for up, down in ((w, w + "_Mount"), (w + "_Mount", w + "_Barrel"), (w + "_Barrel", w + "_Muzzle")):
+			if down not in kids.get(up, ()):
+				print("FAIL deck gun chain:", down, "not under", up)
+				bad += 1
+	# A deck gun's barrel over its whole swing and lay, and kicked back at rest, is
+	# clear of the rails, rigging, masts, sails and hull (boxes down the bore, each
+	# as big as the barrel there).
+	clear_of = [k for k in tris if k in ("Hull", "Upperworks", "Rigging", "Stays", "Bowsprit") or k.startswith("Mast_")]
+	bore_s = np.arange(DG_BORE[0][0], DECK_MUZZLE + 0.01, 0.35)
+	bore_r = np.interp(bore_s, [d for d, _ in DG_BORE], [r for _, r in DG_BORE])
+	clips = {}
+	for side in (-1.0, 1.0):
+		for y in DECK_GUN_Y:
+			trun = np.array((side * DECK_GUN_X, y, base_deck(y) + DG_DAIS + DECK_LIFT))
+			poses = [(a, f, 0.0) for a in np.linspace(-DECK_SWING, DECK_SWING, 13) for f in np.linspace(DECK_RAISE[0], DECK_RAISE[1], 5)]
+			poses.append((0.0, 0.22, -1.1))
+			for a, f, kick in poses:
+				d = np.array((side * math.cos(a) * math.cos(f), math.sin(a) * math.cos(f), math.sin(f)))
+				for s_, r in zip(bore_s + kick, bore_r):
+					c = trun + d * s_
+					lo = np.array((c[0] - r, c[2] - r, -c[1] - r))   # glTF: x, z, -y
+					hi = np.array((c[0] + r, c[2] + r, -c[1] + r))
+					for k in clear_of:
+						hit = tri_hits_box(tris[k], lo, hi)
+						if len(hit):
+							q = tris[k][hit[0]].mean(axis=0)
+							clips.setdefault((side, y, k), f"turned {a:+.2f}, laid {f:+.2f}, {s_:.1f} m down the bore, at ({q[0]:.1f}, {-q[2]:.1f}, {q[1]:.1f})")
+			# Nothing else stands on the deck where the dais and the mount turn.
+			c = (side * DECK_GUN_X, y, base_deck(y))
+			r = 2.8
+			lo = np.array((c[0] - r, c[2] + 0.06, -c[1] - r))
+			hi = np.array((c[0] + r, c[2] + DG_DAIS + 3.2, -c[1] + r))
+			for k in clear_of:
+				hit = tri_hits_box(tris[k], lo, hi)
+				if len(hit):
+					q = tris[k][hit[0]].mean(axis=0)
+					clips.setdefault((side, y, k), f"on the dais's ground, at ({q[0]:.1f}, {-q[2]:.1f}, {q[1]:.1f})")
+	for (side, y, k), what in sorted(clips.items()):
+		print(f"FAIL deck gun at x {side * DECK_GUN_X:+.1f} y {y:+.1f} meets {k}: {what}")
+		bad += 1
 	# The guns' muzzles against the contract: x +-GUN_X, at y GUN_Z.
 	for n in doc["nodes"]:
 		if n.get("name", "").startswith("Gun_"):
@@ -3305,7 +3479,7 @@ def prove():
 				bad += 1
 	total = sum(len(t) for t in tris.values())
 	print(f"triangles (glb): {total}")
-	print(f"guns a side: {len(PORTS)}")
+	print(f"guns a side: {len(PORTS)} hull, {len(DECK_GUN_Y)} deck")
 	for k, v in sorted(STATS.items(), key=lambda kv: -kv[1]):
 		print(f"  {k}: {v}")
 	print("corridor clear: " + ("no" if bad else "yes"))
