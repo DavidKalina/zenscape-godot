@@ -147,7 +147,7 @@ const AMBIENT_SIZE := 2.0
 const AMBIENT_AT := Vector2(130.0,300.0)
 const AMBIENT_GONE := 650.0
 const AMBIENT_OVER := Vector2(28.0,70.0)
-const SPECIES_LIST := ["sparrow","sparrow","robin","goldfinch"]
+const SPECIES_LIST := ["starling"]
 
 ## The covey. A bird's first spring (up, along its way, m/s); the top of its
 ## climb (m/s); how hard it holds its height; how fast it takes up what it
@@ -664,7 +664,7 @@ func _put_ambient(eye: Vector3) -> void:
 	g1 = maxf(g1,Field.SEA_Y)
 	var f := Flock.new()
 	f.state = WHEEL
-	f.species = "sparrow" if _rng.randf() < 0.7 else "goldfinch"
+	f.species = "starling"
 	f.size = AMBIENT_SIZE
 	f.ground = g1
 	f.centre = Vector3(c.x,g1+_rng.randf_range(AMBIENT_OVER.x,AMBIENT_OVER.y),c.z)
