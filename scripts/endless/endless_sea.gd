@@ -16,6 +16,9 @@ extends RefCounted
 ##               (scripts/endless/sea_fft.gd) instead of Gerstner waves 5..10
 ##               and the noise layers; the swell trains stay Gerstner, and
 ##               they alone are mirrored by `height_at`.
+##   surge       in a world with an edge (`set_edge`; --surge=0 takes it off):
+##               the big swell round it, on the sheet and on the CPU (`surge_at`).
+##               --sea-set=surge_size:1.5 sizes it.
 ##
 ## `--water=old` keeps the earlier sea (shaders/sky_ocean.gdshader).
 
@@ -200,15 +203,16 @@ var _swell: Object = null
 ## The shader's defaults for what the mirror reads (a material keeps only
 ## what was set).
 const FOAM_CAPS := Vector3(1.6,6.0,1.0)
-const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foam":Vector3(0.25,0.55,1.2),"fft_patch":Vector2(0.55,1.25),"fft_strength":Vector3(1.0,0.85,0.45),"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
+const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foam":Vector3(0.25,0.55,1.2),"fft_patch":Vector2(0.55,1.25),"fft_strength":Vector3(1.0,0.85,0.45),"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0),"surge_belt":Vector4(-200.0,700.0,2200.0,3200.0),"surge_size":1.0,"surge_peak":0.85}
 
 ## The sea's surface height over its rest level (m) at world `x`,`z` now:
 ## the body's swell (0 without the body). The shader's sheet shoves its
 ## points sideways, so the rest point under `x`,`z` is found by a few steps.
 func height_at(x: float, z: float) -> float:
 	if int(_knob("sea_body")) == 0: return 0.0
-	if _native_swell(): return _swell.height_at(x,z,_now)
-	return gd_height_at(x,z)
+	var surge := surge_at(x,z)
+	if _native_swell(): return _swell.height_at(surge.x,surge.y,_now)+surge.z
+	return gd_height_at(surge.x,surge.y)+surge.z
 
 ## `height_at`'s loop here.
 func gd_height_at(x: float, z: float) -> float:
@@ -313,6 +317,111 @@ func _body_shift(p: Vector2, t: float) -> Vector3:
 		shift.y += amps[i]*sin(phases[i])
 	return shift
 
+# --- The surge on the CPU (shaders/endless_sea.gdshader zs_surge)
+
+const SURGE_LENGTH := [180.0,130.0,90.0]
+const SURGE_SIZE := [9.0,5.0,2.2]
+const SURGE_SET := Vector2(0.007,0.059)
+const SURGE_LEAN := 0.35
+const SURGE_REACH := 700.0
+const SURGE_WANDER := 2300.0
+const SURGE_BEND := Vector2(14.0,-9.0)
+const SURGE_BEND_LENGTH := 1700.0
+## The tallest crest at surge_size 1 (m): every wave at the top of its set and
+## its peak.
+const SURGE_TOP := 22.7
+## The edge line the surge runs in from (LandField `edge`; half 0: none).
+var _surge_edge := Vector4.ZERO
+
+## Gives the sea its surge, round `edge` (x, z, half side, corner radius).
+func set_edge(edge: Vector4) -> void:
+	if edge.z <= 0.0 or int(_knob("sea_body")) == 0 or "--surge=0" in LaunchArgs.user_args(): return
+	_surge_edge = edge
+	material.set_shader_parameter("surge_edge",edge)
+
+## How far over the rest level the surge may reach at `x`,`z` (m; 0 outside
+## its belt), so a look-up can stop short of the waves when it is above them.
+func surge_room(x: float, z: float) -> float:
+	if _surge_edge.z <= 0.0: return 0.0
+	var belt: Vector4 = _knob("surge_belt")
+	var off: float = Field.GDField.edge_off(_surge_edge,x,z)
+	if off <= belt.x: return 0.0
+	return SURGE_TOP*float(_knob("surge_size"))*smoothstep(belt.x,belt.y,off)
+
+## The sheet's point over world `x`,`z`: Vector3(rest x, rest z, the surge's
+## rise there, m). The sheet shoves its points far enough here that Newton
+## finds the rest point, not the body's plain loop; the slow fields (warps,
+## peaks) are read once, at `x`,`z`, as they barely change over a shove.
+func surge_at(x: float, z: float) -> Vector3:
+	if _surge_edge.z <= 0.0: return Vector3(x,z,0.0)
+	var belt: Vector4 = _knob("surge_belt")
+	var target := Vector2(x,z)
+	if Field.GDField.edge_off(_surge_edge,x,z) <= belt.x: return Vector3(x,z,0.0)
+	var t := _now
+	var size_knob: float = _knob("surge_size")
+	var peak: float = _knob("surge_peak")
+	var h: Vector2 = Vector2(_knob("swell_heading")).normalized()
+	var warp_a := _noise(target/900.0+Vector2(3.7,1.9))
+	var warp_b := _noise(target/560.0+Vector2(6.1,8.3))
+	var lobe := smoothstep(0.3,0.7,_noise(target/260.0+Vector2(t*0.012,4.2))*0.55+_noise(target/640.0+Vector2(8.2,t*0.006))*0.45)
+	var wander := smoothstep(0.2,0.8,_noise(target/SURGE_WANDER+Vector2(5.3,2.6)))*SURGE_REACH
+	var bend := _noise(target/SURGE_BEND_LENGTH+Vector2(1.4,7.7))-0.5
+	var p := target
+	var y := 0.0
+	for step_i in 6:
+		var w := _surge_off(p)
+		var off := w.x
+		var d := -Vector2(w.y,w.z)
+		var sets := 0.5+0.5*sin(-off*SURGE_SET.x-t*SURGE_SET.y+warp_a*5.0)
+		var size := size_knob*smoothstep(belt.x,belt.y,off-wander)*(0.4+0.6*sets)*(0.6+0.8*lobe)
+		var total := 0.0
+		for i in 3:
+			total += float(SURGE_SIZE[i])*size*TAU/float(SURGE_LENGTH[i])
+		var q := peak/maxf(total,0.2)
+		var shift := Vector2.ZERO
+		y = 0.0
+		var jxx := 1.0
+		var jzz := 1.0
+		var jxz := 0.0
+		for i in 3:
+			var k := TAU/float(SURGE_LENGTH[i])
+			var omega := sqrt(GRAVITY*k)
+			var a := float(SURGE_SIZE[i])*size
+			var way := d if i < 2 else h
+			var phase: float
+			match i:
+				0: phase = -off*k-omega*t+warp_a*2.6+bend*SURGE_BEND.x
+				1: phase = -off*k-omega*t+warp_b*3.4+2.39+bend*SURGE_BEND.y
+				_: phase = p.dot(h)*k-omega*t+warp_a*1.5+4.78
+			var lean: float = SURGE_LEAN if i < 2 else 0.0
+			var bent := phase-lean*sin(phase)
+			var cp := cos(bent)
+			var sp := sin(bent)
+			shift += way*q*a*cp
+			y += a*sp
+			var squeeze := q*a*k*(1.0-lean*cos(phase))*sp
+			jxx -= way.x*way.x*squeeze
+			jzz -= way.y*way.y*squeeze
+			jxz -= way.x*way.y*squeeze
+		var miss := p+shift-target
+		if miss.length_squared() < 0.0025: break
+		var det := maxf(jxx*jzz-jxz*jxz,0.1)
+		p -= Vector2(jzz*miss.x-jxz*miss.y,jxx*miss.y-jxz*miss.x)/det
+	return Vector3(p.x,p.y,y)
+
+## Vector3(how far `p` lies past the edge line, the way out from it there).
+func _surge_off(p: Vector2) -> Vector3:
+	var rel := p-Vector2(_surge_edge.x,_surge_edge.y)
+	var inner := _surge_edge.z-_surge_edge.w
+	var qx := absf(rel.x)-inner
+	var qz := absf(rel.y)-inner
+	var ox := maxf(qx,0.0)
+	var oz := maxf(qz,0.0)
+	var out := sqrt(ox*ox+oz*oz)
+	var nx := ox/out if out > 1e-3 else (1.0 if qx > qz else 0.0)
+	var nz := oz/out if out > 1e-3 else (0.0 if qx > qz else 1.0)
+	return Vector3(out+minf(maxf(qx,qz),0.0)-_surge_edge.w,nx*(-1.0 if rel.x < 0.0 else 1.0),nz*(-1.0 if rel.y < 0.0 else 1.0))
+
 ## The body's sheet: SkyBelow's rings, finer near the eye (`step` m cells,
 ## `cells` of them each way of the middle, doubling ring by ring to `reach`).
 static var _body_sheet: ArrayMesh
@@ -398,7 +507,7 @@ func step(delta: float, eye: Vector3, plane: Vector3, facing := Vector3.FORWARD,
 		var knobs := {}
 		for k in ["body_wind","foam_flow","body_swell","body_patch","whitecaps","foam_spread","foam_caps","swell_groups","wind_patches","sea_fft","fft_sizes","fft_foam","fft_patch","fft_strength"]: knobs[k] = _knob(k)
 		var strength := _wake_low*float(_knob("wake"))*wake_foam
-		foam.step(delta,eye,facing,time if time >= 0.0 else _now,knobs,Vector4(plane.x,plane.z,strength,2.2),view)
+		foam.step(delta,eye,facing,time if time >= 0.0 else _now,knobs,Vector4(_last.x,_last.y,strength,2.2),view)
 		material.set_shader_parameter("foam_drift",foam.drift)
 		material.set_shader_parameter("foam_side",foam.side)
 		material.set_shader_parameter("foam_at",Vector4(foam.origin.x,foam.origin.y,foam.SIDE,1.0 if foam.ready() and foam.camera != null else 0.0))
@@ -448,7 +557,10 @@ static func depth_image(seed_value: int, corner: Vector2) -> Image:
 
 func _wake(plane: Vector3) -> void:
 	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))
-	var at := Vector2(plane.x,plane.z)
+	# Laid at the sheet's rest point, where the shader reads it: the surge
+	# shoves the water from under the plane by metres.
+	var rest := surge_at(plane.x,plane.z)
+	var at := Vector2(rest.x,rest.y)
 	# The newest point rides with the plane, so the wake starts under it; it
 	# is left behind for good once WAKE_STEP m past the one before.
 	if _last.is_finite():

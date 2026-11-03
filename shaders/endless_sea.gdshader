@@ -354,18 +354,7 @@ vec2 zs_swell_live(vec2 p, float t, float footprint, out vec3 shift, out float c
 	return slope / max(1.0 - squeeze, 0.12);
 }
 
-// A hash with no sine (so the CPU's mirror, EndlessSea, reads the same).
-float zs_body_hash(vec2 p) {
-	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-	p3 += dot(p3, p3.yzx + 33.33);
-	return fract((p3.x + p3.y) * p3.z);
-}
-
-float zs_body_noise(vec2 p) {
-	vec2 i = floor(p), f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(zs_body_hash(i), zs_body_hash(i + vec2(1.0, 0.0)), f.x), mix(zs_body_hash(i + vec2(0.0, 1.0)), zs_body_hash(i + vec2(1.0, 1.0)), f.x), f.y);
-}
+#include "res://shaders/endless_surge.gdshaderinc"
 
 // How rough the sea is at `p`: 0 a glossy slick .. 1 a rough stretch, in
 // broad patches drifting downwind.
@@ -554,6 +543,148 @@ float zs_body_gust(vec2 p, float t) {
 	vec2 hw = normalize(body_wind);
 	vec2 gp = (p - hw * t * 2.0) / 55.0;
 	return smoothstep(0.45, 0.8, zs_body_noise(gp + vec2(9.1, 3.7)) * 0.7 + zs_body_noise(gp * 2.7 + vec2(1.3, 8.8)) * 0.3);
+}
+
+// The surge (shaders/endless_surge.gdshaderinc) as the sea alone shows it.
+// `surge_light`: how far a face turned to the sun or from it moves the water's
+// light, how much of the sky's mirror a trough loses to the wave beside it, how
+// dark the trough's water goes. `surge_white`: how far the foam's light goes
+// from the sun's colour toward plain white.
+uniform vec3 surge_light = vec3(0.5, 0.6, 0.8);
+uniform float surge_white = 0.75;
+// Far off, the sky's mirror on a steep face is what draws a crest: seen low
+// over kilometres every one mirrors the bright sky alike, and every trough the
+// dark wave beside it, thin ruled lines. From `surge_mirror.x` m to `.y` from
+// the eye the surge's slope in the mirror goes, but for patches where the wave
+// is tall and the wind's roughness doesn't scatter it, which keep up to `.z` of
+// it: a far row comes and goes. (Seen that low any slope draws a line, so the
+// rest keeps none.) The trough's dark, the crest's glow and its lighter water
+// go with it. A huge `.x` gives the old look back, for an A/B.
+uniform vec3 surge_mirror = vec3(250.0, 1100.0, 0.7);
+
+// How much of the surge's slope the mirror keeps at rest xz `p`, `far` m from
+// the eye: 1 near, less on low and scattered stretches far off.
+float zs_surge_mirror(vec2 p, float t, float far, vec3 crest) {
+	float away = smoothstep(surge_mirror.x, surge_mirror.y, far);
+	if (away <= 0.0) return 1.0;
+	float tall = smoothstep(7.0, 15.0, length(crest.xy) + max(crest.z, 0.0) * 0.6);
+	float clear = smoothstep(0.35, 0.7, zs_body_noise(p / 380.0 + vec2(t * 0.008, 5.6)) * 0.6 + zs_body_noise(p / 150.0 + vec2(2.2, t * 0.015)) * 0.4);
+	return mix(1.0, surge_mirror.z * tall * clear, away);
+}
+
+// The walls between cells of a bent grid: 0 on a wall, about 0.7 at a cell's heart.
+float zs_surge_cells(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	float near = 8.0, next = 8.0;
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			vec2 o = vec2(float(x), float(y));
+			vec2 c = o + vec2(zs_body_hash(i + o), zs_body_hash(i + o + vec2(19.1, 7.3))) - f;
+			float d = dot(c, c);
+			if (d < near) {
+				next = near;
+				near = d;
+			} else if (d < next) {
+				next = d;
+			}
+		}
+	}
+	return sqrt(next) - sqrt(near);
+}
+
+// Foam of `density` 0..1 as a mat of bubbles eaten away: rounded cell walls, a
+// blotchy noise and a grain add up to a height, and the foam covers what stands
+// above the line `density` sets. Thin foam is that height's broken tops, soft
+// edged and part clear, gathered in patches over a milky veil; thick foam is
+// crisper and closes down to holes. No wall is drawn as a line: drawn ones read
+// as cracked glass from a low eye. Finer than the pixel it evens out into its
+// share. `inner`: how far down from the mat's top, the shade inside thick foam.
+float zs_surge_lace(vec2 p, float density, float footprint, out float inner) {
+	vec2 q = vec2(p.x, p.y * 0.8);
+	q += (vec2(zs_body_noise(p / 2.7 + vec2(4.1, 1.3)), zs_body_noise(p / 2.7 + vec2(0.9, 6.7))) - 0.5) * 1.6;
+	float gather = zs_body_noise(p / 11.0 + vec2(6.6, 2.4)) * 0.6 + zs_body_noise(p / 4.1 + vec2(1.2, 5.5)) * 0.4;
+	float thin = density * (0.35 + 0.8 * smoothstep(0.32, 0.68, gather));
+	vec2 cell = vec2(2.3, 0.9);
+	float seen = 1.0 - smoothstep(0.15, 0.5, footprint / cell.x);
+	float seen_fine = 1.0 - smoothstep(0.15, 0.5, footprint / cell.y);
+	float top = 0.5;
+	inner = 0.0;
+	if (seen > 0.0) {
+		float big = 1.0 - smoothstep(0.0, 0.6, zs_surge_cells(q / cell.x + vec2(2.3, 8.8)));
+		inner = (1.0 - big) * seen;
+		top = mix(0.5, big, seen);
+	}
+	float fine = 0.5;
+	if (seen_fine > 0.0) {
+		fine = zs_body_noise(q / cell.y + vec2(7.7, 3.1)) * 0.6 + zs_body_noise(q / (cell.y * 0.47) + vec2(2.1, 7.3)) * 0.4;
+		fine = mix(0.5, clamp((fine - 0.5) * 2.2 + 0.5, 0.0, 1.0), seen_fine);
+	}
+	float grain = mix(0.5, zs_body_noise(p / 0.34 + vec2(3.7, 9.2)) * 0.65 + zs_body_noise(p / 0.13 + vec2(8.2, 1.6)) * 0.35, 1.0 - smoothstep(0.04, 0.16, footprint));
+	float height = top * 0.44 + fine * 0.36 + clamp((grain - 0.5) * 1.6 + 0.5, 0.0, 1.0) * 0.2;
+	float soft = mix(mix(0.42, 0.1, smoothstep(0.4, 1.0, thin)), 0.75, 1.0 - seen);
+	float line = 1.0 - thin * 0.92;
+	float cover = smoothstep(line - soft * 0.5, line + soft * 0.5, height);
+	float veil = smoothstep(0.02, 0.7, thin) * (0.4 + 0.6 * grain) * 0.42;
+	cover *= mix(0.6, 1.0, smoothstep(0.25, 0.7, thin)) * smoothstep(0.0, 0.14, thin);
+	return 1.0 - (1.0 - cover) * (1.0 - veil);
+}
+
+// The surge's white water `along` the crest: `thick` the cap and fingers,
+// `left` what it leaves on the back (zs_surge_foam).
+void zs_surge_white(vec2 p, float t, float footprint, float breaks, float off, float along, float back, out float thick, out float left) {
+	float speed = sqrt(GRAVITY * SURGE_CREST_LENGTH / TAU);
+	// The white water's shape rides with the crest, sliding back over it a
+	// little; down the face it reaches in fingers.
+	vec2 riding = vec2(along, off + speed * t * 0.85);
+	float keep = 1.0 - smoothstep(1.5, 7.0, footprint);
+	float fingers = mix(0.5, zs_body_noise(riding / vec2(13.0, 26.0)) * 0.6 + zs_body_noise(riding / vec2(5.0, 11.0) + vec2(4.3, 1.1)) * 0.4, keep);
+	float reach = (back < 0.0 ? 26.0 * (0.15 + 1.5 * fingers * fingers) : 3.0 + 7.0 * fingers) * smoothstep(0.0, 0.7, breaks);
+	float torn = mix(0.5, zs_body_noise(riding / 3.3 + vec2(1.3, 6.2)) * 0.6 + zs_body_noise(riding / 1.2 + vec2(5.2, 3.8)) * 0.4, 1.0 - smoothstep(0.3, 1.5, footprint));
+	thick = clamp((1.0 - abs(back) / max(reach, 0.5) + (torn - 0.5) * 0.95) * 2.2, 0.0, 1.0);
+	// The back: thinning away from the crest, gathered into streaks the way
+	// the wave ran, bent.
+	left = back <= 0.0 ? 0.0 : breaks * pow(max(1.0 - back / 58.0, 0.0), 1.4);
+	if (left > 0.004) {
+		vec2 bend = vec2(zs_body_noise(p / 46.0 + vec2(2.2, 8.1)), zs_body_noise(p / 15.0 + vec2(6.4, 0.3))) - 0.5;
+		vec2 down = vec2(along + bend.x * 24.0 + bend.y * 7.0, off);
+		float streak = zs_body_noise(down / vec2(9.0, 30.0) + vec2(1.9, 4.4)) * 0.72 + zs_body_noise(down / vec2(3.4, 13.0) + vec2(8.8, 3.3)) * 0.28;
+		left *= mix(0.55, 0.1 + 1.4 * smoothstep(0.26, 0.74, streak), keep);
+	}
+}
+
+// The surge's breakers at rest xz `p`, from `crest` (zs_surge): only tall
+// waves break, in sections along the crest that ride with it. `cap`: the white
+// water at the crest, in fingers down the face, how much of `laid` is that,
+// less the shade inside it.
+// `laid`: all the foam, the cap and what it leaves on the back, streaks and
+// lace fixed in the water as the wave runs out from under them. `aired`: the
+// milky water round both.
+void zs_surge_foam(vec2 p, float t, float footprint, vec3 crest, out float cap, out float laid, out float aired) {
+	cap = 0.0;
+	laid = 0.0;
+	aired = 0.0;
+	float off, along, back;
+	float breaks = zs_surge_breaks(p, t, crest, off, along, back);
+	if (breaks <= 0.0) return;
+	aired = breaks * breaks * smoothstep(-34.0, -6.0, back) * (1.0 - smoothstep(12.0, 62.0, back));
+	float thick, left;
+	zs_surge_white(p, t, footprint, breaks, off, along, back, thick, left);
+	// Across the seam where `along` wraps, blend in the read from its far side.
+	float seam = zs_surge_seam(along);
+	if (seam > 0.0) {
+		float thick2, left2;
+		zs_surge_white(p, t, footprint, breaks, off, zs_surge_across(along), back, thick2, left2);
+		thick = mix(thick, thick2, seam);
+		left = mix(left, left2, seam);
+	}
+	float density = max(thick, left);
+	if (density <= 0.004) return;
+	float inner;
+	laid = zs_surge_lace(p, min(density, 1.0), footprint, inner);
+	cap = thick - inner * 0.75;
+	// A line of crest finer than the pixel keeps only its share of white.
+	laid *= 1.0 / (1.0 + footprint * 0.04);
 }
 
 const float FFT_N = 256.0;
@@ -1029,8 +1160,9 @@ float zs_foam_soft(vec2 p, float t, float cover, float footprint) {
 // The lace (sea_foam 1): marbled veins, stretched downwind and bent.
 // Foam of `density` (0..1) and `youth` (1 just laid .. 0 old) at `p`: a
 // solid cap when young, opening into a net of veins that thin and break as
-// it fades. Finer than the pixel, it evens out into its mean cover.
-float zs_foam_lace(vec2 p, float density, float youth, float footprint) {
+// it fades. Finer than the pixel, it evens out into its mean cover. `shred`
+// 1 opens even young foam into veins, with no solid islands (the surge).
+float zs_foam_lace(vec2 p, float density, float youth, float footprint, float shred) {
 	if (density < 0.004) return 0.0;
 	float cell = max(foam_lace.x, 0.2);
 	vec2 hw = normalize(body_wind);
@@ -1052,7 +1184,7 @@ float zs_foam_lace(vec2 p, float density, float youth, float footprint) {
 	float grain = zs_body_noise(q / (cell * 0.16) + vec2(1.9, 4.4));
 	// Crossing ridges close into a net.
 	float veins = max(max(big, mid * 0.92), small * 0.85 * hold_fine) * (0.85 + 0.15 * grain);
-	float open = clamp(1.0 - youth, 0.0, 1.0);
+	float open = clamp(1.0 - youth * (1.0 - shred), 0.0, 1.0);
 	open = open * open * (3.0 - 2.0 * open);
 	// Young foam fills in solid (a little grain at its edge); as it ages
 	// only the veins stay, thinner as it fades.
@@ -1122,6 +1254,13 @@ void vertex() {
 		zs_swell(world.xz, zs_flow_time, cell, shift, crest, rough);
 	}
 	VERTEX += shift * near * (1.0 - zs_river_calm(world.xz));
+	if (sea_body > 0 && surge_edge.z > 0.0) {
+		vec3 surge;
+		float surge_jac, surge_lift, surge_share;
+		vec3 surge_crest;
+		zs_surge(world.xz, zs_flow_time, cell * 0.6, surge, surge_jac, surge_lift, surge_share, surge_crest);
+		VERTEX += surge * (1.0 - smoothstep(surge_belt.z, surge_belt.w, reach));
+	}
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
@@ -1168,6 +1307,16 @@ void fragment() {
 	slope *= 1.0 - still;
 	shift *= 1.0 - still;
 	crest *= 1.0 - still;
+	// The surge: its slope joins the swell's; its height is kept apart, the
+	// body's light scaled to waves a thousandth its size.
+	float surge_jac = 1.0, surge_lift = 0.5, surge_share = 0.0;
+	vec3 surge_crest = vec3(0.0);
+	vec2 surge_slope = vec2(0.0);
+	if (sea_body > 0 && surge_edge.z > 0.0) {
+		vec3 surge;
+		surge_slope = zs_surge(rest_xz, t, footprint, surge, surge_jac, surge_lift, surge_share, surge_crest);
+		slope += surge_slope;
+	}
 	vec2 detail;
 	// The FFT sea (sea_fft 1): the wind sea's slope joins the swell's, the
 	// finer cascades are the chop, and the folds make the fresh caps.
@@ -1214,7 +1363,12 @@ void fragment() {
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
-	vec3 calm = normalize(vec3(-(slope.x + detail.x * calm_share), 1.0, -(slope.y + detail.y * calm_share)));
+	// Far off the surge keeps only part of its slope in it (zs_surge_mirror).
+	// So does the dark of the wave beside a trough (`walled`, below): both
+	// draw the far rows.
+	float surge_kept = surge_share > 0.0 ? zs_surge_mirror(rest_xz, t, distance_to, surge_crest) : 1.0;
+	vec2 calm_slope = slope - surge_slope * (1.0 - surge_kept);
+	vec3 calm = normalize(vec3(-(calm_slope.x + detail.x * calm_share), 1.0, -(calm_slope.y + detail.y * calm_share)));
 	float facing = max(dot(eye, normal), 0.0);
 	float sigma = sqrt(swell_rough + chop_rough);
 	float roughness = clamp(0.06 + sigma * 1.4 + footprint * 0.0015, 0.06, 0.5);
@@ -1280,12 +1434,27 @@ void fragment() {
 		float scale = body_swell.x * 0.9 + body_swell.y * 0.3 + 0.05;
 		lift = smoothstep(-1.0, 1.0, shift.y / scale);
 		lift = mix(lift, 0.5, smoothstep(body_value_fade.x, body_value_fade.y, length(world_position - CAMERA_POSITION_WORLD)));
+		// (Far off, the crest's lighter water too comes and goes with the mirror.)
+		lift = mix(lift, mix(0.5, surge_lift, 0.6 + 0.4 * surge_kept), surge_share);
+		jac = min(jac, surge_jac);
 		rough_here = zs_body_rough(rest_xz, t);
 		vec3 up_tint = mix(column, sss_color * zs_palette_water * 0.55, 0.07);
 		column = mix(column * body_value.x, up_tint * body_value.y, lift) * mix(1.0, 0.85, rough_here);
 	}
 	vec3 water = column * light * (vec3(1.0) - seen) + bed * seen;
-	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	// (Without the surge's own slope, which would pin this at its clamp and take
+	// the chop's shading off the great faces.)
+	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz + surge_slope * normal.y, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	// The surge's mass: its faces lit or turned from the sun by the long waves'
+	// own slope, the chop left out, and its troughs a deeper blue.
+	if (surge_share > 0.0) {
+		float turned = -dot(surge_slope, normalize(zs_sun_direction.xz + vec2(1e-4))) * 3.0;
+		water *= 1.0 + clamp(turned, -1.0, 1.0) * surge_light.x * surge_share * smoothstep(-0.05, 0.25, zs_sun_direction.y);
+		water *= mix(1.0, surge_light.z, smoothstep(0.5, 0.1, surge_lift) * surge_share);
+		// The chop shows on the wave's great back seen from above, where the
+		// sky's mirror is faint.
+		water *= 1.0 + clamp(dot(detail, normalize(zs_sun_direction.xz + vec2(1e-4))) * 3.5, -0.4, 0.4) * surge_share;
+	}
 	// Stirred water behind the plane: lighter with the air churned into it.
 	water = mix(water, mix(tint_mid, tint_deep, 0.5) * zs_palette_water * light, stirred * 0.18);
 	// A swimming fish's dark back, under the water.
@@ -1314,6 +1483,7 @@ void fragment() {
 	// The whitecaps, out on the open sea.
 	// sea_foam 1: the fresh cap and the trail it leaves, as lace.
 	float lace_density = 0.0, lace_youth = 0.0, churned = 0.0, wake_laid = 0.0;
+	float surge_cap = 0.0, surge_laid = 0.0, surge_aired = 0.0;
 	if (sea_body > 0 && sea_foam > 0) {
 		float open_sea = smoothstep(4.0, 12.0, water_depth);
 		caps *= open_sea;
@@ -1321,9 +1491,18 @@ void fragment() {
 		lace_density = max(left.x, caps);
 		lace_youth = max(left.y, min(caps * 1.5, 1.0));
 		churned = max(mix(left.x * 0.7, held.b, in_buffer) * open_sea, caps);
+		// The sea's own small caps give the belt to the surge's breakers: they
+		// keep to the high water, and thin out.
+		if (surge_share > 0.0) {
+			float kept = mix(1.0, smoothstep(0.5, 0.8, surge_lift) * 0.8, surge_share);
+			lace_density *= kept;
+			churned *= kept;
+			zs_surge_foam(rest_xz, t, footprint, surge_crest, surge_cap, surge_laid, surge_aired);
+		}
 		wake_laid = held.a * in_buffer * wake;
 		// The churned water round them, lighter and greener.
 		water = mix(water, mix(tint_mid, sss_color, 0.25) * zs_palette_water * light * 1.15, smoothstep(0.02, 0.6, churned) * 0.12 * foam_lace.w);
+		water = mix(water, mix(tint_shallow, sss_color, 0.3) * zs_palette_water * light * 0.8, surge_aired * 0.2);
 	} else if (sea_body > 0) {
 		float open_sea = smoothstep(4.0, 12.0, water_depth);
 		caps *= open_sea;
@@ -1350,14 +1529,20 @@ void fragment() {
 	if (sea_foam > 0) {
 		// The wake's foam left in the buffer joins in as foam already old.
 		float wake_youth = clamp(wake_laid * 1.2 - 0.4, 0.0, 0.6);
-		float laced = zs_foam_lace(rest_xz, max(lace_density, wake_laid * 0.9), lace_density >= wake_laid * 0.9 ? lace_youth : wake_youth, footprint);
+		float laced = zs_foam_lace(rest_xz, max(lace_density, wake_laid * 0.9), lace_density >= wake_laid * 0.9 ? lace_youth : wake_youth, footprint, surge_share * 0.85);
 		foamed = max(foamed, laced * foam);
+		foamed = max(foamed, surge_laid * foam);
 	}
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
 	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still) * (1.0 - max(swim_over, swim_hit));
 	vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
 	// Fresh foam stands up a little: brighter, and lit by its own slope.
 	if (sea_foam > 0) white *= 1.0 + 0.1 * lace_youth + 0.18 * clamp(dot(normal, zs_key_direction), -0.5, 1.0) * float(lace_density > 0.0);
+	// The surge's foam: white, not the sun's colour, and thick where it is cap.
+	if (surge_share > 0.0) {
+		float value = dot(white, vec3(0.3, 0.6, 0.1));
+		white = mix(white, vec3(0.97, 0.99, 1.0) * value * (1.3 + 0.35 * surge_cap), surge_white * surge_share);
+	}
 	water = mix(water, white, foamed * 0.92);
 	// The burrower's wake: its foam as clear white, not the sand the dim lit foam let through.
 	if (zs_burrow_foam > 0.0) {
@@ -1369,7 +1554,11 @@ void fragment() {
 	// The mirror: the sky, the cloud field, and what stands on screen.
 	vec3 reflected = reflect(-eye, calm);
 	reflected.y = abs(reflected.y);
-	vec3 sky = clamp(zsSkyGradient(reflected), vec3(0.0), vec3(0.98));
+	// Held under 0.98 by its brightest channel, not each channel: a low sun's
+	// hot orange band clipped channel by channel went yellow, and pale yellow
+	// over the dark water read lime at dawn and dusk.
+	vec3 sky = max(zsSkyGradient(reflected), vec3(0.0));
+	sky *= min(1.0, 0.98 / max(max(sky.r, sky.g), max(sky.b, 1e-4)));
 	vec4 shade_at = zs_sea_shade_at();
 	if (cloud_mirror > 0.0 && shade_at.w > 0.0 && reflected.y > 0.02) {
 		// Where the mirrored ray meets the cloud's height, the shade map's
@@ -1445,6 +1634,12 @@ void fragment() {
 		}
 	}
 	vec3 reflection = mix(sky, mirror, mirrored);
+	// A trough seen low mirrors the wave beside it, not the sky: what walls it
+	// in is that wave's dark face, so the sea doesn't read as one sheet of sky.
+	if (surge_share > 0.0) {
+		float walled = smoothstep(0.6, 0.15, surge_lift) * (1.0 - smoothstep(0.05, 0.45, eye.y)) * surge_share * surge_kept;
+		reflection = mix(reflection, zs_scene_to_display(column * light * 0.8), walled * surge_light.y);
+	}
 
 	// The sun: a soft path off the calm normal, and a crisp glitter off the
 	// chop's own (hard-edged spots, fewer and finer far off).
@@ -1486,14 +1681,21 @@ void fragment() {
 		float back = smoothstep(-0.1, 0.7, dot(view, sun)) * 0.6 + 0.4 * pow(clamp(dot(normalize(view.xz + vec2(1e-4)), sun_flat), 0.0, 1.0), 3.0);
 		float thin = smoothstep(0.62, 0.95, lift) * (0.2 + 0.8 * smoothstep(0.95, 0.65, jac));
 		float toward_eye = clamp(dot(normal.xz, eye.xz) * 4.0 + 0.35, 0.0, 1.0);
-		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth);
+		// (Light comes through a crest seen edge on; the great back looked down
+		// on is no thin sheet.)
+		float edge_on = mix(1.0, 0.65 * (1.0 - 0.75 * smoothstep(0.2, 0.6, eye.y)), surge_share);
+		// Far off a row glowing whole reads as a ruled line, as the mirror does:
+		// it comes and goes with the mirror's patches (zs_surge_mirror).
+		float far_glow = mix(1.0, 0.2 + 0.8 * surge_kept, surge_share);
+		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth) * edge_on * far_glow;
 		water += sss_color * (key * 1.2 + ambient * 0.3) * glow;
 		fresnel *= 1.0 - 0.15 * rough_here;
 	}
 	vec3 lit = water + zs_lake_direct(vec3(0.0), normal, eye, zs_key_direction, zs_key_irradiance, max(roughness, 0.3)) * glint_share * 0.06 * (1.0 - foamed);
 	lit *= 1.0 - 0.4 * shaded;
 
-	float mirror_weight = fresnel * (1.0 - foamed) * (1.0 - clamp(glow, 0.0, 0.6));
+	// (On the surge's great backs the mirror is the chop's only show: keep it.)
+	float mirror_weight = fresnel * (1.0 - foamed) * (1.0 - clamp(glow, 0.0, 0.6) * mix(1.0, 0.3, surge_share));
 	vec3 display_color = mix(zs_scene_to_display(lit), reflection, mirror_weight);
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
 	vec3 warm = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y)));

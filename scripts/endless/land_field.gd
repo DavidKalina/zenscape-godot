@@ -806,6 +806,10 @@ func fence(p: Vector3, heading: float) -> Vector2:
 func edge_off(x: float, z: float) -> float:
 	return GDField.edge_off(_edge,x,z) if _edge.z > 0.0 else INF
 
+## The world's edge line (centre x, z, half side, corner radius; half 0: none).
+func edge() -> Vector4:
+	return _edge
+
 ## The coast's islands (coast_isles.gd), or null.
 func isles() -> RefCounted:
 	return _isles

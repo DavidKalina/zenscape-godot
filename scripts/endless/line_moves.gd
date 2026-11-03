@@ -25,6 +25,12 @@ extends RefCounted
 ## - slalom: SLALOM_PASSES or more trees passed abeam (within SLALOM_REACH
 ##   spans past a wingtip, at the plane's height) on alternating sides, each
 ##   within SLALOM_GAP s of the last; scored when the run ends.
+## - crest run: low along the top of a tall wave of the big swell (the
+##   sea's surge round the world's edge, scripts/endless/endless_sea.gd):
+##   the water under it CREST_TALL m or more over the sea's rest, within
+##   CREST_LOW spans, the path within CREST_ACROSS of the crest's line (or
+##   on its flat top). The wave runs in under it, so holding one means
+##   drifting landward with it.
 ## - stack orbit: round one rock pillar (a sea stack) within ORBIT_REACH
 ##   spans of its face, ORBIT_TURN of a turn about its middle.
 ## While a held move is under way (`holding`), the chain does not bank.
@@ -38,18 +44,19 @@ extends RefCounted
 ## multiplier before the repeat cut (NearMiss `_chain`).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
+const SEA_Y: float = preload("res://scripts/endless/land_field.gd").SEA_Y
 
 ## Base points of the held moves, and the renamed moments' gain on theirs.
 const BASE := {"carve":150.0,"canopy run":220.0,"canyon run":320.0,"climb":220.0,"surf":200.0,
-	"slalom":110.0,"stack orbit":420.0,"smash":400.0}
+	"crest run":240.0,"slalom":110.0,"stack orbit":420.0,"smash":400.0}
 const GAIN := {"knife edge":1.5,"inverted":2.0}
 ## Held moves: least seconds held.
-const HELD_MIN := {"carve":1.0,"canopy run":1.2,"canyon run":1.2,"climb":1.0,"surf":1.0}
+const HELD_MIN := {"carve":1.0,"canopy run":1.2,"canyon run":1.2,"climb":1.0,"surf":1.0,"crest run":0.8}
 const HELD_TOP := 3.0
 const GRACE := 0.35
 ## Glyphs (near_glyphs.gd ids) of the moves that have their own.
 const GLYPH := {"late pull":"dive","knife edge":"knife","inverted":"inverted","carve":"carve",
-	"canopy run":"canopy","canyon run":"canyon","climb":"climb","surf":"surf","slalom":"slalom",
+	"canopy run":"canopy","canyon run":"canyon","climb":"climb","surf":"surf","crest run":"surf","slalom":"slalom",
 	"stack orbit":"orbit","smash":"rock"}
 
 const KNIFE := deg_to_rad(60.0)
@@ -63,6 +70,13 @@ const CANYON_REACH := 10.0
 const SLOPE := 0.7
 const HUG := 5.0
 const PATH := 0.2
+## The crest run: how tall the wave under it (m over the sea's rest), how
+## low (spans), how far off the crest's line the path may point (the share of
+## it up or down the wave's slope), and a top this flat counts whatever the way.
+const CREST_TALL := 4.0
+const CREST_LOW := 3.0
+const CREST_ACROSS := 0.5
+const CREST_FLAT := 0.06
 const SLALOM_REACH := 3.0
 const SLALOM_GAP := 1.8
 const SLALOM_PASSES := 3
@@ -236,6 +250,9 @@ func step(delta: float, game: Node3D, near: RefCounted) -> void:
 			surfing = along < -0.5 and _vel.y < -PATH*speed
 	_held("climb",climbing,clear,pace,roll,p,"land",delta,game,HUG*span)
 	_held("surf",surfing,clear,pace,roll,p,"land",delta,game,HUG*span)
+	# Crest run: low along a tall wave of the swell.
+	var cresting := fast and surface == "water" and clear < CREST_LOW*span and _on_crest(game,p,h)
+	_held("crest run",cresting,clear,pace,roll,p,"water",delta,game,CREST_LOW*span)
 	# The dive, for a late pull: a descent (past DESCEND of the speed) from
 	# its top, and its time steeper than DIVE_SHARE.
 	if _vel.y < -DESCEND*speed:
@@ -252,6 +269,22 @@ func step(delta: float, game: Node3D, near: RefCounted) -> void:
 	holding = _run >= 2 or (_orbit_id != "" and absf(_orbit_sum) > 0.5*PI)
 	for h2: Hold in _holds.values():
 		if h2.t > 0.3: holding = true
+
+## Over a tall wave of the swell (CREST_TALL m up) and going along its
+## crest. The sea's height is read only in the swell's belt (EndlessSea
+## `surge_room`), three reads for its slope.
+func _on_crest(game: Node3D, p: Vector3, h: float) -> bool:
+	var look = game.get("look")
+	var sea = look.water if look != null else null
+	if sea == null or not game.has_method("sea_height") or float(sea.surge_room(p.x,p.z)) <= 0.0: return false
+	var at := Vector3(p.x,SEA_Y,p.z)
+	var up := float(game.sea_height(at))
+	if up < CREST_TALL: return false
+	const E := 3.0
+	var grad := Vector2(float(game.sea_height(at+Vector3(E,0.0,0.0)))-up,float(game.sea_height(at+Vector3(0.0,0.0,E)))-up)/E
+	var steep := grad.length()
+	if steep < CREST_FLAT: return true
+	return absf(grad.dot(Vector2(-sin(h),-cos(h))))/steep < CREST_ACROSS
 
 ## One held move's frame: fed while `on`, scored once it has been off GRACE s.
 func _held(kind: String, on: bool, clear: float, pace: float, roll: float, p: Vector3, surface: String, delta: float, game: Node3D, band: float) -> void:
