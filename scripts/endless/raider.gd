@@ -179,8 +179,8 @@ func setup(g: Node3D) -> void:
 	_glow_mat = StandardMaterial3D.new()
 	_glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_glow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_glow_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_glow_mat.albedo_color = Color(1.0,0.15,0.05,0.0)
+	_glow_mat.albedo_color = Color(1.0,0.3,0.05,0.0)
+	_glow_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_glow_mat.no_depth_test = false
 	var ball := SphereMesh.new()
 	ball.radius = 1.0
@@ -196,6 +196,7 @@ func setup(g: Node3D) -> void:
 	_flash = MeshInstance3D.new()
 	_flash.mesh = ball
 	var fm := _glow_mat.duplicate() as StandardMaterial3D
+	fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	fm.albedo_color = Color(1.0,0.55,0.2,1.0)
 	_flash.material_override = fm
 	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -422,15 +423,21 @@ func _break(at: Vector3) -> void:
 	for i in PIECES:
 		var m := MeshInstance3D.new()
 		var box := BoxMesh.new()
-		box.size = Vector3(_rng.randf_range(0.4,1.6),_rng.randf_range(0.1,0.4),_rng.randf_range(0.4,1.4))*SIZE
+		box.size = Vector3(_rng.randf_range(0.25,0.8),_rng.randf_range(0.06,0.2),_rng.randf_range(0.25,0.7))*SIZE
 		m.mesh = box
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = (LIVERY.trim as Color) if i%4 == 0 else (LIVERY.body as Color)
+		mat.emission_enabled = true
+		mat.emission = Color(0.12,0.1,0.1)
+		mat.albedo_color = (LIVERY.trim as Color) if i%3 == 0 else Color(0.32,0.31,0.34)
 		m.material_override = mat
 		add_child(m)
-		m.global_position = at+Vector3(_rng.randf_range(-1,1),_rng.randf_range(-0.5,0.5),_rng.randf_range(-1,1))*1.5
-		var out := Vector3(_rng.randf_range(-1,1),_rng.randf_range(-0.3,1),_rng.randf_range(-1,1)).normalized()
-		_pieces.append({"node":m,"v":v*0.3+pv*0.5+out*PIECE_OUT*_rng.randf_range(0.5,1.0),
+		var lead := pv.normalized()*6.0 if pv.length() > 1.0 else Vector3.ZERO
+		m.global_position = at+lead+Vector3(_rng.randf_range(-1,1),_rng.randf_range(-0.5,0.5),_rng.randf_range(-1,1))*1.5
+		# Out to the sides and up, ahead of the plane: none thrown back at the view.
+		var out := Vector3(_rng.randf_range(-1,1),_rng.randf_range(-0.2,1),_rng.randf_range(-1,1)).normalized()
+		var ahead := pv.normalized() if pv.length() > 1.0 else Vector3.ZERO
+		out = (out-ahead*minf(out.dot(ahead),0.0)+ahead*0.4).normalized()
+		_pieces.append({"node":m,"v":pv*1.1+out*PIECE_OUT*_rng.randf_range(0.5,1.0),
 			"spin":Vector3(_rng.randf_range(-9,9),_rng.randf_range(-9,9),_rng.randf_range(-9,9)),"life":PIECE_LIFE})
 	_flash.global_position = at
 	_flash.visible = true
@@ -445,8 +452,8 @@ func _pieces_step(delta: float) -> void:
 	if _flash_t != INF:
 		_flash_t += delta
 		var k := _flash_t/0.4
-		_flash.scale = Vector3.ONE*lerpf(2.0,16.0,minf(k,1.0))
-		(_flash.material_override as StandardMaterial3D).albedo_color.a = maxf(1.0-k,0.0)
+		_flash.scale = Vector3.ONE*lerpf(2.0,11.0,minf(k,1.0))
+		(_flash.material_override as StandardMaterial3D).albedo_color.a = 0.7*maxf(1.0-k,0.0)
 		if k >= 1.0:
 			_flash.visible = false
 			_flash_t = INF
@@ -468,6 +475,8 @@ func _pieces_step(delta: float) -> void:
 			n.global_position.y = ground
 			pc.v = Vector3(v.x*0.4,absf(v.y)*0.2,v.z*0.4)
 		n.rotation += (pc.spin as Vector3)*delta
+		# Not in the view's face.
+		n.visible = (game.camera as Camera3D).global_position.distance_to(n.global_position) > 4.0
 		if float(pc.life) < 0.5: n.scale = Vector3.ONE*maxf(float(pc.life)/0.5,0.01)
 
 # --- Flying -------------------------------------------------------------------
@@ -528,12 +537,14 @@ func _draw_figure(delta: float) -> void:
 	PlaneGroundScale.grow(figure,WorldScale.plane*SIZE)
 	var glow := 0.0
 	if state == &"tell": glow = clampf(t/float(tuning.tell),0.0,1.0)*(0.75+0.25*sin(t*TAU*8.0))
-	elif state == &"ram": glow = 0.7
+	elif state == &"ram": glow = 0.45
 	_glow.visible = glow > 0.01
 	if _glow.visible:
 		_glow.global_position = flight.position+flight.forward()*2.0*SIZE
-		_glow.scale = Vector3.ONE*lerpf(1.0,4.0,glow)*SIZE
-		_glow_mat.albedo_color.a = 0.85*glow
+		# Never under about a hundredth of the distance, so it reads far off.
+		var far := (game.camera as Camera3D).global_position.distance_to(flight.position)*0.022
+		_glow.scale = Vector3.ONE*maxf(lerpf(1.0,3.5,glow)*SIZE,far*glow)
+		_glow_mat.albedo_color.a = 0.8*glow
 
 static func _seg_least(a: Vector3, b: Vector3) -> float:
 	var d := b-a
@@ -595,7 +606,7 @@ class Marker extends Control:
 
 	func _draw() -> void:
 		if not on: return
-		var col := Color(0.55,0.1,0.08,0.85)
+		var col := Color(0.95,0.22,0.12,0.9)
 		var s := 12.0
 		if tell:
 			var k := 0.5+0.5*sin(pulse*TAU*6.0)
@@ -604,10 +615,19 @@ class Marker extends Control:
 		var font := ThemeDB.fallback_font
 		if on_screen:
 			var p := at+Vector2(0.0,-10.0)
-			draw_colored_polygon(PackedVector2Array([p,p+Vector2(-s*0.7,-s),p+Vector2(s*0.7,-s)]),col)
-			draw_string(font,p+Vector2(-40.0,-s-8.0),text,HORIZONTAL_ALIGNMENT_CENTER,80.0,15,col)
+			var w := PackedVector2Array([p,p+Vector2(-s*0.7,-s),p+Vector2(s*0.7,-s),p])
+			draw_polyline(w,Color(0.05,0.03,0.03,0.8),4.0)
+			draw_colored_polygon(w,col)
+			_label(font,p+Vector2(-60.0,-s-8.0),col)
 		else:
 			var n := Vector2(-dir.y,dir.x)
 			var tip := at+dir*s*0.5
-			draw_colored_polygon(PackedVector2Array([tip,tip-dir*s*1.4+n*s*0.8,tip-dir*s*1.4-n*s*0.8]),col)
-			draw_string(font,at-dir*s*2.4+Vector2(-40.0,5.0),text,HORIZONTAL_ALIGNMENT_CENTER,80.0,14,col)
+			var w := PackedVector2Array([tip,tip-dir*s*1.4+n*s*0.8,tip-dir*s*1.4-n*s*0.8,tip])
+			draw_polyline(w,Color(0.05,0.03,0.03,0.8),4.0)
+			draw_colored_polygon(w,col)
+			_label(font,at-dir*s*2.6+Vector2(-60.0,6.0),col)
+
+	func _label(font: Font, p: Vector2, col: Color) -> void:
+		var size := 22 if tell else 18
+		draw_string_outline(font,p,text,HORIZONTAL_ALIGNMENT_CENTER,120.0,size,5,Color(0.05,0.03,0.03,0.8))
+		draw_string(font,p,text,HORIZONTAL_ALIGNMENT_CENTER,120.0,size,col)
