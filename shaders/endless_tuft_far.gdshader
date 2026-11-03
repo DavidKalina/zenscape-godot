@@ -161,7 +161,7 @@ void vertex() {
 		float seen = length(CAMERA_POSITION_WORLD - root);
 		float rise = max(normalize(CAMERA_POSITION_WORLD - root).y, 0.08);
 		silver = zs_silver_drive(root.xz, seen * 0.0016 * (0.6 + 0.4 / rise));
-		silver = mix(silver, zs_swell_silver(swell_s), swell.x);
+		silver = mix(silver, zs_swell_silver(swell_s), swell.x * zs_wind_silver_at(root.xz));
 	}
 }
 

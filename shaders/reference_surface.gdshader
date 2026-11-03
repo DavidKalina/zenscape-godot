@@ -697,7 +697,7 @@ void vertex() {
 					float comb = zs_sheen_field(root, 0.0, comb_swell);
 					float comb_sway = sin(zs_motion_time * 1.5 + dot(root, zs_wind_direction) * 0.14 + phase);
 					comb_push = zs_wind_direction * zs_grass_lean * comb_swell * (0.45 + 0.55 * comb + 0.14 * comb_sway) * bend * sway_shape.y * instance_scale;
-					grass_bow = max(grass_bow, smoothstep(0.1, 1.0, comb) * 0.6);
+					grass_bow = max(grass_bow, smoothstep(0.1, 1.0, comb) * 0.6 * comb_swell * zs_wind_silver_at(root));
 				}
 				grass_tilt = (motion + comb_push) / max(sway_shape.y * instance_scale, 0.1) * 0.6;
 			}

@@ -92,4 +92,24 @@ float zs_wind_swell_at(vec2 p) {
 	if (!zs_wind_on()) return 1.0;
 	return mix(1.0, zs_wind_swell_of(zs_wind_field_at(p)), zs_wind_reach(p));
 }
+
+// The swell's undersides (grass_silver) are the Amberlands' straw: the field's
+// grass keeps its own colours, so only this share of the swell's silver shows
+// on its crests (the motion and sheen stay whole). 1 with no field and past
+// its land, so the Amberlands keep all of theirs.
+const float ZS_WIND_SILVER = 0.25;
+
+// From high up the ground's paint mutes the sheen to 15% (endless_ground
+// wc_up); in the field's land the swells keep this share of it where the
+// grass rolls (`swell` the local grass_swell.x), so a windy slope reads from
+// cruise height. 0 with no field and past its land.
+const float ZS_WIND_UP_SHEEN = 0.8;
+float zs_wind_up_sheen(vec2 p, float swell) {
+	if (!zs_wind_on()) return 0.0;
+	return ZS_WIND_UP_SHEEN * clamp(swell, 0.0, 1.0) * zs_wind_reach(p);
+}
+float zs_wind_silver_at(vec2 p) {
+	if (!zs_wind_on()) return 1.0;
+	return mix(1.0, ZS_WIND_SILVER, zs_wind_reach(p));
+}
 #endif
