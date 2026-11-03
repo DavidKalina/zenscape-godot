@@ -535,6 +535,25 @@ float zs_body_gust(vec2 p, float t) {
 // from the sun's colour toward plain white.
 uniform vec3 surge_light = vec3(0.5, 0.6, 0.8);
 uniform float surge_white = 0.75;
+// Far off, the sky's mirror on a steep face is what draws a crest: seen low
+// over kilometres every one mirrors the bright sky alike, and every trough the
+// dark wave beside it, thin ruled lines. From `surge_mirror.x` m to `.y` from
+// the eye the surge's slope in the mirror goes, but for patches where the wave
+// is tall and the wind's roughness doesn't scatter it, which keep up to `.z` of
+// it: a far row comes and goes. (Seen that low any slope draws a line, so the
+// rest keeps none.) The trough's dark, the crest's glow and its lighter water
+// go with it. A huge `.x` gives the old look back, for an A/B.
+uniform vec3 surge_mirror = vec3(250.0, 1100.0, 0.7);
+
+// How much of the surge's slope the mirror keeps at rest xz `p`, `far` m from
+// the eye: 1 near, less on low and scattered stretches far off.
+float zs_surge_mirror(vec2 p, float t, float far, vec3 crest) {
+	float away = smoothstep(surge_mirror.x, surge_mirror.y, far);
+	if (away <= 0.0) return 1.0;
+	float tall = smoothstep(7.0, 15.0, length(crest.xy) + max(crest.z, 0.0) * 0.6);
+	float clear = smoothstep(0.35, 0.7, zs_body_noise(p / 380.0 + vec2(t * 0.008, 5.6)) * 0.6 + zs_body_noise(p / 150.0 + vec2(2.2, t * 0.015)) * 0.4);
+	return mix(1.0, surge_mirror.z * tall * clear, away);
+}
 
 // The walls between cells of a bent grid: 0 on a wall, about 0.7 at a cell's heart.
 float zs_surge_cells(vec2 p) {
@@ -1188,7 +1207,12 @@ void fragment() {
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
-	vec3 calm = normalize(vec3(-(slope.x + detail.x * calm_share), 1.0, -(slope.y + detail.y * calm_share)));
+	// Far off the surge keeps only part of its slope in it (zs_surge_mirror).
+	// So does the dark of the wave beside a trough (`walled`, below): both
+	// draw the far rows.
+	float surge_kept = surge_share > 0.0 ? zs_surge_mirror(rest_xz, t, distance_to, surge_crest) : 1.0;
+	vec2 calm_slope = slope - surge_slope * (1.0 - surge_kept);
+	vec3 calm = normalize(vec3(-(calm_slope.x + detail.x * calm_share), 1.0, -(calm_slope.y + detail.y * calm_share)));
 	float facing = max(dot(eye, normal), 0.0);
 	float sigma = sqrt(swell_rough + chop_rough);
 	float roughness = clamp(0.06 + sigma * 1.4 + footprint * 0.0015, 0.06, 0.5);
@@ -1241,7 +1265,8 @@ void fragment() {
 		float scale = body_swell.x * 0.9 + body_swell.y * 0.3 + 0.05;
 		lift = smoothstep(-1.0, 1.0, shift.y / scale);
 		lift = mix(lift, 0.5, smoothstep(body_value_fade.x, body_value_fade.y, length(world_position - CAMERA_POSITION_WORLD)));
-		lift = mix(lift, surge_lift, surge_share);
+		// (Far off, the crest's lighter water too comes and goes with the mirror.)
+		lift = mix(lift, mix(0.5, surge_lift, 0.6 + 0.4 * surge_kept), surge_share);
 		jac = min(jac, surge_jac);
 		rough_here = zs_body_rough(rest_xz, t);
 		vec3 up_tint = mix(column, sss_color * zs_palette_water * 0.55, 0.07);
@@ -1428,7 +1453,7 @@ void fragment() {
 	// A trough seen low mirrors the wave beside it, not the sky: what walls it
 	// in is that wave's dark face, so the sea doesn't read as one sheet of sky.
 	if (surge_share > 0.0) {
-		float walled = smoothstep(0.6, 0.15, surge_lift) * (1.0 - smoothstep(0.05, 0.45, eye.y)) * surge_share;
+		float walled = smoothstep(0.6, 0.15, surge_lift) * (1.0 - smoothstep(0.05, 0.45, eye.y)) * surge_share * surge_kept;
 		reflection = mix(reflection, zs_scene_to_display(column * light * 0.8), walled * surge_light.y);
 	}
 
@@ -1472,7 +1497,10 @@ void fragment() {
 		// (Light comes through a crest seen edge on; the great back looked down
 		// on is no thin sheet.)
 		float edge_on = mix(1.0, 0.65 * (1.0 - 0.75 * smoothstep(0.2, 0.6, eye.y)), surge_share);
-		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth) * edge_on;
+		// Far off a row glowing whole reads as a ruled line, as the mirror does:
+		// it comes and goes with the mirror's patches (zs_surge_mirror).
+		float far_glow = mix(1.0, 0.2 + 0.8 * surge_kept, surge_share);
+		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth) * edge_on * far_glow;
 		water += sss_color * (key * 1.2 + ambient * 0.3) * glow;
 		fresnel *= 1.0 - 0.15 * rough_here;
 	}
