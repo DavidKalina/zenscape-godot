@@ -185,14 +185,6 @@ func _lay_gust(head: Vector2, k: float, heading: float, bend: float) -> void:
 		react.gust_strip(at,way,moved,STOOD_GUST,k*SIGHT_K if sight else clampf(k*1.3,0.0,1.0))
 	_trail = head
 
-## Every stood tree within `r` m of `at` shaken at once (a push-up through
-## the crowns).
-func shove(at: Vector2, r: float) -> void:
-	if react != null: react.gust_disc(at,r,1.0)
-	var t: PackedFloat32Array = land.trees_near(at,r)
-	for q in range(0,mini(t.size(),4*STOOD_MOST),4):
-		_shake_one(Vector2(t[q],t[q+1]),t[q+2],t[q+3],at,at.distance_to(Vector2(t[q],t[q+1])),1.0)
-
 func _shake_one(at: Vector2, foot: float, tall: float, head: Vector2, d: float, k: float) -> void:
 	stats.shoved = int(stats.shoved)+1
 	var near := pow(clampf(1.0-d/STOOD_REACH,0.0,1.0),0.7)*clampf(k*1.3,0.0,1.0)

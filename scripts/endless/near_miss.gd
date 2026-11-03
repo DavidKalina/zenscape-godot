@@ -682,7 +682,7 @@ func _line(points: float, game: Node3D) -> Dictionary:
 		var flown := 0.0
 		for m: Dictionary in line_moments:
 			flown += float(m.get("flown",0.0))
-			if not bool(m.get("chime",false)): closest = minf(closest,float(m.clear))
+			closest = minf(closest,float(m.clear))
 		line.closest = closest
 		line.speed = flown/maxf(line_moments.size(),1)
 	var book = game.get("book")
@@ -746,7 +746,7 @@ func _line_moment(m: Dictionary, game: Node3D) -> bool:
 		"height":at.y-maxf(land,float(game.water_at(at))),"under":bool(m.get("under",false))}
 	var f := LineScoreS.factors(raw)
 	var hold := minf(float(m.held)/maxf(float(m.get("held_min",1.0)),0.001),float(t.hold_top)) if m.has("held") else 1.0
-	var farm := 1.0 if m.has("shot") or bool(m.get("chime",false)) else _farm_same(int(m.get("id",0)))
+	var farm := 1.0 if m.has("shot") else _farm_same(int(m.get("id",0)))
 	var units := LineScoreS.moment_units(kind,str(m.band),f,hold,farm)
 	var now := snappedf(clock,0.001)
 	if score_line.count == 0: line_id += 1

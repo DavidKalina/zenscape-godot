@@ -4,7 +4,7 @@ extends "res://scripts/burrower/burrower_ground.gd"
 ## (studies/endless_flight.gd `water_at`). No lists and no rim: it feels
 ## ahead with `open` (steep ground, and the game's rocks, sea stacks, arches,
 ## ruins, halls and tunnels; not trees, it runs through a forest), and `room` is
-## 0 where it can't run (so a start, a resurfacing or a push-up there is
+## 0 where it can't run (so a start or a resurfacing there is
 ## passed over) and ROOM elsewhere. Trees are asked of the game's own stand
 ## near the head (`trees_near`, `canopy_top`, `stand_ahead`): it has no nodes
 ## for them, so `trees` stays empty.

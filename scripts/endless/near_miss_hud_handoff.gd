@@ -221,8 +221,8 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		# A new move cuts the last line's read-back short.
 		if not _bank.is_empty(): _bank.cut = true
 		_feed.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
-			"points":float(m.points),"clear":float(m.clear),"age":0.0,"slot":0.0,"landed":false,"fade":-1.0,"chime":bool(m.get("chime",false))})
-		if not bool(m.get("chime",false)): _gap_lock = maxf(float(m.clear),0.0)
+			"points":float(m.points),"clear":float(m.clear),"age":0.0,"slot":0.0,"landed":false,"fade":-1.0})
+		_gap_lock = maxf(float(m.clear),0.0)
 		_gap_lock_t = 0.0
 		_gap_min = INF
 		_gap_rising = true
@@ -590,8 +590,7 @@ func _draw_line(f: Dictionary, total_c: Vector2, s: float) -> void:
 	var font := _word_font(kind_px,0.12)
 	var kw := _width(font,kind,kind_px)
 	var pw := _width(_nums,pts,pts_px)
-	# A push-up has no clearance to show.
-	var clear := "" if bool(f.get("chime",false)) else "%s m" % _metres(float(f.clear))
+	var clear := "%s m" % _metres(float(f.clear))
 	var clear_px := pts_px*0.8
 	var cw := _width(_nums,clear,clear_px)
 	var gap := lerpf(20.0,16.0,clampf(slot,0.0,1.0))*s

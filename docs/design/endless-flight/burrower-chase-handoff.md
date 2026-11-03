@@ -35,6 +35,39 @@ the plane has been 1400 m from it, and a 45-75 s rest follows each chase.
   55 m (0.96 s) in `1_1`, at least 1.11 s in the other three, at 57 m/s. That moved every
   spot by up to 8 m.
 
+## The push-ups are gone
+
+Orbs, bells and gongs are out of the game (spec task 5). The last commit with them is
+`34788c41`, named in `docs/archive.md`. Gone: `push_ups.gd`, the orb and halo shaders, their
+setup, flags (`--burrower-orb-off`, `--burrower-reach`) and `CATCH_PRIZE`, the three moves
+in `line_moves.gd`, `line_tune.json` and `near_glyphs.gd`, the `chime` moment path in NearMiss,
+the HUD and FlightSound, and what only they used: `want_ahead`, `want_at`, `entering`,
+`TreeShudder.shove`, `GrassReact.gust_disc`, `GritMesh.dome`.
+
+- **He runs closer now.** While an orb was due he held about 1.8 s of the plane's flight
+  ahead (`want_ahead`, some 80-95 m), and `RUN_AHEAD`, 30-48 m, only after the third orb.
+  Now it's `RUN_AHEAD` from the start of the run. In the two catch runs his lead up to the
+  catch was 39-70 m, median 56-57, so a catch may come easier. `RUN_AHEAD` in `burrower.gd`
+  is the knob.
+- **A catch** still fires `caught`, and the burst and dive. No prize.
+- **The study** still has things to show (he wakes, leads, dives and roams, with the ridge
+  and the wake), so it stays. Keys 1 to 5 and `--bell=2`, `--gong=2` went.
+- **Kept:** every file in `assets/audio/burrower/`. `gong-369428.mp3` has no user left; it
+  was the study's `--gong=2`.
+- **Left alone, not the burrower's:** the orbs in `beat_marks.gd` (flight courses), NearMiss
+  `prize` (the pirate ship), the multiplier's and finds' bell sounds, wind horn, ruin kit and
+  cloud uses of "bell". Older specs and handoffs keep the words as history.
+- **Tests:** none in `tests/` name the burrower, NearMiss, LineMoves, FlightSound or
+  GrassReact, so none needs the push-ups. Full suite not run.
+
+Checks on this code: smoke of `studies/endless_flight.tscn` and
+`studies/burrower_study.tscn`, PASS, 0 errors each. Whole run `1_1/a`, headless, ended "out",
+22 of 22 fired, 0 crashes, lead 65/121/153, one plume. Surge roll by the real input on the
+way to the mouth, twice (the driver filled the meter): caught, the `burrower-catch` find
+found, no prize, 0 errors. Study through a driver: B called him, he ran 378 m in 8 s,
+watched, dived, 0 errors. HUD still `scratch/hud5/f00665.png`: the stone graze's glyph, label
+and clearance all show.
+
 ## Spot pairs
 
 s 1901/1953 isn't a forced swing. Laid out on a grid, every consecutive pair in all four

@@ -262,12 +262,6 @@ var stats := {"samples": 0, "chunks": 0, "clods": 0, "dust": 0, "stamps": 0, "ne
 var wet := false
 var wet_k := 0.0
 
-## Set by what it pushes up (push_ups.gd): the least it runs ahead of the
-## plane while leading (m), so a push-up comes a beat ahead; 0 none.
-var want_ahead := 0.0
-## While a push-up is due, the spot it runs for (x, z: on the plane's line, a
-## little past where the push-up will be; NAN: its own slot).
-var want_at := Vector2(NAN,NAN)
 ## The chase camera, to come up out of its view (null: ENTER_SIDE.x out).
 var view: Camera3D
 ## Too far from the eye for the ridge, clods, dust and needles: only his way, the
@@ -518,7 +512,6 @@ func _on_route(delta: float, surge: float) -> float:
 	var p: Vector3 = _plane.position
 	var vp := _plane_speed()
 	var ahead := lerpf(RUN_AHEAD.x,RUN_AHEAD.y,clampf(0.5+1.1*_noise.get_noise_1d(time*0.45+100.0),0.0,1.0))
-	ahead = maxf(ahead,want_ahead)
 	var along := (pos-Vector2(p.x,p.z)).dot(_route_way(_route_s))
 	return maxf(clampf(vp*surge+(ahead-along)*1.1,vp*0.5,vp*1.8),ROUTE_LEAST)*run_pace
 
@@ -693,10 +686,6 @@ func _open_spot(at: Vector2, fwd: Vector2) -> Vector2:
 	_spot_found = false
 	return at
 
-## Coming in across the plane's way (the entrance), not yet running.
-func entering() -> bool:
-	return active and mode == &"lead" and phase == &"enter"
-
 ## On its own from here: wandering the meadow, the plane left be.
 func roam() -> void:
 	mode = &"roam"
@@ -738,7 +727,7 @@ func _resurface() -> void:
 	var f: Vector3 = _plane.forward()
 	var fwd := Vector2(f.x,f.z).normalized()
 	if fwd == Vector2.ZERO: fwd = Vector2(0,-1)
-	var at := Vector2(p.x,p.z)+fwd*maxf(32.0,want_ahead)+Vector2(-fwd.y,fwd.x)*_side*9.0
+	var at := Vector2(p.x,p.z)+fwd*32.0+Vector2(-fwd.y,fwd.x)*_side*9.0
 	var room: float = land.room(at)
 	if room < 30.0: at += land.inward(at)*(30.0-room)
 	for o: Dictionary in _obstacles:
@@ -879,16 +868,11 @@ func _move(delta: float) -> void:
 		var fwd := Vector2(f.x,f.z).normalized()
 		var side := Vector2(-fwd.y,fwd.x)
 		var ahead := lerpf(LEAD_AHEAD.x,LEAD_AHEAD.y,clampf(0.5+1.1*_noise.get_noise_1d(time*0.45+100.0),0.0,1.0))
-		ahead = maxf(ahead,want_ahead)
 		var off := lerpf(LEAD_SIDE.x,LEAD_SIDE.y,clampf(0.5+1.0*_noise.get_noise_1d(time*0.3+200.0),0.0,1.0))
 		# Its slot by the plane sets the speed; it steers for a point on
 		# along the plane's way from there (else it would turn back for a
 		# slot it had overrun).
 		var slot := Vector2(p.x,p.z)+fwd*ahead+side*_side*off
-		# Lost is judged by its own slot: a push-up's spot far out on the
-		# plane's arc is run for, not a reason to sound.
-		var home := slot
-		if not is_nan(want_at.x): slot = want_at
 		var to_slot := slot-pos
 		var behind := to_slot.dot(fwd)
 		# Off to the side counts as behind too (after the plane turns, the
@@ -902,12 +886,12 @@ func _move(delta: float) -> void:
 		var cut := clampf((to_slot.length()-15.0)/30.0,0.0,1.0)
 		_goal = slot+fwd*lerpf(maxf(speed*0.9,20.0),8.0,cut)
 		# Lost all the same (a hard turn by the rim or a rock): it sounds.
-		var lost := (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 or (home-pos).length() > LOST_FAR
+		var lost := (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 or to_slot.length() > LOST_FAR
 		_lost = _lost+delta if lost and not _diving else 0.0
 		if _lost > LOST_S and not _sounding:
 			_sounding = true
 			stats.soundings = int(stats.soundings)+1
-			var lw := "behind" if (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 else ("far (due)" if not is_nan(want_at.x) else "far")
+			var lw := "behind" if (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 else "far"
 			stats.lost_why[lw] = int(stats.lost_why.get(lw,0))+1
 	elif pos.distance_to(_goal) < 18.0 or _shore_ahead(delta):
 		_goal = _roam_goal()
@@ -1040,38 +1024,29 @@ func _run_on(delta: float, surge: float) -> float:
 	var along := rel.dot(fwd)
 	var vp := _plane_speed()
 	var ahead := lerpf(RUN_AHEAD.x,RUN_AHEAD.y,clampf(0.5+1.1*_noise.get_noise_1d(time*0.45+100.0),0.0,1.0))
-	ahead = maxf(ahead,want_ahead)
-	if not is_nan(want_at.x):
-		# A push-up due: it runs for the spot on the plane's line (as it led),
-		# its course following the way it goes.
-		var to := want_at-pos
-		var cut := clampf((to.length()-15.0)/30.0,0.0,1.0)
-		_goal = want_at+fwd*lerpf(maxf(speed*0.9,20.0),8.0,cut)
-		_course = heading
+	# Its own way: a slow wander...
+	_course += WANDER*clampf(2.0*_noise.get_noise_1d(time*0.25+400.0),-1.0,1.0)*delta
+	_into_woods(fwd,delta)
+	var cv := Vector2.from_angle(_course)
+	var out: Vector2 = -land.inward(pos)
+	var room: float = land.room(pos)
+	if room < RUN_ROOM and out != Vector2.ZERO and cv.dot(out) > -0.3:
+		# ...bent along the meadow's edge, the way nearer its course...
+		var tang := out.orthogonal()
+		if tang.dot(cv) < 0.0: tang = -tang
+		var k := clampf((RUN_ROOM-room)/30.0,0.3,1.5)
+		_course = rotate_toward(_course,(tang-out*0.35).angle(),RIM_TURN*k*delta)
+		stats.rim_bends = float(stats.get("rim_bends",0.0))+delta
 	else:
-		# Its own way: a slow wander...
-		_course += WANDER*clampf(2.0*_noise.get_noise_1d(time*0.25+400.0),-1.0,1.0)*delta
-		_into_woods(fwd,delta)
-		var cv := Vector2.from_angle(_course)
-		var out: Vector2 = -land.inward(pos)
-		var room: float = land.room(pos)
-		if room < RUN_ROOM and out != Vector2.ZERO and cv.dot(out) > -0.3:
-			# ...bent along the meadow's edge, the way nearer its course...
-			var tang := out.orthogonal()
-			if tang.dot(cv) < 0.0: tang = -tang
-			var k := clampf((RUN_ROOM-room)/30.0,0.3,1.5)
-			_course = rotate_toward(_course,(tang-out*0.35).angle(),RIM_TURN*k*delta)
-			stats.rim_bends = float(stats.get("rim_bends",0.0))+delta
-		else:
-			# ...and back toward the plane's nose when strayed wide of it.
-			var off := fwd.angle_to(rel)
-			if swing_m > 0.0:
-				var strayed := absf(off) > SWING_OFF or along < 8.0
-				var home := p2+fwd*(maxf(along,0.0)+SWING_HOME_M)
-				_course = rotate_toward(_course,(home-pos).angle(),(SWING_BACK if strayed else SWING_HOME)*delta)
-			elif absf(off) > RUN_OFF or along < 8.0:
-				_course = rotate_toward(_course,fwd.angle(),OFF_TURN*delta*clampf(absf(off)/RUN_OFF,0.5,2.0))
-		_goal = pos+Vector2.from_angle(_course+_swing_on(delta,vp))*30.0
+		# ...and back toward the plane's nose when strayed wide of it.
+		var off := fwd.angle_to(rel)
+		if swing_m > 0.0:
+			var strayed := absf(off) > SWING_OFF or along < 8.0
+			var home := p2+fwd*(maxf(along,0.0)+SWING_HOME_M)
+			_course = rotate_toward(_course,(home-pos).angle(),(SWING_BACK if strayed else SWING_HOME)*delta)
+		elif absf(off) > RUN_OFF or along < 8.0:
+			_course = rotate_toward(_course,fwd.angle(),OFF_TURN*delta*clampf(absf(off)/RUN_OFF,0.5,2.0))
+	_goal = pos+Vector2.from_angle(_course+_swing_on(delta,vp))*30.0
 	# Kept ahead along the plane's nose (it surges and slows for that).
 	var gap := ahead-along
 	var want := clampf(vp*surge+gap*1.1,vp*0.5,vp*1.8)
@@ -1384,8 +1359,7 @@ func _spawn_spout() -> void:
 		"bounced": false, "rest": -1.0, "squash": Vector3(_rng.randf_range(0.8,1.3),_rng.randf_range(0.6,1.0),_rng.randf_range(0.8,1.2))})
 	stats.spout = int(stats.get("spout",0))+1
 
-## Earth thrown off a point (a push-up cracking out, or falling off it):
-## `n` clods from `at` (world, y their start), out `out` m/s, up `up` m/s.
+## Earth thrown off a point: `n` clods from `at` (world, y their start), out `out` m/s, up `up` m/s.
 func throw_earth(at: Vector3, n: int, out: float, up: float, spread := 1.0) -> void:
 	for i in n:
 		if _clods.size() >= CLODS: _drop_clod(0)

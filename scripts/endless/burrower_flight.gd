@@ -1,8 +1,7 @@
 extends Node
 ## The burrower in endless flight (docs/design/endless-flight/
 ## spec-burrower-flight.md, Sightings): the study's creature (scripts/burrower/
-## burrower.gd) and its push-ups (push_ups.gd) on the game's land
-## (scripts/burrower/game_land.gd).
+## burrower.gd) on the game's land (scripts/burrower/game_land.gd).
 ##
 ## He lives by the cave mouths. A plane that comes within MOUTH_NEAR m of an opening of
 ## a stood sunk cave, flying so that he can still lead it (`_can_lead`), finds him
@@ -11,50 +10,38 @@ extends Node
 ## shows from altitude. A plane that comes near him (`_near_him`) starts the run: he
 ## keeps ahead of it along his route (`_try_spot`), in along the sinkhole's open way, so
 ## that following him lines the plane up with the opening, and goes in (`_in`). The
-## plane is left behind, or the run's orbs are out: he goes on all the same, and he
-## only stops short if caught, or if the plane lands or crashes. The caves are there
+## plane left behind, he goes on all the same, and he only stops short if caught, or
+## if the plane lands or crashes. The caves are there
 ## without him: he shows one, he doesn't open it.
 ## Inside he carries on along the bore (scripts/endless/burrower_bore.gd). There is no
 ## timer: he's seen at a mouth or not at all. REST s after a run he can be found again,
 ## and each mouth once until the plane has been well away from it.
 ## `--no-burrower` leaves him out; `--burrower-every=S` makes the rest S s;
 ## `--burrower-near=M` makes MOUTH_NEAR M m (it stays inside the caves' build reach).
-## The run's tuning: `--burrower-orb-off=M` (least m off the plane's line an orb comes
-## up, the band ORB_OFF's width; 0: on the line as he crosses it), `--burrower-reach=M`
-## (ORB_MORE), `--burrower-swing=M` (his swing each side; 0: none) and
+## The run's tuning: `--burrower-swing=M` (his swing each side; 0: none) and
 ## `--burrower-swing-s=S` (there and back).
 
 ## A surge roll into his ridge on a run (`try_catch`, scripts/endless/
-## surge_smash.gd): the ground bursts at `at` (world), a prize comes up ahead, he
-## dives. Once a run. The `finds` lane's `event` binds to this.
+## surge_smash.gd): the ground bursts at `at` (world), he dives. Once a run. The
+## `finds` lane's `event` binds to this.
 signal caught(at: Vector3)
 
 const Burrower = preload("res://scripts/burrower/burrower.gd")
-const PushUps = preload("res://scripts/burrower/push_ups.gd")
 const BurrowerBore = preload("res://scripts/endless/burrower_bore.gd")
 const GameLand = preload("res://scripts/burrower/game_land.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
-const WorldScale = preload("res://scripts/world_scale.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## The crowns round his head count as ground for a catch (m round it).
 const CANOPY_HEAD := 16.0
-const RUN_ORBS := 3
 ## A surge roll runs him down: his pace under it; caught within CATCH_M m of his
 ## head or the CATCH_TRAIL m of ridge behind it, within CATCH_UP m over the ground
-## or the crowns. The prize comes up PRIZE_AHEAD s of flight on.
+## or the crowns.
 const RUN_DOWN := 0.55
 const CATCH_M := 14.0
 const CATCH_TRAIL := 26.0
 const CATCH_UP := 16.0
 const CATCH_CLODS := 40
-const PRIZE_AHEAD := 1.3
-const CATCH_PRIZE := &"gong"
-## An orb's reach past the study's (m).
-const ORB_MORE := 2.0
-## How far off the plane's line an orb comes up (m): flying straight misses it, a
-## turn takes it. PushUps holds it to what the plane can reach in the time.
-const ORB_OFF := Vector2(9.0,15.0)
 ## His swing on the run: m each side of his course, s there and back.
 const SWING_M := 18.0
 const SWING_S := 7.0
@@ -105,7 +92,6 @@ const GUST_FAR_M := 300.0
 
 var land: GameLand
 var burrower: Burrower
-var push_ups: PushUps
 var bore: BurrowerBore
 var _idle := 0
 var _ask := 0.0
@@ -151,17 +137,8 @@ func setup(game: Node3D) -> void:
 	add_child(burrower)
 	burrower.setup(land,game.react)
 	burrower.view = game.camera
-	push_ups = PushUps.new()
-	add_child(push_ups)
-	push_ups.setup(land,burrower)
-	push_ups.at_head = true
-	push_ups.run_most = RUN_ORBS
-	push_ups.reach_more = _flag("--burrower-reach",ORB_MORE)
-	var off := _flag("--burrower-orb-off",ORB_OFF.x)
-	if off > 0.0: push_ups.off_line = Vector2(off,off+ORB_OFF.y-ORB_OFF.x)
 	burrower.swing_m = _flag("--burrower-swing",SWING_M)
 	burrower.swing_s = maxf(_flag("--burrower-swing-s",SWING_S),1.0)
-	push_ups.taken.connect(_taken.bind(game))
 	bore = BurrowerBore.new()
 	add_child(bore)
 	bore.setup(game.tunnels)
@@ -170,28 +147,18 @@ func setup(game: Node3D) -> void:
 	_every = every_flag()
 	_near = clampf(_flag("--burrower-near",MOUTH_NEAR),MOUTH_NEAR_SET.x,MOUTH_NEAR_SET.y)
 
-## One frame: whether he's about (asleep, only that), the creature and its push-ups.
+## One frame: whether he's about (asleep, only that), and the creature.
 func step(delta: float, game: Node3D) -> void:
 	bore.step(delta,game)
 	FrameLog.mark(&"b_bore")
 	_rouse(delta,game)
 	# Asleep and all settled: nothing more a frame (a couple of frames on
-	# after, so the last halo and mote are cleared).
-	_idle = _idle+1 if burrower.settled() and push_ups.settled() else 0
+	# after, so the last of him is cleared).
+	_idle = _idle+1 if burrower.settled() else 0
 	if _idle > 2: return
 	FrameLog.mark(&"b_rouse")
-	var span: float = WorldScale.TOY_SPAN*game.ground_scale.size()
 	burrower.tick(delta)
 	FrameLog.mark(&"b_tick")
-	var bumped: bool = game.hand_landing.flying() and push_ups.bump(game.get_world_3d().direct_space_state,game.plane)
-	FrameLog.mark(&"b_bump")
-	push_ups.tick(delta,game.plane,span*0.5,bumped)
-	FrameLog.mark(&"b_pushups")
-
-## A push-up taken: a move in the chain (LineMoves `push_up`), when the chain
-## is running (NearMiss is stepped only then).
-func _taken(kind: StringName, at: Vector3, game: Node3D) -> void:
-	if game.plane.weighted and game.hand_landing.flying(): game.near.moves.push_up(str(kind),at,game)
 
 func _rouse(delta: float, game: Node3D) -> void:
 	var flying: bool = game.hand_landing.flying()
@@ -237,7 +204,6 @@ func _in(game: Node3D) -> void:
 	_sighted = false
 	burrower.shudder.sight = false
 	burrower.plunge(_mouth.out)
-	burrower.want_at = Vector2(NAN,NAN)
 	game.sound.shot("crack",0.9,0.55,burrower.head())
 	game.sound.shot("thud",1.0,0.6,burrower.head())
 	rouse.why = "mouth"
@@ -274,15 +240,11 @@ func try_catch(game: Node3D) -> bool:
 	catch(game)
 	return true
 
-## Caught: the burst at his head, the prize ahead of the plane, he dives.
+## Caught: the burst at his head, he dives.
 func catch(game: Node3D) -> void:
 	var head: Vector3 = burrower.head()
 	burrower.throw_earth(head+Vector3.UP*0.4,CATCH_CLODS,9.0,17.0,2.5)
 	burrower.puff(head,14)
-	var v: Vector3 = game.plane.velocity
-	var flat := Vector2(v.x,v.z)
-	var spot := Vector2(game.plane.position.x,game.plane.position.z)+flat*PRIZE_AHEAD
-	push_ups.push(spot if land.open(spot) else burrower.pos,CATCH_PRIZE,-flat.normalized())
 	burrower.run_pace = 1.0
 	burrower.dive()
 	rouse.why = "caught"
@@ -320,7 +282,6 @@ func notice(game: Node3D) -> void:
 	burrower.shudder.sight = false
 	game.react.gust_gain = 1.0
 	burrower.notice(game.plane)
-	push_ups.begin_run()
 
 ## He's out there at `spot` ({at, way, route, down, mouth}, what `_try_spot` gave).
 func sight(game: Node3D, spot: Dictionary) -> void:

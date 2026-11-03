@@ -1,4 +1,4 @@
-// Gritty soil, shared by the burrower's earth (clods, push-up dome, torn crest).
+// Gritty soil, shared by the burrower's earth (clods, torn crest).
 // grit_albedo(p, base, wet, seed): damp dark earth with dry lighter crumbs,
 // pale and dark grains, and bits of root or grass; grit_height(p, seed): a
 // crumbly height for bump.

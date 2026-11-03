@@ -1,7 +1,7 @@
 shader_type spatial;
 #include "res://shaders/burrower_grit.gdshaderinc"
 // The burrower's loose earth (scripts/burrower/burrower.gd clods via a
-// MultiMesh, push_ups.gd domes): gritty soil over the base colour. With
+// MultiMesh): gritty soil over the base colour. With
 // `use_instance` the base is the instance colour and each clod has its own
 // grain; otherwise `tint` and `seed`.
 
@@ -11,8 +11,7 @@ uniform float seed = 0.0;
 uniform float dry = 0.4;
 uniform float bump = 0.9;
 // The clods' base lifted under the grit (its damp earth is 0.62 of the
-// base), so they read from the chase camera as the plain clods did; the
-// dome keeps 1.15.
+// base), so they read from the chase camera as the plain clods did.
 uniform float lift = 1.75;
 
 varying vec3 v_p;
