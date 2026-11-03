@@ -33,7 +33,8 @@ extends Node3D
 ## --bird-ride=S seconds alongside (6), --ambient-birds=X the far flocks
 ## (1; 0 none). The grass flush has its own: scripts/endless/grass_birds.gd
 ## (--grass-birds=X, --flush-gap=S, --flush-size=X, --flush-sound=N); --birds=0
-## stops it too.
+## stops it too. The escort has its own too: scripts/endless/sky_escort.gd
+## (--escort=X, --escort-gap=S, --escort-size=X); --birds=0 stops that as well.
 ##
 ## The covey (`put_covey`, `_covey`): the grass flush's birds. Each flies itself
 ## here, not a place in the flock: one goes, the rest after it, a hard low
@@ -54,6 +55,7 @@ const Plan = preload("res://scripts/endless/tree_plan.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const Body = preload("res://scripts/songbird_body.gd")
 const GrassBirds = preload("res://scripts/endless/grass_birds.gd")
+const SkyEscort = preload("res://scripts/endless/sky_escort.gd")
 const SHADER = preload("res://shaders/endless_birds.gdshader")
 
 ## The most birds drawn at once.
@@ -208,8 +210,9 @@ const COVEY_GONE := 420.0
 ## Flock states. PERCH..WHEEL as before; SCATTER (wheeling over the tree,
 ## flushed on foot), FLIT (off to another tree), SETTLE (each bird coming in
 ## to its perch), LEAVE (away, no tree to go to), COVEY (the grass flush, each
-## bird on its own).
-enum { PERCH, BURST, RIDING, PEEL, WHEEL, SCATTER, FLIT, SETTLE, LEAVE, COVEY }
+## bird on its own), ESCORT (in company with the plane, sky_escort.gd steering
+## the anchor).
+enum { PERCH, BURST, RIDING, PEEL, WHEEL, SCATTER, FLIT, SETTLE, LEAVE, COVEY, ESCORT }
 ## A bird's own state.
 enum { SAT, HOPPING, GROUND, FLYING, LANDING }
 
@@ -259,6 +262,9 @@ class Bird:
 	var jink_at := 0.0
 	var whirr := 0.0             # the whirr-and-glide's clock, + beating, - set
 	var tossed := false          # the plane has gone by it
+	# In an escort.
+	var bunch := Vector3.ZERO    # its place with the flock drawn in
+	var seat := Vector3.ZERO     # its place with the flock open round the plane
 
 class Crown:
 	var x := 0.0
@@ -292,7 +298,8 @@ class Flock:
 	var until := 0.0
 	var calm := 0.0
 	var nid := -1                # flown natively (ZenScapeBirds), or -1
-	var plan := {}               # a covey's flush (grass_birds.gd `_try`)
+	var plan := {}               # a covey's flush (grass_birds.gd `_try`), an escort's
+	var loose := 0.12            # how far a bird wanders about its place, of `keep`
 
 var enabled := true
 var density := 1.0
@@ -328,6 +335,8 @@ var _head_at := Vector3.ZERO
 var native: Object = null
 ## The grass flush: when and where its coveys go.
 var grass: Node3D = null
+## The escort: when it comes and where its flock is.
+var escort: Node3D = null
 
 const NATIVE_CLASS := &"ZenScapeBirds"
 const NATIVE_VERSION := 1
@@ -400,6 +409,10 @@ func setup(land_seed: int, field: RefCounted, trees: Node3D) -> void:
 	grass.name = "GrassBirds"
 	add_child(grass)
 	grass.setup(land_seed,field)
+	escort = SkyEscort.new()
+	escort.name = "SkyEscort"
+	add_child(escort)
+	escort.setup(land_seed,field)
 
 ## The parts, from the songbird's own meshes: sitting (body and folded
 ## wings), the head, the flying body with its wings tucked (the bounds) and
@@ -465,6 +478,7 @@ func step(delta: float, eye: Vector3, plane: RefCounted) -> void:
 	_draw()
 	stats.draw_ms = lerpf(float(stats.draw_ms),(Time.get_ticks_usec()-t_draw)/1000.0,0.05)
 	grass.step(delta,plane)
+	escort.step(delta,plane,eye)
 	var ms := (Time.get_ticks_usec()-began)/1000.0
 	stats.ms = ms
 	stats.ms_avg = lerpf(float(stats.ms_avg),ms,0.05)
@@ -792,6 +806,8 @@ func _flock_step(f: Flock, delta: float, eye: Vector3, pp: Vector3, pv: Vector3,
 			if _gone(f,eye,GONE*0.7,25.0): return false
 		COVEY:
 			return _covey(f,delta,pp,pv)
+		ESCORT:
+			if not escort.fly(f,delta,eye,pp,pv): return false
 	# The ground under the anchor, once a frame for the flock.
 	if f.state != WHEEL:
 		f.ground = maxf(_field.height(f.a.x,f.a.z),Field.SEA_Y)
@@ -1096,6 +1112,34 @@ func _covey_pose(b: Bird, delta: float, calm: float, going_down: bool, over: flo
 	else:
 		b.beat = lerp_angle(b.beat,GLIDE_BEAT,1.0-exp(-delta*16.0))
 
+# --- The escort --------------------------------------------------------------------
+
+## A flock at `at`, off stage, moving at `moving`, bunched up: sky_escort.gd's.
+func put_escort(at: Vector3, moving: Vector3, n: int, bird_size: float, plan: Dictionary) -> Flock:
+	var f := Flock.new()
+	f.state = ESCORT
+	f.species = "starling"
+	f.plan = plan
+	f.size = bird_size
+	f.spread = 1.0
+	f.a = at
+	f.av = moving
+	f.ground = maxf(_field.height(at.x,at.z),Field.SEA_Y)
+	var flat := Vector3(moving.x,0.0,moving.z)
+	f.heading = flat.normalized() if flat.length() > 0.5 else Vector3.FORWARD
+	for i in n:
+		var b := _new_bird(f,i,n)
+		b.mode = FLYING
+		b.bunch = b.off
+		b.seat = escort.seat_of(i,n)
+		b.p = f.a+_place_off(f,b)
+		b.v = f.av
+		b.face = f.heading
+		b.t = 10.0
+		f.birds.append(b)
+	flocks.append(f)
+	return f
+
 # --- The perched life -------------------------------------------------------------------
 
 func _perched_life(f: Flock, delta: float) -> void:
@@ -1187,7 +1231,7 @@ func _place_off(f: Flock, b: Bird) -> Vector3:
 	var fx := f.heading
 	var rx := fx.cross(Vector3.UP)
 	var keep := _span*f.size*1.1*sqrt(float(f.birds.size()+1))*f.spread
-	var w := b.off+Vector3(sin(_clock*0.5+b.seed),sin(_clock*0.37+b.seed*1.7)*0.5,cos(_clock*0.43+b.seed))*0.12
+	var w := b.off+Vector3(sin(_clock*0.5+b.seed),sin(_clock*0.37+b.seed*1.7)*0.5,cos(_clock*0.43+b.seed))*f.loose
 	return rx*w.x*keep+Vector3.UP*w.y*keep*0.6-fx*w.z*keep
 
 func _fly_birds(f: Flock, delta: float, pp: Vector3) -> void:
@@ -1466,4 +1510,4 @@ func note() -> String:
 			if b.mode == FLYING or b.mode == LANDING: flying += 1
 			else: perched += 1
 	return "\nbirds: %d flying, %d perched in %d flocks  ·  %d flushed  ·  %.2f ms (avg %.2f, draw %.2f)" % [
-		flying,perched,flocks.size(),int(stats.flushed),float(stats.ms),float(stats.ms_avg),float(stats.draw_ms)]+grass.note()
+		flying,perched,flocks.size(),int(stats.flushed),float(stats.ms),float(stats.ms_avg),float(stats.draw_ms)]+grass.note()+escort.note()
