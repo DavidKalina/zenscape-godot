@@ -166,6 +166,7 @@ const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
 const Raider = preload("res://scripts/endless/raider.gd")
+const LockOn = preload("res://scripts/endless/lock_on.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
@@ -341,6 +342,8 @@ var spray: Node3D
 var burrower: Node
 ## The raider plane (scripts/endless/raider.gd; --raider: on).
 var raider: Node3D
+## Lock-on (scripts/endless/lock_on.gd; with --raider).
+var lock_on: Node
 ## The towers that lead from the start to the ruin and the isles (scripts/endless/way_towers.gd).
 var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
@@ -796,6 +799,10 @@ func _ready() -> void:
 		raider = Raider.new()
 		add_child(raider)
 		raider.setup(self)
+	if LockOn.wanted():
+		lock_on = LockOn.new()
+		add_child(lock_on)
+		lock_on.setup(self)
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
@@ -1659,6 +1666,7 @@ func _frame(delta: float) -> void:
 	_punch_want *= exp(-delta/PUNCH_FADE)
 	_punch = lerpf(_punch,_punch_want,1.0-exp(-delta/PUNCH_IN)) if delta > 0.0 else _punch_want
 	camera.fov = chase.fov+_punch+_speed_wide(delta)
+	if lock_on != null: lock_on.frame(delta,self)
 
 ## How low and fast it is over the land (0 to 1): within LOW_SPANS
 ## wingspans of what is under it (the near misses' ground clearance when

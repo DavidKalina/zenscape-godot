@@ -176,6 +176,7 @@ func setup(g: Node3D) -> void:
 	figure.name = "RaiderPlane"
 	figure.visible = false
 	add_child(figure)
+	figure.add_to_group(&"lock_on")  # a lock-on target (scripts/endless/lock_on.gd)
 	_glow_mat = StandardMaterial3D.new()
 	_glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_glow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
