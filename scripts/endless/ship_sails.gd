@@ -1,13 +1,16 @@
 extends RefCounted
-## A ship's sails: hands the shared sail shader (assets/models/pirate_ship/
-## ship_cloth.gdshader, written by art/blender/ship/ship_build.py) what it can't
-## get from the world's wind, per ship, as instance uniforms so every ship may
-## share the one material: her bow, her speed, her turn, and how slack she's gone.
-## The cloth's shape, wind and gusts all live in the shader.
+## A ship's sails and flags: hands the shared sail and flag shaders (assets/models/
+## pirate_ship/ship_cloth.gdshader and ship_flag.gdshader, written by art/blender/
+## ship/ship_build.py) what they can't get from the world's wind, per ship, as
+## instance uniforms so every ship may share the one material: her bow, her speed,
+## her turn, and how slack she's gone. The cloth's shape, wind and gusts all live
+## in the shaders.
 
 ## How far the shader may throw the cloth past its flat sheet (m), for culling:
 ## the belly of the 20 m deep courses, or their swing in a sink.
 const REACH := 22.0
+## A flag's: the main's 30 m pennant turned to any side of its truck.
+const FLAG_REACH := 32.0
 ## Past this generated LODs would flatten the sheet the shader shapes.
 const NO_LOD := 1000.0
 ## Seconds for the turn the cloth feels to follow hers, and for her to go slack.
@@ -25,13 +28,14 @@ var _slack := 0.0
 var _sent := Vector4.INF
 var _sent_slack := 0.0
 
-## Every Sail_* under `model`.
+## Every Sail_* and Flag_* under `model`.
 func _init(model: Node) -> void:
-	for n: Node in model.find_children("Sail_*","MeshInstance3D",true,false):
-		var sail := n as GeometryInstance3D
-		sail.extra_cull_margin = REACH
-		sail.lod_bias = NO_LOD
-		_sails.append(sail)
+	for pattern: String in ["Sail_*","Flag_*"]:
+		for n: Node in model.find_children(pattern,"MeshInstance3D",true,false):
+			var sail := n as GeometryInstance3D
+			sail.extra_cull_margin = REACH if pattern == "Sail_*" else FLAG_REACH
+			sail.lod_bias = NO_LOD
+			_sails.append(sail)
 
 ## One frame: `at` and `way` her place and bow (x, z), `sinking` her cloth let go.
 func step(delta: float, at: Vector3, way: Vector2, sinking: bool) -> void:

@@ -251,8 +251,8 @@ const PLANK_SINK := 0.5
 const PLANK_TURNS := 5
 ## The wreck's reach from her middle (m): past it nothing of her is met.
 const WRECK_REACH := 125.0
-## Her far points (her frame), the mast tops and poop, for "all under".
-const HIGH_POINTS := [Vector3(0.0,104.0,2.0),Vector3(0.0,92.0,-30.0),Vector3(0.0,80.0,33.0),Vector3(0.0,32.0,56.0),Vector3(0.0,25.0,-56.0)]
+## Her far points (her frame), the mast tops, poop, bow and the ensign staff's head, for "all under".
+const HIGH_POINTS := [Vector3(0.0,104.0,2.0),Vector3(0.0,92.0,-30.0),Vector3(0.0,80.0,33.0),Vector3(0.0,32.0,56.0),Vector3(0.0,25.0,-56.0),Vector3(0.0,50.5,60.0)]
 ## Her return: least seconds after she's gone (--ship-return=S), how often it's tried
 ## (s), how many spots round the route. A spot is good at RETURN_ANY m off the eye,
 ## or at RETURN_NEAR m off and outside the view (RETURN_CONE: the cosine off its axis).

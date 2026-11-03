@@ -22,7 +22,8 @@ Blender (x, y, z) is the contract's (x, -z, y).
 Textures are painted here in numpy: `hull` and `stern` are unique maps (one
 for a side's elevation, shared by both sides, one for both flat ends),
 projected straight on, so stains run across the planks; `wood` tiles; `sail`
-is an atlas of patched canvas, its few shot holes and frayed hem a cut-out alpha. Vertex colours carry baked darkness,
+is an atlas of patched canvas, its few shot holes and frayed hem a cut-out alpha,
+the fore and main courses carrying a glyph each; `flag` the ensign and pennants. Vertex colours carry baked darkness,
 shade under decks; the gun deck's light is drawn by its `deck` shader.
 """
 import json
@@ -179,6 +180,14 @@ JIB_SPAN = (53.0, 95.0)
 JIB_DROP = 15.0
 JIB_FOOT = 1.2
 JIB_SKEW = -0.55          # the clew aft, toward the head (sail_geo)
+# Flags: a pennant at each truck (Flag_1..3, fore to mizzen) and the ensign on a staff
+# over the taffrail (Flag_E), each a flat sheet off its hoist that ship_flag.gdshader
+# streams down the air on it. Off solids(): the plane goes through cloth.
+PENNANTS = ((22.0, 1.9), (30.0, 2.4), (20.0, 1.7))   # fly, hoist (m)
+PENNANT_TAPER = 0.8       # the share of the hoist the fly's end loses
+ENSIGN_STAFF = ((0.0, -57.8, 28.0), (0.0, -60.0, 50.5))   # foot on the poop, head; HIGH_POINTS has the head
+ENSIGN = (12.0, 8.4)      # fly, hoist
+FLAG_SIZE = 64.0          # the vertex colour's scale, as SAIL_SIZE
 
 # Textures (px wide).
 HULL_TEX = 4096
@@ -189,6 +198,8 @@ SAIL_TEX = 2048
 SAIL_CELL = (2.0, 1.2)    # a sail's mesh at most this coarse (m across, m down), before crowding to its edges
 SAIL_MIN = (12, 8)        # and at least this many columns and rows
 SAIL_SIZE = 64.0          # the vertex colour's scale: a sail's size (m) / this; the main course is 53 wide
+FLAG_TEX = 512
+FLAG_ROWS = ((0, 360), (384, 512))   # the flag map's rows (of 512): the ensign's, the pennants'
 
 WHITE = (1.0, 1.0, 1.0)
 RAW = (0.95, 0.76, 0.54)    # fresh-broken wood, on the wood tile
@@ -498,7 +509,7 @@ def inner(tint=WHITE, k=1.0):
 
 # --- Mesh building ------------------------------------------------------------
 
-MAT_NAMES = ("hull", "stern", "wood", "wood_in", "iron", "sail", "rope", "glass", "dark", "paint", "iron_in", "lamp", "plug")
+MAT_NAMES = ("hull", "stern", "wood", "wood_in", "iron", "sail", "rope", "glass", "dark", "paint", "iron_in", "lamp", "plug", "flag")
 M = {n: i for i, n in enumerate(MAT_NAMES)}
 
 
@@ -1725,7 +1736,7 @@ def build_rigging(g, stays, yards):
 	rope(stays, (0.0, fy + 0.3, lerp(f2, ft, 0.62)), sp_b + Vector((0.0, -1.0, 0.4)), 0.2, 0.8, 5)
 	rope(stays, (0.0, my + 0.8, m1 + 0.5), (0.0, fy - 1.4, f1 - 0.5), 0.3, 0.8, 5)
 	rope(stays, (0.0, my + 0.6, m2 + 0.5), (0.0, fy - 0.9, f2 - 0.2), 0.24, 0.7, 5)
-	rope(stays, (0.0, my + 0.3, mt - 1.5), (0.0, fy - 0.4, ft - 1.5), 0.18, 0.6, 5)
+	rope(stays, (0.0, my + 0.3, mt - 3.0), (0.0, fy - 0.4, ft - 3.0), 0.18, 0.6, 5)   # under the pennants' hoists
 	rope(stays, (0.0, zy + 0.8, z1 + 0.5), (0.0, my - 1.5, m1 - 0.5), 0.28, 0.8, 5)
 	rope(stays, (0.0, zy + 0.5, z2 + 0.5), (0.0, my - 0.9, m2 - 0.5), 0.22, 0.7, 5)
 	# No bobstay: it would cross the bow's way out.
@@ -1775,6 +1786,51 @@ def jib_frame():
 	side = up.cross(d)
 	rot = Matrix((d, side, up)).transposed()
 	return (p0 + p1) * 0.5, (p1 - p0).length, rot.to_euler()
+
+
+def flag_geo(fly, hoist, taper, rows, seed, nx, ny):
+	"""A flag's flat sheet: x along its fly from the hoist (the origin), z down the hoist
+	from its head (a pennant tapers to its middle); `ship_flag.gdshader` streams it.
+	The vertex colour: its fly / FLAG_SIZE, a seed. `rows`: its band of the flag map."""
+	g = Geo()
+	v0 = 1.0 - (rows[0] + 1.0) / 512.0
+	v1 = 1.0 - (rows[1] - 1.0) / 512.0
+	col = (fly / FLAG_SIZE, seed, hoist / FLAG_SIZE, 1.0)
+	ids = []
+	for j in range(ny + 1):
+		v = j / ny
+		row = []
+		for i in range(nx + 1):
+			f = i / nx
+			hw = hoist * (1.0 - taper * f)
+			z = -hoist * 0.5 + (0.5 - v) * hw
+			row.append(g.vert((f * fly, 0.0, z), (f, lerp(v0, v1, v)), col))
+		ids.append(row)
+	for j in range(ny):
+		for i in range(nx):
+			g.face([ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i]], "flag", Vector((0.0, -1.0, 0.0)))
+	return g
+
+
+def ensign_frame():
+	"""The ensign's hoist head on its staff and its rotation: z up the staff, x aft off it."""
+	a, b = Vector(ENSIGN_STAFF[0]), Vector(ENSIGN_STAFF[1])
+	up = (b - a).normalized()
+	aft = Vector((0.0, -1.0, 0.0))
+	x = (aft - up * aft.dot(up)).normalized()
+	y = up.cross(x)
+	return b - up * 0.7, Matrix((x, y, up)).transposed().to_euler()
+
+
+def build_ensign_staff(g):
+	"""The ensign's staff, standing on the poop and raked aft over the taffrail."""
+	a, b = Vector(ENSIGN_STAFF[0]), Vector(ENSIGN_STAFF[1])
+	g.tube([a, a.lerp(b, 0.15), b], [0.34, 0.3, 0.17], 8, "wood", MAST_WOOD)
+	g.tube([b - (b - a).normalized() * 0.1, b + (b - a).normalized() * 0.35], [0.24, 0.2], 8, "wood", SPAR_DARK)
+	g.box(-0.7, 0.7, a.y - 0.7, a.y + 0.7, a.z, a.z + 0.5, "wood", SPAR_DARK)
+	for t in (0.1, 0.32):
+		p = a.lerp(b, t)
+		g.tube([p - Vector((0.0, 0.0, 0.15)), p + Vector((0.0, 0.0, 0.15))], [lerp(0.34, 0.17, t) + 0.05] * 2, 8, "iron", BAND, cap=False)
 
 
 # --- Textures -----------------------------------------------------------------
@@ -1996,6 +2052,143 @@ SAIL_GREY = (C(0.31, 0.345, 0.385), C(0.43, 0.46, 0.5))   # the canvas, weathere
 SAIL_INK = C(0.1, 0.1, 0.105)
 SAIL_BORDER = (0.03, 0.04)    # the border's width: share of the half-width, of the depth
 
+# The two glyphs, by the atlas cell they're painted on: the wind spiral on the fore
+# course, the sun with curved rays on the main course. Each is painted round on the
+# cloth (in metres, not in the cell's stretched texels), GLYPH_SPAN of its depth
+# across, centred: near-black ink, a mid grey for the second strokes, a little
+# bleached cloth for the centres.
+GLYPHS = {0: "spiral", 1: "sun"}
+GLYPH_SPAN = 0.8
+GLYPH_RASTER = 1024
+GLYPH_INK = C(0.07, 0.068, 0.066)
+GLYPH_MID = C(0.19, 0.185, 0.18)
+GLYPH_LIGHT = C(0.5, 0.505, 0.5)
+
+
+class Glyph:
+	"""A square brush-painted glyph: colour and coverage, painted in strokes
+	(ship_concept_build.py's, unworn: the wear is the cloth's)."""
+
+	def __init__(self, n=GLYPH_RASTER, seed=11):
+		self.n = n
+		self.a = np.zeros((n, n, 3), np.float32)
+		self.m = np.zeros((n, n), np.float32)
+		ys, xs = np.mgrid[0:n, 0:n].astype(np.float32)
+		self.X, self.Y = (xs + 0.5) / n, (ys + 0.5) / n
+		self.rng = np.random.default_rng(seed)
+
+	def put(self, mask, col):
+		self.a[mask] = col
+		self.m[mask] = 1.0
+
+	def stroke(self, pts, ws, col):
+		"""A brush stroke along pts, its width ws at each point, a little uneven."""
+		pts = np.array(pts, np.float32)
+		ws = np.array(ws, np.float32) * (1.0 + 0.18 * (self.rng.random(len(pts)) - 0.5))
+		mask = np.zeros(self.X.shape, bool)
+		for i in range(len(pts) - 1):
+			(x0, y0), (x1, y1) = pts[i], pts[i + 1]
+			r = max(ws[i], ws[i + 1])
+			lo_x, hi_x = int(max(0, (min(x0, x1) - r) * self.n)), int(min(self.n, (max(x0, x1) + r) * self.n + 1))
+			lo_y, hi_y = int(max(0, (min(y0, y1) - r) * self.n)), int(min(self.n, (max(y0, y1) + r) * self.n + 1))
+			if lo_x >= hi_x or lo_y >= hi_y:
+				continue
+			X, Y = self.X[lo_y:hi_y, lo_x:hi_x], self.Y[lo_y:hi_y, lo_x:hi_x]
+			dx, dy = x1 - x0, y1 - y0
+			t = np.clip(((X - x0) * dx + (Y - y0) * dy) / (dx * dx + dy * dy + 1e-9), 0, 1)
+			d = np.hypot(X - (x0 + t * dx), Y - (y0 + t * dy))
+			mask[lo_y:hi_y, lo_x:hi_x] |= d < ws[i] + (ws[i + 1] - ws[i]) * t
+		self.put(mask, col)
+
+	def disc(self, cx, cy, r, col, wob=0.0):
+		ang = np.arctan2(self.Y - cy, self.X - cx)
+		rr = r * (1.0 + wob * np.sin(ang * 3.0 + 1.3) + wob * 0.6 * np.sin(ang * 7.0 - 0.4))
+		self.put((self.X - cx) ** 2 + (self.Y - cy) ** 2 < rr * rr, col)
+
+	def arc(self, cx, cy, r, a0, a1, w0, w1, col, n=40, wob=0.0):
+		ts = np.linspace(0, 1, n)
+		ang = a0 + (a1 - a0) * ts
+		rr = r + wob * np.sin(ts * 9.0)
+		self.stroke(list(zip(cx + np.cos(ang) * rr, cy + np.sin(ang) * rr)), list(w0 + (w1 - w0) * ts), col)
+
+
+def glyph_art(kind):
+	"""The concept's two glyphs (ship_concept_build.py `glyph_art`), in the build's inks."""
+	ink, mid, light = GLYPH_INK, GLYPH_MID, GLYPH_LIGHT
+	g = Glyph(seed=11 if kind == "spiral" else 13)
+	if kind == "spiral":   # wind: a breath spiral in an uneven ring, curls on the four quarters
+		g.arc(0.5, 0.5, 0.42, 0, 2 * math.pi, 0.03, 0.03, ink, 90, 0.008)
+		ts = np.linspace(0, 1, 120)
+		ang = 0.4 + ts * 3.3 * math.pi
+		rr = 0.04 + 0.27 * ts
+		g.stroke(list(zip(0.5 + np.cos(ang) * rr, 0.5 + np.sin(ang) * rr)), list(0.018 + 0.045 * ts), ink)
+		g.disc(0.5, 0.5, 0.05, light, 0.08)
+		for k in range(4):
+			c = k * math.pi / 2 + math.pi / 4
+			cx, cy = 0.5 + math.cos(c) * 0.42, 0.5 + math.sin(c) * 0.42
+			g.arc(cx + math.cos(c) * 0.04, cy + math.sin(c) * 0.04, 0.05, c + math.pi, c + 2.6 * math.pi, 0.022, 0.006, mid, 30)
+	else:   # the sun with curved rays
+		for k in range(12):
+			c = k * math.pi / 6
+			ts = np.linspace(0, 1, 24)
+			ang = c + 0.45 * ts
+			rr = 0.25 + 0.2 * ts
+			g.stroke(list(zip(0.5 + np.cos(ang) * rr, 0.5 + np.sin(ang) * rr)), list(0.04 - 0.034 * ts), ink if k % 2 == 0 else mid)
+		g.disc(0.5, 0.5, 0.2, ink, 0.025)
+		g.arc(0.5, 0.5, 0.15, 0, 2 * math.pi, 0.012, 0.012, light, 60, 0.004)
+		g.disc(0.5, 0.5, 0.07, mid, 0.06)
+	return g
+
+
+def course_size(cell):
+	"""The head width, foot width and depth (m) of the one sail painted on `cell`."""
+	for mast in SAILS:
+		for name, zy, w, zb, wb, c, tilt in mast:
+			if c == cell:
+				return w, wb, zy - zb
+	raise ValueError(cell)
+
+
+def sample(img, gx, gy):
+	"""`img` (n x n, or n x n x 3) at gx, gy in 0..1, bilinear; 0 outside."""
+	n = img.shape[0]
+	fx = np.clip(gx * n - 0.5, 0.0, n - 1.001)
+	fy = np.clip(gy * n - 0.5, 0.0, n - 1.001)
+	x0, y0 = fx.astype(np.int32), fy.astype(np.int32)
+	ax, ay = fx - x0, fy - y0
+	if img.ndim == 3:
+		ax, ay = ax[..., None], ay[..., None]
+	out = (img[y0, x0] * (1 - ax) + img[y0, x0 + 1] * ax) * (1 - ay) + (img[y0 + 1, x0] * (1 - ax) + img[y0 + 1, x0 + 1] * ax) * ay
+	inside = (gx >= 0.0) & (gx < 1.0) & (gy >= 0.0) & (gy < 1.0)
+	return out * (inside[..., None] if img.ndim == 3 else inside)
+
+
+def paint_glyph(base, s, t, cell, weave, blot, grain):
+	"""The cell's glyph over its canvas, at its own aspect on the cloth: each texel's
+	place in metres (s across, t down the sheet, as `sail_geo` lays them) into the
+	glyph's square. Brushed: a ragged edge, the weave through the ink, worn patchy."""
+	w, wb, h = course_size(cell)
+	span = GLYPH_SPAN * h
+	gx = s * lerp(w, wb, t) * 0.5 / span + 0.5
+	gy = (t - 0.5) * h / span + 0.5
+	g = glyph_art(GLYPHS[cell])
+	# A little soft, so the brush's edge can wander in it.
+	cov = np.clip(blur(g.m, 0.1 / span * g.n), 0.0, 1.0)
+	m = sample(g.m, gx, gy)
+	col = sample(g.a * g.m[..., None], gx, gy) / np.maximum(m, 1e-3)[..., None]
+	c = sample(cov, gx, gy)
+	cw = s.shape[0]
+	rough = spectral(cw, cw, 0.55, 300 + cell, sy=0.6)
+	m = sst(0.34, 0.66, c + (rough - 0.5) * 0.8)
+	# Worn: thin where the sun and the sheets have had it, a few flakes gone.
+	flake = spectral(cw, cw, 0.9, 310 + cell)
+	patch = 0.62 + 0.38 * sst(0.3, 0.7, blot * 0.5 + grain * 0.5)
+	m *= patch * (1.0 - 0.65 * sst(0.66, 0.74, flake))
+	ink = col * (0.78 + 0.44 * weave)[..., None]
+	# The canvas's own light and dark through the paint.
+	ink *= np.clip(base.mean(axis=-1) / 0.4, 0.75, 1.2)[..., None]
+	return mix(base, ink, np.clip(m, 0.0, 1.0))
+
 
 def paint_sails(W):
 	"""Four whole, weathered cloths in a 2 x 2 atlas: RGB and a hard alpha for shot holes and a frayed hem.
@@ -2039,6 +2232,9 @@ def paint_sails(W):
 			tint = rng.choice([0.86, 0.92, 1.06, 1.1]) * np.array((0.98, 0.99, 1.02), dtype=np.float32)
 			base = np.where((d < 0.0)[..., None], np.clip(base * tint, 0, 1), base)
 			base = mix(base, base * 0.72, sst(0.004, 0.0, np.abs(d)) * 0.6)
+		# The courses' glyphs, under the weather.
+		if cell in GLYPHS:
+			base = paint_glyph(base, s, t, cell, weave, blot, grain)
 		# Rain and salt run down the cloth, tar from the yard, mildew at the foot.
 		streak = spectral(cw, cw, 1.1, 250 + cell, sx=0.1, sy=1.0)
 		base = mix(base, base * 0.74, sst(0.52, 0.8, wash2) * (0.3 + 0.5 * t))
@@ -2067,6 +2263,50 @@ def paint_sails(W):
 		x0 = (cell % 2) * cw
 		col[y0:y0 + cw, x0:x0 + cw] = np.clip(base, 0, 1)
 		alpha[y0:y0 + cw, x0:x0 + cw] = a
+	return col, alpha
+
+
+FLAG_DARK = C(0.135, 0.132, 0.135)   # sRGB-ish map, as the sails': near-black bunting
+FLAG_GREY = C(0.33, 0.345, 0.37)     # the sails' weathered grey
+
+
+def paint_flags(W):
+	"""The ensign and the pennant in one map (FLAG_ROWS), RGB and a hard alpha for the
+	frayed fly and the pennant's swallowtail: dark bunting, the sails' grey in a band
+	at the hoist and, on the ensign, a stepped fret across its foot."""
+	col = np.zeros((W, W, 3), np.float32)
+	alpha = np.zeros((W, W), np.float32)
+	v, u = np.mgrid[0:W, 0:W].astype(np.float32)
+	x = (u + 0.5) / W
+	grain = spectral(W, W, 0.8, 400, sx=6.0)
+	weave = spectral(W, W, 0.35, 401)
+	wash = spectral(W, W, 1.6, 402)
+	fray = spectral(W, W, 1.1, 403)
+	for k, (r0, r1) in enumerate(FLAG_ROWS):
+		r0, r1 = r0 * W // 512, r1 * W // 512
+		e = slice(r0, r1)
+		y = (v[e] - r0 + 0.5) / (r1 - r0)
+		xe = x[e]
+		base = np.broadcast_to(FLAG_DARK, xe.shape + (3,)).copy()
+		grey = xe < (0.16 if k == 0 else 0.12)
+		if k == 0:
+			# The fret: three cells across the fly, a band over the foot.
+			fa = np.mod((xe - 0.2) / 0.8 * 3.0, 1.0)
+			fb = (y - 0.6) / 0.26
+			grey |= fret(fa, fb) & (xe > 0.2) & (fb >= 0.0) & (fb < 1.0)
+		else:
+			grey |= (xe > 0.17) & (xe < 0.2)
+		base = np.where(grey[..., None], FLAG_GREY, base)
+		# Worn: the weave, the sun's bleaching, the fly's end darkened by the wind's fraying.
+		base *= (0.88 + 0.24 * grain[e])[..., None] * (0.92 + 0.16 * weave[e])[..., None]
+		base = mix(base, base * 1.25 + 0.02, sst(0.5, 0.8, wash[e]) * 0.5)
+		base = mix(base, base * 0.7, sst(0.75, 1.0, xe) * 0.6)
+		# The cut: the fly frayed; the pennant's end forked.
+		keep = (1.0 - xe) - (fray[e] - 0.5) * 0.05 - 0.012
+		if k == 1:
+			keep = np.minimum(keep, (1.0 - 0.16 * (1.0 - np.abs(y * 2.0 - 1.0))) - xe)
+		col[e] = np.clip(base, 0, 1)
+		alpha[e] = sst(-0.002, 0.002, keep)
 	return col, alpha
 
 
@@ -2123,6 +2363,7 @@ MATERIALS = {
 	"lamp": ("lamp", None, None, {}),
 	"iron": ("surface", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7}),
 	"sail": ("cloth", "ship_sail", None, {"fill": 3.6}),
+	"flag": ("flag", "ship_flag", None, {"fill": 3.6}),
 	"rope": ("surface", None, None, {"roughness_value": 0.95, "fill": 1.7, "rim": 0.0}),
 	"glass": ("surface", None, None, {"roughness_value": 0.14, "metallic_value": 0.3, "fill": 1.0}),
 	"dark": ("surface", None, None, {"roughness_value": 0.95, "fill": 0.0, "rim": 0.0}),
@@ -2269,6 +2510,29 @@ void fragment() {
 }
 """
 
+GUST_CODE = r"""float sail_hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float sail_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(sail_hash(i), sail_hash(i + vec2(1.0, 0.0)), f.x),
+		mix(sail_hash(i + vec2(0.0, 1.0)), sail_hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+// The land's gust field (zs_gust_field_at) at a sail's size: the same air, the
+// same run downwind, in parcels a sail can feel. -1 a lull, 1 a gust.
+float sail_gust(vec2 p) {
+	vec2 dir = zs_wind_direction;
+	vec2 q = p - dir * zs_gust_distance;
+	vec2 e = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(0.016, 0.028);
+	float field = sail_noise(e) * 0.62 + sail_noise(e * 2.3 + vec2(3.7, 9.1)) * 0.38;
+	return smoothstep(0.28, 0.72, field) * 2.0 - 1.0;
+}
+"""
+
 SAIL_CODE = """// A sail: a flat sheet (ship_build.py `sail_geo`) shaped here and nowhere else,
 // from the wind every ship sees and her own heading and speed. Pinned at the
 // yard, it fills forward; it never bulges aft, it goes slack or flogs instead.
@@ -2316,28 +2580,7 @@ struct Cloth {
 	vec3 hang;
 };
 
-float sail_hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-float sail_noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(sail_hash(i), sail_hash(i + vec2(1.0, 0.0)), f.x),
-		mix(sail_hash(i + vec2(0.0, 1.0)), sail_hash(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-
-// The land's gust field (zs_gust_field_at) at a sail's size: the same air, the
-// same run downwind, in parcels a sail can feel. -1 a lull, 1 a gust.
-float sail_gust(vec2 p) {
-	vec2 dir = zs_wind_direction;
-	vec2 q = p - dir * zs_gust_distance;
-	vec2 e = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(0.016, 0.028);
-	float field = sail_noise(e) * 0.62 + sail_noise(e * 2.3 + vec2(3.7, 9.1)) * 0.38;
-	return smoothstep(0.28, 0.72, field) * 2.0 - 1.0;
-}
-
+""" + GUST_CODE + r"""
 // The cloth at s (-1..1 across), t (0 yard .. 1 foot).
 vec3 sail_at(float s, float t, Cloth c) {
 	float s2 = s * s;
@@ -2413,6 +2656,63 @@ void vertex() {
 }
 """
 
+FLAG_CODE = """// A flag: a flat sheet off its hoist (ship_build.py `flag_geo`), streamed here down
+// the air on it, the air the sails take (ship_cloth.gdshader): the true wind less her
+// way. The hoist stays on its mast or staff (local y); the fly turns about it, hangs
+// as the air drops, and ripples out along it.
+//   VERTEX       x along the fly from the hoist, y up the hoist, as built
+//   COLOR.r      the fly's length / FLAG_SIZE; COLOR.g a seed
+//   ship_way, ship_slack: as the sails' (scripts/endless/ship_sails.gd)
+global uniform float zs_wind_strength;
+global uniform vec2 zs_wind_direction;
+global uniform float zs_gust_distance;
+instance uniform vec4 ship_way;
+instance uniform float ship_slack;
+uniform float wind_ms = 20.0;
+uniform float gust_swing = 0.42;
+// The air (m/s) that has a flag two thirds out, and how far (rad) below level it hangs in none.
+uniform float flies_at = 4.5;
+uniform float droop = 1.0;
+// The ripple: its reach at the fly's end (a share of the fly), waves along the fly, their pace.
+uniform float wave = 0.085;
+uniform float waves = 1.5;
+uniform float pace = 0.8;
+const float SIZE = """ + str(FLAG_SIZE) + r""";
+
+""" + GUST_CODE + r"""
+vec3 flag_at(float x, float y, float len, vec3 fly, vec3 side, float out_of, float clock, float seed) {
+	float f = clamp(x / len, 0.0, 1.0);
+	float q = (f * waves - y / len * 0.4) * 6.28318 - clock + seed * 6.28318;
+	float amp = wave * len * pow(f, 1.2) * mix(1.7, 1.0, out_of);
+	float ripple = sin(q) + 0.3 * sin(2.3 * q + 1.7);
+	float lift = 0.3 * sin(0.7 * q + 2.0) * amp;
+	return vec3(0.0, y + lift, 0.0) + fly * x + side * ripple * amp;
+}
+
+void vertex() {
+	float len = max(COLOR.r * SIZE, 0.1);
+	float seed = COLOR.g;
+	vec2 air = zs_wind_direction * zs_wind_strength * wind_ms * (1.0 + gust_swing * sail_gust(MODEL_MATRIX[3].xz)) - ship_way.xy * ship_way.z;
+	float speed = length(air);
+	// The air in the flag's own frame, across its hoist; none, and it keeps its built line.
+	vec3 w = transpose(mat3(MODEL_MATRIX)) * vec3(air.x, 0.0, air.y);
+	vec2 d = w.xz;
+	float dl = length(d);
+	d = dl > 0.05 ? d / dl : vec2(1.0, 0.0);
+	float out_of = (1.0 - exp(-pow(speed / flies_at, 1.5))) * (1.0 - clamp(ship_slack, 0.0, 1.0));
+	float a = droop * (1.0 - out_of);
+	vec3 fly = vec3(d.x, 0.0, d.y) * cos(a) - vec3(0.0, sin(a), 0.0);
+	vec3 side = vec3(-d.y, 0.0, d.x);
+	float clock = zs_gust_distance * 2.0 * pace;
+	vec3 p = flag_at(VERTEX.x, VERTEX.y, len, fly, side, out_of, clock, seed);
+	float dx = len * 0.02;
+	vec3 px = flag_at(VERTEX.x + dx, VERTEX.y, len, fly, side, out_of, clock, seed) - p;
+	vec3 py = flag_at(VERTEX.x, VERTEX.y + 0.2, len, fly, side, out_of, clock, seed) - p;
+	VERTEX = p;
+	NORMAL = normalize(cross(px, py));
+}
+"""
+
 SHADERS = {
 	"surface": SHADER_HEAD % "diffuse_lambert, specular_schlick_ggx" + """uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float normal_depth = 0.0;
@@ -2443,6 +2743,17 @@ void fragment() {
 	BACKLIGHT = base * through;
 	ALBEDO *= 1.0 - v_form * form;
 """ + SHADER_FILL.replace("vec3 n =", "base *= 1.0 - v_form * form;\n\tvec3 n =") + "}\n",
+	"flag": SHADER_HEAD % "diffuse_lambert, cull_disabled" + FLAG_CODE + """uniform float through = 0.4;
+void fragment() {
+	vec4 t = texture(albedo_tex, UV);
+	vec3 base = t.rgb;
+	ALBEDO = base;
+	ALPHA = t.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
+	ROUGHNESS = 1.0;
+	SPECULAR = 0.1;
+	BACKLIGHT = base * through;
+""" + SHADER_FILL + "}\n",
 }
 
 
@@ -2455,7 +2766,7 @@ def write_materials():
 		lines = ['shader = ExtResource("1")']
 		for key, tex, i in (("albedo_tex", alb, 2), ("normal_tex", nrm, 3)):
 			if tex:
-				suffix = ".png" if tex == "ship_sail" else ".jpg"
+				suffix = ".png" if tex in ("ship_sail", "ship_flag") else ".jpg"
 				ext.append(f'[ext_resource type="Texture2D" path="{RES}/{tex}{suffix}" id="{i}"]')
 				lines.append(f'shader_parameter/{key} = ExtResource("{i}")')
 		for k, v in params.items():
@@ -2477,6 +2788,8 @@ def make_mats(scale):
 	save_tex("ship_wood_n", normal_from(h, 3.0), data=True)
 	c, a = paint_sails(int(SAIL_TEX * scale))
 	save_tex("ship_sail", c, a)
+	c, a = paint_flags(int(FLAG_TEX * scale))
+	save_tex("ship_flag", c, a)
 	write_materials()
 	mats = {}
 	for name in MAT_NAMES:
@@ -2570,6 +2883,7 @@ def build(fast):
 	build_stern(upper)
 	build_backing(inside)
 	build_beak(upper)
+	build_ensign_staff(upper)
 	build_tunnel(hull)
 	emit("Hull", hull, mats, extra=(teeth,))
 	emit("Upperworks", upper, mats)
@@ -2612,6 +2926,15 @@ def build(fast):
 	build_rigging(fine, stays, yards)
 	emit("Rigging", fine, mats)
 	emit("Stays", stays, mats)
+	# Flags: a pennant at each truck, built streaming aft; the ensign on its staff.
+	for i, (fly, hoist) in enumerate(PENNANTS):
+		y, top1, top2, truck = MASTS[i]
+		fg = flag_geo(fly, hoist, PENNANT_TAPER, FLAG_ROWS[1], 0.23 + 0.31 * i, 22, 2)
+		fob = emit(f"Flag_{i + 1}", fg, mats, group="Flags", origin=Vector((0.0, y, truck - 0.15)), local=True)
+		fob.rotation_euler = (0.0, 0.0, -math.pi * 0.5)
+	at, rot = ensign_frame()
+	fob = emit("Flag_E", flag_geo(ENSIGN[0], ENSIGN[1], 0.0, FLAG_ROWS[0], 0.71, 12, 8), mats, group="Flags", origin=at, local=True)
+	fob.rotation_euler = rot
 	# The anchors for code.
 	for name, at, side in gun_empties:
 		empty(name, at, rot=(0.0, 0.0, -side * math.pi * 0.5))
