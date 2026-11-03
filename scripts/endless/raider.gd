@@ -200,6 +200,7 @@ var _lost := 0.0
 var _clock := 0.0
 var _prev := Vector3.INF
 var _plane_prev := Vector3.INF
+var _plane_was: Object = null
 var _glow: MeshInstance3D
 var _glow_mat: StandardMaterial3D
 var _pieces: Array[Dictionary] = []
@@ -285,6 +286,16 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 	_pieces_step(delta)
 	var plane = game.plane
 	var flying: bool = game.hand_landing.flying()
+	# A crash relaunches a new plane, set back from where it hit (study
+	# `crash`): no closest pass swept across the jump, and a tell or ram aimed
+	# at the old one ends. It stalks the new one from where it flies.
+	if plane != _plane_was:
+		if _plane_was != null:
+			_prev = Vector3.INF
+			_plane_prev = Vector3.INF
+			if state == &"tell" or state == &"ram": _go(&"stalk")
+			stats.relaunches = int(stats.get("relaunches",0))+1
+		_plane_was = plane
 	match state:
 		&"away", &"dead":
 			if flying:
