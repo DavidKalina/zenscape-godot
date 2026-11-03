@@ -319,9 +319,10 @@ func _body_shift(p: Vector2, t: float) -> Vector3:
 const SURGE_LENGTH := [180.0,130.0,90.0]
 const SURGE_SIZE := [9.0,5.0,2.2]
 const SURGE_SET := Vector2(0.007,0.059)
+const SURGE_LEAN := 0.35
 ## The tallest crest at surge_size 1 (m): every wave at the top of its set and
 ## its peak.
-const SURGE_TOP := 23.5
+const SURGE_TOP := 22.7
 ## The edge line the surge runs in from (LandField `edge`; half 0: none).
 var _surge_edge := Vector4.ZERO
 
@@ -363,7 +364,7 @@ func surge_at(x: float, z: float) -> Vector3:
 		var off := w.x
 		var d := -Vector2(w.y,w.z)
 		var sets := 0.5+0.5*sin(-off*SURGE_SET.x-t*SURGE_SET.y+warp_a*5.0)
-		var size := size_knob*smoothstep(belt.x,belt.y,off)*(0.3+0.7*sets*sets)*(0.55+0.9*lobe)
+		var size := size_knob*smoothstep(belt.x,belt.y,off)*(0.4+0.6*sets)*(0.6+0.8*lobe)
 		var total := 0.0
 		for i in 3:
 			total += float(SURGE_SIZE[i])*size*TAU/float(SURGE_LENGTH[i])
@@ -383,11 +384,13 @@ func surge_at(x: float, z: float) -> Vector3:
 				0: phase = -off*k-omega*t+warp_a*2.6
 				1: phase = -off*k-omega*t+warp_b*3.4+2.39
 				_: phase = p.dot(h)*k-omega*t+warp_a*1.5+4.78
-			var cp := cos(phase)
-			var sp := sin(phase)
+			var lean: float = SURGE_LEAN if i < 2 else 0.0
+			var bent := phase-lean*sin(phase)
+			var cp := cos(bent)
+			var sp := sin(bent)
 			shift += way*q*a*cp
 			y += a*sp
-			var squeeze := q*a*k*sp
+			var squeeze := q*a*k*(1.0-lean*cos(phase))*sp
 			jxx -= way.x*way.x*squeeze
 			jzz -= way.y*way.y*squeeze
 			jxz -= way.x*way.y*squeeze

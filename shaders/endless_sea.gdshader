@@ -548,14 +548,19 @@ float zs_body_gust(vec2 p, float t) {
 // the eye, fading by `.w`, and past that they are shading alone. Sets (crests
 // rising and dying as they run in) and peaks along a crest keep them from
 // reading as rings. `surge_size` scales their height, `surge_peak` how sharp
-// the crests get.
+// the crests get. The two fronts lean toward the land (SURGE_LEAN: a steep face
+// ahead of the crest, a long back behind it). `surge_light`: how far a face
+// turned to the sun or from it moves the water's light, how much of the sky's
+// mirror a trough loses to the wave beside it, how dark the trough's water goes.
 uniform vec4 surge_edge = vec4(0.0);
 uniform vec4 surge_belt = vec4(-200.0, 700.0, 2200.0, 3200.0);
 uniform float surge_size = 1.0;
 uniform float surge_peak = 0.85;
+uniform vec3 surge_light = vec3(0.5, 0.6, 0.8);
 const float SURGE_LENGTH[3] = float[3](180.0, 130.0, 90.0);
 const float SURGE_SIZE[3] = float[3](9.0, 5.0, 2.2);
 const vec2 SURGE_SET = vec2(0.007, 0.059);
+const float SURGE_LEAN = 0.35;
 
 // How far `p` lies past the edge line, and the way out from it there.
 float zs_surge_off(vec2 p, out vec2 way_out) {
@@ -586,7 +591,7 @@ vec2 zs_surge(vec2 p, float t, float footprint, out vec3 shift, out float jac, o
 	float warp_b = zs_body_noise(p / 560.0 + vec2(6.1, 8.3));
 	float sets = 0.5 + 0.5 * sin(-off * SURGE_SET.x - t * SURGE_SET.y + warp_a * 5.0);
 	float lobe = smoothstep(0.25, 0.75, zs_body_noise(p / 260.0 + vec2(t * 0.012, 4.2)));
-	float grown = (0.3 + 0.7 * sets * sets) * (0.55 + 0.9 * lobe);
+	float grown = (0.4 + 0.6 * sets) * (0.6 + 0.8 * lobe);
 	float size = surge_size * share * grown;
 	vec2 d[3];
 	d[0] = -way_out;
@@ -608,19 +613,23 @@ vec2 zs_surge(vec2 p, float t, float footprint, out vec3 shift, out float jac, o
 	vec3 j = vec3(1.0, 1.0, 0.0);
 	for (int i = 0; i < 3; i++) {
 		float held = 1.0 - smoothstep(SURGE_LENGTH[i] * 0.1, SURGE_LENGTH[i] * 0.28, footprint);
-		float cp = cos(phases[i]), sp = sin(phases[i]);
-		float steep = amps[i] * ks[i];
+		float lean = i < 2 ? SURGE_LEAN : 0.0;
+		float bent = phases[i] - lean * sin(phases[i]);
+		float cp = cos(bent), sp = sin(bent);
+		float steep = amps[i] * ks[i] * (1.0 - lean * cos(phases[i]));
 		shift.xz += d[i] * q * amps[i] * cp * held;
 		shift.y += amps[i] * sp * held;
 		slope += d[i] * steep * cp * held;
 		j -= vec3(d[i].x * d[i].x, d[i].y * d[i].y, d[i].x * d[i].y) * q * steep * sp * held;
 	}
 	jac = j.x * j.y - j.z * j.z;
-	lift = smoothstep(-1.0, 1.0, shift.y / (8.0 * surge_size));
+	// Measured against this wave's own size: a set's tall crests saturate no
+	// sooner than its small ones, so the glow stays up at the crest.
+	lift = smoothstep(-1.0, 1.0, shift.y / max(11.0 * size, 2.0));
 	// Only the tall crests break: a band along the crest and a tail of foam
 	// on the back it has just run from.
-	float tall = smoothstep(0.75, 1.2, grown) * share;
-	float since = fract((PI * 0.5 - phases[0]) / TAU);
+	float tall = smoothstep(0.85, 1.2, grown) * share;
+	float since = fract((PI * 0.5 - phases[0] + SURGE_LEAN * sin(phases[0])) / TAU);
 	white = tall * max(smoothstep(0.6, 0.2, jac) * 0.8, exp(-since * 18.0) * 0.5);
 	float det = max(jac, 0.1);
 	return vec2(j.y * slope.x - j.z * slope.y, j.x * slope.y - j.z * slope.x) / det;
@@ -1122,9 +1131,11 @@ void fragment() {
 	// The surge: its slope joins the swell's; its height is kept apart, the
 	// body's light scaled to waves a thousandth its size.
 	float surge_jac = 1.0, surge_lift = 0.5, surge_share = 0.0, surge_white = 0.0;
+	vec2 surge_slope = vec2(0.0);
 	if (sea_body > 0 && surge_edge.z > 0.0) {
 		vec3 surge;
-		slope += zs_surge(rest_xz, t, footprint, surge, surge_jac, surge_lift, surge_share, surge_white);
+		surge_slope = zs_surge(rest_xz, t, footprint, surge, surge_jac, surge_lift, surge_share, surge_white);
+		slope += surge_slope;
 	}
 	vec2 detail;
 	// The FFT sea (sea_fft 1): the wind sea's slope joins the swell's, the
@@ -1218,7 +1229,19 @@ void fragment() {
 		column = mix(column * body_value.x, up_tint * body_value.y, lift) * mix(1.0, 0.85, rough_here);
 	}
 	vec3 water = column * light * (vec3(1.0) - seen) + bed * seen;
-	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	// (Without the surge's own slope, which would pin this at its clamp and take
+	// the chop's shading off the great faces.)
+	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz + surge_slope * normal.y, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	// The surge's mass: its faces lit or turned from the sun by the long waves'
+	// own slope, the chop left out, and its troughs a deeper blue.
+	if (surge_share > 0.0) {
+		float turned = -dot(surge_slope, normalize(zs_sun_direction.xz + vec2(1e-4))) * 3.0;
+		water *= 1.0 + clamp(turned, -1.0, 1.0) * surge_light.x * surge_share * smoothstep(-0.05, 0.25, zs_sun_direction.y);
+		water *= mix(1.0, surge_light.z, smoothstep(0.5, 0.1, surge_lift) * surge_share);
+		// The chop shows on the wave's great back seen from above, where the
+		// sky's mirror is faint.
+		water *= 1.0 + clamp(dot(detail, normalize(zs_sun_direction.xz + vec2(1e-4))) * 3.5, -0.4, 0.4) * surge_share;
+	}
 	// Stirred water behind the plane: lighter with the air churned into it.
 	water = mix(water, mix(tint_mid, tint_deep, 0.5) * zs_palette_water * light, stirred * 0.18);
 
@@ -1370,6 +1393,12 @@ void fragment() {
 		}
 	}
 	vec3 reflection = mix(sky, mirror, mirrored);
+	// A trough seen low mirrors the wave beside it, not the sky: what walls it
+	// in is that wave's dark face, so the sea doesn't read as one sheet of sky.
+	if (surge_share > 0.0) {
+		float walled = smoothstep(0.6, 0.15, surge_lift) * (1.0 - smoothstep(0.05, 0.45, eye.y)) * surge_share;
+		reflection = mix(reflection, zs_scene_to_display(column * light * 0.8), walled * surge_light.y);
+	}
 
 	// The sun: a soft path off the calm normal, and a crisp glitter off the
 	// chop's own (hard-edged spots, fewer and finer far off).
@@ -1408,14 +1437,18 @@ void fragment() {
 		float back = smoothstep(-0.1, 0.7, dot(view, sun)) * 0.6 + 0.4 * pow(clamp(dot(normalize(view.xz + vec2(1e-4)), sun_flat), 0.0, 1.0), 3.0);
 		float thin = smoothstep(0.62, 0.95, lift) * (0.2 + 0.8 * smoothstep(0.95, 0.65, jac));
 		float toward_eye = clamp(dot(normal.xz, eye.xz) * 4.0 + 0.35, 0.0, 1.0);
-		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth) * mix(1.0, 0.65, surge_share);
+		// (Light comes through a crest seen edge on; the great back looked down
+		// on is no thin sheet.)
+		float edge_on = mix(1.0, 0.65 * (1.0 - 0.75 * smoothstep(0.2, 0.6, eye.y)), surge_share);
+		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth) * edge_on;
 		water += sss_color * (key * 1.2 + ambient * 0.3) * glow;
 		fresnel *= 1.0 - 0.15 * rough_here;
 	}
 	vec3 lit = water + zs_lake_direct(vec3(0.0), normal, eye, zs_key_direction, zs_key_irradiance, max(roughness, 0.3)) * glint_share * 0.06 * (1.0 - foamed);
 	lit *= 1.0 - 0.4 * shaded;
 
-	float mirror_weight = fresnel * (1.0 - foamed) * (1.0 - clamp(glow, 0.0, 0.6));
+	// (On the surge's great backs the mirror is the chop's only show: keep it.)
+	float mirror_weight = fresnel * (1.0 - foamed) * (1.0 - clamp(glow, 0.0, 0.6) * mix(1.0, 0.3, surge_share));
 	vec3 display_color = mix(zs_scene_to_display(lit), reflection, mirror_weight);
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
 	vec3 warm = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y)));
