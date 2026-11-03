@@ -804,7 +804,7 @@ func _ready() -> void:
 	coast.setup(self)
 	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
 	ground_native = GroundNative.new()
-	ground_native.setup(arches,rocks,towers,stair)
+	ground_native.setup(arches,rocks,towers,stair,ice)
 	# --full-meter: a surge roll ready at once; again whenever the ship's plates
 	# come back (pirate_ship.gd `refill`).
 	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
@@ -1142,7 +1142,8 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	var g: Variant = field.height(p.x,p.z)
 	if m & GroundNative.ARCHES: g = arches.ground(p,g,pad)
 	if m & GroundNative.ROCKS: g = rocks.ground(p,g,pad)
-	g = ice.ground(p,tunnels.ground(p,halls.ground(p,trees.ground(p,g),pad),pad),pad)
+	g = tunnels.ground(p,halls.ground(p,trees.ground(p,g),pad),pad)
+	if m & GroundNative.ICE: g = ice.ground(p,g,pad)
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
@@ -1174,7 +1175,8 @@ func floor_at(p: Vector2) -> float:
 	if (h < Field.SEA_Y+0.2 and not tunnels.dry(Vector3(p.x,h,p.y))) or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
 	var q := Vector3(p.x,plane.position.y if plane != null else h,p.y)
-	return ice.land_y(q,tunnels.land_y(q,h))
+	h = tunnels.land_y(q,h)
+	return ice.land_y(q,h) if _stone_near(q) & GroundNative.ICE else h
 
 ## Whether the field's last sample was on a river's water (not the sea's
 ## mouth, which the sea takes).
@@ -1197,7 +1199,8 @@ func eye_floor(p: Vector3) -> float:
 	if doors != null and doors.holds(p): return doors.hall_floor()
 	var h: float = field.height(p.x,p.z)
 	if _on_river(): h = maxf(h,field.river_drawn())
-	h = ice.land_y(p,tunnels.land_y(p,h))
+	h = tunnels.land_y(p,h)
+	if _stone_near(p) & GroundNative.ICE: h = ice.land_y(p,h)
 	if tunnels.dry(p): return h
 	return maxf(h,Field.SEA_Y+sea_height(p))
 

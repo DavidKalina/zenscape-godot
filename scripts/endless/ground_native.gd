@@ -2,7 +2,7 @@ class_name GroundNative
 extends RefCounted
 ## The flight's ground queries' broad phase in C++ (ZenScapeGround,
 ## native/terrain_kernels/ground_bind.h): the arches, the rocks (with the
-## Peak's towers) and the Peak's stair publish where they stand as world XZ
+## Peak's towers), the Peak's stair and the ice tunnel publish where they stand as world XZ
 ## rectangles, and `mask` hands back, from one native lookup, which of them
 ## may answer at a point. The study's `plane_ground`, `_blocked`, `_solid` and
 ## `_sight` ask only those; the rest answer "nothing here" as they would
@@ -29,6 +29,7 @@ const SLACK := 1.0
 const ARCHES := 1
 const ROCKS := 2
 const STAIR := 4
+const ICE := 8
 const ALL := 0xffff
 
 ## Bumped by the owners on change (any instance republishes).
@@ -55,6 +56,7 @@ var arches: Node3D
 var rocks: Node3D
 var towers: Node3D
 var stair: Node3D
+var ice: Node3D
 ## Bits always set (an owner whose stand can't be bounded right now).
 var _force := 0
 
@@ -63,11 +65,12 @@ static func wanted() -> bool:
 		if arg == "--ground-native=0" or arg == "--gdscript-kernels": return false
 	return true
 
-func setup(p_arches: Node3D, p_rocks: Node3D, p_towers: Node3D, p_stair: Node3D) -> void:
+func setup(p_arches: Node3D, p_rocks: Node3D, p_towers: Node3D, p_stair: Node3D, p_ice: Node3D = null) -> void:
 	arches = p_arches
 	rocks = p_rocks
 	towers = p_towers
 	stair = p_stair
+	ice = p_ice
 	on = false
 	if not wanted() or not preload("res://scripts/endless/land_field.gd").native_available() or not ClassDB.class_exists(CLASS): return
 	_g = ClassDB.instantiate(CLASS)
@@ -108,6 +111,7 @@ func _publish() -> void:
 	_g.publish(0,_arch_rects())
 	_g.publish(1,_rock_rects())
 	_g.publish(2,_stair_rects())
+	_g.publish(3,_ice_rects())
 
 ## Each committed arch's square of reach round its foot (`_reach_rect`).
 func _arch_rects() -> PackedFloat32Array:
@@ -161,4 +165,21 @@ func _stair_rects() -> PackedFloat32Array:
 			lo = Vector2(minf(lo.x,w.x),minf(lo.y,w.z))
 			hi = Vector2(maxf(hi.x,w.x),maxf(hi.y,w.z))
 		out.append_array([lo.x-SLACK,lo.y-SLACK,hi.x+SLACK,hi.y+SLACK])
+	return out
+
+## The ice tunnel's box (LandIceTunnel `_at` answers nothing outside
+## PeakTunnel `box`, already grown by its REACH, whatever the pad) and each
+## window's square round its shaft (`window_at`: within WINDOW_R of it, less
+## the grow). Its `ground` and `land_y` sample the field before those tests,
+## so skipping them off these saves a field.height a query. The tube stands
+## once (LandField `ice_tunnel`), so this is published with the rest.
+func _ice_rects() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	if ice == null or ice.tun == null: return out
+	var b: Rect2 = ice.tun.box
+	out.append_array([b.position.x-0.01,b.position.y-0.01,b.end.x+0.01,b.end.y+0.01])
+	var r: float = ice.tun.WINDOW_R+0.01
+	for w: Dictionary in ice.tun.windows:
+		var c: Vector2 = w.at
+		out.append_array([c.x-r,c.y-r,c.x+r,c.y+r])
 	return out
