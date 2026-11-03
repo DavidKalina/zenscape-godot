@@ -93,6 +93,7 @@ COR_Z = COR_FLOOR + COR_H * 0.5   # the flight line's height
 FUNNEL_LEN = 6.0
 FUNNEL_IN = COR_W * 0.5 + 0.06
 FUNNEL_STEP = 0.5         # the solid's stations along it (m)
+WALL_BACK = 0.08          # the tunnel walls' backing, this far outboard of their planks
 # The plugs: each fills the corridor's end, this big, in the flat of that end.
 CRACK_W = 18.0
 CRACK_H = 10.0
@@ -1003,6 +1004,10 @@ def build_tunnel(g):
 				xa, xb = s * tunnel_x(a), s * tunnel_x(b)
 				lean = (tunnel_x(b) - tunnel_x(a)) / (b - a)
 				g.quad(Vector((xa, a, z0)), Vector((xb, b, z0)), Vector((xb, b, z1 - 0.03)), Vector((xa, a, z1 - 0.03)), "wood", col, hint=Vector((-s, lean, 0)))
+				# Dark backing behind the seam: the hull's skin outboard is one-sided,
+				# so the seam would show the sky through her.
+				ba, bb = xa + s * WALL_BACK, xb + s * WALL_BACK
+				g.quad(Vector((ba, a, z0)), Vector((bb, b, z0)), Vector((bb, b, z1)), Vector((ba, a, z1)), "wood", (0.02, 0.015, 0.012), hint=Vector((-s, lean, 0)))
 		# The cut's edge up the side, a timber, and one along each lip to the stem.
 		side = [(s * (tunnel_x(cy) + 0.2), cy, z) for z in frange(TUNNEL_LO - 0.3, TUNNEL_HI + 0.3, 1.2) for cy in (cross_y(z),)]
 		g.tube(side, [CUT_R] * len(side), 8, "wood", (0.2, 0.15, 0.11))

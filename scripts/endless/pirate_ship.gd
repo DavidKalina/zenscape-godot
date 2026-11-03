@@ -593,11 +593,23 @@ func local(p: Vector3) -> Vector3:
 	return _inv*p
 
 ## Within the gun deck's walls, and between its ends (`pad` m past the stern's),
-## or forward of it in the prow's tunnel and under its lips (`pad` m past the stem).
+## or forward of it in the prow's tunnel and under its lips (`pad` m past the upper
+## lip's solid, `lip_solid`).
 func in_corridor(p: Vector3, pad := 0.0) -> bool:
 	var l := local(p)
 	if l.z > -LONG*0.5: return l.z < LONG*0.5+pad and absf(l.x) < wide*0.5 and l.y > FLOOR_Y-1.0 and l.y < FLOOR_Y+high+1.0
-	return l.z > -LIP_HI-pad and absf(l.x) < TUNNEL_X and l.y > TUNNEL_LO-1.0 and l.y < TUNNEL_HI+1.0
+	return l.z > -lip_solid()-pad and absf(l.x) < TUNNEL_X and l.y > TUNNEL_LO-1.0 and l.y < TUNNEL_HI+1.0
+
+## How far forward her upper lip's solid runs (m, her frame's -z): the last of
+## SOLIDS' steps under TUNNEL_HI, which fit_solids takes past the model's LIP_HI.
+static func lip_solid() -> float:
+	if _lip_solid < 0.0:
+		_lip_solid = LIP_HI
+		for b: Array in SOLIDS.BOXES:
+			if absf(float(b[1])-TUNNEL_HI) < 0.05: _lip_solid = maxf(_lip_solid,-float(b[2]))
+	return _lip_solid
+
+static var _lip_solid := -1.0
 
 ## The way through at `z` (her frame): Vector3(the walls' half width, the floor, the
 ## roof); the gun deck's, or the prow's tunnel's (in the funnel, closing in to the gun
@@ -622,7 +634,10 @@ func deck_way_off(p: Vector3, what := "") -> Vector3:
 	var l := local(p)
 	if state == SINKING and not in_corridor(p): return _wreck_way_off(p,l,what)
 	if state == GONE: return Vector3.ZERO
-	if not in_corridor(p) or (state == AFLOAT and _by_shut_plate(l)): return Vector3.ZERO
+	# At the stem, as far forward as the lip's solid is grown round the plane (the
+	# study's `solid_pad`): riding out under it, the plane still touches it there.
+	var bow_reach := float(game.get("solid_pad")) if l.z < -LONG*0.5 and game.get("solid_pad") != null else 0.0
+	if not in_corridor(p,bow_reach) or (state == AFLOAT and _by_shut_plate(l)): return Vector3.ZERO
 	var w := _way_at(l.z)
 	var wall := _wall_off(l)
 	var side := wall.x
