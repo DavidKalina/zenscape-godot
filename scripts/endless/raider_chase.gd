@@ -23,8 +23,9 @@ extends RefCounted
 ## past it (`route`). The Peak's carved gates are left alone.
 ##
 ## The gap: it runs at PACE times the plane's Boost, so Boost flown high and
-## straight loses it slowly and the cruise fast. Behind the plane it runs
-## ahead at the plane's speed + AHEAD_OVER.
+## straight loses it slowly and the cruise fast; past EASE_M.x m it eases
+## off toward EASE_PACE times Boost by EASE_M.y, so it stays catchable.
+## Behind the plane it runs ahead at the plane's speed + AHEAD_OVER.
 ##
 ## Skimming builds speed: while it's up, the plane's `skim_over` (SkyPlane,
 ## m/s over the throttle's speed) is `heat` x SKIM_GAIN (`--raider-skim=`).
@@ -47,25 +48,32 @@ const Build = preload("res://scripts/endless/arch_build.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 
 ## Its pace: times the plane's Boost speed; behind the plane, m/s over its speed.
-const PACE := 1.08
+const PACE := 1.12
+## Past EASE_M.x m off it eases to EASE_PACE times Boost by EASE_M.y m.
+const EASE_M := Vector2(350.0,650.0)
+const EASE_PACE := 1.0
 const AHEAD_OVER := 22.0
-## Where it shows up: m ahead of the view, degrees off its axis, m up.
+## Where it shows up: m ahead of the view, degrees off its axis; at most
+## SPAWN_UP m over its low flying height (never over the plane's height).
 const SPAWN_M := 200.0
 const SPAWN_OFF := 8.0
+const SPAWN_UP := 10.0
 ## Its turn (rad/s at most; a line the player can follow), the gain per rad
-## off the aim, its pitch at most (rad) and the pitch's rate (rad/s).
+## off the aim, its pitch at most (rad: up, and down: a gentler dive, so a
+## rise ahead never catches it nose down) and the pitch's rate (rad/s).
 const TURN := 0.9
 const TURN_GAIN := 1.8
 const PITCH_MAX := 0.55
+const PITCH_DOWN := 0.3
 const PITCH_RATE := 1.2
 ## m over what stands ahead it flies; the least over the land (m); the
 ## samples ahead (m) and to each side (m) its height is read from, and the
 ## slope it climbs by to meet what stands ahead (rise per m on).
 const LOW := 4.0
 const FLOOR := 3.0
-const AHEAD := [0.0,10.0,20.0,35.0,55.0,80.0,110.0]
+const AHEAD := [0.0,6.0,12.0,18.0,24.0,30.0,36.0,42.0,48.0,56.0,66.0,80.0,96.0,114.0,134.0,156.0,180.0]
 const SIDE := 5.0
-const CLIMB := 0.3
+const CLIMB := 0.4
 ## The least it keeps over a crown it's over (m); how far up it reads the
 ## solids from (m), and the pad round them (m: past its half span).
 const CROWN_CLEAR := 1.0
@@ -121,11 +129,11 @@ const BACK_SIDE := 110.0
 const ROUND_OVER := 28.0
 ## Skimming: spans of clearance it counts within, the heat's ease up and
 ## down (s), a scored moment's kick, the speed at full heat (m/s).
-const SKIM_BAND := 3.0
+const SKIM_BAND := 6.0
 const HEAT_UP := 0.6
 const HEAT_DOWN := 2.5
 const KICK := 0.4
-const SKIM_GAIN := 22.0
+const SKIM_GAIN := 40.0
 
 var raider: Node3D
 ## run (fleeing), round (coming back)
@@ -142,7 +150,7 @@ var leg := 0
 var tuning := {}
 ## Counted, for the drivers: arch passes (and their names), seconds over
 ## trees (within 12 m of a crown), frames inside a solid, rounds.
-var stats := {"arches":0,"arch_names":[],"tree_s":0.0,"clips":0,"clip_what":"","rounds":0,"plans":0,"arch_near":0,"arch_fit":0,"arch_way":0,"arch_clear":0}
+var stats := {"arches":0,"arch_names":[],"tree_s":0.0,"clips":0,"clip_what":"","rounds":0,"plans":0,"lifts":0,"arch_near":0,"arch_fit":0,"arch_way":0,"arch_clear":0}
 
 var _want := 0.0
 var _plan_t := 0.0
@@ -174,7 +182,8 @@ func spawn() -> void:
 	flat = flat.normalized()
 	var side := 1.0 if raider._rng.randf() < 0.5 else -1.0
 	var at := p+flat.rotated(Vector3.UP,deg_to_rad(SPAWN_OFF)*side)*SPAWN_M
-	at.y = maxf(p.y,_floor_y(at,flat,true)+float(tuning.low))
+	var low := _floor_y(at,flat,true)+float(tuning.low)
+	at.y = maxf(minf(p.y,low+SPAWN_UP),low)
 	var f: SkyTraffic.Flight = raider.flight
 	f.position = at
 	f.heading = atan2(-flat.x,-flat.z)
@@ -225,7 +234,7 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 			_lost = 0.0
 			_want = f.heading
 		return
-	var pace := float(plane.boost_speed())*float(tuning.pace)
+	var pace := float(plane.boost_speed())*lerpf(float(tuning.pace),EASE_PACE,smoothstep(EASE_M.x,EASE_M.y,gap))
 	if not ahead: pace = maxf(pace,ps+AHEAD_OVER)
 	_plan_t -= delta
 	if route.is_empty() and _plan_t <= 0.0:
@@ -514,9 +523,9 @@ func _fly(want: float, delta: float, pace: float, y := NAN, solids := true) -> v
 	# The aim's own climb led (its rise a m on), then the miss closed.
 	var run := maxf(raider.speed*delta,0.01)
 	if not is_nan(_want_y):
-		_slope = lerpf(_slope,clampf((want_y-_want_y)/run,-PITCH_MAX,PITCH_MAX),raider._ease(0.12,delta))
+		_slope = lerpf(_slope,clampf((want_y-_want_y)/run,-PITCH_DOWN,PITCH_MAX),raider._ease(0.12,delta))
 	_want_y = want_y
-	var pitch := clampf(atan(_slope)+atan2(want_y-f.position.y,maxf(raider.speed*0.4,15.0)),-PITCH_MAX,PITCH_MAX)
+	var pitch := clampf(atan(_slope)+atan2(want_y-f.position.y,maxf(raider.speed*0.4,15.0)),-PITCH_DOWN,PITCH_MAX)
 	if f.position.y < under+FLOOR: pitch = maxf(pitch,0.3)
 	f.pitch = move_toward(f.pitch,pitch,PITCH_RATE*delta)
 	raider.speed = lerpf(raider.speed,pace,raider._ease(1.0,delta))
@@ -527,6 +536,11 @@ func _fly(want: float, delta: float, pace: float, y := NAN, solids := true) -> v
 	var land: float = raider._ground_at(f.position)
 	f.position.y = maxf(f.position.y,land+FLOOR)
 	if raider.game.trees != null: f.position.y = maxf(f.position.y,float(raider.game.trees.top_at(f.position))+CROWN_CLEAR)
+	# Off a route, never inside a rock or an arch: lifted onto its top (the
+	# look-ahead should keep this from ever happening; counted).
+	if solids and _pillar(f.position):
+		f.position.y = maxf(f.position.y,_top(raider.game.plane_ground(f.position+Vector3.UP*PROBE,SOLID_PAD))+CROWN_CLEAR)
+		stats.lifts = int(stats.lifts)+1
 	_count(f.position,land)
 
 ## The height it needs here to meet what stands ahead climbing CLIMB: at
@@ -543,8 +557,7 @@ func _floor_y(at: Vector3, flat: Vector3, solids: bool) -> float:
 		var q := at+flat*a
 		var h := float(game.field.height(q.x,q.z))
 		if solids:
-			var g: Variant = game.plane_ground(Vector3(q.x,at.y+PROBE,q.z),SOLID_PAD)
-			if g is float or g is int: h = maxf(h,float(g))
+			h = maxf(h,_top(game.plane_ground(Vector3(q.x,at.y+PROBE,q.z),SOLID_PAD)))
 		h = maxf(h,float(game.water_at(q)))
 		if game.trees != null: h = maxf(h,float(game.trees.top_at(q)))
 		if game.trees != null:
@@ -552,6 +565,13 @@ func _floor_y(at: Vector3, flat: Vector3, solids: bool) -> float:
 			h = maxf(h,float(game.trees.top_at(q-side*SIDE)))
 		top = maxf(top,h-a*CLIMB)
 	return top
+
+## The top of what `plane_ground` read from high up finds: a height, or
+## Vector2(top, underside) over an opening (an arch's lintel); -INF else.
+static func _top(g: Variant) -> float:
+	if g is float or g is int: return float(g)
+	if g is Vector2: return (g as Vector2).x
+	return -INF
 
 ## The drivers' tallies: time low over crowns, frames inside a solid.
 func _count(at: Vector3, land: float) -> void:
