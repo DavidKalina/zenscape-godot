@@ -15,8 +15,8 @@ Loop `ITER(company)`, spec `spec-sky-and-water-company.md`. Two lanes, merged on
 
 ## Open
 
-- The swimmer's fin seldom cuts the surface at 0.9 m down, so there's little bow wave. The two options are in the trail: lift only the fin in `wake_fish.gdshader`, or a stronger bow hump in `zs_swim_one`.
-- The swimmer is lost in the noon sun's glare, and it reads fainter off Boost (20-22 m from the eye).
+- The swimmer's fin now stands 0.75 m out with spray (judged in stills, noon and 16.2, Boost and cruise); not yet played. Its back still breaks a trough as a black patch now and then (about 1 still in 25): `height_at` misses the FFT chop. The gap driver wasn't rerun and the droplets' frame cost wasn't measured.
+- Off Boost at evening (24 m from the eye) the fin is a small dark mark.
 - With a hill ahead, some escort birds end up against land instead of sky.
 - The escort's timing is seeded by the land, so the same flight repeats the same sequence.
 - No sound for either; nothing was flown by hand. Proof is autopilot drives and rendered films (paths in the trail).

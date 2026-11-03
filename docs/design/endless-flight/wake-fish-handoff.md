@@ -117,6 +117,18 @@ WakeFish's splashes and rings. 30% of the time a smaller second fish comes along
   less sky, and where the fin cuts, spray and two short ripples.
 - The fish shader (`shaders/wake_fish.gdshader`, `under`/`surface_y`) takes the
   water's colour under the surface and dims its sun glint; leaps leave `under` at 0.
+- The fin: while it paces, only the dorsal grows (`dorsal_lift`, its rear nearly
+  as tall as its front, raked back) so its tip stands `FIN_OUT` 0.75 m over the
+  swell; the body stays 0.9 m down (the wander now goes deeper only). Out of the
+  water the fin keeps the air's light (`under_light` dims only under the
+  surface) with a faint wet sheen (`fin_wet`); it shrinks back to its own size
+  as the fish breaches. Fine spray: up to 72 droplets (`_drops`,
+  `shaders/fin_spray.gdshader`, one MultiMesh) off its leading edge, trailing a
+  couple of metres; in the sea, a soft bow wave, a finer-grained foam feather
+  and a short V (`zs_swim_one`), now placed at the water's displaced position
+  (in rest space they sat 1-2 m off the fin). The body pitches with the swell's
+  slope and the tail's upper lobe folds lower under water (`tail_low`): both
+  stood out of troughs as black cut-outs.
 
 To see it: `.\run-endless-flight.cmd --at=2334,-1534 --heading=90 --alt=3
 --swim-gap=8`, and fly low (under 14 m) over the lake. Knobs: `--swimmer=0` none,

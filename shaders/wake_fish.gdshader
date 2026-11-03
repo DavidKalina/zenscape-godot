@@ -50,13 +50,41 @@ uniform float under = 0.0;
 uniform float surface_y = 0.0;
 uniform vec3 under_tint : source_color = vec3(0.04, 0.09, 0.11);
 uniform float under_fade = 2.5;
+// The sky's fill and bounce under the surface, a share of what's above it: the
+// fin that stands out keeps the air's.
+uniform float under_light = 1.0;
+// The dorsal grown taller (mesh metres added to its front tip, the rest of it in
+// step and raked back with it), so the swimmer's stands out of the water.
+uniform float dorsal_lift = 0.0;
+// How much of the tail's upper lobe's height is taken off (0 for a leap).
+uniform float tail_low = 0.0;
+// The sky's sheen off a wet fin in the air (0 for a leap: its fins are small).
+uniform float fin_wet = 0.0;
 
 varying float fin;
 varying float eye;
 varying float world_y;
 
 void vertex() {
-	float s = clamp(nose_z - VERTEX.z, 0.0, 0.9999) * 8.0;
+	float x = VERTEX.x;
+	float y = VERTEX.y;
+	float z = VERTEX.z;
+	// The dorsal: the fin over the back ahead of the adipose (art/blender/fish/
+	// fish_build.py: its tip heights fall 0.085, 0.078, 0.052, 0.022 root to rear,
+	// UV.x root to rear and UV.y root to tip).
+	// Grown, its rear stands nearly as tall as its front, so what's out of the
+	// water has some breadth seen from behind.
+	if (dorsal_lift > 0.0 && COLOR.r > 0.5 && y > 0.0 && z > -0.18) {
+		float rear = UV.x * 3.0;
+		float shape = rear < 1.0 ? mix(1.0, 0.96, rear) : (rear < 2.0 ? mix(0.96, 0.82, rear - 1.0) : mix(0.82, 0.5, rear - 2.0));
+		float up = UV.y * shape * dorsal_lift;
+		y += up;
+		z -= up * (0.25 + 0.6 * UV.x);
+	}
+	// The tail's upper lobe folded lower (the swimmer's, under a swell that
+	// otherwise lays it bare in the troughs).
+	if (COLOR.r > 0.5 && y > 0.0 && z < -0.36) y *= 1.0 - tail_low;
+	float s = clamp(nose_z - z, 0.0, 0.9999) * 8.0;
 	int i = int(s);
 	vec3 a = spine[i];
 	vec3 b = spine[i + 1];
@@ -64,8 +92,6 @@ void vertex() {
 	vec3 joint = mix(a, b, k);
 	float cs = cos(joint.z);
 	float sn = sin(joint.z);
-	float x = VERTEX.x;
-	float y = VERTEX.y;
 	fin = COLOR.r;
 	eye = COLOR.g;
 	// The paired fins swing about their roots.
@@ -110,14 +136,22 @@ void fragment() {
 	ROUGHNESS = wet_rough;
 	METALLIC = 0.15 * flank_share;
 	SPECULAR = 0.65;
-	vec3 hemi = mix(zs_hemi_ground * bounce, zs_hemi_sky, world_n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	float lit = mix(1.0, under_light, under * smoothstep(0.0, 0.08, surface_y - world_y));
+	float fill_here = fill * lit;
+	float bounce_here = bounce * lit;
+	vec3 hemi = mix(zs_hemi_ground * bounce_here, zs_hemi_sky, world_n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	vec3 mirror_way = (INV_VIEW_MATRIX * vec4(reflect(-VIEW, NORMAL), 0.0)).xyz;
-	vec3 sky = mix(zs_hemi_ground * bounce, zs_hemi_sky, mirror_way.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	vec3 sky = mix(zs_hemi_ground * bounce_here, zs_hemi_sky, mirror_way.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float sun_in_it = pow(max(dot(normalize(mirror_way), zs_key_direction), 0.0), flash_tight);
 	float sunward = clamp(dot(world_n, zs_key_direction), 0.0, 1.0);
 	float sky_luma = dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722));
 	vec3 lift = mix(zs_hemi_sky, vec3(sky_luma), 0.7) * zs_hemi_energy * shade_lift * mix(0.1, 1.0, zs_daylight) * mix(1.0, 0.3, sunward);
-	EMISSION = base * (hemi * fill + lift) + mix(base, vec3(0.85), 0.6) * flank_share * (sky * mirror + vec3(sun_in_it * flash * zs_daylight));
+	EMISSION = base * (hemi * fill_here + lift) + mix(base, vec3(0.85), 0.6) * flank_share * (sky * mirror + vec3(sun_in_it * flash * zs_daylight));
+	// A wet fin out of the water: the sky off it, most where it's seen edge on.
+	if (fin > 0.5 && fin_wet > 0.0) {
+		float edge_on = 1.0 - abs(dot(NORMAL, VIEW));
+		EMISSION += sky * fin_wet * (0.08 + 0.92 * edge_on * edge_on * edge_on);
+	}
 	// Under the water its colours go to the water's, and the sun's shine with them.
 	if (under > 0.0) {
 		// Most of it at once under the surface (the sun and sky come through it
@@ -130,6 +164,6 @@ void fragment() {
 		SPECULAR = 0.65 * (1.0 - smoothstep(0.0, 0.5, t));
 		ROUGHNESS = mix(wet_rough, 1.0, t);
 		METALLIC *= 1.0 - t;
-		EMISSION = mix(EMISSION, under_tint * hemi * fill, t);
+		EMISSION = mix(EMISSION, under_tint * hemi * fill_here, t);
 	}
 }

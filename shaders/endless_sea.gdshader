@@ -904,18 +904,24 @@ vec2 zs_swim_one(vec2 p, vec2 look, vec4 at, vec4 body, inout float slick, inout
 		float ov = dot(q, side) / (0.26 * l);
 		body_over = max(body_over, (1.0 - smoothstep(0.5, 1.0, ou * ou + ov * ov)) * body.w);
 	}
-	// The fin: where it stands out, a thin feather of spray behind its edge and
-	// two short ripples running off it.
+	// The fin: where it stands out, a small bow wave pushed ahead of its edge, a
+	// feather of spray off the edge widening behind, and a short V of ripples.
+	// Its edge at the waterline is a little ahead of the body's middle
+	// (scripts/endless/swim_fish.gd grows it, shaders/wake_fish.gdshader).
 	if (body.z > 0.0) {
 		float fin = smoothstep(0.03, 0.15, body.z) * body.w;
-		float b = -(u + 0.04 * l);
-		if (b > -0.2) {
-			float w = 0.04 + 0.05 * max(b, 0.0);
-			float lead = smoothstep(-0.2, 0.05, b);
-			spray = max(spray, exp(-(v * v) / (w * w)) * exp(-max(b, 0.0) / 0.5) * lead * fin * 0.8);
+		float b = 0.02 * l - u;
+		if (b > -0.9) {
+			// The bow wave, as a height whose slope is taken.
+			float bx = b + 0.2;
+			float bow = 0.035 * fin * exp(-(bx * bx) / 0.1 - (v * v) / 0.06);
+			grad += bow * vec2(2.0 * bx / 0.1, -2.0 * v / 0.06);
+			float w = 0.05 + 0.2 * max(b, 0.0);
+			float lead = smoothstep(-0.12, 0.04, b);
+			spray = max(spray, exp(-(v * v) / (w * w)) * exp(-max(b, 0.0) / 0.8) * lead * fin);
 			float off = abs(v) - 0.36 * max(b, 0.0);
-			float arm = exp(-(off * off) / 0.1) * exp(-max(b, 0.0) / 0.9) * lead * fin;
-			grad.y += sin(off * TAU / 0.45) * arm * 0.18 * sign(v);
+			float arm = exp(-(off * off) / 0.03) * exp(-max(b, 0.0) / 1.6) * lead * fin * smoothstep(0.0, 0.3, b);
+			grad.y += sin(off * TAU / 0.35) * arm * 0.22 * sign(v);
 		}
 	}
 	return way * grad.x + side * grad.y;
@@ -1196,9 +1202,11 @@ void fragment() {
 	float swim_slick = 0.0, swim_shade = 0.0, swim_spray = 0.0, swim_over = 0.0;
 	vec2 swim_slope = vec2(0.0);
 	if (swim_count > 0) {
+		// Where the water is now, not its rest: the swell's sideways sway put the
+		// fin's spray a metre or two off the fin.
 		vec2 look = -eye.xz / max(eye.y, 0.12);
-		swim_slope = zs_swim_one(rest_xz, look, swim_at0, swim_body0, swim_slick, swim_shade, swim_spray, swim_over);
-		if (swim_count > 1) swim_slope += zs_swim_one(rest_xz, look, swim_at1, swim_body1, swim_slick, swim_shade, swim_spray, swim_over);
+		swim_slope = zs_swim_one(world_position.xz, look, swim_at0, swim_body0, swim_slick, swim_shade, swim_spray, swim_over);
+		if (swim_count > 1) swim_slope += zs_swim_one(world_position.xz, look, swim_at1, swim_body1, swim_slick, swim_shade, swim_spray, swim_over);
 		slope += swim_slope;
 		detail *= 1.0 - swim_slick;
 		wake_slope *= 1.0 - swim_slick * 0.6;
@@ -1332,7 +1340,11 @@ void fragment() {
 	foamed = max(foamed, (smoothstep(0.2, 0.55, waked * (0.15 + 1.3 * fleck)) * 0.9 + smoothstep(0.4, 0.85, fleck) * stirred * 0.18) * foam);
 	cover = max(cover, waked);
 	// The spray off a swimming fish's fin, fine and broken.
-	if (swim_spray > 0.0) foamed = max(foamed, smoothstep(0.25, 0.75, swim_spray * (0.35 + 1.1 * fleck)) * 0.6 * foam);
+	// Its grain is finer than the wake's: droplets, not patches.
+	if (swim_spray > 0.0) {
+		float fine = zs_noise(rest_xz * 7.0 + vec2(t * 1.1, t * 0.7)) * 0.6 + zs_noise(rest_xz * 17.0 - vec2(t * 0.9, 0.0)) * 0.4;
+		foamed = max(foamed, smoothstep(0.3, 0.75, swim_spray * (0.4 + 1.3 * fine)) * 0.85 * foam);
+	}
 	// Far off the pattern is finer than a pixel: an even wash instead.
 	foamed = mix(foamed, cover * 0.6 * foam, smoothstep(0.15, 0.8, footprint));
 	if (sea_foam > 0) {

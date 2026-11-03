@@ -63,7 +63,8 @@ const SIDE := Vector2(5.0,6.5)
 const DEPTH := 0.9
 const START := Vector3(-16.0,11.0,4.0)
 const GONE := Vector3(-30.0,13.0,5.5)
-## How far its slot wanders (m) and how fast (rad/s).
+## How far its slot wanders (m; down only, never shallower than DEPTH) and how
+## fast (rad/s).
 const WANDER := Vector3(2.5,0.8,0.08)
 const WANDER_RATE := Vector3(0.55,0.4,0.9)
 ## A surge: once in a while it pulls ahead this far (m) for about this long (s).
@@ -83,6 +84,29 @@ const PITCH := 0.09
 ## The dorsal's tip over the spine, a share of its length (art/blender/fish/
 ## fish_build.py: the back at 0.36 of the nose plus the fin's 0.085).
 const FIN_TOP := 0.167
+## Pacing, its dorsal stands this far out of the swell (m, for a 4.8 m fish): the
+## fin alone grows to it (shaders/wake_fish.gdshader `dorsal_lift`), the body
+## stays down. Margin over the swell `height_at` misses, so it doesn't sink in
+## and out at speed.
+const FIN_OUT := 0.75
+## Under the water its tail's upper lobe is this much lower (a share of its
+## height), back to whole as it comes out: the swell's troughs, which `height_at`
+## doesn't all follow, laid it bare as a black cut-out.
+const TAIL_LOW := 0.45
+## The sky's sheen off its wet fin (shaders/wake_fish.gdshader `fin_wet`).
+const FIN_WET := 0.25
+## The fine spray thrown off the fin's leading edge where it cuts: droplets (how
+## many at most, born per s at full cut), each this long-lived (s) and this big
+## (m). They leave with most of its speed, up and out to either side, and the
+## air slows them (per s), so they trail a few metres behind it.
+const DROPS := 72
+const DROP_RATE := 320.0
+const DROP_LIFE := Vector2(0.15,0.35)
+const DROP_SIZE := Vector2(0.03,0.06)
+const DROP_KEEP := Vector2(0.8,0.93)
+const DROP_UP := Vector2(0.5,1.8)
+const DROP_OUT := Vector2(0.3,1.2)
+const DROP_DRAG := 0.8
 ## Under the water the sky doesn't reach it: the body's fill, bounce and mirror
 ## (shaders/wake_fish.gdshader) this much of the leaping fish's, back to all of it
 ## as it comes out.
@@ -112,6 +136,8 @@ class Swimmer:
 	var yaw := 0.0
 	var pitch := 0.0
 	var out := false
+	## Its dorsal's growth (mesh m, `dorsal_lift`).
+	var lift := 0.0
 
 var wake: Node3D
 var _rng := RandomNumberGenerator.new()
@@ -135,6 +161,20 @@ var _spine := PackedVector3Array()
 var _at: Array[Vector4] = [Vector4.ZERO,Vector4.ZERO]
 var _body: Array[Vector4] = [Vector4.ZERO,Vector4.ZERO]
 var _warm := 0.5
+## The fin's spray: each droplet's place, velocity, age and life (dead when age
+## passes life), drawn as one MultiMesh; how many are owed to be born.
+var _d_mm: MultiMesh
+var _d_node: MultiMeshInstance3D
+var _d_pos := PackedVector3Array()
+var _d_vel := PackedVector3Array()
+var _d_age := PackedFloat32Array()
+var _d_life := PackedFloat32Array()
+var _d_size := PackedFloat32Array()
+var _d_floor := PackedFloat32Array()
+var _d_buf := PackedFloat32Array()
+var _d_owed := 0.0
+var _d_next := 0
+var _d_live := false
 ## For the numbers and probes: time low over a lake (s), moments, breaches, and
 ## the last one's start (of that time); ms this frame and its mean.
 var water_s := 0.0
@@ -178,6 +218,7 @@ func setup(the_wake: Node3D, mesh: Mesh, shader: Shader, skin: Texture2D) -> voi
 		s.mat.set_shader_parameter("spot_share",KIND.spots)
 		s.mat.set_shader_parameter("band_share",KIND.bands)
 		s.mat.set_shader_parameter("under",1.0)
+		s.mat.set_shader_parameter("fin_wet",FIN_WET)
 		# Over the still sea's level by a swell's trough: the swell lays its back
 		# bare now and then, and dry it reads as a fish lying on the water.
 		s.mat.set_shader_parameter("surface_y",Field.SEA_Y+WET_BACK)
@@ -192,6 +233,103 @@ func setup(the_wake: Node3D, mesh: Mesh, shader: Shader, skin: Texture2D) -> voi
 		s.node.top_level = true
 		add_child(s.node)
 		_pool.append(s)
+	_drops_setup()
+
+## The fin's spray: one quad per droplet, set in the world by the shader
+## (shaders/fin_spray.gdshader).
+func _drops_setup() -> void:
+	var quad := ArrayMesh.new()
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO,Vector3.ZERO,Vector3.ZERO,Vector3.ZERO])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0,0),Vector2(1,0),Vector2(1,1),Vector2(0,1)])
+	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0,1,2,0,2,3])
+	quad.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/fin_spray.gdshader")
+	_d_mm = MultiMesh.new()
+	_d_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_d_mm.use_custom_data = true
+	_d_mm.mesh = quad
+	_d_mm.instance_count = DROPS
+	_d_node = MultiMeshInstance3D.new()
+	_d_node.name = "FinSpray"
+	_d_node.multimesh = _d_mm
+	_d_node.material_override = mat
+	_d_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Moved by the shader: never culled by a stale box.
+	_d_node.custom_aabb = AABB(Vector3(-1e5,-1e3,-1e5),Vector3(2e5,3e3,2e5))
+	_d_node.top_level = true
+	_d_node.visible = false
+	add_child(_d_node)
+	_d_pos.resize(DROPS)
+	_d_vel.resize(DROPS)
+	_d_age.resize(DROPS)
+	_d_life.resize(DROPS)
+	_d_size.resize(DROPS)
+	_d_floor.resize(DROPS)
+	_d_age.fill(1.0)
+	_d_life.fill(0.0)
+	_d_buf.resize(DROPS*16)
+	_d_buf.fill(0.0)
+	_d_mm.buffer = _d_buf
+
+## Droplets born off each fin that cuts the water, and all of them flown on.
+func _drops(delta: float) -> void:
+	var way: Vector3 = wake._ahead*float(wake._speed)
+	for i in _swim.size():
+		var s := _swim[i]
+		var cut := _body[i].z
+		if s.out or cut < 0.08: continue
+		var fore := s.node.global_transform.basis.z
+		fore = Vector3(fore.x,0.0,fore.z).normalized()
+		var over := Vector3.UP.cross(fore)
+		var moving := Vector3(s.vel.x,0.0,s.vel.z)
+		var top := s.pos.y+s.depth
+		_d_owed += DROP_RATE*delta*smoothstep(0.08,0.4,cut)*clampf(moving.length()/40.0,0.3,1.0)
+		while _d_owed >= 1.0:
+			_d_owed -= 1.0
+			var k := _d_next
+			_d_next = (_d_next+1)%DROPS
+			var side := 1.0 if _rng.randf() < 0.5 else -1.0
+			# Most off the leading edge, some along its foot.
+			var back := pow(_rng.randf(),2.0)*0.12*s.long
+			_d_pos[k] = s.pos+fore*(0.02*s.long-back)+over*side*0.04+Vector3(0.0,top-s.pos.y+0.02,0.0)
+			_d_vel[k] = moving*_rng.randf_range(DROP_KEEP.x,DROP_KEEP.y)+over*side*_rng.randf_range(DROP_OUT.x,DROP_OUT.y)+Vector3.UP*_rng.randf_range(DROP_UP.x,DROP_UP.y)*(1.0-back/(0.12*s.long)*0.6)
+			_d_age[k] = 0.0
+			_d_life[k] = _rng.randf_range(DROP_LIFE.x,DROP_LIFE.y)
+			_d_size[k] = _rng.randf_range(DROP_SIZE.x,DROP_SIZE.y)
+			_d_floor[k] = top-0.05
+	var live := false
+	var drag := exp(-DROP_DRAG*delta)
+	for k in DROPS:
+		var o := k*16
+		if _d_age[k] >= _d_life[k]:
+			_d_buf[o+13] = 0.0
+			continue
+		_d_age[k] += delta
+		var v := _d_vel[k]
+		v.y -= GRAVITY*delta
+		v *= drag
+		_d_vel[k] = v
+		_d_pos[k] += v*delta
+		var p := _d_pos[k]
+		# Back in the water: gone.
+		if v.y < 0.0 and p.y < _d_floor[k]: _d_age[k] = _d_life[k]
+		# Seen from the camera, which flies with the plane, it falls back slowly.
+		var seen := v-way
+		_d_buf[o] = seen.x
+		_d_buf[o+4] = seen.y
+		_d_buf[o+8] = seen.z
+		_d_buf[o+3] = p.x
+		_d_buf[o+7] = p.y
+		_d_buf[o+11] = p.z
+		_d_buf[o+12] = _d_size[k]
+		_d_buf[o+13] = maxf(1.0-_d_age[k]/_d_life[k],0.0)
+		live = true
+	if live or _d_live: _d_mm.buffer = _d_buf
+	_d_live = live
+	_d_node.visible = live
 
 ## One frame, after WakeFish read the plane's line.
 func step(delta: float) -> void:
@@ -201,7 +339,9 @@ func step(delta: float) -> void:
 		if _warm <= 0.0:
 			for s: Swimmer in _pool: s.node.visible = false
 	if _on: _run(delta)
-	else: _wait(delta)
+	else:
+		_wait(delta)
+		if _d_live: _drops(delta)
 	ms = (Time.get_ticks_usec()-began)/1000.0
 	ms_avg = lerpf(ms_avg,ms,0.05)
 
@@ -320,13 +460,14 @@ func _run(delta: float) -> void:
 		s.vel.y = (was_depth-s.depth)/maxf(delta,1e-4)
 		_pose(s,delta)
 	_water()
+	_drops(delta)
 
 ## Where its slot should be at this moment of the moment.
 func _slot(s: Swimmer, lead: Swimmer, dive_from: float) -> Vector3:
 	var t := _t
 	var base := s.to+s.offset
 	if s != lead: base = Vector3(lead.fore,lead.side,maxf(lead.depth,lead.to.z))+s.offset
-	var w := Vector3(WANDER.x*sin(t*WANDER_RATE.x+s.phase),WANDER.y*sin(t*WANDER_RATE.y+s.phase*1.7),WANDER.z*sin(t*WANDER_RATE.z+s.phase*0.6))
+	var w := Vector3(WANDER.x*sin(t*WANDER_RATE.x+s.phase),WANDER.y*sin(t*WANDER_RATE.y+s.phase*1.7),WANDER.z*(0.5+0.5*sin(t*WANDER_RATE.z+s.phase*0.6)))
 	var surge := SURGE*exp(-pow((t-_surge_at)/(SURGE_LONG*0.5),2.0))
 	var paced := base+(w+Vector3(surge,0.0,0.0) if s == lead else Vector3.ZERO)
 	if t < RISE:
@@ -376,7 +517,16 @@ func _pose(s: Swimmer, delta: float) -> void:
 	s.yaw = lerpf(s.yaw,want_yaw,k)
 	s.pitch = lerpf(s.pitch,want_pitch,k)
 	var flat := ahead.rotated(Vector3.UP,-s.yaw*_sign)
-	var fore := (flat*cos(s.pitch)+Vector3.UP*sin(s.pitch)).normalized()
+	# Along the swell's slope too, at once: level across a swell its tail stood out
+	# of the trough behind it, a black cut-out.
+	var pitch := s.pitch
+	if wake.sea != null and s.depth > 0.0:
+		var half := 0.4*s.long
+		var nose := s.pos+flat*half
+		var tail := s.pos-flat*half
+		var slope: float = (wake.sea.height_at(nose.x,nose.z)-wake.sea.height_at(tail.x,tail.z))/(2.0*half)
+		pitch += atan(slope)*(1.0-smoothstep(0.0,0.5,-s.depth+0.5))
+	var fore := (flat*cos(pitch)+Vector3.UP*sin(pitch)).normalized()
 	var over := Vector3.UP.cross(fore).normalized()
 	var b := Basis(over,fore.cross(over),fore)
 	s.node.global_transform = Transform3D(b*Basis.from_scale(Vector3(s.long*s.shape.x,s.long*s.shape.y,s.long)),s.pos)
@@ -397,12 +547,18 @@ func _pose(s: Swimmer, delta: float) -> void:
 	s.mat.set_shader_parameter("spine",_spine)
 	s.mat.set_shader_parameter("flare",-0.4)
 	s.mat.set_shader_parameter("surface_y",s.pos.y+s.depth+WET_BACK)
+	# The fin grown so its tip stands FIN_OUT over the swell at its paced depth:
+	# deeper (rising, diving) it's under, and out of the water it's its own size.
+	var tall := s.long*s.shape.y
+	var out := FIN_OUT*clampf(s.long/4.8,0.6,1.2)
+	s.lift = maxf(out+minf(s.depth,s.to.z+s.offset.z+WANDER.z)-FIN_TOP*tall,0.0)/tall
+	s.mat.set_shader_parameter("dorsal_lift",s.lift)
+	s.mat.set_shader_parameter("tail_low",TAIL_LOW*smoothstep(0.3,0.7,s.depth))
 	var lit := lerpf(1.0,UNDER_LIGHT,smoothstep(-0.2,0.6,s.depth))
 	# The flank's shine is the sky's and the sun's off it in the air: under, the
 	# surface takes them, or it shows as a white fish lying on the water.
 	var shine := 1.0-smoothstep(-0.3,0.4,s.depth)
-	s.mat.set_shader_parameter("fill",2.2*lit)
-	s.mat.set_shader_parameter("bounce",3.0*lit)
+	s.mat.set_shader_parameter("under_light",lit)
 	s.mat.set_shader_parameter("mirror",0.9*shine)
 	s.mat.set_shader_parameter("flash",3.0*shine)
 
@@ -425,7 +581,7 @@ func _swim_mark(i: int) -> void:
 	var way := Vector2(fore.x,fore.z)
 	way = way/way.length() if way.length_squared() > 1e-6 else Vector2(wake._ahead.x,wake._ahead.z)
 	_at[i] = Vector4(s.pos.x,s.pos.z,way.x,way.y)
-	var fin := FIN_TOP*s.long*s.shape.y-s.depth
+	var fin := (FIN_TOP+s.lift)*s.long*s.shape.y-s.depth
 	_body[i] = Vector4(s.long,s.depth,fin,0.0 if s.out else 1.0)
 
 func _finish() -> void:
