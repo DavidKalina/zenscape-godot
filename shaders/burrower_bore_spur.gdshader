@@ -3,18 +3,27 @@ shader_type spatial;
 // A spur of rock the burrower left in a bore (scripts/endless/bore_spurs.gd): broken
 // rock, flat-faced, paler toward its torn tip. VERTEX.y is the way up it, 0 at the bore's
 // rock and 1 at the tip. Lit as the rock is: the glows, the mouths, his own glow. No sky
-// fill, no haze. A faint fill of its own so it shows in the dark between the glows.
+// fill, no haze. A faint fill of its own so it shows in the dark between the glows. Fresh
+// out it's hot at the root (`lit_at`, when he passed), cooling as the crack round it does.
 render_mode diffuse_burley, specular_schlick_ggx, ambient_light_disabled, fog_disabled, cull_disabled;
 
 uniform vec3 rock_lo : source_color = vec3(0.13, 0.11, 0.10);
 uniform vec3 rock_hi : source_color = vec3(0.46, 0.40, 0.34);
 uniform float fill = 0.1;
+uniform float now = 0.0;
+uniform float hold = 0.8;
+uniform vec3 seam : source_color = vec3(1.0, 0.5, 0.2);
+uniform float seam_glow = 5.0;
+uniform float cool = 1.4;
+instance uniform float lit_at = -1000.0;
 
 varying vec3 wpos;
 varying float v_up;
+varying float v_heat;
 
 void vertex() {
 	v_up = VERTEX.y;
+	v_heat = exp(-max(now - lit_at - hold, 0.0) / cool);
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
@@ -35,5 +44,8 @@ void fragment() {
 	vec3 r2 = cross(NORMAL, dpdx);
 	float det = dot(dpdx, r1);
 	NORMAL = normalize(abs(det) * NORMAL - 0.03 * sign(det) * (dFdx(h) * r1 + dFdy(h) * r2));
-	EMISSION = rock * fill;
+	float root = 1.0 - smoothstep(0.02, 0.42, v_up + 0.3 * (g_noise(wpos * 0.45) - 0.5));
+	float wn = g_noise(wpos * 0.8 + 4.0);
+	float vein = 1.0 - smoothstep(0.0, 0.035 + fwidth(wn), abs(wn - 0.5));
+	EMISSION = rock * fill + seam * seam_glow * v_heat * root * vein;
 }

@@ -3,9 +3,10 @@ extends Node3D
 ## spec-burrower-chase.md). The layout is fixed per tunnel, drawn from its seed (`plan`):
 ## which spurs, how far along, how long; the angle is his line's there (BoreLine), so the
 ## ridge marks each spot. He reveals them as he passes, whichever way he runs, and they
-## fire off him, not off the plane: `passing` starts a spur's clock, HOLD_S later it snaps
-## out of the bore. Each stays out for as long as its tunnel stays built. Nothing goes in
-## the save, and a tunnel he hasn't run has none.
+## fire off him, not off the plane: `passing` starts a spur's clock and its tell (the crack,
+## the grit, the light: scripts/endless/bore_tell.gd), HOLD_S later it snaps out of the
+## bore. Each stays out for as long as its tunnel stays built. Nothing goes in the save,
+## and a tunnel he hasn't run has none.
 ##
 ## A spur is a pooled rock (a shared mesh, its own convex collider) that slides out of the
 ## rock along its axis. The bore's own mesh and collision are never touched. It is stone
@@ -21,6 +22,7 @@ extends Node3D
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const BoreLine = preload("res://scripts/endless/bore_line.gd")
+const BoreTell = preload("res://scripts/endless/bore_tell.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SPUR_SHADER = preload("res://shaders/burrower_bore_spur.gdshader")
 
@@ -52,14 +54,16 @@ const NEAR_M := 45.0
 ## How far under the rock a spur's tip lies before the snap (m).
 const TUCK := 0.5
 ## The rock: rings up the unit spur, y up its length (0 at the rock, 1 the tip), radius
-## as a share of the root's. Below 0 it runs on into the rock, so a lump can't lift its
-## foot into view.
-const RING_Y := [-0.3,0.0,0.28,0.55,0.8,1.0]
-const RING_R := [1.2,1.0,0.74,0.46,0.24,0.06]
-const SIDES := 6
+## as a share of the root's: in steps, so it reads as broken strata and not a cone. Below
+## 0 it runs on into the rock, so a lump can't lift its foot into view.
+const RING_Y := [-0.3,0.0,0.14,0.2,0.42,0.48,0.68,0.74,0.9,1.0]
+const RING_R := [1.2,1.0,0.92,0.7,0.6,0.42,0.34,0.22,0.16,0.05]
+const SIDES := 7
 const SHAPES := 3
-## How much a ring's points stray (a share of the radius) and how far the rock bends.
-const JAG := 0.24
+## How much a ring's points stray (a share of the radius), how far a ring turns against
+## the last (rad) and how far the rock bends.
+const JAG := 0.3
+const TWIST := 0.3
 const BEND := 0.12
 ## The spheres down a spur's axis (the plane's solid), and how far past them a touch
 ## still counts as on the spur (`face`).
@@ -87,6 +91,8 @@ class Spur:
 	var girth := 0.0
 	var left := 0.0
 	var body: StaticBody3D
+	## Its tell's patch (BoreTell).
+	var crack: MeshInstance3D
 	var basis := Basis.IDENTITY
 	## Its solid: the spheres' centres from the root, their radii, the bound round them.
 	var chain := PackedVector3Array()
@@ -113,6 +119,7 @@ var _spare: Array[StaticBody3D] = []
 var _meshes: Array[ArrayMesh] = []
 var _hulls: Array[PackedVector3Array] = []
 var _mat: ShaderMaterial
+var _tell: BoreTell
 ## For drivers: the worst frame's work (us), spurs fired, spots dropped.
 var stats := {"worst_us": 0, "fired": 0, "dropped": 0}
 
@@ -123,6 +130,10 @@ func setup(tunnels: Node3D) -> void:
 	_tunnels = tunnels
 	_mat = ShaderMaterial.new()
 	_mat.shader = SPUR_SHADER
+	_mat.set_shader_parameter("hold",HOLD_S)
+	_tell = BoreTell.new()
+	add_child(_tell)
+	_tell.setup(HOLD_S,SNAP_S)
 	var rng := RandomNumberGenerator.new()
 	for i in SHAPES:
 		rng.seed = hash(["bore spur",i])
@@ -182,6 +193,8 @@ func passing(at: float) -> void:
 	if _lay_i >= 0 and _lay_i < n and (list[_lay_i].s-at)*_way < LAY_AHEAD:
 		_lay(_run,list[_lay_i])
 		_lay_i += by
+	else:
+		_tell.work()
 	while _fire_i >= 0 and _fire_i < n and (at-list[_fire_i].s)*_way >= 0.0:
 		var sp := list[_fire_i]
 		_fire_i += by
@@ -190,12 +203,16 @@ func passing(at: float) -> void:
 		sp.fired = true
 		sp.clock = 0.0
 		_moving.append(sp)
+		_tell.light(_run.site,_run.grain,sp)
+		(sp.body.get_child(0) as MeshInstance3D).set_instance_shader_parameter("lit_at",_tell.now)
 		stats.fired = int(stats.fired)+1
 	stats.worst_us = maxi(int(stats.worst_us),Time.get_ticks_usec()-began)
 
 ## One frame, `at` the plane: the spurs under way, those near it, tunnels gone.
 func step(delta: float, at: Vector3) -> void:
 	if _groups.is_empty(): return
+	_tell.step(delta)
+	_mat.set_shader_parameter("now",_tell.now)
 	for i in range(_moving.size()-1,-1,-1):
 		var sp := _moving[i]
 		sp.clock += delta
@@ -264,6 +281,7 @@ func _lay(g: Group, sp: Spur) -> void:
 	for i in hull.size(): hull[i] *= Vector3(sp.girth,long,sp.girth)
 	(cs.shape as ConvexPolygonShape3D).points = hull
 	_pose(sp)
+	_tell.lay(g.site,g.grain,sp)
 
 ## The spur's radius `q` of the way up, a share of its root's.
 static func _radius(q: float) -> float:
@@ -294,6 +312,7 @@ func _take() -> StaticBody3D:
 func _let_go(g: Group) -> void:
 	for sp: Spur in g.spurs:
 		if sp.body == null: continue
+		_tell.drop(sp)
 		sp.body.visible = false
 		sp.body.collision_layer = 0
 		_spare.append(sp.body)
@@ -310,8 +329,9 @@ func _make_shape(rng: RandomNumberGenerator) -> void:
 		var y: float = RING_Y[r]
 		var at := bend*maxf(y,0.0)*maxf(y,0.0)
 		var ring := PackedVector3Array()
+		var turn := rng.randf_range(-TWIST,TWIST)
 		for k in SIDES:
-			var a := TAU*(k+rng.randf_range(-0.2,0.2))/SIDES
+			var a := TAU*(k+rng.randf_range(-0.2,0.2))/SIDES+turn
 			var w := float(RING_R[r])*(1.0+rng.randf_range(-JAG,JAG))
 			ring.append(Vector3(at.x+cos(a)*w,y,at.y+sin(a)*w))
 		rings.append(ring)
