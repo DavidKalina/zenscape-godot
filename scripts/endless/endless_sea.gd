@@ -320,6 +320,10 @@ const SURGE_LENGTH := [180.0,130.0,90.0]
 const SURGE_SIZE := [9.0,5.0,2.2]
 const SURGE_SET := Vector2(0.007,0.059)
 const SURGE_LEAN := 0.35
+const SURGE_REACH := 700.0
+const SURGE_WANDER := 2300.0
+const SURGE_BEND := Vector2(14.0,-9.0)
+const SURGE_BEND_LENGTH := 1700.0
 ## The tallest crest at surge_size 1 (m): every wave at the top of its set and
 ## its peak.
 const SURGE_TOP := 22.7
@@ -356,7 +360,9 @@ func surge_at(x: float, z: float) -> Vector3:
 	var h: Vector2 = Vector2(_knob("swell_heading")).normalized()
 	var warp_a := _noise(target/900.0+Vector2(3.7,1.9))
 	var warp_b := _noise(target/560.0+Vector2(6.1,8.3))
-	var lobe := smoothstep(0.25,0.75,_noise(target/260.0+Vector2(t*0.012,4.2)))
+	var lobe := smoothstep(0.3,0.7,_noise(target/260.0+Vector2(t*0.012,4.2))*0.55+_noise(target/640.0+Vector2(8.2,t*0.006))*0.45)
+	var wander := smoothstep(0.2,0.8,_noise(target/SURGE_WANDER+Vector2(5.3,2.6)))*SURGE_REACH
+	var bend := _noise(target/SURGE_BEND_LENGTH+Vector2(1.4,7.7))-0.5
 	var p := target
 	var y := 0.0
 	for step_i in 6:
@@ -364,7 +370,7 @@ func surge_at(x: float, z: float) -> Vector3:
 		var off := w.x
 		var d := -Vector2(w.y,w.z)
 		var sets := 0.5+0.5*sin(-off*SURGE_SET.x-t*SURGE_SET.y+warp_a*5.0)
-		var size := size_knob*smoothstep(belt.x,belt.y,off)*(0.4+0.6*sets)*(0.6+0.8*lobe)
+		var size := size_knob*smoothstep(belt.x,belt.y,off-wander)*(0.4+0.6*sets)*(0.6+0.8*lobe)
 		var total := 0.0
 		for i in 3:
 			total += float(SURGE_SIZE[i])*size*TAU/float(SURGE_LENGTH[i])
@@ -381,8 +387,8 @@ func surge_at(x: float, z: float) -> Vector3:
 			var way := d if i < 2 else h
 			var phase: float
 			match i:
-				0: phase = -off*k-omega*t+warp_a*2.6
-				1: phase = -off*k-omega*t+warp_b*3.4+2.39
+				0: phase = -off*k-omega*t+warp_a*2.6+bend*SURGE_BEND.x
+				1: phase = -off*k-omega*t+warp_b*3.4+2.39+bend*SURGE_BEND.y
 				_: phase = p.dot(h)*k-omega*t+warp_a*1.5+4.78
 			var lean: float = SURGE_LEAN if i < 2 else 0.0
 			var bent := phase-lean*sin(phase)

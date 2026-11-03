@@ -22,8 +22,10 @@ float zs_body_noise(vec2 p) {
 // waves over the sea's own, the first two with their fronts along the edge
 // line (`surge_edge`: centre x, z, half side, corner radius; half 0 none), so
 // they roll in toward the land on every side. They start `surge_belt.x` m past
-// the line and are whole by `.y`; the sheet heaves with them out to `.z` m from
-// the eye, fading by `.w`, and past that they are shading alone. Sets (crests
+// the line and are whole by `.y`, both pushed out by up to SURGE_REACH where
+// a slow noise wanders, so the belt builds up on no one line. The sheet heaves
+// with them out to `.z` m from the eye, fading by `.w`, and past that they are
+// shading alone. Sets (crests
 // rising and dying as they run in) and peaks along a crest keep them from
 // reading as rings. `surge_size` scales their height, `surge_peak` how sharp
 // the crests get. The two fronts lean toward the land (SURGE_LEAN: a steep face
@@ -39,6 +41,12 @@ const float SURGE_SIZE[3] = float[3](9.0, 5.0, 2.2);
 const vec2 SURGE_SET = vec2(0.007, 0.059);
 const float SURGE_LEAN = 0.35;
 const float SURGE_CREST_LENGTH = 150.0;
+const float SURGE_REACH = 700.0;
+const float SURGE_WANDER = 2300.0;
+const vec2 SURGE_BEND = vec2(14.0, -9.0);
+const float SURGE_BEND_LENGTH = 1700.0;
+const float SURGE_LIFT_FLOOR = 7.0;
+const float SURGE_SEAM = 160.0;
 
 // How far `p` lies past the edge line, and the way out from it there.
 float zs_surge_off(vec2 p, out vec2 way_out) {
@@ -64,12 +72,21 @@ vec2 zs_surge(vec2 p, float t, float footprint, out vec3 shift, out float jac, o
 	crest = vec3(0.0);
 	vec2 way_out;
 	float off = zs_surge_off(p, way_out);
-	share = smoothstep(surge_belt.x, surge_belt.y, off);
+	if (off <= surge_belt.x) return vec2(0.0);
+	// Where the belt builds up wanders out along the coast (SURGE_REACH), so
+	// it starts on no one line round the land.
+	float wander = smoothstep(0.2, 0.8, zs_body_noise(p / SURGE_WANDER + vec2(5.3, 2.6)));
+	share = smoothstep(surge_belt.x, surge_belt.y, off - wander * SURGE_REACH);
 	if (share <= 0.0) return vec2(0.0);
 	float warp_a = zs_body_noise(p / 900.0 + vec2(3.7, 1.9));
 	float warp_b = zs_body_noise(p / 560.0 + vec2(6.1, 8.3));
+	// The two fronts bend apart over kilometres (SURGE_BEND), so the crests
+	// cross a little and no two rows run alike.
+	float bend = zs_body_noise(p / SURGE_BEND_LENGTH + vec2(1.4, 7.7)) - 0.5;
 	float sets = 0.5 + 0.5 * sin(-off * SURGE_SET.x - t * SURGE_SET.y + warp_a * 5.0);
-	float lobe = smoothstep(0.25, 0.75, zs_body_noise(p / 260.0 + vec2(t * 0.012, 4.2)));
+	// Peaks along a crest, and stretches of crest a few hundred metres long
+	// that run low, so a far row is no unbroken line.
+	float lobe = smoothstep(0.3, 0.7, zs_body_noise(p / 260.0 + vec2(t * 0.012, 4.2)) * 0.55 + zs_body_noise(p / 640.0 + vec2(8.2, t * 0.006)) * 0.45);
 	float grown = (0.4 + 0.6 * sets) * (0.6 + 0.8 * lobe);
 	float size = surge_size * share * grown;
 	vec2 d[3];
@@ -84,8 +101,8 @@ vec2 zs_surge(vec2 p, float t, float footprint, out vec3 shift, out float jac, o
 		amps[i] = SURGE_SIZE[i] * size;
 		total += amps[i] * ks[i];
 	}
-	phases[0] = -off * ks[0] - omega[0] * t + warp_a * 2.6;
-	phases[1] = -off * ks[1] - omega[1] * t + warp_b * 3.4 + 2.39;
+	phases[0] = -off * ks[0] - omega[0] * t + warp_a * 2.6 + bend * SURGE_BEND.x;
+	phases[1] = -off * ks[1] - omega[1] * t + warp_b * 3.4 + 2.39 + bend * SURGE_BEND.y;
 	phases[2] = dot(p, d[2]) * ks[2] - omega[2] * t + warp_a * 1.5 + 4.78;
 	float q = surge_peak / max(total, 0.2);
 	vec2 slope = vec2(0.0);
@@ -105,10 +122,28 @@ vec2 zs_surge(vec2 p, float t, float footprint, out vec3 shift, out float jac, o
 	}
 	jac = j.x * j.y - j.z * j.z;
 	// Measured against this wave's own size: a set's tall crests saturate no
-	// sooner than its small ones, so the glow stays up at the crest.
-	lift = smoothstep(-1.0, 1.0, shift.y / max(11.0 * size, 2.0));
+	// sooner than its small ones, so the glow stays up at the crest. Not below
+	// SURGE_LIFT_FLOOR m, so low stretches read low: from far off every row
+	// glowing alike read as ruled lines.
+	lift = smoothstep(-1.0, 1.0, shift.y / max(11.0 * size, SURGE_LIFT_FLOOR));
 	float det = max(jac, 0.1);
 	return vec2(j.y * slope.x - j.z * slope.y, j.x * slope.y - j.z * slope.x) / det;
+}
+
+// The sections a crest breaks in, `along` it and `slip` past the line.
+float zs_surge_sections(float along, float slip) {
+	return zs_body_noise(vec2(along / 85.0, slip / 240.0) + vec2(3.1, 0.7)) * 0.65 + zs_body_noise(vec2(along / 31.0, slip / 120.0) + vec2(7.4, 2.9)) * 0.35;
+}
+
+// `along` (zs_surge_breaks) wraps once round the edge: how much of the read
+// from the far side of the wrap (zs_surge_across) to blend in (0 .. 0.5 on it).
+float zs_surge_seam(float along) {
+	float half_round = PI * surge_edge.z;
+	return 0.5 * smoothstep(half_round - SURGE_SEAM, half_round, abs(along));
+}
+
+float zs_surge_across(float along) {
+	return along - sign(along) * TAU * surge_edge.z;
 }
 
 // How hard the surge breaks at rest xz `p`, from `crest` (zs_surge): 0 calm ..
@@ -135,6 +170,10 @@ float zs_surge_breaks(vec2 p, float t, vec3 crest, out float off, out float alon
 	// when the crest went by.
 	float speed = sqrt(GRAVITY * SURGE_CREST_LENGTH / TAU);
 	float slip = off + speed * t * 0.7 - max(back, 0.0) * 0.7;
-	float sections = zs_body_noise(vec2(along / 85.0, slip / 240.0) + vec2(3.1, 0.7)) * 0.65 + zs_body_noise(vec2(along / 31.0, slip / 120.0) + vec2(7.4, 2.9)) * 0.35;
+	float sections = zs_surge_sections(along, slip);
+	// Where `along` wraps round (the SW diagonal) read it both ways and blend,
+	// so no breaker is cut there.
+	float seam = zs_surge_seam(along);
+	if (seam > 0.0) sections = mix(sections, zs_surge_sections(zs_surge_across(along), slip), seam);
 	return smoothstep(0.0, 0.55, over + (sections - 0.5) * 2.2);
 }

@@ -594,6 +594,29 @@ float zs_surge_lace(vec2 p, float density, float footprint, out float inner) {
 	return 1.0 - (1.0 - cover) * (1.0 - veil);
 }
 
+// The surge's white water `along` the crest: `thick` the cap and fingers,
+// `left` what it leaves on the back (zs_surge_foam).
+void zs_surge_white(vec2 p, float t, float footprint, float breaks, float off, float along, float back, out float thick, out float left) {
+	float speed = sqrt(GRAVITY * SURGE_CREST_LENGTH / TAU);
+	// The white water's shape rides with the crest, sliding back over it a
+	// little; down the face it reaches in fingers.
+	vec2 riding = vec2(along, off + speed * t * 0.85);
+	float keep = 1.0 - smoothstep(1.5, 7.0, footprint);
+	float fingers = mix(0.5, zs_body_noise(riding / vec2(13.0, 26.0)) * 0.6 + zs_body_noise(riding / vec2(5.0, 11.0) + vec2(4.3, 1.1)) * 0.4, keep);
+	float reach = (back < 0.0 ? 26.0 * (0.15 + 1.5 * fingers * fingers) : 3.0 + 7.0 * fingers) * smoothstep(0.0, 0.7, breaks);
+	float torn = mix(0.5, zs_body_noise(riding / 3.3 + vec2(1.3, 6.2)) * 0.6 + zs_body_noise(riding / 1.2 + vec2(5.2, 3.8)) * 0.4, 1.0 - smoothstep(0.3, 1.5, footprint));
+	thick = clamp((1.0 - abs(back) / max(reach, 0.5) + (torn - 0.5) * 0.95) * 2.2, 0.0, 1.0);
+	// The back: thinning away from the crest, gathered into streaks the way
+	// the wave ran, bent.
+	left = back <= 0.0 ? 0.0 : breaks * pow(max(1.0 - back / 58.0, 0.0), 1.4);
+	if (left > 0.004) {
+		vec2 bend = vec2(zs_body_noise(p / 46.0 + vec2(2.2, 8.1)), zs_body_noise(p / 15.0 + vec2(6.4, 0.3))) - 0.5;
+		vec2 down = vec2(along + bend.x * 24.0 + bend.y * 7.0, off);
+		float streak = zs_body_noise(down / vec2(9.0, 30.0) + vec2(1.9, 4.4)) * 0.72 + zs_body_noise(down / vec2(3.4, 13.0) + vec2(8.8, 3.3)) * 0.28;
+		left *= mix(0.55, 0.1 + 1.4 * smoothstep(0.26, 0.74, streak), keep);
+	}
+}
+
 // The surge's breakers at rest xz `p`, from `crest` (zs_surge): only tall
 // waves break, in sections along the crest that ride with it. `cap`: the white
 // water at the crest, in fingers down the face, how much of `laid` is that,
@@ -608,24 +631,16 @@ void zs_surge_foam(vec2 p, float t, float footprint, vec3 crest, out float cap, 
 	float off, along, back;
 	float breaks = zs_surge_breaks(p, t, crest, off, along, back);
 	if (breaks <= 0.0) return;
-	float speed = sqrt(GRAVITY * SURGE_CREST_LENGTH / TAU);
 	aired = breaks * breaks * smoothstep(-34.0, -6.0, back) * (1.0 - smoothstep(12.0, 62.0, back));
-	// The white water's shape rides with the crest, sliding back over it a
-	// little; down the face it reaches in fingers.
-	vec2 riding = vec2(along, off + speed * t * 0.85);
-	float keep = 1.0 - smoothstep(1.5, 7.0, footprint);
-	float fingers = mix(0.5, zs_body_noise(riding / vec2(13.0, 26.0)) * 0.6 + zs_body_noise(riding / vec2(5.0, 11.0) + vec2(4.3, 1.1)) * 0.4, keep);
-	float reach = (back < 0.0 ? 26.0 * (0.15 + 1.5 * fingers * fingers) : 3.0 + 7.0 * fingers) * smoothstep(0.0, 0.7, breaks);
-	float torn = mix(0.5, zs_body_noise(riding / 3.3 + vec2(1.3, 6.2)) * 0.6 + zs_body_noise(riding / 1.2 + vec2(5.2, 3.8)) * 0.4, 1.0 - smoothstep(0.3, 1.5, footprint));
-	float thick = clamp((1.0 - abs(back) / max(reach, 0.5) + (torn - 0.5) * 0.95) * 2.2, 0.0, 1.0);
-	// The back: thinning away from the crest, gathered into streaks the way
-	// the wave ran, bent.
-	float left = back <= 0.0 ? 0.0 : breaks * pow(max(1.0 - back / 58.0, 0.0), 1.4);
-	if (left > 0.004) {
-		vec2 bend = vec2(zs_body_noise(p / 46.0 + vec2(2.2, 8.1)), zs_body_noise(p / 15.0 + vec2(6.4, 0.3))) - 0.5;
-		vec2 down = vec2(along + bend.x * 24.0 + bend.y * 7.0, off);
-		float streak = zs_body_noise(down / vec2(9.0, 30.0) + vec2(1.9, 4.4)) * 0.72 + zs_body_noise(down / vec2(3.4, 13.0) + vec2(8.8, 3.3)) * 0.28;
-		left *= mix(0.55, 0.1 + 1.4 * smoothstep(0.26, 0.74, streak), keep);
+	float thick, left;
+	zs_surge_white(p, t, footprint, breaks, off, along, back, thick, left);
+	// Across the seam where `along` wraps, blend in the read from its far side.
+	float seam = zs_surge_seam(along);
+	if (seam > 0.0) {
+		float thick2, left2;
+		zs_surge_white(p, t, footprint, breaks, off, zs_surge_across(along), back, thick2, left2);
+		thick = mix(thick, thick2, seam);
+		left = mix(left, left2, seam);
 	}
 	float density = max(thick, left);
 	if (density <= 0.004) return;
