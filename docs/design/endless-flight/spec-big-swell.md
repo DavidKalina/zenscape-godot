@@ -46,6 +46,10 @@ hands-off low flight:
 2. **Foam reads as foam.** Today it is flat cream patches like cut paper up
    close. Crests should tear into white water, with lace and streaks down the
    back of a wave, and no hard-edged islands. Only the tall crests break.
+   Up close the lace must read as soft foam: the first pass reads as cracked
+   glass (`captures/swell/t2i_low_0.png`), wire-thin hard lines round cells a
+   few metres wide. Judge it from a low chase camera on a wave's back, not only
+   from the face.
 3. **The crests throw spray.** Spindrift blowing off the tall crests, with the
    wind, the thing that says "big" at a distance. Cheap: it runs round the eye
    and only in the belt. No cost anywhere else in the world.
