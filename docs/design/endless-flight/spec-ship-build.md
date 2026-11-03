@@ -64,9 +64,12 @@ cd /Users/davidkalina/Documents/Projects/zenscape-ship-build && python3 tools/pl
 1. **Figurehead options.** On the concept blockout (tar and slate, head off), three
    small figurehead options at the stem head under the bowsprit, a few metres tall,
    clear of the exit and the lips. For example: a serpent head, a bird's head, a small
-   mask. Carved dark wood or grey stone in the Mesoamerican manner, crude and
-   hand-carved, not boxy. Stills: three-quarter bow at 150 m and a close view, each
-   option labelled, plus one side-by-side sheet. This is a checkpoint for the user's
+   mask. Carved dark wood in the Mesoamerican manner, not boxy. Stills: three-quarter bow at 150 m and a close view, each
+   option labelled, plus one side-by-side sheet. **Spec change (user):** "we shouldn't
+   go for the crude style. Instead, something more wooden and carved". So: carved
+   wood, cleanly and skilfully carved like a ship carver's work, with smooth
+   flowing forms and crisp detail, not crude, rough or chipped, and wood, not stone.
+   This is a checkpoint for the user's
    pick; the loop goes on without waiting. The coordinator writes the pick into this
    spec under "Picks".
 2. **The model, hull.** Port the concept's hull, sheer, castles, raked stern counter
