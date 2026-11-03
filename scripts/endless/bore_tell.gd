@@ -27,9 +27,10 @@ const TALL_LEAST := 3.2
 const ROWS := 7
 const ACROSS := 9
 const ROWS_A_FRAME := 1
-## The burst's quads, how many bursts can run at once, and how long one lasts past the snap.
+## The burst's quads, how many bursts can run at once (a corkscrew fires up to five in
+## under two seconds), and how long one lasts past the snap.
 const BITS := 150
-const BURSTS := 4
+const BURSTS := 6
 const BURST_AFTER_S := 1.8
 ## The light: what it starts at, reaches by the snap, jumps to at the snap, how fast it
 ## then dies (s), its range, and how far off the rock it stands (m).
@@ -123,8 +124,8 @@ func _job(t: Tunnels.Site, grain: FastNoiseLite, sp: RefCounted) -> Job:
 	job.grain = grain
 	job.sp = sp
 	job.r = clampf(float(sp.girth)*CRACK_GIRTHS,CRACK_R.x,CRACK_R.y)
-	job.share = fposmod(BoreLine.angle_at(t,sp.s)/TAU,1.0)
-	job.rng.seed = hash([t.seed,"bore crack",sp.s])
+	job.share = float(sp.round)
+	job.rng.seed = hash([t.seed,"bore crack",sp.s,sp.turn,sp.side])
 	return job
 
 ## This frame's rows.
