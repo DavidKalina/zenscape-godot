@@ -101,11 +101,14 @@ The draw can't go below 29.7 or above 60.3 s of low meadow at the default, and a
 failed spot adds up to a few reads. Birds came no nearer than 7.8 m in these
 runs. Across both: 8 to 20 birds, 5 crossed the nose, 7 split round it.
 
-**Cost.** Rendered, 1440x900, medium, flying the rich meadow, the birds' whole
-step: median 0.41 ms with a covey up, against 0.13 without; p99 0.89 and most
-2.55 with, 0.75 and 1.42 without. A flush going is 0.3 to 0.5 ms and a read
-0.05 ms. No C++: 20 birds for a few seconds in 45, and it stays well under a
-perched flock's worst frame.
+**Cost.** The birds' whole step, headless, Boost, 7 simulated minutes alone on
+the machine: mean 0.35 ms with a covey up against 0.12 without, worst frame 5.9
+against 2.7 (4.1 just after a driver hop). The 5.9 wasn't traced. Rendered at
+1440x900 over a short flight the same split was median 0.41 against 0.13, worst
+2.55 against 1.42. Worst frames of 20 to 35 ms in the 10 minute runs were two
+headless runs and a window sharing the machine; they went away run alone. A
+flush going is 0.3 to 0.5 ms, a read 0.05 ms. No C++: 20 birds for a few seconds
+in 45. The real check is a user flight with `--frame-log`, the `birds` part.
 
 **Never touches the flight.** The same scripted stick with flushes and with
 `--grass-birds=0`, three flushes in the first, down to a landing and a stop:
@@ -139,6 +142,9 @@ real wing poses. Those sequences are in `scratch/film/` (not committed).
 
 - The first birds sit visible on the ground for a moment where the grass is thin.
   In the near tufts they're hidden; from the chase camera they're too far to tell.
+- Long headless runs that teleport the plane print 3 or 4 RID errors from the
+  dummy renderer (`Initializing already initialized RID`, `unimplemented base
+  type`). They come with `--grass-birds=0` too, so not from this round.
 - `film` views other than `play` draw the ground without near tufts and with
   clouds reflected into it. It's the harness's camera, not the game.
 
