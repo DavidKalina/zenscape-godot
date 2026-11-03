@@ -70,8 +70,9 @@ func _node(mesh: ArrayMesh, shader: Shader) -> MeshInstance3D:
 	add_child(m)
 	return m
 
-## Stone from `from` along `seg`, `girth` round, burst with the plane going `blast` (m/s).
-func burst(from: Vector3, seg: Vector3, girth: float, blast: Vector3) -> void:
+## Stone from `from` along `seg`, `girth` round, burst with the plane going `blast` (m/s),
+## its pieces `lump` times the size the girth alone gives them.
+func burst(from: Vector3, seg: Vector3, girth: float, blast: Vector3, lump := 1.0) -> void:
 	if _slots.is_empty(): return
 	var s := _slots[_turn]
 	_turn = (_turn+1)%_slots.size()
@@ -82,6 +83,7 @@ func burst(from: Vector3, seg: Vector3, girth: float, blast: Vector3) -> void:
 		mat.set_shader_parameter("seg",seg)
 		mat.set_shader_parameter("girth",girth)
 		mat.set_shader_parameter("blast",blast)
+		mat.set_shader_parameter("lump",lump)
 		mat.set_shader_parameter("lit_at",_now)
 		mat.set_shader_parameter("now",_now)
 		node.visible = true

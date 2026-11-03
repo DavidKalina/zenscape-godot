@@ -15,9 +15,10 @@ extends Node3D
 ## - a burrower on a run can't keep ahead, and flown into he's caught
 ##   (scripts/endless/burrower_flight.gd `try_catch`, signal `caught`).
 ## - the spurs he leaves in a bore that are out (scripts/endless/bore_spurs.gd
-##   `struck`, `smash`) burst into rubble, and the plugs he brings down will too;
-##   each is a `smash` moment on the line (LineMoves `smash`). The bore itself
-##   stays stone.
+##   `struck`, `smash`) and the plugs he brings down that are down or coming down
+##   (scripts/endless/bore_plug.gd `struck`, `smash`: the whole wall, hole and all)
+##   burst into rubble; each is a `smash` moment on the line (LineMoves `smash`,
+##   `smashed` "spur" or "plug"). The bore itself stays stone.
 ##
 ## Below a full meter the roll button is the clean roll and `fly_surge` the plain
 ## surge, as before.
@@ -50,6 +51,8 @@ const LOOK_S := 0.1
 const LOOK_LEAST := 6.0
 const SPUR_KICK := Vector2(0.045,14.0)
 const SPUR_STOP := Vector2(6.0,0.1)
+const PLUG_KICK := Vector2(0.06,16.0)
+const PLUG_STOP := Vector2(7.0,0.08)
 ## How long the wingtip vapour stays hard on (s).
 const VAPOUR_S := 0.7
 ## While full or hot, every SCAN_S s, ruins within SCAN_M m ahead get their
@@ -69,6 +72,7 @@ var vapour := 0.0
 var rolls := 0
 var hits := 0
 var spurs := 0
+var plugs := 0
 var catches := 0
 var _held_was := false
 var _hold := 0.0
@@ -156,6 +160,7 @@ func _strike() -> void:
 	var pad := WorldScale.span*0.5+0.3
 	var look := maxf(v.length()*LOOK_S,LOOK_LEAST)
 	if _spur(p,way,look,pad,v): return
+	if _plug(p,way,look,pad,v): return
 	var s := 0.0
 	while s <= look:
 		var q := p+way*s
@@ -194,6 +199,24 @@ func _spur(p: Vector3, way: Vector3, look: float, pad: float, v: Vector3) -> boo
 	game.feel_hit(SPUR_KICK.x,SPUR_KICK.y)
 	game.sound.shot("thump",1.3,0.55,q)
 	game.near.moves.smash(game,"spur",q,hash([sp.root,sp.s]))
+	return true
+
+## A plug he brought down on the way, smashed whole: true if one was.
+func _plug(p: Vector3, way: Vector3, look: float, pad: float, v: Vector3) -> bool:
+	var bore_plugs = game.tunnels.plugs if game.tunnels != null else null
+	if bore_plugs == null: return false
+	var pl: RefCounted = bore_plugs.struck(p,way,look,pad)
+	if pl == null: return false
+	var q: Vector3 = pl.mid
+	var id := hash([pl.mid,pl.s])
+	bore_plugs.smash(pl,p,v)
+	plugs += 1
+	_felt(q,way)
+	hub.pause(int(PLUG_STOP.x),PLUG_STOP.y)
+	game.feel_hit(PLUG_KICK.x,PLUG_KICK.y)
+	game.sound.shot("thump",1.4,0.45,q)
+	game.sound.shot("crash",1.2,0.6,q)
+	game.near.moves.smash(game,"plug",q,id)
 	return true
 
 ## The hit in the eye and the ear.

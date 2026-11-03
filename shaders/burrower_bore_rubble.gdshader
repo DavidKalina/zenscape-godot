@@ -22,6 +22,8 @@ uniform float lift = 5.0;
 uniform float drag = 1.1;
 uniform float gravity = 9.8;
 // A chunk's size, a share of the girth (least, most); its life (s).
+// The pieces' size over what the girth alone gives (a wide burst of small stone).
+uniform float lump = 1.0;
 uniform vec2 size_share = vec2(0.06, 0.28);
 uniform vec2 life = vec2(1.4, 3.4);
 // Closer to the eye than this (m) a chunk goes, so none fills the view; it shrinks over
@@ -65,7 +67,7 @@ void vertex() {
 		+ vec3(0.0, lift * COLOR.b, 0.0);
 	float a = max(age, 0.0);
 	vec3 w = start + v * (1.0 - exp(-a * drag)) / drag + vec3(0.0, -0.5 * gravity * a * a, 0.0);
-	float size = girth * mix(size_share.x, size_share.y, UV.x * UV.x) * mix(1.0, 0.55, u);
+	float size = girth * lump * mix(size_share.x, size_share.y, UV.x * UV.x) * mix(1.0, 0.55, u);
 	size *= 1.0 - smoothstep(0.75, 1.0, a / lasts);
 	vec3 spin_axis = normalize(vec3(UV.y - 0.5, COLOR.a - 0.5, UV2.x - 0.5) + vec3(0.01, 0.02, 0.0));
 	mat3 rot = turn(spin_axis, UV.y * 20.0 + a * mix(2.0, 11.0, UV.y));

@@ -11,7 +11,9 @@ extends Node3D
 ## The hole is at least WorldScale.opening(TOY_PLUG_HOLE) across, off the middle at a seeded
 ## angle, so threading it is a line. The plug is stone: outside the hole it's a crash, as
 ## the bore is (`stretches`, `inside`, `face` through LandTunnels `ground`, `inside`,
-## `sight` and FlightContact). Through the hole is a thread (`crossed`, NearMiss).
+## `sight` and FlightContact). Through the hole is a thread (`crossed`, NearMiss). A surge
+## (scripts/endless/surge_smash.gd) smashes the whole plug, hole and all (`struck`, `smash`):
+## it bursts into the spurs' rubble and stays gone while its tunnel is built.
 ##
 ## A plug is a pooled body (its mesh rebuilt once, when it's laid, on the bore's real ring;
 ## its collision the same triangles). The bore's own mesh and collision are never touched.
@@ -86,6 +88,14 @@ const LAND_THROW := 9.0
 const LAY_AHEAD := 200.0
 const NEAR_M := 60.0
 const THREAD_SLACK := 0.5
+## A smash's two bursts: one round the plane's line (its girth, m), and the wall's across
+## the bore (its girth a share of the wall's reach), its stone as big as a burst SMASH_LUMP m
+## round would throw, so a cavern's plug doesn't burst into boulders; the near one's stone
+## and dust NEAR_LUMP of its girth's (it's carried with the plane, and the eye flies in it).
+const SMASH_NEAR := 8.0
+const NEAR_LUMP := 0.7
+const SMASH_GIRTH := 0.75
+const SMASH_LUMP := 8.0
 
 ## One plug: its place in the layout, then, once laid (`_lay`), where it stands.
 class Plug:
@@ -137,7 +147,7 @@ var _rubble: BoreRubble
 var _sound: Node
 var _now := 0.0
 ## For drivers: the worst frame's work (us), plugs laid, fired, landed.
-var stats := {"worst_us": 0, "laid": 0, "fired": 0, "landed": 0}
+var stats := {"worst_us": 0, "laid": 0, "fired": 0, "landed": 0, "smashed": 0}
 
 func _init() -> void:
 	name = "BorePlugs"
@@ -527,6 +537,46 @@ func crossed(from: Vector3, to: Vector3) -> Dictionary:
 		if rho > pl.r+THREAD_SLACK: continue
 		return {"room":pl.r-rho,"half":pl.r,"name":"plug %.0f" % pl.s}
 	return {}
+
+## A plug that's down or coming down (not in its tell, not broken) whose slab the plane
+## meets going from `p` along `way` (unit) within `look` m, `pad` m wider, or null. The
+## whole wall counts, the hole too: a surge doesn't thread, it smashes.
+func struck(p: Vector3, way: Vector3, look: float, pad: float) -> Plug:
+	for list: Array in [_near,_moving]:
+		for pl: Plug in list:
+			if pl.broken or pl.body == null or (not pl.solid and pl.down <= 0.0): continue
+			var a0 := (p-pl.mid).dot(pl.along)
+			var a1 := a0+way.dot(pl.along)*look
+			var h := pl.half+pad
+			if maxf(a0,a1) < -h or minf(a0,a1) > h: continue
+			var k := 0.0 if absf(a1-a0) < 1e-4 else clampf(-a0/(a1-a0),0.0,1.0)
+			var d := p+way*(look*k)-pl.mid
+			if Vector2(d.dot(pl.side),d.y).length() > pl.reach+pad: continue
+			return pl
+	return null
+
+## Plug `pl` smashed by the plane at `at` going `blast` (m/s): the whole wall bursts, and
+## it's gone (its collar with it) for as long as its tunnel stays built.
+func smash(pl: Plug, at: Vector3, blast: Vector3) -> void:
+	if pl.body == null or pl.broken: return
+	# Each burst's stone runs along the path through the wall, the root on the plane's side:
+	# the wall's fills the section, the near one is the stone round the plane's line.
+	var toward := signf(blast.dot(pl.along)) if blast.dot(pl.along) != 0.0 else 1.0
+	var seg := pl.along*(2.0*pl.half*toward)
+	var wide := pl.reach*SMASH_GIRTH
+	_rubble.burst(pl.mid-seg*0.5,seg,wide,blast,minf(SMASH_LUMP/wide,1.0))
+	var on := at-pl.along*(at-pl.mid).dot(pl.along)
+	_rubble.burst(on-seg*0.5,seg,SMASH_NEAR,blast,NEAR_LUMP)
+	pl.broken = true
+	pl.solid = false
+	pl.down = 0.0
+	pl.body.visible = false
+	pl.body.collision_layer = 0
+	_spare.append(pl.body)
+	pl.body = null
+	_moving.erase(pl)
+	_near.erase(pl)
+	stats.smashed = int(stats.smashed)+1
 
 ## Whether `body` is a plug's.
 func holds(body: Object) -> bool:

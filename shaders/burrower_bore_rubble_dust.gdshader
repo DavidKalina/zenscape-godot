@@ -18,6 +18,8 @@ uniform vec2 throw_speed = vec2(2.0, 9.0);
 uniform vec2 carry = vec2(0.05, 0.4);
 uniform float drag = 1.6;
 // A puff's size: a share of the girth at birth, and how much it grows; its life (s).
+// The pieces' size over what the girth alone gives (a wide burst of small stone).
+uniform float lump = 1.0;
 uniform vec2 size_share = vec2(0.6, 1.3);
 uniform float grow = 2.2;
 uniform vec2 life = vec2(1.2, 3.2);
@@ -62,7 +64,7 @@ void vertex() {
 	vec3 v = rad * mix(throw_speed.x, throw_speed.y, COLOR.a) + blast * mix(carry.x, carry.y, NORMAL.z);
 	vec3 w = start + v * (1.0 - exp(-a * drag)) / drag + vec3(0.0, 0.6 * a, 0.0);
 	float k = a / lasts;
-	float size = girth * mix(size_share.x, size_share.y, NORMAL.y) * mix(1.0, 0.6, u) * (1.0 + grow * sqrt(k));
+	float size = girth * lump * mix(size_share.x, size_share.y, NORMAL.y) * mix(1.0, 0.6, u) * (1.0 + grow * sqrt(k));
 	vec4 vw = VIEW_MATRIX * vec4(w, 1.0);
 	float alpha = opacity * smoothstep(0.0, 0.04, k) * (1.0 - k) * (1.0 - k);
 	alpha *= clamp((-vw.z - size * 0.3) / near_fade, 0.0, 1.0);
