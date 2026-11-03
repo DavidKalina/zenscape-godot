@@ -89,6 +89,8 @@ static func fft_wanted() -> bool:
 static func foam_wanted() -> bool:
 	return body_wanted() and not "--sea-foam=old" in LaunchArgs.user_args()
 
+var _leaps_on := false
+
 func _init(seed_value: int) -> void:
 	land_seed = seed_value
 	material = ShaderMaterial.new()
@@ -500,6 +502,16 @@ func other_track(points: Array[Vector4], head: Vector2) -> void:
 	material.set_shader_parameter("other_points",sent)
 	material.set_shader_parameter("other_count",count)
 	material.set_shader_parameter("other_head",Vector4(head.x,head.y,1.0,reach))
+
+## The water round the leaping fish (scripts/endless/wake_fish.gd): its marks as
+## `(x, z, the moment it breaks, size)`, on the fish's `clock`. Sent while `live`,
+## and once more to take them off.
+func leaps(marks: PackedVector4Array, clock: float, live: bool) -> void:
+	if not live and not _leaps_on: return
+	_leaps_on = live
+	material.set_shader_parameter("leap_marks",marks)
+	material.set_shader_parameter("leap_count",marks.size() if live else 0)
+	material.set_shader_parameter("leap_now",clock)
 
 ## Waits for a worker still baking (before the sea is freed).
 func finish() -> void:

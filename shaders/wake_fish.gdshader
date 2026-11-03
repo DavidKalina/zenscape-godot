@@ -1,112 +1,112 @@
 shader_type spatial;
-// A fish flung out of the water by the plane (scripts/endless/wake_fish.gd):
-// life_models.gd's vertex-coloured fish, nose along +Z. The whole leap is here,
-// worked out from the moment it breaks the water, so nothing runs on the CPU
-// once it has begun: the arc, the body turned along it, the bend, the tail.
-// The instance's transform: the spot on the water, turned along the leap,
-// scaled to its length.
-// INSTANCE_CUSTOM: x the moment it breaks (`clock`'s s), y its time in the air
-// (s), z its run along the water (m/s), w a seed 0..1 signed by the side it
-// bends to; over FLOP it goes in on its side.
-render_mode cull_disabled;
+// The leaping fish (scripts/endless/wake_fish.gd): assets/models/fish/hero_fish.glb,
+// a metre nose to tail, nose along +Z. The script flies it and bends it: `spine`
+// is the body's curve this frame, each section of the mesh set on it and turned
+// with it, so it flexes through its length and doesn't shear. Lit as the world
+// is: no ambient, the sky's hemisphere added as emission
+// (shaders/folk_surface.gdshaderinc).
+// The skin's channels (art/blender/fish/fish_build.py): R the dark of the back,
+// G the spots, B the lines, A the scales; the tints say what fish it is.
+// COLOR: R a fin, G an eye, B a paired fin, root to tip.
+render_mode diffuse_lambert, specular_schlick_ggx, cull_disabled;
 
-uniform float clock = 0.0;
-// The mesh's length nose to tail tip (m) and its nose's z.
-uniform float fish_length = 0.48;
-uniform float nose_z = 0.2;
-uniform float gravity = 9.8;
-// The centre starts this share of the length under the water.
-uniform float sink_share = 0.3;
-uniform float flop = 0.65;
-// The scales' silver: how much of the paint gives way to it.
-uniform vec3 silver : source_color = vec3(0.86, 0.9, 0.95);
-uniform float silver_share = 0.75;
-// The flash: a broad sheen off the flank and a tight glint in it.
-uniform float sheen = 1.2;
-uniform float glint = 9.0;
-uniform float rim = 0.3;
+global uniform vec3 zs_hemi_sky;
+global uniform vec3 zs_hemi_ground;
+global uniform float zs_hemi_energy;
+global uniform vec3 zs_key_direction;
+global uniform float zs_daylight;
 
-varying float wet;
-// 1 on the flanks and belly, 0 along the back: the silver stops at the dark back.
-varying float flank;
+uniform sampler2D skin : hint_default_black, filter_linear_mipmap_anisotropic, repeat_disable;
+// Nine joints nose to tail, a metre of body shared evenly: x and z in the mesh's
+// metres, and how far the section there is turned (rad).
+uniform vec3 spine[9];
+uniform float nose_z = 0.42;
+// The paired fins held out or laid back.
+uniform float flare = 0.0;
+uniform vec3 back_tint : source_color = vec3(0.12, 0.17, 0.16);
+uniform vec3 flank_tint : source_color = vec3(0.62, 0.64, 0.6);
+uniform vec3 belly_tint : source_color = vec3(0.9, 0.9, 0.86);
+uniform vec3 spot_tint : source_color = vec3(0.04, 0.04, 0.05);
+uniform vec3 band_tint : source_color = vec3(0.7, 0.3, 0.3);
+uniform vec3 fin_tint : source_color = vec3(0.25, 0.25, 0.25);
+uniform float spot_share = 0.8;
+uniform float band_share = 0.0;
+// The sky's fill and the bounce off the water under it.
+uniform float fill = 2.2;
+uniform float bounce = 3.0;
+// The world's fill is a twentieth of the sun: a near-neutral lift off the sky's
+// own light, strongest away from the sun, as the plane has
+// (assets/models/hero_plane/hero_surface.gdshader).
+uniform float shade_lift = 3.2;
+// The flank is a mirror of sorts: the sky in it, and for the instant it faces
+// right, the sun, all along the flank.
+uniform float mirror = 0.9;
+uniform float flash = 3.0;
+uniform float flash_tight = 45.0;
+
+varying float fin;
+varying float eye;
 
 void vertex() {
-	float t = clock - INSTANCE_CUSTOM.x;
-	float air = INSTANCE_CUSTOM.y;
-	float u = t / air;
-	wet = 1.0;
-	flank = 1.0 - smoothstep(0.3, 0.85, NORMAL.y);
-	if (u < 0.0 || u > 1.3) {
-		// Not in the air: folded to a point.
-		VERTEX = vec3(0.0);
-	} else {
-		float scale = length(MODEL_MATRIX[0].xyz);
-		float seed = abs(INSTANCE_CUSTOM.w);
-		float side = INSTANCE_CUSTOM.w < 0.0 ? -1.0 : 1.0;
-		float along = clamp(u, 0.0, 1.0);
-		float top = sin(along * PI);
-		// The body, in the mesh's own metres. 0 at the nose, 1 at the tail's tip.
-		float back = clamp((nose_z - VERTEX.z) / fish_length, 0.0, 1.0);
-		float from_mid = back - 0.42;
-		// The arch: a C held over the top of the leap.
-		float bend = side * 1.3 * pow(top, 1.5);
-		float arch = bend * from_mid * from_mid * fish_length;
-		// The beat: hard as it breaks out, still at the top, a last flick going in.
-		float beat = fish_length * (0.26 * (1.0 - smoothstep(0.0, 0.38, u)) + 0.2 * smoothstep(0.68, 0.9, u) * (1.0 - smoothstep(0.98, 1.2, u)));
-		float wave = TAU * mix(9.0, 6.0, along) * t + seed * 40.0 - back * 4.2;
-		float whip = smoothstep(0.25, 1.0, back);
-		float swing = sin(wave) * beat * whip;
-		vec3 v = VERTEX;
-		v.x += arch * 0.75 + swing;
-		v.y -= abs(bend) * from_mid * from_mid * fish_length * 0.7;
-		// Stretched bursting out, squashed a touch going in.
-		float long = 1.0 + 0.18 * (1.0 - smoothstep(0.0, 0.3, u)) - 0.08 * smoothstep(0.85, 1.0, u);
-		float thin = 1.0 / sqrt(long);
-		v *= vec3(thin, thin, long);
-		// The normal turned with the bend's slope (sideways along z).
-		float slope = bend * 2.0 * from_mid + cos(wave) * beat * whip * 4.2 / fish_length;
-		vec3 n = normalize(NORMAL + vec3(0.0, 0.0, 1.0) * NORMAL.x * slope * 0.5);
-		// The roll: it twists through the air, which turns the flank to the
-		// sun and away; a flop lies over on its side.
-		float roll = 0.55 * sin(along * 7.0 + seed * 6.2832) * top;
-		if (seed > flop) roll += side * 1.45 * smoothstep(0.35, 0.95, u);
-		float cr = cos(roll);
-		float sr = sin(roll);
-		v = vec3(cr * v.x - sr * v.y, sr * v.x + cr * v.y, v.z);
-		n = vec3(cr * n.x - sr * n.y, sr * n.x + cr * n.y, n.z);
-		// Nose along the arc.
-		float rise = gravity * air * 0.5 - gravity * t;
-		float run = INSTANCE_CUSTOM.z;
-		float slant = length(vec2(rise, run));
-		float cp = run / slant;
-		float sp = rise / slant;
-		v = vec3(v.x, cp * v.y + sp * v.z, -sp * v.y + cp * v.z);
-		n = vec3(n.x, cp * n.y + sp * n.z, -sp * n.y + cp * n.z);
-		// The arc, from just under the water, back to as far under. The
-		// spot's own scale is undone: the arc is in metres.
-		float sink = fish_length * scale * sink_share;
-		float height = -sink + gravity * air * 0.5 * t - 0.5 * gravity * t * t;
-		VERTEX = v + vec3(0.0, height, run * t) / scale;
-		NORMAL = n;
-		wet = 1.0 - 0.4 * along;
-	}
+	float s = clamp(nose_z - VERTEX.z, 0.0, 0.9999) * 8.0;
+	int i = int(s);
+	vec3 a = spine[i];
+	vec3 b = spine[i + 1];
+	float k = s - float(i);
+	vec3 joint = mix(a, b, k);
+	float cs = cos(joint.z);
+	float sn = sin(joint.z);
+	float x = VERTEX.x;
+	float y = VERTEX.y;
+	fin = COLOR.r;
+	eye = COLOR.g;
+	// The paired fins swing about their roots.
+	y += COLOR.b * flare * abs(x) * 0.8;
+	x *= 1.0 - 0.25 * COLOR.b * max(-flare, 0.0);
+	VERTEX = vec3(joint.x + x * cs, y, joint.y + x * sn);
+	vec3 n = NORMAL;
+	NORMAL = vec3(n.x * cs - n.z * sn, n.y, n.x * sn + n.z * cs);
 }
 
 void fragment() {
-	ALBEDO = mix(COLOR.rgb, silver, silver_share * flank) * mix(0.5, 0.7, flank);
-	ROUGHNESS = mix(0.5, 0.25, wet);
-	METALLIC = 0.2;
-	SPECULAR = 0.8;
-}
-
-void light() {
-	// Wrapped all the way round: a fish on the far side of the sun is never a black shape.
-	float wrap = (dot(NORMAL, LIGHT) + 1.0) * 0.5;
-	DIFFUSE_LIGHT += wrap * wrap * wrap * 0.5 * ATTENUATION * LIGHT_COLOR / PI;
-	vec3 half_way = normalize(VIEW + LIGHT);
-	float over = max(dot(NORMAL, half_way), 0.0);
-	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
-	// The flash stays silver in a low sun: most of the light's colour taken out.
-	vec3 white = mix(LIGHT_COLOR, vec3(dot(LIGHT_COLOR, vec3(0.33))), 0.7);
-	SPECULAR_LIGHT += ATTENUATION * white / PI * (pow(over, 7.0) * sheen + pow(over, 70.0) * glint + edge * rim);
+	vec3 world_n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec3 base;
+	float flank_share = 0.0;
+	float wet_rough = 0.3;
+	if (eye > 0.5) {
+		// A black pupil in a pale ring.
+		float r = length(UV - vec2(0.5)) * 2.0;
+		base = mix(vec3(0.01), vec3(0.6, 0.5, 0.3), smoothstep(0.55, 0.7, r));
+		wet_rough = 0.12;
+	} else if (fin > 0.5) {
+		// Rays, running out from the root, darker to the edge.
+		float ray = 0.82 + 0.18 * sin(UV.x * 44.0);
+		base = mix(flank_tint * 0.5, fin_tint, smoothstep(0.1, 0.8, 1.0 - UV.y)) * ray;
+		wet_rough = 0.42;
+	} else {
+		vec4 m = texture(skin, UV);
+		float round_way = 1.0 - UV.y;
+		float belly = 1.0 - smoothstep(0.14, 0.46, round_way);
+		base = mix(flank_tint, belly_tint, belly);
+		// The band along the flank.
+		base = mix(base, band_tint, band_share * smoothstep(0.08, 0.0, abs(round_way - 0.5)) * smoothstep(0.08, 0.2, UV.x));
+		base = mix(base, back_tint, m.r);
+		base = mix(base, spot_tint, m.g * spot_share);
+		base *= 1.0 - 0.75 * m.b;
+		base *= 0.86 + 0.28 * m.a;
+		flank_share = (1.0 - m.r) * (1.0 - m.g * spot_share) * (0.75 + 0.25 * m.a);
+		wet_rough = mix(0.34, 0.24, m.a);
+	}
+	ALBEDO = base;
+	ROUGHNESS = wet_rough;
+	METALLIC = 0.15 * flank_share;
+	SPECULAR = 0.65;
+	vec3 hemi = mix(zs_hemi_ground * bounce, zs_hemi_sky, world_n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	vec3 mirror_way = (INV_VIEW_MATRIX * vec4(reflect(-VIEW, NORMAL), 0.0)).xyz;
+	vec3 sky = mix(zs_hemi_ground * bounce, zs_hemi_sky, mirror_way.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	float sun_in_it = pow(max(dot(normalize(mirror_way), zs_key_direction), 0.0), flash_tight);
+	float sunward = clamp(dot(world_n, zs_key_direction), 0.0, 1.0);
+	float sky_luma = dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722));
+	vec3 lift = mix(zs_hemi_sky, vec3(sky_luma), 0.7) * zs_hemi_energy * shade_lift * mix(0.1, 1.0, zs_daylight) * mix(1.0, 0.3, sunward);
+	EMISSION = base * (hemi * fill + lift) + mix(base, vec3(0.85), 0.6) * flank_share * (sky * mirror + vec3(sun_in_it * flash * zs_daylight));
 }

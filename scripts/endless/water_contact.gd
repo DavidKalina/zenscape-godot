@@ -677,15 +677,6 @@ func _sound_step(delta: float) -> void:
 	_hiss.step(delta)
 	_churn.step(delta)
 
-## How hard the plane stirs the water under it (0 to 1): its closeness over
-## the two spans `clear` is read for, by the speed's share as for the spray.
-## For the fish (scripts/endless/wake_fish.gd).
-func stir() -> float:
-	if kind == NONE: return 0.0
-	var plane = _game.plane
-	var fast := smoothstep(SPRAY_SPEED.x,maxf(plane.cruise()*SPRAY_SPEED.y,SPRAY_SPEED.x+1.0),float(plane.velocity.length()))
-	return clampf(1.0-clear/((REACH+1.0)*WorldScale.span),0.0,1.0)*fast
-
 ## The pad's hum over water (0 to 1), fluttering.
 func hum() -> float:
 	if _hum <= 0.0: return 0.0
