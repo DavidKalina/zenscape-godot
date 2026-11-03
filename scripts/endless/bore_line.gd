@@ -40,6 +40,14 @@ static func middle(t: Tunnels.Site, at: float) -> Vector3:
 	var n := Vector2(-tg.y,tg.x)*(pr.y-pr.x)*0.5
 	return Vector3(c.x+n.x,Tunnels.floor_at(t,at)+pr.z*MIDDLE,c.y+n.y)
 
+## About where the rock lies at distance `at`, `angle` round: an ellipse over the bore's
+## middle, no lumps, cheap enough for every frame.
+static func about(t: Tunnels.Site, at: float, angle: float) -> Vector3:
+	var tg: Vector2 = Tunnels.at_s(t,at)[1]
+	var pr := Tunnels.profile(t,at)
+	var c := cos(angle)
+	return middle(t,at)+Vector3(-tg.y,0.0,tg.x)*sin(angle)*(pr.x+pr.y)*0.5+Vector3.UP*(-c)*pr.z*(MIDDLE if c > 0.0 else 1.0-MIDDLE)
+
 ## The rock round the bore at distance `at`, as `_build_rock` lays it out, closed, from
 ## the floor's middle on over the +d wall (the angle's way). `grain`: the site's
 ## LandTunnels `rock_grain`.

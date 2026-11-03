@@ -362,7 +362,7 @@ static func _takes(pattern: String, count: int) -> Array:
 
 ## A looping copy of a WAV (they import unlooped), started at a random point
 ## when heard, on `bus`; no player when this run is silent.
-func _bed(path: String, bus: StringName) -> Bed:
+func _bed(path: String, bus: StringName, world := false) -> Bed:
 	var bed := Bed.new()
 	_beds.append(bed)
 	if not audible: return bed
@@ -370,13 +370,24 @@ func _bed(path: String, bus: StringName) -> Bed:
 	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	stream.loop_begin = 0
 	stream.loop_end = roundi(stream.get_length()*stream.mix_rate)
-	var player := AudioStreamPlayer.new()
+	var player: Node
+	if world:
+		var p3 := AudioStreamPlayer3D.new()
+		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+		p3.panning_strength = 1.0
+		player = p3
+	else: player = AudioStreamPlayer.new()
 	player.stream = stream
 	player.bus = bus
 	player.volume_db = -80.0
 	add_child(player)
 	bed.player = player
 	return bed
+
+## A looping voice in the world: the caller moves its `player` (null headless) and sets
+## its goals, and gain carries no fall-off with distance.
+func bed_in_world(path: String, bus := SFX) -> Bed:
+	return _bed(path,bus,true)
 
 ## The quit leak ("ObjectDB instances leaked at exit"): a playback still in
 ## the AudioServer's list when the engine tears down is reported leaked. A

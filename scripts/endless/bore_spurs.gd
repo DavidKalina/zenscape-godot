@@ -48,6 +48,9 @@ const SHAFT_ROOM := 6.0
 ## The hold from him passing to the snap (s), the snap's length (s).
 const HOLD_S := 0.8
 const SNAP_S := 0.16
+## The snap's sound.
+const SNAP_GAIN := 0.8
+const SNAP_PITCH := 0.7
 ## Laid out this far ahead of him (m; one a frame), and counted near the plane this far (m).
 const LAY_AHEAD := 170.0
 const NEAR_M := 45.0
@@ -209,7 +212,7 @@ func passing(at: float) -> void:
 	stats.worst_us = maxi(int(stats.worst_us),Time.get_ticks_usec()-began)
 
 ## One frame, `at` the plane: the spurs under way, those near it, tunnels gone.
-func step(delta: float, at: Vector3) -> void:
+func step(delta: float, at: Vector3, sound: Node) -> void:
 	if _groups.is_empty(): return
 	_tell.step(delta)
 	_mat.set_shader_parameter("now",_tell.now)
@@ -221,6 +224,7 @@ func step(delta: float, at: Vector3) -> void:
 		if not sp.body.visible:
 			sp.body.visible = true
 			sp.body.collision_layer = LandTunnels.LAYER
+			sound.shot("crack",SNAP_GAIN,SNAP_PITCH,sp.root)
 		var o := 1.0-minf(k,1.0)
 		sp.out = 1.0-o*o*o
 		_pose(sp)

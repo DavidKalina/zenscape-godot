@@ -244,7 +244,7 @@ func _in(game: Node3D) -> void:
 	rouse.dives = int(rouse.dives)+1
 	rouse.mouths = int(rouse.mouths)+1
 	rouse.bore = ""
-	bore.begin(_mouth.site,int(_mouth.end))
+	bore.begin(_mouth.site,int(_mouth.end),game.plane)
 
 ## The chase in the bore is over.
 func _bore_over(why: StringName) -> void:
