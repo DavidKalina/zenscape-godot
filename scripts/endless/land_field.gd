@@ -479,18 +479,6 @@ var _p_r := 0.0
 var _p_w := 0.0
 var _p_y := 0.0
 
-## The carve layers natively (ZenScapeCarve, land_carve.h): the ponds, slot
-## halls and splits cut into the field's height in one call, each square's
-## sites published to it as `sample` finds them here (`_publish`). The
-## tunnels, the Peak and the isles stay in GDScript (a point in a tunnel's
-## box is worked here whole). Off with --ground-native=0 or
-## --gdscript-kernels, the --tunnel-test tunnel, or no library (or one older
-## than CARVE_VERSION): then all of it is cut in here, the reference.
-const CARVE_CLASS := &"ZenScapeCarve"
-const CARVE_VERSION := 1
-var _carve := false
-var _cv: RefCounted = null
-
 ## Slot halls (scripts/endless/hall_sites.gd): a cut through the ridges, a
 ## layer over either field as the ponds are, cut in after them. `halls`
 ## their density (the world's `halls` layer, --halls=X; 0 none).
@@ -578,7 +566,6 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	ice_tunnel = PeakTunnel.make(_massif)
 	_isles = null if k.get("old_land",false) else CoastIsles.make(land_seed,String(world.id))
 	_set_edge(k)
-	_carve_setup()
 	if _blend:
 		for r: int in world.regions.size():
 			if _edge.z > 0.0: break
@@ -618,55 +605,6 @@ static func _want_native() -> bool:
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--land-native=0" or arg == "--gdscript-kernels": return false
 	return true
-
-## Whether the flags allow the native carve layers (--ground-native=0 or
-## --gdscript-kernels: GDScript).
-static func _want_ground_native() -> bool:
-	for arg: String in preload("res://scripts/launch_args.gd").user_args():
-		if arg == "--ground-native=0" or arg == "--gdscript-kernels": return false
-	return true
-
-## Turns the native carve layers on where they can be (see `_carve`).
-func _carve_setup() -> void:
-	_carve = false
-	if _tunnel_test or not _want_ground_native(): return
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0: return
-	if not native_available() or not ClassDB.class_exists(CARVE_CLASS): return
-	if _cv == null:
-		_cv = ClassDB.instantiate(CARVE_CLASS)
-		if int(_cv.version()) != CARVE_VERSION:
-			_cv = null
-			return
-		# The C library's sin/cos/atan2 as the field's (--land-libm), and as
-		# the GDScript field's when the land is grown in GDScript.
-		var libm := not _want_native()
-		for arg: String in preload("res://scripts/launch_args.gd").user_args():
-			if arg == "--land-libm": libm = true
-		_cv.setup(ponds > 0.0,tunnels > 0.0,halls > 0.0,splits > 0.0,PackedFloat64Array([Ponds.CELL,Tunnels.CELL,Sites.CELL,Splits.CELL]),libm)
-	_carve = true
-
-## Whether the carve layers run natively (`_carve`); `set_carve_native`
-## turns them off (or back on where they can be) for comparisons.
-func carve_native() -> bool:
-	return _carve
-
-func set_carve_native(on: bool) -> void:
-	if on: _carve_setup()
-	else: _carve = false
-
-## Hands the native field the squares' sites at (x, z) `sample` just found
-## (a tunnel's square as its tunnels' boxes, grown a metre: a point in one
-## is worked here).
-func _publish(x: float, z: float, p: PackedFloat32Array, ts: Array, s: PackedFloat32Array, sp: PackedFloat32Array) -> void:
-	if ponds > 0.0: _cv.put(0,x,z,p)
-	if tunnels > 0.0:
-		var boxes := PackedFloat32Array()
-		for t: RefCounted in ts:
-			var bx: Rect2 = t.box
-			boxes.append_array([bx.position.x-1.0,bx.position.y-1.0,bx.end.x+1.0,bx.end.y+1.0])
-		_cv.put(1,x,z,boxes)
-	if halls > 0.0: _cv.put(2,x,z,s)
-	if splits > 0.0: _cv.put(3,x,z,sp)
 
 ## The regions world's land (land_blend.gd): one field per region's recipe
 ## (native where built), blended by the region map's weights; a recipe with
@@ -825,29 +763,12 @@ func sample(x: float, z: float) -> Vector2:
 	_m_on = false
 	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
 		return _isle(_impl.sample(x,z) if _massif == null else _peak(_impl.sample(x,z),x,z),x,z)
-	var miss := false
-	if _carve:
-		var c: Vector2 = _impl.sample(x,z)
-		var r: Vector3 = _cv.carve(x,z,c.x,float(_impl.last_river))
-		if r.y < 1.5:
-			c.x = r.x
-			if r.y > 0.5:
-				var pr: Vector4 = _cv.pond()
-				_p_on = true
-				_p_out = pr.x
-				_p_r = pr.y
-				_p_w = pr.z
-				_p_y = pr.w
-			if _massif != null: c = _peak(c,x,z)
-			return _isle(c,x,z)
-		miss = r.y < 2.5
 	# (The square's pond, tunnel, hall and split first: finding them samples
 	# the field.)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var s := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
 	var sp := _split_for(x,z) if splits > 0.0 else PackedFloat32Array()
-	if miss: _publish(x,z,p,ts,s,sp)
 	var got: Vector2 = _impl.sample(x,z)
 	if not p.is_empty(): got.x = _pond(p,x,z,got.x,float(_impl.last_river))
 	if not ts.is_empty(): got = _tunnel(ts,got,x,z)

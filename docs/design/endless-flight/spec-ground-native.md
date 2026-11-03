@@ -82,3 +82,16 @@ The user judges by playing and by `tools/frame_report.py` side by side.
 
 Smoke check every iteration: `studies/endless_flight.tscn` via
 `tools/smoke.py`. Iteration cap and budget: the skill's default.
+
+## Notes (2026-11-03, trimmed for the PR)
+
+- Stage 2 (the carve in C++, `ZenScapeCarve`, 64c685b1) was built, then
+  axed by the user's choice: a tiny gain for a duplicated copy of the
+  carve's maths that would drift silently from the GDScript. LandField
+  `sample` is main's GDScript again. What ships: the GroundTally counter,
+  stage 3's broad phase (`ZenScapeGround`, with the ice layer and stage 5's
+  per-owner republish) and stage 4's tree solid (`ZenScapeTreeSolid`).
+- The stage parity checks are one committed tool:
+  `python tools/ground_parity.py` (`--break` for the control).
+- The PC needs a native rebuild (`docs/desktop-builds.md`); until then it
+  runs the GDScript for both layers. Handoff: ground-native-handoff.md.

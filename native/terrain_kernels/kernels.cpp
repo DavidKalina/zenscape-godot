@@ -17,7 +17,6 @@
 #include "water_flow.h"
 #include "isle_kernels.h"
 #include "land_field_bind.h"
-#include "land_carve_bind.h"
 #include "ground_bind.h"
 #include "tree_solid_bind.h"
 #include "grass_cell.h"
@@ -330,7 +329,6 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeIsleKernels>();
     ClassDB::register_class<ZenScapeLandField>();
     ClassDB::register_class<ZenScapeLandBand>();
-    ClassDB::register_class<ZenScapeCarve>();
     ClassDB::register_class<ZenScapeGround>();
     ClassDB::register_class<ZenScapeTreeSolid>();
     ClassDB::register_class<ZenScapeGrass>();

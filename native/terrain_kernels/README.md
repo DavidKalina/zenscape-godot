@@ -49,16 +49,6 @@ multiply-add, three spots in four move, by up to 3 cm.
 machines. Any change to one field must be made to the other; check with
 `scratch/`'s comparison (the handoff, docs/design/endless-flight/native-land-handoff.md).
 
-`land_carve.h` is LandField `sample`'s carve layers over the native field:
-the ponds, the slot halls and the split mountains (land_ponds.gd,
-hall_sites.gd, split_sites.gd), cut in by the field's `carve_sample` in one
-call. GDScript still finds the sites and publishes each square's to the
-field as it finds it (`carve_put`); a square not yet published, or one a
-tunnel may touch, is worked in GDScript. The tunnels, the Peak and the isles
-stay GDScript. `carve_version` (LandField `CARVE_VERSION`) gates a stale
-library; `--ground-native=0` (or `--gdscript-kernels`) cuts them in GDScript.
-Like the field it uses land_math.h's sin/cos/atan2 unless `--land-libm`.
-
 `tree_solid_bind.h` (`ZenScapeTreeSolid`) is LandTrees `tree_in` / `top_at`
 over the stood trees' flight solid: each plan cell's `solid` is published
 as its block stands, a tree in it is knocked or the block goes, and a query
@@ -77,6 +67,12 @@ skip the rest. The owners' own narrow tests stay GDScript. Main thread only.
 `version` (GroundNative `VERSION`) gates a stale library; `--ground-native=0`
 (or `--gdscript-kernels`) asks every owner. The handoff:
 docs/design/endless-flight/ground-native-handoff.md.
+
+After touching a ground owner's `ground` / `inside` / `land_y` or what it
+publishes to the broad phase (arches, rocks, the Peak's towers and stair,
+the ice tunnel), or the tree solid on either side, run
+`python tools/ground_parity.py`: both checks must report 0 mismatches
+(`--break` is its control and must fail).
 
 ## The endless grass
 

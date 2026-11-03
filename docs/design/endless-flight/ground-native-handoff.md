@@ -4,8 +4,8 @@ The ask (spec-ground-native.md): the GDScript tick asks for the ground
 dozens of times a frame (the camera, near misses, landing, the plane's
 figure, the tree knock), and those parts dominated a flown log. This round
 moves the stable parts of those queries to C++. It is a prototype round:
-smoke checks, scratch parity comparisons (0 mismatches) and headless driven
-timings. No committed tests.
+smoke checks, a parity tool (0 mismatches) and headless driven timings. No
+committed tests.
 
 ## Launch
 
@@ -21,14 +21,7 @@ timings. No committed tests.
 Each layer keeps its GDScript as the reference and the fallback, and each
 publishes its data when it changes, never per query.
 
-1. **The carve** (`land_carve.h`, `land_carve_bind.h`, `ZenScapeCarve`; one
-   per LandField, so one per thread). LandField `sample` gets the field's
-   height, then one `carve` call cuts in the ponds, the slot halls and the
-   split mountains, and hands back the pond's reads when a pond is nearer
-   than the river. GDScript still finds the sites; a square not yet
-   published runs the old path and publishes. Bit for bit (land_math.h
-   trig, no contraction), so the land is the same on every machine.
-2. **The broad phase** (`ground_bind.h`, `ZenScapeGround`,
+1. **The broad phase** (`ground_bind.h`, `ZenScapeGround`,
    `scripts/endless/ground_native.gd`). The arches (and the ships' moving
    ones, the cracked walls and way towers, in a short list of their own),
    the rocks, the Peak's towers and stair and the ice tunnel publish world
@@ -41,21 +34,35 @@ publishes its data when it changes, never per query.
    `touch_rock` the cell or grid square, the towers and the stair `bump`
    their part (`bump()` alone republishes everything), the movers
    `bump_loose()`; only the changed squares are re-marked. Main thread only.
-3. **The trees' flight solid** (`tree_solid_bind.h`, `ZenScapeTreeSolid`).
+2. **The trees' flight solid** (`tree_solid_bind.h`, `ZenScapeTreeSolid`).
    LandTrees publishes each plan cell's `solid` as its block stands, a tree
    is knocked or the block goes; `tree_in`, `top_at`, `inside` and `ground`
    read the 3 x 3 buckets in C++, in double, bit for bit. Main thread only.
 
+## Stage 2, the carve, axed
+
+Stage 2 put LandField `sample`'s pond, slot hall and split carves in C++
+(`ZenScapeCarve`, 64c685b1). The user took it out before the PR: the gain
+was small (field.height ~7.0 -> 5.1 us in the split segment, within noise
+in the meadow; the rest of field.height's cost is GDScript wrapping it
+couldn't take) for a second copy of the carve's maths that would drift
+silently from the GDScript each time a carve is tuned, and the carve shapes
+the land. It was removed in a new commit (not a history rewrite): the
+class, `land_carve.h`, `land_carve_bind.h`, its registration and its
+README paragraph, and LandField's native path, so `sample` and `height`
+are main's GDScript again (plus GroundTally's two counter lines). The
+commit 64c685b1 keeps it whole if it is ever wanted back.
+
 ## What stays GDScript, and why
 
-- **Tunnels** (tunnel_sites.gd, land_tunnels.gd): churned 2026-11-01/02. A
-  point in a tunnel's box runs the whole GDScript carve; their ground,
-  land_y, sight and tube are GDScript. In a bore the camera's `_sight` is
+- **LandField `sample`'s carve** (ponds, tunnels, halls, splits, the Peak,
+  the isles): all GDScript, as on main (stage 2 axed, above).
+- **Tunnels** (tunnel_sites.gd, land_tunnels.gd): churned 2026-11-01/02.
+  Their ground, land_y, sight and tube are GDScript. In a bore the camera's `_sight` is
   the tunnels' own fine march, so the bores gain least.
 - **The ice tunnel's narrow tests**: churned 2026-11-01 (icefield). Only its
   reach is published (broad-phase bit ICE), so away from the tube it costs
   nothing.
-- **The Peak and the coast isles' carve** (churned 2026-10-31).
 - **Halls, coast, doors** in the composite: about 1-2 us each, not worth a
   layer yet.
 - **The batch calls for the camera's probe march and `_sight`** (in the
@@ -71,38 +78,43 @@ publishes its data when it changes, never per query.
 
 ## Flags and staleness
 
-- `--ground-native=0` or `--gdscript-kernels`: all three layers off.
+- `--ground-native=0` or `--gdscript-kernels`: both layers off.
 - No library, or a library without the class or with another version: that
-  layer runs GDScript, cleanly. Versions: LandField `CARVE_VERSION` (1) vs
-  `ZenScapeCarve.version()`, `GroundNative.VERSION` (2) vs
+  layer runs GDScript, cleanly. Versions: `GroundNative.VERSION` (2) vs
   `ZenScapeGround.version()`, LandTrees `SOLID_VERSION` (1) vs
   `ZenScapeTreeSolid.version()`.
 - **The PC needs a rebuild** of the native libraries (docs/desktop-builds.md,
   native/terrain_kernels/README.md "Build and run"). Until then it runs the
-  GDScript for all three, as on main.
+  GDScript for both, as on main; the parity tool says so (its checks FAIL
+  with "no library, a stale one"). Rebuild there, then run
+  `python tools/ground_parity.py` on the PC too.
 - Measuring: `GroundTally` (scripts/endless/ground_tally.gd) counts each
   ground query per FrameLog part when a frame log is on; off it costs one
   static read a query.
 
-## How to compare (scratch, git-ignored, in the loop's worktree)
+## How to compare
 
-Each prints a `mismatches` line; 0 is the pass. `--break` controls make
-them fail on purpose, to show they bite.
+`python tools/ground_parity.py` (headless, ~9 min both; `--only trees` ~1
+min, `--only ground` ~8; past a tool call's limit, run it under
+`tools/bg.py`). It runs `tools/harness/ground_parity.gd` once per check
+and prints `PASS|FAIL <check>: points N mismatches M`; exit 0 only when
+both find 0 mismatches. `--break` is the control (the arches layer, and
+some tree cells, unpublished from the native side): both checks must FAIL
+and it exits 1 (3 if it found nothing, so the check doesn't bite).
 
-- `python3 tools/drive.py scratch/gn_carve.gd` (also `--land-libm`): the
-  carve, random, along flight lines and round every pond, split and tunnel
-  box. Last: "GN_CARVE points 142700 mismatches 0".
-- `scratch/gn_hall.gd`: the hall carve on 40 synthetic sites (seed 1 has no
-  halls). "GN_HALL points 99312 mismatches 0".
-- `python3 tools/drive.py scratch/gn_ground.gd --timeout 900` (~7 min):
-  the composite at many pads, at both ships, the stair, the Peak, the ice
-  tube. "GN_GROUND points 132560 mismatches 0".
-- `python3 tools/drive.py scratch/gn_trees.gd --timeout 900` (~40 s): the
-  trees with knocks and blocks freed. "GN_TREES points 98142 mismatches 0".
-- Timing: `scratch/gn_base.gd` (a 55 m/s kinematic low flight, 8 m over the
-  ground, `--seg=meadow|split|tunnel`, a per-call bench) and
-  `python3 scratch/gn_parts.py <csv>...` for the parts' mean/p99.
-  `scratch/gn6_ab.sh` is the whole-loop A/B below.
+- `ground`: the study's plane_ground at pads -1, 0, random, 16, 17,
+  `_blocked`, `_solid`, `_sight`, `floor_at`, `eye_floor` and the field's
+  `last_river` after each, broad phase on vs every owner asked, at both
+  ships, meadow and split spots, three stair flights, the Peak and the ice
+  tube, near arches, loose arches, rocks, towers, flights and ice windows.
+- `trees`: `tree_in`, `top_at`, `inside`, `ground` native vs GDScript at
+  six spots, with knocks and blocks freed and re-stood.
+
+Timing (scratch, git-ignored, in the loop's worktree): `scratch/gn_base.gd`
+(a 55 m/s kinematic low flight, 8 m over the ground,
+`--seg=meadow|split|tunnel`, a per-call bench) and
+`python3 scratch/gn_parts.py <csv>...` for the parts' mean/p99.
+`scratch/gn6_ab.sh` is the whole-loop A/B below.
 
 ## Numbers
 
@@ -115,8 +127,6 @@ Per stage (us per call, before -> after; from the commits):
 
 | stage | query | before | after |
 |---|---|---|---|
-| 2 carve | field.height, split | 7.0 | 5.1 |
-| 2 carve | floor_at, split | 16.3 | 12.2 |
 | 3 broad phase | plane_ground, meadow | 44.3 | 30.5 |
 | 3 broad phase | _sight, meadow | 233 | 181 |
 | 3 ice layer | plane_ground, meadow | 38.1, 30.3 | 24.3, 23.0 |
@@ -124,7 +134,12 @@ Per stage (us per call, before -> after; from the commits):
 | 4 trees | tree_in, meadow | 9.4, 9.9 | 2.0, 2.4 |
 | 4 trees | top_at, meadow | 8.4, 8.9 | 1.5, 1.6 |
 
-Whole loop, every layer off (`--ground-native=0`) vs on, this round
+(The stage 3 broad phase row was `--ground-native=0` vs on, which then
+turned stage 2's carve off too, so it is stages 2 and 3 together.)
+
+Whole loop, every layer off (`--ground-native=0`) vs on, measured in
+stage 5 **with stage 2's carve still in** (so "on" includes its small share,
+mostly in the split segment; not re-measured after the trim)
 (`scratch/gn6_ab.sh`, logs `scratch/gn6_*`), parts mean/p99 ms:
 
 | part (mean/p99 ms) | meadow off r1, r2 | meadow on r1, r2 | split off r1, r2 | split on r1, r2 |
@@ -158,8 +173,8 @@ mismatches, FAIL as it should.
 - No flown log yet. Please fly the same kind of flight (low, fast, near
   trees, arches and rocks) with and without `--ground-native=0` and send
   the two logs: that is the spec's "done".
-- Seed 1 has no slot halls, so the hall carve is proved only on synthetic
-  sites.
+- The whole-loop numbers above were taken with stage 2 in; the trimmed
+  branch was smoked and parity-checked, not re-timed.
 - One headless run in stage 3 logged 11 dummy-renderer RID errors at load
   ("Initializing already initialized RID"), in no other run; it looks like
   a headless render-server race, not this round (it touches no meshes).
