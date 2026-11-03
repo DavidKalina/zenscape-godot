@@ -49,6 +49,10 @@ void vertex() {
 	// Far off a splash is a few pixels: it stands a little taller than it is.
 	float off = pow(max(distance(at, INV_VIEW_MATRIX[3].xyz) / 20.0, 1.0), 0.75);
 	float grow = sqrt(size);
+	// A big fish's water (size over about 1.5): thrown no higher past a point, but
+	// in bigger drops that stay up longer.
+	float thrown = min(grow, 1.6);
+	float heft = max(sqrt(size / 1.4), 1.0);
 	vec3 place = at;
 	vec3 moving = vec3(0.0, 1.0, 0.0);
 	float half_size = 0.0;
@@ -77,15 +81,15 @@ void vertex() {
 			}
 		} else if (sort < 0.35) {
 			// A drop off the crown's rim.
-			float live = 0.45 + 0.5 * COLOR.b;
-			float up = (2.0 + 3.6 * COLOR.a) * grow * mix(0.75, 1.0, going_in);
-			float out_speed = (0.5 + 2.0 * COLOR.b) * grow;
+			float live = (0.45 + 0.5 * COLOR.b) * heft;
+			float up = (2.0 + 3.6 * COLOR.a) * thrown * mix(0.75, 1.0, going_in);
+			float out_speed = (0.5 + 2.0 * COLOR.b) * thrown;
 			vec3 v0 = vec3(way.x * out_speed, up, way.y * out_speed) + fling * vec3(0.12, 0.0, 0.12);
 			vec3 p = v0 * t + vec3(0.0, -0.5 * gravity * t * t, 0.0);
 			if (t < live && p.y > -0.03) {
 				place = at + p;
 				moving = v0 + vec3(0.0, -gravity * t, 0.0);
-				half_size = UV2.x;
+				half_size = UV2.x * heft;
 				fade = 1.0 - smoothstep(0.75, 1.0, t / live);
 			}
 		} else if (sort < 0.6) {
@@ -97,17 +101,17 @@ void vertex() {
 				vec3 from = fish_at(at, fling, shed);
 				vec3 v0 = (fling + vec3(0.0, -gravity * shed, 0.0)) * keep + vec3(way.x, 0.0, way.y) * (0.2 + 0.7 * COLOR.b);
 				vec3 p = from + v0 * t + vec3(0.0, -0.5 * gravity * t * t, 0.0);
-				if (t < 1.1 && p.y > at.y - 0.03) {
+				if (t < 1.1 * heft && p.y > at.y - 0.03) {
 					place = p;
 					moving = v0 + vec3(0.0, -gravity * t, 0.0);
-					half_size = UV2.x;
-					fade = 1.0 - smoothstep(0.7, 1.1, t);
+					half_size = UV2.x * heft;
+					fade = 1.0 - smoothstep(0.7 * heft, 1.1 * heft, t);
 				}
 			}
 		} else if (sort < 0.85) {
 			// The jet: the hole closing where it went in throws a stem up.
 			if (going_in > 0.5) {
-				float up = (1.4 + 2.2 * COLOR.a) * grow;
+				float up = (1.4 + 2.2 * COLOR.a) * thrown;
 				float h = up * t - 0.5 * gravity * t * t;
 				if (h > -0.02) {
 					place = at + vec3(way.x * COLOR.b * 0.05, h, way.y * COLOR.b * 0.05);
@@ -118,12 +122,12 @@ void vertex() {
 			}
 		} else {
 			// A breath of mist off it, thin.
-			float live = 0.8;
+			float live = 0.8 * heft;
 			float k = t / live;
 			if (k < 1.0) {
 				place = at + vec3(way.x * 0.4 * t, 0.12 + (0.5 + COLOR.a) * t * (1.0 - 0.4 * k), way.y * 0.4 * t) * vec3(1.0, grow, 1.0);
 				half_size = UV2.x * grow * mix(0.6, 1.8, sqrt(k));
-				fade = 0.16 * (1.0 - k) * (1.0 - k) * smoothstep(0.0, 0.1, k) * mix(0.6, 1.0, going_in);
+				fade = 0.16 * heft * (1.0 - k) * (1.0 - k) * smoothstep(0.0, 0.1, k) * mix(0.6, 1.0, going_in);
 			}
 		}
 	}

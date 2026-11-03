@@ -80,6 +80,61 @@ Cost, headless: 0.011 ms a frame idle, 0.033 ms with a fish in the air, 0.26 ms 
 the frame a moment is laid, worst 0.62 ms in 3000 frames. One 18 ms frame turned up
 once in an earlier 3600-frame run and didn't come back; its cause wasn't found.
 
+## The big leap
+
+A fifth moment, `big`, a fifth of the moments by default (about one every 3-4
+minutes low over a lake). A 2.6-3.8 m fish beside the view, or 3.4-4.6 m further
+off with the whole arc in sight (40%), 4.6-8 m high, about 2.5 s in the air on real
+gravity, a slow tail (2.6-4.2 Hz), a stiffer body, a longer swirl first and a second
+burst when the hole closes. The splash stops rising past size 2.56 (`thrown` in
+`shaders/wake_splash.gdshader`) but its drops grow and stay up longer (`heft`).
+
+To see it: `.\run-endless-flight.cmd --at=2334,-1534 --heading=90 --alt=3
+--leap-gap=6 --leap-big=1`. Knob: `--leap-big=S[,X]` the share of the moments
+(0 none, 1 all) and their length times X.
+
+## The swimmer
+
+A big fish (4.2-5.4 m, the hero fish's mesh) that comes up from behind and keeps
+pace beside the plane just under the surface for 5-8 s, with one surge ahead,
+then dives back and away. Half the time it breaches once on real gravity, with
+WakeFish's splashes and rings. 30% of the time a smaller second fish comes along.
+`scripts/endless/swim_fish.gd`, owned by WakeFish; leaps hold off while it swims.
+
+- Gap: a mean of 60 s low (under 14 m) over a lake, 36-84 s, the first at 0.3-0.7
+  of one.
+- Its slot: 2 m behind to 4 m ahead of the plane's centre, 5-6.5 m out, so 14-18 m
+  from the eye on Boost; off Boost the camera's narrower and the slot slides up to
+  5 m further on. Its middle 0.9 m under the swell (it rides `EndlessSea.height_at`),
+  wandering 0.08 m.
+- What shows is a real mesh under the real sea sheet. The sea draws its own water
+  over it (`shaders/endless_sea.gdshader`): `zs_swim_hit` finds the pixels whose
+  bed is the fish's body (inside its footprint, no deeper than its belly), so its
+  back isn't taken for a shallow (no shore foam, no clear edge) and the water over
+  it is its own: dark blue-green at its back, going to the water's colour down its
+  sides and toward nose and tail (`swim_see`, `swim_clear`). `zs_swim_one` adds a low
+  hump ahead of the head, a hollow behind, the chop stilled over its back, a little
+  less sky, and where the fin cuts, spray and two short ripples.
+- The fish shader (`shaders/wake_fish.gdshader`, `under`/`surface_y`) takes the
+  water's colour under the surface and dims its sun glint; leaps leave `under` at 0.
+
+To see it: `.\run-endless-flight.cmd --at=2334,-1534 --heading=90 --alt=3
+--swim-gap=8`, and fly low (under 14 m) over the lake. Knobs: `--swimmer=0` none,
+`--swim-gap=S` the mean gap (s), `--swim-size=X` its length times X.
+
+Numbers, headless, medium, 360 s each circling the 2.8 km lake at 3 m with a wobble
+in the line (the real stick). On screen: its middle inside the frame, which is not
+the same as seen through the water.
+
+| | time over water | swimmers | gaps | mean | least | most | on screen |
+|---|---|---|---|---|---|---|---|
+| Boost (55.8 m/s) | 312 s | 5 (2 pairs, 3 breaches) | 4 | 54.6 s | 39.1 s | 77.5 s | 5.1-8.0 s of 8.4-11.1 |
+| no Boost (35.3 m/s) | 313 s | 5 (3 pairs, 2 breaches) | 4 | 67.1 s | 49.4 s | 77.3 s | 6.7-8.9 s of 8.6-10.7 |
+
+Cost, rendered (1440x900, 3D scale 0.75, this PC): its script 0.069 ms a frame
+while it swims. The frame's GPU time with it off, on, off: 5.75/5.89/5.85 ms and
+5.83/5.71/5.90 ms, so the sea's added work is inside the noise (about 0.15 ms).
+
 ## Model budget
 
 444 triangles, 289 vertices, a 1024x256 mask skin.
@@ -112,3 +167,11 @@ once in an earlier 3600-frame run and didn't come back; its cause wasn't found.
   on a GPU.
 - The plane's own foam patch under the camera is much the brightest thing near the
   fish at low height. It's as it was and wasn't touched.
+- The big leap's heavier splash is mostly seen on the far ones: near fish leave
+  the frame before they land, so it wasn't judged in a close still.
+- The swimmer: judged only in stills (chase camera, noon and 16.2, Boost and
+  cruise). In the sun's glare at noon and at about 22 m after a breach it's lost;
+  some cruise frames show it darker navy with harder edges. At 0.9 m the dorsal
+  seldom cuts the surface, so its spray and ripples seldom show; shallower than
+  about 0.8 m its back now and then stands out of a trough `height_at` misses,
+  as a black cut-out. No sound for it; the hump and slick barely read at its range.
