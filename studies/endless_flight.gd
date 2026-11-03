@@ -679,6 +679,7 @@ func _ready() -> void:
 		fish.name = "Fish"
 		add_child(fish)
 		fish.setup(seed,field)
+		if fish.wake != null and look != null: fish.wake.sea = look.water
 	birds = EndlessBirds.new()
 	birds.name = "Birds"
 	add_child(birds)
@@ -1321,7 +1322,7 @@ func tick(delta: float) -> void:
 	birds.step(delta,camera.global_position,plane)
 	FrameLog.mark(&"birds")
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
-	if fish != null and fish.wake != null: fish.wake.step(delta,camera.global_position,plane,water)
+	if fish != null and fish.wake != null: fish.wake.step(delta,camera.global_position,plane)
 	FrameLog.mark(&"fish")
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
 	FrameLog.mark(&"traffic")

@@ -270,6 +270,11 @@ uniform vec4 other_points[40];
 uniform int other_count = 0;
 uniform vec4 other_head = vec4(0.0);
 uniform float other_wide = 1.8;
+// The water round a leaping fish (scripts/endless/wake_fish.gd): its marks (xz,
+// the moment it breaks, size), how many, and that clock.
+uniform vec4 leap_marks[6];
+uniform int leap_count = 0;
+uniform float leap_now = 0.0;
 // 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover,
 // 6 (sea_foam 1): the lace's density, youth, buffer reach and churn, 7: the
 // foam worked out per crest everywhere (no buffer).
@@ -800,6 +805,46 @@ float zs_river_calm(vec2 p) {
 	return clamp(textureLod(depth_map, uv, 0.0).g, 0.0, 1.0) * river_calm;
 }
 
+// What a fish does to the surface at `p`: the slope added. Before it breaks the
+// water domes and turns over it; after, rings run out, a few crests to a packet
+// slowing as they go, as the slope only, so the sky and the sun take them.
+vec2 zs_leap_slope(vec2 p) {
+	vec2 sum = vec2(0.0);
+	for (int i = 0; i < leap_count; i++) {
+		vec4 m = leap_marks[i];
+		float age = leap_now - m.z;
+		if (m.w <= 0.0 || age < -0.7 || age > 5.0) continue;
+		vec2 d = p - m.xy;
+		float r2 = dot(d, d);
+		float size = m.w;
+		float front = size * 0.35 + 2.2 * (1.0 - exp(-max(age, 0.0) / 1.8)) * 2.0;
+		float reach = front + 2.0 * size + 0.5;
+		if (r2 > reach * reach) continue;
+		float r = sqrt(r2);
+		vec2 out_way = d / max(r, 1e-3);
+		if (age < 0.0) {
+			float w = 0.55 * size;
+			float grow = smoothstep(-0.65, -0.05, age);
+			float dome = r / (w * w) * exp(-r2 / (2.0 * w * w)) * w;
+			float a = atan(d.y, d.x);
+			float turn = sin(a * 2.0 + r * 5.0 / size + age * 7.0) * exp(-r2 / (3.0 * w * w));
+			sum += (out_way * dome * 0.9 + vec2(-out_way.y, out_way.x) * turn * 0.5) * grow;
+		} else {
+			float wave = 0.85 + 0.25 * age;
+			float e = (r - front) / (0.55 + 0.45 * age + 0.4 * size);
+			float packet = exp(-e * e);
+			float fall = exp(-age / 1.6) / (1.0 + r * 0.25);
+			sum += out_way * sin((r - front) * TAU / wave) * packet * fall * 0.75;
+			// Where it went through: broken, for a moment, a boil of small slopes.
+			float w = 0.5 * size + 0.25 * age;
+			float boil = exp(-r2 / (w * w)) * exp(-age / 0.8);
+			float a = atan(d.y, d.x);
+			sum += vec2(sin(d.x * 19.0 + a * 3.0 + age * 6.0), sin(d.y * 23.0 - a * 2.0 - age * 5.0)) * boil * 0.7;
+		}
+	}
+	return sum;
+}
+
 // A wake at `p` (track 0 the plane's, 1 the burrower's): its foam (returned), the stirred water round it
 // (`stirred`, 0..1) and the slope its ripples add. Only the nearest point of
 // the track counts, so the arms are one V and not a ring per point.
@@ -1055,6 +1100,7 @@ void fragment() {
 	float stirred;
 	float zs_burrow_foam;
 	float waked = zs_wake(rest_xz, wake_slope, stirred, zs_burrow_foam);
+	if (leap_count > 0) slope += zs_leap_slope(rest_xz);
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.

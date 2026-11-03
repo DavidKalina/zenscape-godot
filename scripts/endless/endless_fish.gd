@@ -11,7 +11,7 @@ extends Node3D
 ## shaders/endless_fish.gdshader, the splashes two MultiMeshes of quads
 ## (shaders/endless_splash.gdshader) simulated here.
 ##
-## The fish the plane itself flings up, and those in the lakes, are
+## The rare leaps in the lakes, placed for the plane's eye, are
 ## scripts/endless/wake_fish.gd's.
 ##
 ## --fish=0 none (and none without ponds, --ponds=0).
@@ -75,7 +75,7 @@ var _ring_mm: MultiMesh
 var _ring_trough := PackedFloat32Array()
 var _plops: Array = []
 var _plop_streams: Array = []
-## The fish that answer the plane (scripts/endless/wake_fish.gd), or null.
+## The rare leaps in the lakes (scripts/endless/wake_fish.gd), or null.
 var wake: Node3D
 ## For the numbers: leaps begun, ponds known, ms this frame and its mean.
 var leaps_total := 0
@@ -122,7 +122,7 @@ func setup(land_seed: int, field: RefCounted) -> void:
 		wake = WakeFish.new()
 		wake.name = "Wake"
 		add_child(wake)
-		wake.setup(land_seed,field)
+		wake.setup(field)
 
 func _multimesh(n: String, count: int, ring: bool) -> MultiMesh:
 	var mm := MultiMesh.new()
