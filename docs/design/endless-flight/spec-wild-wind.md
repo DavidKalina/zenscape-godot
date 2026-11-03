@@ -60,10 +60,26 @@ In the wilderness (seed 1, the main scene, `run-endless-flight.command`):
    when it's windy (on top of today's altitude bed). Pollen/leaf litter
    blow with the local wind. Lakes and rivers get dark wind ripples (cat's
    paws) on windy stretches and lie glassy in calm.
-6. **The plane is not affected** by the wind in this loop. It will be,
+6. **The eddies.** The visible wind ribbons (`scripts/endless/endless_eddies.gd`,
+   `scripts/breeze_ribbons.gd`; `docs/design/endless-flight/endless-eddies-handoff.md`)
+   stay; the user likes the flourish they add. Whether they still earn a
+   place beside the new wind is an open question for the user, so don't
+   remove them. Two changes:
+   - **Their grass motion is wrong.** Today each ribbon head drops react
+     stamps every 2 m into the grass's react map (`GrassReact.eddy`,
+     `scripts/endless/grass_react.gd`, `zs_react_map`). The user sees the
+     grass move at a low frame rate or in big chunks. It should be a smooth
+     rolling gust of air through the grass instead. Find why it steps
+     (the map's resolution, how often it updates, stamp spacing) and make it
+     smooth; driving it off the new wind field (a moving gust cell
+     the grass reads every frame) is one way.
+   - **They follow the wind.** More of them where and when it's windy,
+     few or none in calm spots and still hours, travelling with the local
+     wind's heading.
+7. **The plane is not affected** by the wind in this loop. It will be,
    later; don't build for that beyond keeping the field queryable from
    GDScript at a point (a `wind_at(x, z)`-style call) so it can be.
-7. **Flags for A/B:** `--hour=` already exists. Add a way to force the wind:
+8. **Flags for A/B:** `--hour=` already exists. Add a way to force the wind:
    e.g. `--wind=calm|breezy|gusty` for the day's temper, `--wind=X` for a
    fixed strength everywhere, `--wind=off` for today's single wind (the old
    look), and a debug view of the field (overlay or map) for checking where
@@ -93,8 +109,10 @@ In the wilderness (seed 1, the main scene, `run-endless-flight.command`):
      blow-as-one swell in the wilderness. Checkpoint: stills/short clips of a
      windy ridge and a calm valley at the same hour.
   3. Trees: near spruce by the field, cheap sway for far spruce and far trees.
-  4. Sound, pollen/leaves, lake and river ripples.
-  5. Tune by eye across the day, measure cost, final stills.
+  4. The eddies: smooth rolling grass motion, and spawning by the local wind.
+     Checkpoint: a short clip of an eddy rolling through grass.
+  5. Sound, pollen/leaves, lake and river ripples.
+  6. Tune by eye across the day, measure cost, final stills.
 - Motion doesn't read in a single still: where motion is the point, shoot a
   short frame strip or clip (tools/shot.py, tools/README.md) and look at it.
 - Cap: the skill's default. Budget per iteration: 250000 tokens.
