@@ -155,6 +155,7 @@ const RUNS_S := 1.6
 ## Running (`flee`), a faint glow at its tail so it reads far off against
 ## the trees (the dark body alone is a speck past about 80 m).
 const FLEE_GLOW := 0.3
+const FLEE_GLOW_NEAR := 50.0
 
 const PIECES := 16
 const PIECE_OUT := 22.0
@@ -682,9 +683,17 @@ func _draw_figure(delta: float) -> void:
 		var end := -1.6 if state == &"flee" else 2.0
 		_glow.global_position = flight.position+flight.forward()*end*SIZE
 		# Never under about a hundredth of the distance, so it reads far off.
-		var far := (game.camera as Camera3D).global_position.distance_to(flight.position)*0.022
-		_glow.scale = Vector3.ONE*maxf(lerpf(1.0,3.5,glow)*SIZE,far*glow)
-		_glow_mat.albedo_color.a = 0.8*glow
+		var d := (game.camera as Camera3D).global_position.distance_to(flight.position)
+		var far := d*0.022
+		var near := lerpf(1.0,3.5,glow)*SIZE
+		var alpha := 0.8*glow
+		if state == &"flee":
+			# Running and close, an engine's ember, not a lamp: small and
+			# faint inside FLEE_GLOW_NEAR m, up to full by twice that.
+			near = SIZE*0.9
+			alpha *= lerpf(0.45,1.0,smoothstep(FLEE_GLOW_NEAR,FLEE_GLOW_NEAR*2.0,d))
+		_glow.scale = Vector3.ONE*maxf(near,far*glow)
+		_glow_mat.albedo_color.a = alpha
 
 static func _seg_least(a: Vector3, b: Vector3) -> float:
 	var d := b-a

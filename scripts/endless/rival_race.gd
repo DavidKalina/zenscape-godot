@@ -296,6 +296,10 @@ func step(delta: float, game: Node) -> void:
 func _offer(delta: float, game: Node, flying: bool, pressed: bool) -> void:
 	var traffic: Node = game.traffic
 	var camera: Camera3D = game.camera
+	# Locked on (scripts/endless/lock_on.gd, with --raider): no traffic plane
+	# is offered, so no second bracket, and R3's press can't start a challenge.
+	var lock: Node = game.get("lock_on")
+	if lock != null and lock.get("target") != null: flying = false
 	if not flying:
 		offered = -1
 		hold = 0.0

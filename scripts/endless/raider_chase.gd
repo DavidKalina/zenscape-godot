@@ -46,6 +46,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
+const Field = preload("res://scripts/endless/land_field.gd")
 
 ## Its pace: times the plane's Boost speed; behind the plane, m/s over its speed.
 const PACE := 1.12
@@ -99,12 +100,20 @@ const LOOK := [60.0,120.0,180.0,240.0,300.0]
 ## The plan's weights: a sample in trees; a m climbed past its height; a
 ## sample over the sea; a rad of turn; a rad off the last plan; running
 ## back at the plane (below FLEE_COS of straight away from it); toward an
-## arch; home from past HOME_M m off the land's middle; a rock or an arch
+## arch; home from past HOME_M m off the land's middle; toward the nearest
+## land while it's over the sea (W_SEA_HOME); a rock or an arch
 ## in the way at its height (it goes round, not over).
 const W_TREE := 0.35
 const W_BLOCK := 2.0
 const W_CLIMB := 0.02
-const W_SEA := 0.12
+const W_SEA := 0.35
+const W_SEA_HOME := 4.0
+## Out over the sea: rings looked over for land (m), and directions in each.
+const SEA_LOOK := [150.0,300.0,600.0,1000.0,1600.0,2400.0]
+const SEA_DIRS := 16
+## Over the sea, running away from the plane counts this much (it would
+## rather come back past you to the land than run out over open water).
+const SEA_FLEE := 0.35
 const W_TURN := 0.5
 const W_KEEP := 0.6
 const FLEE_COS := 0.55
@@ -275,6 +284,7 @@ func _plan(p: Vector3) -> void:
 	var home := Vector3(-at.x,0.0,-at.z)
 	var far := home.length()
 	home = home/maxf(far,1.0)
+	var land_way := _land_way(at)
 	var best := -INF
 	var best_h := f.heading
 	for k in range(-FAN,FAN+1):
@@ -299,13 +309,32 @@ func _plan(p: Vector3) -> void:
 		score -= absf(k*FAN_STEP)*W_TURN
 		score -= absf(angle_difference(_want,h))*W_KEEP
 		var flee := dir.dot(away)
-		if flee < FLEE_COS: score -= (FLEE_COS-flee)*W_FLEE
+		if flee < FLEE_COS: score -= (FLEE_COS-flee)*W_FLEE*(SEA_FLEE if land_way != Vector3.ZERO else 1.0)
 		if arch_way != Vector3.ZERO: score += maxf(dir.dot(arch_way),0.0)*W_ARCH
 		if far > HOME_M: score += dir.dot(home)*W_HOME
+		if land_way != Vector3.ZERO: score += dir.dot(land_way)*W_SEA_HOME
 		if score > best:
 			best = score
 			best_h = h
 	_want = best_h
+
+## Over the sea's floor (not a river): the way (flat, unit) to the nearest
+## land within SEA_LOOK m, else zero.
+func _land_way(at: Vector3) -> Vector3:
+	var field = raider.game.field
+	if float(field.height(at.x,at.z)) >= Field.SEA_Y-1.0: return Vector3.ZERO
+	for s: float in SEA_LOOK:
+		var best := Vector3.ZERO
+		var best_h := Field.SEA_Y+1.0
+		for k in SEA_DIRS:
+			var a := TAU*k/SEA_DIRS
+			var d := Vector3(sin(a),0.0,cos(a))
+			var h := float(field.height(at.x+d.x*s,at.z+d.z*s))
+			if h > best_h:
+				best_h = h
+				best = d
+		if best != Vector3.ZERO: return best
+	return Vector3.ZERO
 
 ## A rock or an arch standing at `q`.
 func _pillar(q: Vector3) -> bool:
