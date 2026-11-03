@@ -2,11 +2,12 @@
 // scripts/endless/wind_field.gd `wind_at` (docs/design/endless-flight/
 // spec-wild-wind.md), from the baked exposure (a texture over the world's
 // square), the drifting patches' five blobs and the global factor now, all
-// published by EndlessLook `_publish`. Include after reference_wind (it reads
-// zs_breeze_air). A world with no field (w 0) reads zs_wind_strength and
-// zs_breeze everywhere, as before.
+// published by EndlessLook `_publish`. Stands on reference_globals alone, so
+// the trees' tree_wind can include it too. A world with no field (w 0) reads
+// zs_wind_strength and zs_breeze everywhere, as before.
 #ifndef ZS_WIND_FIELD
 #define ZS_WIND_FIELD
+#include "res://shaders/reference_globals.gdshaderinc"
 
 // x the field's factor now (WindField PEAK x now), y how far its baked
 // exposure has come in (0..1; 0.5 everywhere before), z a fixed strength
@@ -27,6 +28,11 @@ global uniform vec4 zs_wind_patch_4;
 const float ZS_WIND_SHELTER = 0.12;
 const float ZS_WIND_PATCH_ADD = 0.55;
 const float ZS_WIND_REACH_FADE = 3000.0;
+
+// The eye's breeze (reference_wind zs_breeze_air).
+float zs_wind_eye_breeze() {
+	return clamp(zs_breeze, 0.0, 2.5);
+}
 
 bool zs_wind_on() {
 	return zs_wind_field.w > 0.5;
@@ -76,8 +82,8 @@ float zs_wind_local(vec2 p) {
 
 // The breeze at `p` (zs_breeze_air's scale).
 float zs_wind_breeze_at(vec2 p) {
-	if (!zs_wind_on()) return zs_breeze_air();
-	return mix(zs_breeze_air(), zs_wind_breeze_of(zs_wind_field_at(p)), zs_wind_reach(p));
+	if (!zs_wind_on()) return zs_wind_eye_breeze();
+	return mix(zs_wind_eye_breeze(), zs_wind_breeze_of(zs_wind_field_at(p)), zs_wind_reach(p));
 }
 
 // The share of a world's grass_swell that blows at `p` (1 with no field, and

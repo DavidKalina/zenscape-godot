@@ -15,10 +15,9 @@ shader_type spatial;
 // distance), so it hands over to the mid crowns with no pop.
 render_mode cull_disabled, diffuse_lambert, specular_disabled;
 
-global uniform vec3 zs_hemi_sky;
-global uniform vec3 zs_hemi_ground;
-global uniform float zs_hemi_energy;
-global uniform vec3 zs_cloud_sun;
+// The globals (hemisphere, cloud sun, key) and the woods' wind by place
+// (tree_wind.gdshaderinc zs_tree_far_sway, wind_field.gdshaderinc).
+#include "res://shaders/tree_wind.gdshaderinc"
 #include "res://shaders/look_fill.gdshaderinc"
 // The shade's olive turns with the shade's hue (light_leans; 0 fixed).
 #include "res://shaders/light_leans.gdshaderinc"
@@ -27,11 +26,12 @@ global uniform vec3 zs_cloud_sun;
 #include "res://shaders/spruce_variety.gdshaderinc"
 // --spruce-look=b (spruce_tiers.gdshaderinc): the tiers' tones, tilt, the cool shade, the dabs.
 #include "res://shaders/spruce_tiers.gdshaderinc"
-global uniform vec3 zs_key_direction;
 // Backlight's gain on the crown's silhouette (shaders/backlight.gdshaderinc).
 const float BACKLIGHT_GAIN = 2.0;
 
 uniform vec2 band = vec2(0.0, 1e9);
+// The crown's height in model units (its sway's reach; the near crowns' conifer_height).
+uniform float sway_tall = 4.3;
 uniform vec2 fade = vec2(0.0);
 uniform vec3 gain = vec3(1.0);
 // x value (value x ringlift), y blue, z luminance of the crowns' tint (to read the bake), w volume (round)
@@ -68,6 +68,12 @@ void vertex() {
 	float d = distance(ring_foot, CAMERA_POSITION_WORLD);
 	if (d < band.x - (fade.x > 0.0 ? fade.x + SLACK : 0.0) || d >= band.y + (fade.y > 0.0 ? fade.y + SLACK : 0.0)) VERTEX = vec3(0.0);
 	ring_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// The cheap sway: the crown leans and swings with the wind where it stands.
+	if (zs_tree_alive > 0.0) {
+		float tall = sway_tall * length(MODEL_MATRIX[1].xyz);
+		vec2 m = zs_tree_far_sway(ring_foot.xz, clamp(VERTEX.y / sway_tall, 0.0, 1.2), tall);
+		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(m.x, 0.0, m.y);
+	}
 }
 
 void fragment() {

@@ -4,6 +4,10 @@
 // The grass's own stirring (zs_react_map): the eddies' swept bands, the
 // gusts landing and the prop's wash, so the woods bow with the meadows.
 #include "res://shaders/grass_react.gdshaderinc"
+// The wind by place and hour (wind_field.gdshaderinc, spec-wild-wind.md): a
+// tree on a windy ridge tosses, one in a sheltered hollow barely stirs. With
+// no field it reads the eye's breeze everywhere, as before.
+#include "res://shaders/wind_field.gdshaderinc"
 // The woods alive (scripts/endless/land_trees.gd, --tree-alive=X): gust waves
 // rolling through the woods and the boughs moving on their own, at every
 // distance the spruces draw. 0 is the woods as before (each tree swaying as
@@ -69,10 +73,16 @@ float zs_tree_air() {
 	return zs_tree_alive * clamp(zs_breeze / 0.53, 0.0, 2.0);
 }
 
-// 0..1 (times zs_tree_air): how hard a gust wave is on the tree standing at
-// `root` (world x, z), `lag` s behind the air there (a tall tree's top lags).
-float zs_tree_wave(vec2 root, float lag) {
-	float air = zs_tree_air();
+// The same for breeze `breeze` (zs_breeze's scale, zs_wind_breeze_at a tree's
+// foot): the woods' share of the wind where they stand.
+float zs_tree_air_of(float breeze) {
+	return zs_tree_alive * clamp(breeze / 0.53, 0.0, 2.0);
+}
+
+// 0..1 (times `air`, zs_tree_air_of the breeze there): how hard a gust wave
+// is on the tree standing at `root` (world x, z), `lag` s behind the air there
+// (a tall tree's top lags).
+float zs_tree_wave_air(vec2 root, float lag, float air) {
 	if (air <= 0.0) return 0.0;
 	vec2 dir = zs_wind_direction;
 	float travel = (zs_gust_distance - zs_gust_speed * lag) * ZS_TREE_WAVE_PACE;
@@ -84,6 +94,28 @@ float zs_tree_wave(vec2 root, float lag) {
 	// Stretches of each front blow harder, others hardly at all.
 	float patch = smoothstep(0.2, 0.6, zs_tree_noise(p * 1.2 + vec2(11.3, 4.7)));
 	return crest * patch * air;
+}
+
+// zs_tree_wave_air with the wind where the tree stands.
+float zs_tree_wave(vec2 root, float lag) {
+	return zs_tree_wave_air(root, lag, zs_tree_air_of(zs_wind_breeze_at(root)));
+}
+
+// A far tree's cheap sway (world m, xz; scripts/endless/land_trees.gd's rings past
+// the sprites' look, --spruce-sprites=0): at `k` of its height (0 the foot, 1 the
+// top) a `tall` m tree at `root` leans downwind in the breeze there, rides the
+// woods' gust waves and swings slowly round its lean, as the sprites do, with no
+// stir and no boughs. Calm where the wind field is calm.
+vec2 zs_tree_far_sway(vec2 root, float k, float tall) {
+	float breeze = zs_wind_breeze_at(root);
+	float air = zs_tree_air_of(breeze);
+	if (air <= 0.0) return vec2(0.0);
+	float phase = dot(root, vec2(0.43, 0.71));
+	float wave = zs_tree_wave_air(root, 0.3 * tall * k, air);
+	float lean = (0.3 * breeze * ZS_TREE_SWAY_LEAN + wave * ZS_TREE_WAVE_LEAN) * min(zs_tree_alive, 2.0);
+	float pace = 2.6 / sqrt(max(tall, 0.3));
+	float swing = sin(zs_motion_time * pace + phase - k * 0.9);
+	return zs_wind_direction * (1.0 + ZS_TREE_SWAY_SWING * swing) * lean * 0.3 * tall * k * k;
 }
 
 // The grass's push at a tree's foot (world x, z, in lean units), and `stir`
@@ -127,11 +159,10 @@ vec2 zs_tree_gust(vec2 root, float swing, float phase, inout vec2 react, inout f
 // A bough's own motion, as an offset in the tree's model space: each bough
 // bobs on its own beat (its phase from its turn about the trunk and its
 // height), most at its tip, further when a wave is on it. `phase` is the
-// tree's own; `wave` zs_tree_wave there.
+// tree's own; `wave` zs_tree_wave there; `air` zs_tree_air_of the breeze there.
 // `lift` out: -1..1, the bough's bob now (up shows its underside).
-vec3 zs_tree_bough(vec3 vertex, float phase, float wave, out float lift) {
+vec3 zs_tree_bough(vec3 vertex, float phase, float wave, float air, out float lift) {
 	lift = 0.0;
-	float air = zs_tree_air();
 	float r = length(vertex.xz);
 	float reach = r / ZS_BOUGH_REACH;
 	float tip = smoothstep(0.15, 1.0, reach) * reach;

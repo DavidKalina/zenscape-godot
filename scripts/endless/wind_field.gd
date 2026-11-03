@@ -26,6 +26,7 @@ extends RefCounted
 ## mood's), --wind-map (the field's map in the top-right corner).
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const TreePlan = preload("res://scripts/endless/tree_plan.gd")
 
 ## The bake's cell (m) and how far past the coast's half side it reaches.
 const CELL := 125.0
@@ -35,6 +36,13 @@ const SEA_RING := 2500.0
 const OPEN_WATER := 0.85
 const RIDGE := 30.0
 const HOLLOW := 20.0
+## The woods' shelter: a cell all dense forest takes FOREST_SHELTER off its
+## exposure (a grove's clump GROVE_SHELTER of that), the woods' share blurred
+## FOREST_REACH cells each way so their lee and their clearings are calmer too.
+## A forested ridge still blows (its ridge term is larger). --wind-forest=0 none.
+const FOREST_SHELTER := 0.3
+const GROVE_SHELTER := 0.4
+const FOREST_REACH := 1
 ## Past the bake the field gives way to the world's own wind over this (m).
 const REACH_FADE := 3000.0
 ## The day's curve: [hour, share of the peak], round the clock (Catmull-Rom,
@@ -75,6 +83,13 @@ var water := PackedByteArray()
 var baked := false
 var bake_ms := 0.0
 var grid_ms := 0.0
+var forest_ms := 0.0
+## The woods' share a cell (0..1, before the blur; empty: no shelter), and the
+## share of FOREST_SHELTER they take off (--wind-forest=X).
+var forest := PackedFloat32Array()
+var forest_shelter := FOREST_SHELTER
+## The woods' flags (LandTrees.flags: on, share, meadows), read on the main thread.
+var _woods := {}
 ## The bake's worker task (-1: none), and how far the field has come in
 ## since it landed (0..1 over FADE_IN s: the world's own wind gives way).
 var _task := -1
@@ -104,6 +119,7 @@ func setup(seed_value: int, field: RefCounted, args: PackedStringArray) -> void:
 	land_seed = seed_value
 	base_angle = float(absi(hash(seed_value))%6283)/1000.0
 	for a: String in args:
+		if a.begins_with("--wind-forest="): forest_shelter = maxf(0.0,float(a.get_slice("=",1)))*FOREST_SHELTER
 		if not a.begins_with("--wind="): continue
 		var v := a.get_slice("=",1)
 		if v == "off": mode = "off"
@@ -119,6 +135,7 @@ func setup(seed_value: int, field: RefCounted, args: PackedStringArray) -> void:
 		var half := (e.z if e.z > 0.0 else 8500.0)+SEA_RING
 		n = int(ceil(2.0*half/CELL))+1
 		origin = centre-Vector2(half,half)
+		_woods = (load("res://scripts/endless/land_trees.gd") as GDScript).call("flags")
 		# On a worker (about 1.4 s over the doors world's blend): the world's
 		# own wind blows till it lands.
 		_task = WorkerThreadPool.add_task(bake.bind(field))
@@ -174,10 +191,46 @@ func bake(field: RefCounted) -> void:
 		var ridge := smoothstep(2.0,RIDGE,rise)
 		var hollow := smoothstep(-2.0,-HOLLOW,rise)
 		var high := smoothstep(sea_y+40.0,sea_y+400.0,h)
-		raw[k] = clampf(0.38+0.55*ridge+0.3*high+0.45*open[k]-0.4*hollow,0.0,1.0)
+		raw[k] = 0.38+0.55*ridge+0.3*high+0.45*open[k]-0.4*hollow
+	if forest_shelter > 0.0:
+		_bake_forest(field)
+		var lee := _blur(forest,FOREST_REACH)
+		for k in n*n:
+			if water[k] == 0: raw[k] -= forest_shelter*lee[k]
+	for k in n*n: raw[k] = clampf(raw[k],0.0,1.0)
 	# A cell's blur, so ridges read as bands, not specks.
 	exposure = _blur(raw,1)
 	bake_ms = float(Time.get_ticks_usec()-t0)/1000.0
+
+## The woods' share of each land cell (TreePlan's mask at its middle: the dense
+## woods all, a grove's clump GROVE_SHELTER), from the land's shape there.
+func _bake_forest(field: RefCounted) -> void:
+	var t0 := Time.get_ticks_usec()
+	forest.resize(n*n)
+	forest.fill(0.0)
+	var f := _woods
+	if not bool(f.get("on",false)):
+		forest = PackedFloat32Array()
+		return
+	var plan: RefCounted = TreePlan.new(land_seed,float(f.share))
+	plan.meadows = float(f.meadows)
+	for j in range(1,n-1):
+		for i in range(1,n-1):
+			var k := j*n+i
+			if water[k] == 1: continue
+			var x := origin.x+i*CELL
+			var z := origin.y+j*CELL
+			var s: Dictionary = field.shape(x,z)
+			# None on the Peak's massif (TreePlan.area), and the up over the
+			# plan's own slot, so its steep ground stays bare here too.
+			if s.has("peak"): continue
+			var h := float(s.height)
+			var gx: float = (float(field.height(x+TreePlan.SLOT,z))-h)/TreePlan.SLOT
+			var gz: float = (float(field.height(x,z+TreePlan.SLOT))-h)/TreePlan.SLOT
+			var up := 1.0/sqrt(1.0+gx*gx+gz*gz)
+			var m: Vector3 = plan.mask(field,x,z,s,up)
+			forest[k] = clampf(m.x+m.y*GROVE_SHELTER,0.0,1.0)
+	forest_ms = float(Time.get_ticks_usec()-t0)/1000.0
 
 ## A box blur `r` cells each way (running sums along rows, then columns).
 func _blur(src: PackedFloat32Array, r: int) -> PackedFloat32Array:
