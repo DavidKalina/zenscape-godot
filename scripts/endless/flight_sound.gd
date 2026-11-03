@@ -26,7 +26,8 @@ extends Node
 ##   scripts/endless/flight_rumble.gd reads): a touch's thump by its `k`, a
 ##   greaser's tap, a hop (`bounce`), a `hit`, a slide breaking loose; the
 ##   rumble by ground speed and the skid by the landing's grit.
-## - Ambience: a breeze that grows with height over the ground, a thin high
+## - Ambience: a breeze that grows with height over the ground and swells with
+##   the wind where the plane is (the wind field's, hushed in calm), a thin high
 ##   wind up near the ceiling, and a shore bed near the sea (a ring of land
 ##   samples: water on one side and land on the other is a coast; open sea
 ##   a lesser surf), low only.
@@ -153,6 +154,16 @@ const KNOCK := 0.45
 ## the shore's.
 const BREEZE := Vector2(0.03,0.08)
 const BREEZE_HEIGHT := Vector2(2.0,120.0)
+## The breeze by the wind where the plane is (EndlessLook wind_here: the wind
+## field's, on top of the height's bed): the bed's share in a still hollow and
+## at full wind (`WIND_SHARE`, by the wind between `WIND_AT`), and the gain the
+## wind adds over it (`WIND_SWELL`, by the wind between `SWELL_AT`), its pitch
+## lift. With no field (other worlds, --wind=off) the height's bed alone.
+const WIND_SHARE := Vector2(0.45,1.0)
+const WIND_AT := Vector2(0.1,0.6)
+const WIND_SWELL := 0.07
+const SWELL_AT := Vector2(0.45,1.4)
+const WIND_PITCH := 0.08
 const THIN := 0.07
 const THIN_HEIGHT := Vector2(50.0,215.0)
 const SHORE := 0.14
@@ -218,6 +229,10 @@ var over := 0.0
 var agl := 0.0
 var alt := 0.0
 var water := 0.0
+## The wind where the plane is (the field's, eased; 0..2) and how far in its
+## land (0..1); -1 with no field.
+var wind := -1.0
+var wind_reach := 0.0
 ## One-shots played, by kind, and the last (kind, gain, pitch): for probes.
 var played := {}
 var last_shot := {}
@@ -484,6 +499,10 @@ func step(delta: float, game: Node3D, events: Dictionary, boost: float) -> void:
 	_engine(plane,landing,boost,speed,cruise,on_wheels)
 	_wheels(landing,speed,on_wheels)
 	_landing(events)
+	var look = game.get("look")
+	var here: Vector2 = look.wind_here() if look != null and look.has_method("wind_here") else Vector2(-1.0,0.0)
+	wind = here.x
+	wind_reach = here.y
 	_place_wait -= delta
 	if _place_wait <= 0.0:
 		_place_wait = PLACE_TICK
@@ -676,6 +695,13 @@ func _ambience(on_wheels: bool) -> void:
 	var up := smoothstep(BREEZE_HEIGHT.x,BREEZE_HEIGHT.y,agl)
 	breeze.goal = lerpf(BREEZE.x,BREEZE.y,up)
 	breeze.pitch_goal = 0.9+0.2*up
+	if wind >= 0.0:
+		# The wind by place and hour: a still hollow hushes the bed, a windy
+		# ridge swells it.
+		var share := lerpf(WIND_SHARE.x,WIND_SHARE.y,smoothstep(WIND_AT.x,WIND_AT.y,wind))
+		var swell := smoothstep(SWELL_AT.x,SWELL_AT.y,wind)
+		breeze.goal = lerpf(breeze.goal,breeze.goal*share+WIND_SWELL*swell,wind_reach)
+		breeze.pitch_goal += WIND_PITCH*swell*wind_reach
 	thin.goal = THIN*smoothstep(THIN_HEIGHT.x,THIN_HEIGHT.y,alt)
 	thin.pitch_goal = 0.9+0.15*smoothstep(THIN_HEIGHT.x,THIN_HEIGHT.y,alt)
 	# A coast (water on some sides, land on others) is a shore; open sea a

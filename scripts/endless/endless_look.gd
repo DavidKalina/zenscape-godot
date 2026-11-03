@@ -202,6 +202,13 @@ var _eye := Vector3.ZERO
 ## The field's strength at the eye, eased, and the breeze plants lean in there.
 var _wind_here := -1.0
 var _breeze_here := -1.0
+## The air's own travel (m) by the wind at the eye: with a field it all but
+## stops in calm and runs on in the wind (the pollen's drift, the water's cat's
+## paws); with none, the gusts' travel (`_gust`), as before. And its way: the
+## shaders' zs_wind_offset (m), the air's travel along each frame's heading,
+## so a pattern carried on it slides rigidly as the heading wanders.
+var drift := 0.0
+var _wind_offset := Vector2.ZERO
 ## The baked exposure's texture once handed to the shaders (zs_wind_exposure).
 var _wind_texture: ImageTexture
 ## The field's map (--wind-map), or null.
@@ -734,6 +741,13 @@ func _publish(delta: float) -> void:
 	_gust += travel
 	_sheen += travel*_sheen_pace
 	wind_direction = Vector2(cos(angle),sin(angle))
+	# The air's own travel: in the field's land by the wind there alone (none
+	# in a still hollow), past it (and with no field) the gusts' as before.
+	var air := travel
+	if wind != null: air = lerpf(travel,delta*AIR_SPEED*minf(strength,2.0)/WIND,wind.reach(_eye.x,_eye.z))
+	drift += air
+	_wind_offset += wind_direction*air
+	RenderingServer.global_shader_parameter_set("zs_wind_offset",_wind_offset)
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_flow_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_wind_direction",Vector2(cos(angle),sin(angle)))
@@ -741,6 +755,13 @@ func _publish(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust)
 	RenderingServer.global_shader_parameter_set("zs_sheen_distance",_sheen)
 	RenderingServer.global_shader_parameter_set("zs_gust_speed",AIR_SPEED)
+
+## The field's wind at the eye (eased; zs_wind_strength's scale) and how far
+## the eye is in its land (0..1), or (-1, 0) with no field (other worlds,
+## --wind=off).
+func wind_here() -> Vector2:
+	if wind == null or _wind_here < 0.0: return Vector2(-1.0,0.0)
+	return Vector2(_wind_here,wind.reach(_eye.x,_eye.z))
 
 ## The wind field to the shaders (shaders/wind_field.gdshaderinc): its factor
 ## now, how far its bake has come in, a fixed strength, its patches, and the

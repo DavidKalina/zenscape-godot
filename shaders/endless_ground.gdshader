@@ -314,6 +314,21 @@ uniform vec3 river_pads = vec3(1.0, 1.15, 0.22);
 uniform vec3 river_pad_colour : source_color = vec3(0.42, 0.56, 0.24);
 // How much of the cloud field the water mirrors (the sea's cloud_mirror).
 uniform float river_cloud_mirror = 0.8;
+// The wind on the water (wind_field, only where a field blows): cat's paws,
+// dark ruffled patches carried downwind on the air's travel, where it's
+// windy, and still water lying glassy in calm. x: the paws' ripple strength
+// (0 none of it), y: a patch's size (m), z: how much a paw dulls the mirror,
+// w: how glassy still water lies in calm (its ripples' share taken off).
+uniform vec4 river_paws = vec4(0.35, 16.0, 0.6, 0.9);
+// The wind (zs_wind_strength's scale) the paws come in between (none at .x,
+// all at .y); the calm under which still water goes glassy (all at .z, none
+// by .w).
+uniform vec4 river_paw_wind = vec4(0.3, 1.0, 0.15, 0.5);
+// The paws' ripple tiles (m, two layers), their share of the air's travel
+// they ride at, and the noise level a paw starts at in full wind.
+uniform vec4 river_paw_ripple = vec4(2.6, 1.1, 1.2, 0.47);
+// How much darker a paw's body is.
+uniform float river_paw_dark = 0.3;
 // The flow's look (rivers-flow-handoff.md). White water: from the current's
 // speed .x (m/s) it breaks, by .y it is all white water, .z how much.
 uniform vec3 river_rapids = vec3(1.0, 2.2, 1.0);
@@ -473,6 +488,30 @@ vec2 zs_river_layer(sampler2D tex, vec2 p, vec2 dir, float speed, float size, fl
 	vec2 s = (s0 * w0 + s1 * w1) * inversesqrt(w0 * w0 + w1 * w1);
 	// Back from the flow's frame to the world's (the streak's squeeze too).
 	return dir * s.x / river_streak + across * s.y;
+}
+
+// The wind's cat's paws at `p` (0..1) for a windiness `windy` (0..1):
+// patches of ruffle carried downwind on the air's travel (zs_wind_offset, a
+// rigid slide as the heading wanders), forming and dying slowly as they go,
+// more of the water covered the windier it is.
+float zs_paw_mask(vec2 p, float windy) {
+	vec2 l = (p - zs_wind_offset) / river_paws.y;
+	float n = ep_noise(l) * 0.62 + ep_noise(l * 2.7 + vec2(5.3, 1.7)) * 0.38;
+	float s = 0.5 + 0.5 * sin(zs_motion_time * 0.07);
+	n += (mix(ep_noise(l * 0.5 + vec2(3.1, 7.7)), ep_noise(l * 0.5 + vec2(11.4, 2.9)), s) - 0.5) * 0.3;
+	float lo = mix(river_paw_ripple.w + 0.2, river_paw_ripple.w, windy);
+	return smoothstep(lo, lo + 0.12, n) * smoothstep(0.0, 0.25, windy);
+}
+
+// A paw's ripples: two tiles of the chop map riding the air's travel.
+vec2 zs_paw_ripple(sampler2D tex, vec2 p, float fp) {
+	vec2 q = p - zs_wind_offset * river_paw_ripple.z;
+	float k0 = 1.0 - smoothstep(river_paw_ripple.x * 0.04, river_paw_ripple.x * 0.22, fp);
+	float k1 = 1.0 - smoothstep(river_paw_ripple.y * 0.04, river_paw_ripple.y * 0.22, fp);
+	vec2 s = vec2(0.0);
+	if (k0 > 0.0) s += (texture(tex, q / river_paw_ripple.x).xy * 2.0 - 1.0) * k0;
+	if (k1 > 0.0) s += (texture(tex, (q + vec2(7.3, 2.1)) / river_paw_ripple.y).xy * 2.0 - 1.0) * k1 * 0.7;
+	return s;
 }
 
 // --- The live river (river_live 1) ----------------------------------------
@@ -1457,6 +1496,22 @@ void fragment() {
 			float fall = pow(max(spd - 0.35, 0.0) / 9.0, 2.0);
 			slope -= dir * fall;
 		}
+		// The wind on the water (wind_field): still water glassy in calm,
+		// cat's paws on windy stretches (dark: their ripples dull the mirror).
+		float paw = 0.0;
+		if (zs_wind_on() && river_paws.x > 0.0) {
+			float paw_reach = zs_wind_reach(p.xz);
+			float paw_ww = zs_wind_local(p.xz);
+			float paw_pool = 1.0 - smoothstep(0.05, 0.3, spd);
+			float paw_glass = (1.0 - smoothstep(river_paw_wind.z, river_paw_wind.w, paw_ww)) * paw_pool * river_paws.w * paw_reach;
+			slope *= 1.0 - paw_glass;
+			rough *= (1.0 - paw_glass) * (1.0 - paw_glass);
+			paw = zs_paw_mask(p.xz, smoothstep(river_paw_wind.x, river_paw_wind.y, paw_ww)) * paw_reach;
+			if (paw > 0.0) {
+				slope += zs_paw_ripple(river_detail_b, p.xz, r_fp) * river_paws.x * paw;
+				rough += river_paws.x * river_paws.x * paw * smoothstep(river_paw_ripple.y * 0.04, river_paw_ripple.x * 0.22, r_fp);
+			}
+		}
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
@@ -1552,6 +1607,7 @@ void fragment() {
 		// sea's body_shade), so the chop reads where the mirror is dim.
 		water *= 1.0 + clamp(dot(slope, -normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.5, -0.45, 0.45) * river_body_shade;
 		water *= 1.0 - 0.4 * shaded;
+		water *= 1.0 - river_paw_dark * paw;
 		// The live river's foam and white water.
 		if (river_live > 0.5 && live_foam > 0.0) {
 			vec3 froth = vec3(0.92, 0.96, 1.0) * (ambient * 1.15 + key * 0.85);
@@ -1626,9 +1682,10 @@ void fragment() {
 		}
 		float fres = river_fresnel.x + (1.0 - river_fresnel.x) * pow(1.0 - max(dot(eye, calm), 0.0), river_fresnel.y);
 		fres = clamp(fres * (1.0 + sl * river_slick.z), 0.0, 1.0);
+		fres *= 1.0 - river_paws.z * paw;
 		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - skin) * (1.0 - pad));
 		vec4 path = zs_lake_glint(refl, zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
-		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad));
+		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad) * (1.0 - 0.6 * paw));
 		float spark = smoothstep(0.9993, 0.99955, dot(reflect(-eye, wn), zs_sun_direction)) * (0.0025 / (0.0025 + rough));
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
 		vec3 warm_c = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y)));
