@@ -11,9 +11,13 @@ extends Node3D
 ## shaders/endless_fish.gdshader, the splashes two MultiMeshes of quads
 ## (shaders/endless_splash.gdshader) simulated here.
 ##
+## The fish the plane itself flings up, and those in the lakes, are
+## scripts/endless/wake_fish.gd's.
+##
 ## --fish=0 none (and none without ponds, --ponds=0).
 
 const Models = preload("res://scripts/life_models.gd")
+const WakeFish = preload("res://scripts/endless/wake_fish.gd")
 
 ## Fish at once in the air, sprays and rings at most.
 const MAX_LEAPS := 4
@@ -71,6 +75,8 @@ var _ring_mm: MultiMesh
 var _ring_trough := PackedFloat32Array()
 var _plops: Array = []
 var _plop_streams: Array = []
+## The fish that answer the plane (scripts/endless/wake_fish.gd), or null.
+var wake: Node3D
 ## For the numbers: leaps begun, ponds known, ms this frame and its mean.
 var leaps_total := 0
 var ms := 0.0
@@ -112,6 +118,11 @@ func setup(land_seed: int, field: RefCounted) -> void:
 		a.panning_strength = 0.6
 		add_child(a)
 		_plops.append(a)
+	if WakeFish.wanted():
+		wake = WakeFish.new()
+		wake.name = "Wake"
+		add_child(wake)
+		wake.setup(land_seed,field)
 
 func _multimesh(n: String, count: int, ring: bool) -> MultiMesh:
 	var mm := MultiMesh.new()
@@ -412,4 +423,4 @@ func note() -> String:
 	var air := 0
 	for l: Dictionary in _leaps:
 		if float(l.t) >= 0.0: air += 1
-	return "\nfish: %d ponds, leaping %d, leaps %d, spray %d, rings %d  %.2f ms (%.2f)" % [_ponds.size(),air,leaps_total,_s_pos.size(),_r_pos.size(),ms,ms_avg]
+	return "\nfish: %d ponds, leaping %d, leaps %d, spray %d, rings %d  %.2f ms (%.2f)" % [_ponds.size(),air,leaps_total,_s_pos.size(),_r_pos.size(),ms,ms_avg]+(wake.note() if wake != null else "")

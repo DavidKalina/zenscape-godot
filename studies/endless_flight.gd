@@ -1321,6 +1321,7 @@ func tick(delta: float) -> void:
 	birds.step(delta,camera.global_position,plane)
 	FrameLog.mark(&"birds")
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
+	if fish != null and fish.wake != null: fish.wake.step(delta,camera.global_position,plane,water)
 	FrameLog.mark(&"fish")
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
 	FrameLog.mark(&"traffic")

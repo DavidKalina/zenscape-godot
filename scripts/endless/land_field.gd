@@ -801,6 +801,11 @@ func fence(p: Vector3, heading: float) -> Vector2:
 	if absf(angle_difference(heading,home)) < PI*0.5: return Vector2.ZERO
 	return Vector2(smoothstep(FENCE_FROM,FENCE_FULL,off),home)
 
+## How far (m) (x, z) lies past the world's edge line, negative inside; INF in
+## a world with no edge.
+func edge_off(x: float, z: float) -> float:
+	return GDField.edge_off(_edge,x,z) if _edge.z > 0.0 else INF
+
 ## The coast's islands (coast_isles.gd), or null.
 func isles() -> RefCounted:
 	return _isles
