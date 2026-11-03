@@ -65,7 +65,13 @@ The trunk, in order, after both lanes are merged:
    lock-on working across both. `--raider-mode=mix` becomes the default.
 2. A tuning pass from driven runs and stills: chase distances, how much
    speed skimming gives, lock-on framing, how often it switches.
-3. Stills of each part (locked dogfight, locked chase through trees or an
+3. Fixes before the stills: after a crash and relaunch the raider must not
+   stalk and ram from far above the ground (it did, 1,300 to 1,800 m up, for
+   about 50 s); it settles back to the plane's height and the ground. Then
+   name the empty bracket low-left in the locked-dogfight still: if it's an
+   existing marker of the game (a place line's marks), say so and leave it;
+   if the raider combat drew it, fix it.
+4. Stills of each part (locked dogfight, locked chase through trees or an
    arch, a kill) and the handoff.
 
 ## Checks
