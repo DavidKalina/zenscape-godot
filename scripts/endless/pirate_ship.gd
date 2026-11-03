@@ -30,8 +30,9 @@ extends Node3D
 ##
 ## Her look is assets/models/pirate_ship.glb on the moving node (`_dress`), or the
 ## gray box's blocks with --ship-blocks. Either way `solids()` alone is what she
-## collides by. Guns fire from the glb's `Gun_*` empties, and a burst throws the
-## plate's `CrackPlug_*` shards (`_throw`), which a reseal puts back.
+## collides by. Hull guns fire from the glb's `Gun_*` empties, deck guns lob from
+## its `DeckGun_*` (stand-ins while it has none; ship-guns-handoff.md), and a burst
+## throws the plate's `CrackPlug_*` shards (`_throw`), which a reseal puts back.
 ##
 ## Two sail at once (CoastSites `ships`), each one of these on its own route, with
 ## its own guns, plates, sink and return. They share meshes and materials (`twin`),
@@ -62,18 +63,13 @@ const ShipSails = preload("res://scripts/endless/ship_sails.gd")
 ## look only, so the iron's marks turn over in flight.
 const BALL_MODEL := "res://assets/models/pirate_ball.glb"
 const BALL_TUMBLE := 3.0
-## The ball's wisp of smoke, look only: its shader, how far back it runs (m), its
-## radius at the ball and at the end, its opacity at the thickest.
-const SMOKE_SHADER := "res://assets/models/pirate_ship/ball_smoke.gdshader"
-const SMOKE_LONG := 18.0
-const SMOKE_THIN := 0.45
-const SMOKE_WIDE := 3.6
-const SMOKE_OPACITY := 0.42
-## A gun's flash and smoke puff (look only): their shader, the flash's core radius
-## (m, readable from 300 m) and the puff's reach.
+## The guns' look: the muzzle blast, a ball's trail of smoke, the splash, the cut
+## guns (ship_guns.gd, docs/design/endless-flight/ship-guns-handoff.md).
+const ShipGuns = preload("res://scripts/endless/ship_guns.gd")
+## A gun's tell before it fires, and the sink's mist (look only): their shader,
+## and the tell's core radius (m, readable from 300 m).
 const PUFF_SHADER := "res://assets/models/pirate_ship/muzzle_puff.gdshader"
 const FLASH_R := 3.8
-const PUFF_R := 2.0
 ## Where the rigging stops drawing (m); the glb can't carry it.
 const RIGGING_FAR := 450.0
 ## Where what can't be told from outside stops drawing (m): the gun deck's inside and
@@ -119,20 +115,61 @@ const END_ROOM := 2.0
 const WALL := 3.375
 const DECK := 2.0
 const GUNS_Z := [-40.0,-24.0,-8.0,8.0,24.0,40.0]
-## Guns: over the waterline (m); firing from MIN to MAX m off, within ARC rad of
-## abeam; a shot every EVERY s; TELL s of flash before it; a gun rests REST s.
+## Hull guns a side. Of a glb with six a side (`Gun_L_01..06`, 01 the sternmost),
+## the numbers that fire (z 40, 8, -24; the rest are cut out of the look); a glb
+## with HULL_GUNS a side fires them all.
+const HULL_GUNS := 3
+const HULL_PICK := [1,3,5]
+## Hull guns: over the waterline (m); firing from MIN to MAX m off, within ARC rad
+## of abeam; a shot every EVERY s; TELL s of flash before it; a gun rests REST s.
 const GUN_Y := 8.0
 const RANGE := Vector2(60.0,520.0)
 const ARC := 1.05
-const EVERY := 1.15
+const EVERY := 1.4
 const TELL := 0.85
 const REST := 3.0
-## Balls: m/s, drop (m/s²), radius (m), the most at once, seconds aloft.
+## Hull balls: m/s, drop (m/s²), radius (m), the most at once, seconds aloft.
 const BALL_SPEED := 110.0
 const BALL_DROP := 6.0
 const BALL_R := 1.5
 const BALLS := 24
 const BALL_LIFE := 7.0
+## Deck guns, two a side on the top deck, lob. Where the glb has no `DeckGun_*`
+## empties, stand-ins at these pivots (starboard x, z; port mirrored; on the top
+## deck), their trunnions DECK_LIFT m over the pivot and the muzzle DECK_MUZZLE m
+## on from them, the hull gun's barrel DECK_SIZE times over so they read over the
+## rail from off her beam; laid DECK_REST rad up at rest.
+const DECK_GUNS := [Vector2(7.6,19.0),Vector2(7.6,-11.0)]
+const DECK_LIFT := 3.1
+const DECK_MUZZLE := 5.6
+const DECK_SIZE := 1.45
+const DECK_REST := 0.22
+## How far a deck gun swings off abeam, how low and high it lays (rad), how fast
+## it swings and lays (rad/s), and how close to its lay it fires (rad).
+const DECK_SWING := 1.05
+const DECK_RAISE := Vector2(-0.05,0.95)
+const DECK_TURN := Vector2(1.4,1.0)
+const DECK_AIMED := 0.12
+## Lobs: from MIN to MAX m off; one every LOB_EVERY s; a deck gun rests LOB_REST s;
+## the fall (m/s², the hull's is BALL_DROP) and the time aloft to the plane at MIN
+## and at MAX m (s). Thrown to meet the plane where it'll be if it holds its line.
+const LOB_RANGE := Vector2(110.0,560.0)
+const LOB_EVERY := 2.6
+const LOB_REST := 5.0
+const LOB_DROP := 28.0
+const LOB_T := Vector2(2.3,4.0)
+## A gun's kick (look only): how far back it goes (m, hull and deck), how long it
+## takes, holds, then runs out again (s).
+const KICK := Vector2(1.4,1.1)
+const KICK_S := Vector3(0.06,0.25,1.4)
+## Shots heard: how far a boom and a splash carry (m to half as loud). A lob
+## whistles coming down inside WHISTLE_NEAR m of the plane, high to low.
+const BOOM_HEARD := 260.0
+const SPLASH_HEARD := 140.0
+const WHISTLE := "res://assets/audio/kit/air-whistle-loop.wav"
+const WHISTLE_NEAR := 170.0
+const WHISTLE_PITCH := Vector2(2.1,1.2)
+const WHISTLE_GAIN := 0.55
 ## How far past a touch of the plane (WorldScale.span*0.5 off its middle) a pass
 ## still scores (NearMiss `shot_pass`).
 const PASS_REACH := 14.0
@@ -255,8 +292,9 @@ var _leg := ROUTE_LEG
 var _inv := Transform3D.IDENTITY
 var wide := 18.0
 var high := 10.0
-## Counted, for the drivers.
+## Counted, for the drivers: shots (lobs among them), hits, passes, ...
 var fired := 0
+var lobs := 0
 var hits := 0
 var passes := 0
 var bursts := 0
@@ -267,10 +305,10 @@ var paid := 0.0
 ## when the plane leaves a sinking ship, whose plates won't.
 var refill := false
 var _refilled := false
-## Live balls: {node, at, v, age, least, near (world, the plane there), done}.
+## Live balls: {node, at, v, drop (m/s²), lob, age, least, near (world, the plane
+## there), done, trail (m to its next puff)}.
 var balls: Array[Dictionary] = []
 var _pool: Array[Node3D] = []
-var _splashes: Array[Dictionary] = []
 var _chunks: Array[Dictionary] = []
 var _chunk_pool: Array[MeshInstance3D] = []
 var _hull: Dictionary
@@ -278,19 +316,26 @@ var _hull: Dictionary
 var _model: Node3D
 ## The one mesh every ball draws, its material on it; null with --ship-blocks.
 var _ball_mesh: Mesh
-## The one wisp every ball trails, its material on it; null with --ship-blocks.
-var _smoke: Mesh
 ## Thrown shards: {node, off (its plug in her frame), v (her frame), spin}.
 var _shards: Array[Dictionary] = []
 ## part ("stern", "bow") -> {record, body, shape, look (blocks), plug and shards
 ## (model: {node, home}), open}.
 var plates := {}
+## Every gun: {kind ("hull", "deck"), side, z, flash (its tell), rest (s to ready),
+## kick (s since it fired, -1 still), kick_node and kick_home (what recoils, and
+## its rest)}; a hull gun's `at` (its muzzle, her frame) and `out` (its bore);
+## a deck gun's `pivot` (her frame), `yaw_node` and `yaw_home`, `barrel` and
+## `barrel_home`, `muzzle` (in the barrel's frame), `yaw`, `pitch`, `err` (rad
+## off its lay).
 var _guns: Array[Dictionary] = []
 var _tells: Array[Dictionary] = []
-## The one flash and the one smoke puff every gun draws; null with --ship-blocks.
+## The one tell every gun draws; null with --ship-blocks.
 var _flash_mesh: Mesh
-var _puff_mesh: Mesh
 var _every := 0.0
+var _lob_every := 0.0
+## The guns' look (ship_guns.gd), and a lob's whistle (null when muted).
+var _fx: RefCounted
+var _whistle: AudioStreamPlayer3D
 var _plane_was := Vector3.INF
 ## The hull's StaticBody, off while she's gone.
 var _hull_body: StaticBody3D
@@ -485,16 +530,9 @@ func after(delta: float, events: Dictionary) -> void:
 func _guns_step(delta: float, p: Vector3, d: float) -> void:
 	for g: Dictionary in _guns:
 		g.rest = maxf(float(g.rest)-delta,0.0)
-		var puff := float(g.puff)
-		if puff > 0.0:
-			puff = maxf(puff-delta,0.0)
-			g.puff = puff
-			(g.smoke as Node3D).scale = Vector3.ONE*(1.0+(1.2-puff)*2.6)
-			(g.smoke as Node3D).visible = puff > 0.0
-			if _puff_mesh != null:
-				var u := 1.2-puff
-				(g.smoke as Node3D).position = (g.at as Vector3)+Vector3(float(g.side)*(2.0+u*4.0),1.0+u*1.5,0.0)
-				(g.smoke as GeometryInstance3D).set_instance_shader_parameter("fade",smoothstep(0.0,0.8,puff))
+		_kick_step(g,delta)
+	var l := local(p)
+	_lay(delta,p,d,l)
 	if state != AFLOAT: return
 	var left: Array[Dictionary] = []
 	for t: Dictionary in _tells:
@@ -508,45 +546,136 @@ func _guns_step(delta: float, p: Vector3, d: float) -> void:
 		_fire(g)
 	_tells = left
 	_every = maxf(_every-delta,0.0)
-	if _every > 0.0 or not game.plane.weighted or not bool(game.hand_landing.flying()) or game.stage != null: return
-	if d < RANGE.x or d > RANGE.y: return
-	var l := local(p)
+	_lob_every = maxf(_lob_every-delta,0.0)
+	if not game.plane.weighted or not bool(game.hand_landing.flying()) or game.stage != null: return
 	if absf(l.z) > absf(l.x)*tan(ARC): return
 	var side := signf(l.x)
+	if _every <= 0.0 and d >= RANGE.x and d <= RANGE.y:
+		var best := _pick("hull",side,l.z)
+		if not best.is_empty():
+			_every = EVERY
+			best.rest = REST
+			_tell(best)
+	if _lob_every <= 0.0 and d >= LOB_RANGE.x and d <= LOB_RANGE.y:
+		var best := _pick("deck",side,l.z)
+		if not best.is_empty():
+			_lob_every = LOB_EVERY
+			best.rest = LOB_REST
+			_tell(best)
+
+## The ready gun of `kind` on `side` nearest `z` along her (a deck gun only once
+## it's laid), or {}.
+func _pick(kind: String, side: float, z: float) -> Dictionary:
 	var best: Dictionary = {}
 	for g: Dictionary in _guns:
-		if float(g.side) != side or float(g.rest) > 0.0: continue
-		if best.is_empty() or absf(float(g.z)-l.z) < absf(float(best.z)-l.z): best = g
-	if best.is_empty(): return
-	_every = EVERY
-	best.rest = REST
-	(best.flash as Node3D).visible = true
-	_tells.append({"gun":best,"t":TELL})
+		if str(g.kind) != kind or float(g.side) != side or float(g.rest) > 0.0: continue
+		if kind == "deck" and float(g.err) > DECK_AIMED: continue
+		if best.is_empty() or absf(float(g.z)-z) < absf(float(best.z)-z): best = g
+	return best
 
-## Gun `g` fires at where the plane is headed: straight on its line now, the ball
-## meeting it there, the drop allowed for. A dodge after the shot is what saves it.
+func _tell(g: Dictionary) -> void:
+	(g.flash as Node3D).visible = true
+	_tells.append({"gun":g,"t":TELL})
+
+## The deck guns swing and lay onto the lob that would meet the plane now while
+## it's on their side and near enough; else back to rest. Look, and the lay a gun
+## must have to fire: the ball itself is thrown by `_lob`, from where its muzzle is.
+func _lay(delta: float, p: Vector3, d: float, l: Vector3) -> void:
+	var live := state == AFLOAT and d <= LOB_RANGE.y*1.15 and bool(game.hand_landing.flying())
+	for g: Dictionary in _guns:
+		if str(g.kind) != "deck": continue
+		var want := Vector2(0.0,DECK_REST)
+		if live and float(g.side) == signf(l.x):
+			var gv: Vector3 = (g.pivot as Transform3D).basis.inverse()*(_inv.basis*_lob(g,p,d))
+			want = Vector2(clampf(atan2(-gv.x,-gv.z),-DECK_SWING,DECK_SWING),clampf(atan2(gv.y,Vector2(gv.x,gv.z).length()),DECK_RAISE.x,DECK_RAISE.y))
+		g.yaw = move_toward(float(g.yaw),want.x,DECK_TURN.x*delta)
+		g.pitch = move_toward(float(g.pitch),want.y,DECK_TURN.y*delta)
+		g.err = absf(want.x-float(g.yaw))+absf(want.y-float(g.pitch)) if live else INF
+		(g.yaw_node as Node3D).transform = _yaw_frame(g)
+		var kick := Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,KICK.y*_kick_share(float(g.kick))))
+		(g.barrel as Node3D).transform = _barrel_frame(g)*kick
+
+func _yaw_frame(g: Dictionary) -> Transform3D:
+	var home: Transform3D = g.yaw_home
+	return Transform3D(home.basis*Basis(Vector3.UP,float(g.yaw)),home.origin)
+
+func _barrel_frame(g: Dictionary) -> Transform3D:
+	var home: Transform3D = g.barrel_home
+	return Transform3D(home.basis*Basis(Vector3.RIGHT,float(g.pitch)),home.origin)
+
+## Deck gun `g`'s muzzle as it's laid now, in her frame, -z its bore.
+func _deck_muzzle(g: Dictionary) -> Transform3D:
+	return (g.pivot as Transform3D)*_yaw_frame(g)*_barrel_frame(g)*Transform3D(Basis.IDENTITY,g.muzzle as Vector3)
+
+## The throw (m/s, the world's) from deck gun `g`'s muzzle that comes down on the
+## plane where it'll be after the lob's time aloft at `d` m, if it holds its line.
+func _lob(g: Dictionary, p: Vector3, d: float) -> Vector3:
+	var from: Vector3 = transform*_deck_muzzle(g).origin
+	var t := lob_time(d)
+	var at: Vector3 = p+(game.plane.velocity as Vector3)*t
+	return (at-from)/t+Vector3.UP*0.5*LOB_DROP*t
+
+## A lob's time aloft to a plane `d` m off.
+static func lob_time(d: float) -> float:
+	return lerpf(LOB_T.x,LOB_T.y,clampf((d-LOB_RANGE.x)/(LOB_RANGE.y-LOB_RANGE.x),0.0,1.0))
+
+## How far back a gun is `t` s after it fired (0 to 1; -1 is still).
+static func _kick_share(t: float) -> float:
+	if t < 0.0: return 0.0
+	if t < KICK_S.x: return t/KICK_S.x
+	if t < KICK_S.x+KICK_S.y: return 1.0
+	return 1.0-smoothstep(0.0,KICK_S.z,t-KICK_S.x-KICK_S.y)
+
+## A gun's kick on: a hull gun's piece moves back along its bore (a deck gun's
+## barrel is laid in `_lay`, its kick with it).
+func _kick_step(g: Dictionary, delta: float) -> void:
+	if float(g.kick) < 0.0: return
+	g.kick = float(g.kick)+delta
+	if float(g.kick) > KICK_S.x+KICK_S.y+KICK_S.z: g.kick = -1.0
+	if str(g.kind) == "hull" and g.kick_node != null:
+		var home: Transform3D = g.kick_home
+		(g.kick_node as Node3D).transform = Transform3D(home.basis,home.origin+(g.kick_way as Vector3)*KICK.x*_kick_share(float(g.kick)))
+
+## Gun `g` fires. A hull gun at where the plane is headed: straight on its line
+## now, the ball meeting it there, the drop allowed for. A deck gun lobs onto
+## where it'll be (`_lob`). A dodge after the shot is what saves it.
 func _fire(g: Dictionary) -> void:
-	var from: Vector3 = transform*(g.at as Vector3)
-	(g.smoke as Node3D).visible = true
-	g.puff = 1.2
-	game.sound.shot("thump",1.0,0.65,from)
+	var deck := str(g.kind) == "deck"
+	var from: Vector3
+	var out: Vector3
+	if deck:
+		var m := _deck_muzzle(g)
+		from = transform*m.origin
+		out = transform.basis*(m.basis*Vector3.FORWARD)
+	else:
+		from = transform*(g.at as Vector3)
+		out = transform.basis*(g.out as Vector3)
+	g.kick = 0.0
+	if _fx != null: _fx.blast(from,out)
+	var d: float = from.distance_to(game.plane.position)
+	game.sound.shot("thump",1.2/(1.0+d/BOOM_HEARD),0.75 if deck else 0.6,from,&"SFX",true)
 	if balls.size() >= BALLS: return
 	var to: Vector3 = (game.plane.position as Vector3)-from
-	var v: Vector3 = game.plane.velocity
-	var a := v.length_squared()-BALL_SPEED*BALL_SPEED
-	var b := 2.0*to.dot(v)
-	var c := to.length_squared()
-	var root := b*b-4.0*a*c
-	if root < 0.0 or absf(a) < 0.01: return
-	var t := (-b-sqrt(root))/(2.0*a)
-	if t <= 0.0: return
+	var shot: Vector3
+	if deck:
+		shot = _lob(g,game.plane.position,(game.plane.position as Vector3).distance_to(position))
+	else:
+		var v: Vector3 = game.plane.velocity
+		var a := v.length_squared()-BALL_SPEED*BALL_SPEED
+		var b := 2.0*to.dot(v)
+		var c := to.length_squared()
+		var root := b*b-4.0*a*c
+		if root < 0.0 or absf(a) < 0.01: return
+		var t := (-b-sqrt(root))/(2.0*a)
+		if t <= 0.0: return
+		var at: Vector3 = to+v*t
+		shot = at/t+Vector3.UP*BALL_DROP*t*0.5
 	var ball := _ball()
 	ball.position = from
 	ball.visible = true
-	var at: Vector3 = to+v*t
-	var shot := at/t+Vector3.UP*BALL_DROP*t*0.5
-	balls.append({"node":ball,"at":from,"v":shot,"age":0.0,"least":INF,"near":from,"done":false})
+	balls.append({"node":ball,"at":from,"v":shot,"drop":LOB_DROP if deck else BALL_DROP,"lob":deck,"age":0.0,"least":INF,"near":from,"done":false,"trail":0.0})
 	fired += 1
+	if deck: lobs += 1
 
 func _ball() -> Node3D:
 	if not _pool.is_empty(): return _pool.pop_back()
@@ -565,51 +694,7 @@ func _ball() -> Node3D:
 		body.mesh = s
 		body.material_override = _mat(Color(0.12,0.1,0.09),Color(1.0,0.35,0.05),1.4)
 	n.add_child(body)
-	var tail := MeshInstance3D.new()
-	if _smoke != null:
-		tail.mesh = _smoke
-		tail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	else:
-		var box := BoxMesh.new()
-		box.size = Vector3(0.7,0.7,9.0)
-		tail.mesh = box
-		tail.position = Vector3(0.0,0.0,5.0)
-		tail.material_override = _mat(Color(0.6,0.58,0.55),Color(0.6,0.58,0.55),0.5)
-	n.add_child(tail)
 	return n
-
-## Discs strung back along +z, closer where they are thin, each collapsed on its
-## centre for ball_smoke.gdshader to turn to the eye.
-func _smoke_mesh() -> ArrayMesh:
-	var at := PackedVector3Array()
-	var uv := PackedVector2Array()
-	var size := PackedVector2Array()
-	var index := PackedInt32Array()
-	var z := BALL_R*0.7
-	while z < SMOKE_LONG:
-		var t := z/SMOKE_LONG
-		var r := lerpf(SMOKE_THIN,SMOKE_WIDE,pow(t,0.7))
-		var centre := Vector3(sin(z*0.45)*0.3*r,cos(z*0.31)*0.3*r,z)
-		var first := at.size()
-		for corner: Vector2 in [Vector2.ZERO,Vector2.RIGHT,Vector2.ONE,Vector2.DOWN]:
-			at.append(centre)
-			uv.append(corner)
-			size.append(Vector2(r,SMOKE_OPACITY*smoothstep(0.0,0.2,t)*pow(1.0-t,1.4)+0.04*(1.0-t)))
-		index.append_array([first,first+1,first+2,first,first+2,first+3])
-		z += r*0.5
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = at
-	arrays[Mesh.ARRAY_TEX_UV] = uv
-	arrays[Mesh.ARRAY_TEX_UV2] = size
-	arrays[Mesh.ARRAY_INDEX] = index
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	mesh.custom_aabb = AABB(Vector3(-SMOKE_WIDE*1.3,-SMOKE_WIDE*1.3,-SMOKE_WIDE),Vector3(SMOKE_WIDE*2.6,SMOKE_WIDE*2.6,SMOKE_LONG+SMOKE_WIDE*2.0))
-	var mat := ShaderMaterial.new()
-	mat.shader = load(SMOKE_SHADER)
-	mesh.surface_set_material(0,mat)
-	return mesh
 
 ## A cluster of `n` soft discs for muzzle_puff.gdshader: one core disc of radius
 ## `r` then the rest scattered round it (`spread` x r), tinted from `tints`,
@@ -656,7 +741,7 @@ func _balls_step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> 
 		var b: Dictionary = balls[i]
 		var a: Vector3 = b.at
 		var v: Vector3 = b.v
-		v += Vector3.DOWN*BALL_DROP*delta
+		v += Vector3.DOWN*float(b.drop)*delta
 		var n: Vector3 = a+v*delta
 		b.v = v
 		b.at = n
@@ -664,6 +749,7 @@ func _balls_step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> 
 		(b.node as Node3D).position = n
 		if v.length() > 1.0: (b.node as Node3D).basis = Basis.looking_at(v.normalized(),Vector3.UP if absf(v.normalized().y) < 0.99 else Vector3.RIGHT)
 		if _ball_mesh != null: ((b.node as Node3D).get_child(0) as Node3D).basis = Basis(Vector3(0.6,0.8,0.0),float(b.age)*BALL_TUMBLE)
+		if _fx != null and (b.node as Node3D).visible: _fx.trail(b,a,n)
 		# The closest pass this frame: both moved, so the segment's of the two apart.
 		if flying and not bool(b.done):
 			var r0 := a-was
@@ -679,13 +765,52 @@ func _balls_step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> 
 			elif float(b.least) < reach+PASS_REACH and gap > float(b.least)+6.0:
 				b.done = true
 				_passed(b)
-		var ground := maxf(float(game.field.height(n.x,n.z)),float(game.water_at(n)))
+		var land := float(game.field.height(n.x,n.z))
+		var water := float(game.water_at(n))
+		var ground := maxf(land,water)
 		if n.y <= ground or float(b.age) > BALL_LIFE:
 			if not bool(b.done) and float(b.least) < reach+PASS_REACH: _passed(b)
-			if n.y <= ground: _splash(Vector3(n.x,ground,n.z))
+			if n.y <= ground and (b.node as Node3D).visible:
+				var q := a.lerp(n,clampf((a.y-ground)/maxf(a.y-n.y,0.001),0.0,1.0))
+				_splash(Vector3(q.x,ground,q.z),v,water >= land)
 			(b.node as Node3D).visible = false
 			_pool.append(b.node)
 			balls.remove_at(i)
+	_whistle_step(p)
+
+## The whistle on the lob coming down nearest the plane inside WHISTLE_NEAR m,
+## higher the farther off, louder the nearer.
+func _whistle_step(p: Vector3) -> void:
+	if balls.is_empty() and (_whistle == null or not _whistle.playing): return
+	var best: Dictionary = {}
+	var near := WHISTLE_NEAR
+	for b: Dictionary in balls:
+		if not bool(b.lob) or (b.v as Vector3).y >= 0.0 or not (b.node as Node3D).visible: continue
+		var d := (b.at as Vector3).distance_to(p)
+		if d < near:
+			near = d
+			best = b
+	if best.is_empty():
+		if _whistle != null and _whistle.playing: _whistle.stop()
+		return
+	if _whistle == null:
+		if not bool(game.sound.audible): return
+		var stream := (load(WHISTLE) as AudioStreamWAV).duplicate() as AudioStreamWAV
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		stream.loop_begin = 0
+		stream.loop_end = roundi(stream.get_length()*stream.mix_rate)
+		_whistle = AudioStreamPlayer3D.new()
+		_whistle.name = "Whistle"
+		_whistle.stream = stream
+		_whistle.bus = &"SFX"
+		_whistle.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+		_whistle.panning_strength = 0.8
+		_fx.root.add_child(_whistle)
+	var k := near/WHISTLE_NEAR
+	_whistle.global_position = best.at
+	_whistle.pitch_scale = lerpf(WHISTLE_PITCH.y,WHISTLE_PITCH.x,k)
+	_whistle.volume_db = linear_to_db(WHISTLE_GAIN*(1.0-k*k)+0.001)
+	if not _whistle.playing: _whistle.play()
 
 func _passed(b: Dictionary) -> void:
 	passes += 1
@@ -993,6 +1118,7 @@ func _come_back(s: float) -> void:
 	visible = true
 	_ghost = false
 	_every = EVERY
+	_lob_every = LOB_EVERY
 	for g: Dictionary in _guns: g.rest = 0.0
 	_pose()
 	_hull_body.collision_layer = game.arches.LAYER
@@ -1175,31 +1301,19 @@ func _new_chunk() -> MeshInstance3D:
 	add_child(c)
 	return c
 
-func _splash(at: Vector3) -> void:
-	var m := MeshInstance3D.new()
-	var c := CylinderMesh.new()
-	c.top_radius = 0.8
-	c.bottom_radius = 2.6
-	c.height = 1.0
-	c.radial_segments = 8
-	m.mesh = c
-	m.material_override = _mat(Color(0.92,0.96,1.0),Color(0.8,0.85,0.9),0.5)
-	m.top_level = true
-	add_child(m)
-	m.position = at
-	_splashes.append({"node":m,"t":0.0})
+## A ball down at `at` going `v`: a splash on the water (`wet`), else dirt and dust.
+func _splash(at: Vector3, v: Vector3, wet: bool) -> void:
+	if _fx != null: _fx.splash(at,v,wet)
+	var gain := 1.0/(1.0+at.distance_to(game.plane.position)/SPLASH_HEARD)
+	if wet:
+		game.sound.shot("splash",0.9*gain,0.7,at,&"SFX",true)
+	else:
+		game.debris.burst("dust",at,Vector3.UP)
+		game.sound.shot("debris",0.8*gain,0.75,at,&"SFX",true)
 
 func _bits_step(delta: float) -> void:
 	_shards_step(delta)
-	for i in range(_splashes.size()-1,-1,-1):
-		var s: Dictionary = _splashes[i]
-		s.t = float(s.t)+delta
-		var k := float(s.t)/0.9
-		var n: MeshInstance3D = s.node
-		n.scale = Vector3(1.0+k*1.5,14.0*sin(minf(k,1.0)*PI)+0.01,1.0+k*1.5)
-		if k >= 1.0:
-			n.queue_free()
-			_splashes.remove_at(i)
+	if _fx != null: _fx.step(delta)
 	for i in range(_chunks.size()-1,-1,-1):
 		var c: Dictionary = _chunks[i]
 		c.t = float(c.t)-delta
@@ -1219,8 +1333,10 @@ func _bits_step(delta: float) -> void:
 func _build() -> void:
 	var all := solids(wide,high)
 	var blocks: bool = "--ship-blocks" in preload("res://scripts/launch_args.gd").user_args()
+	_fx = ShipGuns.new(get_parent(),twin._fx if twin != null else null)
 	if blocks: _blocks(all)
 	else: _dress()
+	_deck_guns()
 	# The solids: the plates first in `loose`, so a hit near a jamb finds the plate.
 	_hull = _record("hull",all.hull)
 	_hull["no_break"] = true
@@ -1252,23 +1368,15 @@ func _dress() -> void:
 	_sails = ShipSails.new(_model)
 	if twin != null:
 		_ball_mesh = twin._ball_mesh
-		_smoke = twin._smoke
 		_flash_mesh = twin._flash_mesh
-		_puff_mesh = twin._puff_mesh
 	else:
 		var ball: Node3D = (load(BALL_MODEL) as PackedScene).instantiate()
 		_ball_mesh = (ball.find_child("Ball",true,false) as MeshInstance3D).mesh
 		ball.free()
-		_smoke = _smoke_mesh()
 		_flash_mesh = _cluster_mesh(FLASH_R,[Color(1.0,0.95,0.7),Color(1.0,0.72,0.28),Color(1.0,0.5,0.1)],1.0,5,0.5,0.0)
-		_puff_mesh = _cluster_mesh(PUFF_R,[Color(0.78,0.79,0.8),Color(0.68,0.69,0.7),Color(0.84,0.84,0.84)],0.55,9,1.0,1.0)
 	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
 	for part: String in ["Interior","Cannons"]: (_model.find_child(part,true,false) as GeometryInstance3D).visibility_range_end = INNER_FAR
-	for i in GUNS_Z.size():
-		var z: float = GUNS_Z[GUNS_Z.size()-1-i]
-		for side: float in [-1.0,1.0]:
-			var empty: Node3D = _model.find_child("Gun_%s_%02d" % ["L" if side < 0.0 else "R",i+1],true,false)
-			_muzzle(side,z,to_local(empty.global_position))
+	_hull_guns()
 
 ## Plate `part`'s plug in the model, each shard's place kept for the reseal.
 func _plug(plate: Dictionary, part: String) -> void:
@@ -1324,7 +1432,7 @@ func _blocks(all: Dictionary) -> void:
 			_look(AABB(Vector3(side*(half-0.5)-0.2,roof-1.2,gz-0.5),Vector3(0.4,0.9,1.0)),lamp)
 			_look(AABB(Vector3(side*half-0.06,GUN_Y-1.1,gz-1.2),Vector3(0.12,2.2,2.4)),port)
 			_look(AABB(Vector3(side*(half-0.5)-0.5,FLOOR_Y,gz-1.0),Vector3(1.0,1.1,2.0)),gun)
-			_gun(side,gz,beam,gun)
+			if (GUNS_Z.size()-GUNS_Z.find(gz)) in HULL_PICK: _gun(side,gz,beam,gun)
 
 func _record(part: String, boxes: Array) -> Dictionary:
 	return {"name":handle+"/"+part,"kind":"ship","node":self,"pos":position,"cos":cos(yaw),"sin":sin(yaw),
@@ -1371,33 +1479,184 @@ func _plate(box: AABB, part: String) -> Node3D:
 func _gun(side: float, gz: float, beam: float, mat: Material) -> void:
 	_look(AABB(Vector3(side*beam-(0.1 if side > 0.0 else 0.0),GUN_Y-1.0,gz-1.0),Vector3(0.1,2.0,2.0)),_mat(Color.BLACK))
 	var x := side*(beam+1.2)
-	_look(AABB(Vector3(x-1.2,GUN_Y-0.5,gz-0.5),Vector3(2.4,1.0,1.0)),mat)
-	_muzzle(side,gz,Vector3(side*(beam+3.0),GUN_Y,gz))
+	var barrel := _look(AABB(Vector3(x-1.2,GUN_Y-0.5,gz-0.5),Vector3(2.4,1.0,1.0)),mat)
+	_muzzle(side,gz,Vector3(side*(beam+3.0),GUN_Y,gz),Vector3(side,0.0,0.0),barrel,Vector3(-side,0.0,0.0))
 
-## A gun's muzzle at `at`: its flash and smoke, and the record the guns fire by.
-func _muzzle(side: float, gz: float, at: Vector3) -> void:
+## A hull gun's muzzle at `at` (her frame), its bore `out`: its tell, and the
+## record the guns fire by. When it fires `kick` recoils along `way` (its
+## parent's frame).
+func _muzzle(side: float, gz: float, at: Vector3, out: Vector3, kick: Node3D = null, way := Vector3.ZERO) -> void:
+	var flash := _tell_flash()
+	flash.position = at
+	add_child(flash)
+	_guns.append({"kind":"hull","side":side,"z":gz,"at":at,"out":out,"flash":flash,"rest":0.0,"kick":-1.0,"kick_node":kick,"kick_home":kick.transform if kick != null else Transform3D.IDENTITY,"kick_way":way})
+
+## A gun's tell: the glow at its muzzle before it fires.
+func _tell_flash() -> MeshInstance3D:
 	var flash := MeshInstance3D.new()
-	var smoke := MeshInstance3D.new()
 	if _flash_mesh != null:
 		flash.mesh = _flash_mesh
-		smoke.mesh = _puff_mesh
-		for m: GeometryInstance3D in [flash,smoke]: m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	else:
 		var b := BoxMesh.new()
 		b.size = Vector3(2.2,2.2,2.2)
 		flash.mesh = b
 		flash.material_override = _mat(Color(1.0,0.8,0.3),Color(1.0,0.7,0.2),5.0)
-		var sb := BoxMesh.new()
-		sb.size = Vector3(4.0,4.0,4.0)
-		smoke.mesh = sb
-		smoke.material_override = _mat(Color(0.8,0.8,0.78),Color(0.5,0.5,0.48),0.4)
-	flash.position = at
 	flash.visible = false
-	add_child(flash)
-	smoke.position = at+Vector3(side*2.0,1.0,0.0)
-	smoke.visible = false
-	add_child(smoke)
-	_guns.append({"side":side,"z":gz,"at":at,"flash":flash,"smoke":smoke,"puff":0.0,"rest":0.0})
+	return flash
+
+## The hull guns off the glb's `Gun_<side>_<nn>` empties (muzzle, -z out): of six
+## a side the HULL_PICK ones, of HULL_GUNS all. Each recoils as a piece of its
+## own: the glb's `Cannon_<side>_<nn>` if it has one, else cut out of its merged
+## `Cannons` round the empty (ShipGuns.cut), which is then hidden, so the guns
+## that don't fire are gone from the look.
+func _hull_guns() -> void:
+	var six := _model.find_child("Gun_L_%02d" % (HULL_GUNS+1),true,false) != null
+	var cannons: MeshInstance3D = _model.find_child("Cannons",true,false)
+	var cuts: Dictionary = _fx.shared.cuts
+	var into := _model.global_transform.affine_inverse()
+	var cut := false
+	for n: int in (HULL_PICK if six else range(1,HULL_GUNS+1)):
+		for side: float in [-1.0,1.0]:
+			var key := "%s_%02d" % ["L" if side < 0.0 else "R",n]
+			var empty: Node3D = _model.find_child("Gun_"+key,true,false)
+			if empty == null: continue
+			var frame: Transform3D = into*empty.global_transform
+			var piece: Node3D = _model.find_child("Cannon_"+key,true,false)
+			if piece == null and cannons != null:
+				if not cuts.has(key):
+					var source: Transform3D = into*cannons.global_transform
+					cuts[key] = ShipGuns.cut(cannons.mesh,func(q: Vector3) -> bool: return ShipGuns.in_gun(source*q,frame),frame.affine_inverse()*source)
+				var m := MeshInstance3D.new()
+				m.name = "Cannon_"+key
+				m.mesh = cuts[key]
+				m.transform = frame
+				m.visibility_range_end = INNER_FAR
+				_model.add_child(m)
+				piece = m
+				cut = true
+			var way := Vector3.ZERO
+			if piece != null: way = ((piece.get_parent() as Node3D).global_basis.inverse()*empty.global_basis.z).normalized()
+			_muzzle(side,local(empty.global_position).z,local(empty.global_position),(_inv.basis*-empty.global_basis.z).normalized(),piece,way)
+	if cut: cannons.visible = false
+
+## The deck guns: at the glb's `DeckGun_<side>_<nn>` empties (the mount's pivot,
+## -z outboard), turned by their `_Mount` child, laid by its `_Barrel`, fired from
+## that one's `_Muzzle`; where it has none of those, stand-ins there; where it has
+## no empties, stand-ins at DECK_GUNS on the top deck.
+func _deck_guns() -> void:
+	var top := FLOOR_Y+high+DECK
+	var under: Node3D = _model if _model != null else self
+	for i in DECK_GUNS.size():
+		for side: float in [-1.0,1.0]:
+			var key := "%s_%02d" % ["L" if side < 0.0 else "R",i+1]
+			var pivot: Node3D = _model.find_child("DeckGun_"+key,true,false) if _model != null else null
+			if pivot == null:
+				var spot: Vector2 = DECK_GUNS[i]
+				pivot = Node3D.new()
+				pivot.name = "DeckGun_"+key
+				pivot.transform = Transform3D(Basis(Vector3.UP,-side*PI*0.5),Vector3(side*spot.x,top,spot.y))
+				under.add_child(pivot)
+			var mount := _part(pivot,"_Mount")
+			var barrel := _part(mount,"_Barrel") if mount != null else null
+			var muzzle := _part(barrel,"_Muzzle") if barrel != null else null
+			if muzzle == null:
+				var built := _deck_stand_in(pivot)
+				mount = built[0]
+				barrel = built[1]
+				muzzle = built[2]
+			var flash := _tell_flash()
+			flash.position = muzzle.position
+			barrel.add_child(flash)
+			var frame: Transform3D = global_transform.affine_inverse()*pivot.global_transform
+			_guns.append({"kind":"deck","side":side,"z":frame.origin.z,"pivot":frame,"yaw_node":mount,"yaw_home":mount.transform,"barrel":barrel,"barrel_home":barrel.transform,
+				"muzzle":muzzle.position,"yaw":0.0,"pitch":DECK_REST,"err":INF,"flash":flash,"rest":0.0,"kick":-1.0,"kick_node":barrel})
+
+## The child of `n` whose name ends with `end`, or null.
+func _part(n: Node, end: String) -> Node3D:
+	for c: Node in n.get_children():
+		if c is Node3D and str(c.name).ends_with(end): return c
+	return null
+
+## A deck gun's stand-in on `pivot` (on the deck, -z outboard): a round base and a
+## turning carriage with two cheeks (one mesh), the barrel on its trunnions (the
+## glb's hull gun barrel, else a box). [mount, barrel, muzzle].
+func _deck_stand_in(pivot: Node3D) -> Array:
+	var mount := Node3D.new()
+	mount.name = str(pivot.name)+"_Mount"
+	pivot.add_child(mount)
+	var barrel := Node3D.new()
+	barrel.name = str(pivot.name)+"_Barrel"
+	barrel.position = Vector3(0.0,DECK_LIFT,0.0)
+	mount.add_child(barrel)
+	var muzzle := Node3D.new()
+	muzzle.name = str(pivot.name)+"_Muzzle"
+	muzzle.position = Vector3(0.0,0.0,-DECK_MUZZLE)
+	barrel.add_child(muzzle)
+	var shared: Dictionary = _fx.shared
+	var key := "deck" if _model != null else "deck_blocks"
+	if not shared.has(key): shared[key] = _deck_meshes()
+	var meshes: Array = shared[key]
+	for k in 2:
+		var m := MeshInstance3D.new()
+		m.mesh = meshes[k]
+		m.visibility_range_end = INNER_FAR*1.3
+		(mount if k == 0 else barrel).add_child(m)
+	return [mount,barrel,muzzle]
+
+## The stand-ins' [mount, barrel] meshes: the mount from boxes and a drum, in the
+## ship's wood; the barrel cut from the glb's first starboard hull gun, in the
+## outside iron (blocks: boxes in the gray box's colours).
+func _deck_meshes() -> Array:
+	var wood: Material = load("res://assets/models/pirate_ship/wood.tres") if _model != null else _mat(RIB_C)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var k := DECK_SIZE
+	var drum := CylinderMesh.new()
+	drum.top_radius = 1.15*k
+	drum.bottom_radius = 1.4*k
+	drum.height = DECK_LIFT-1.5*k
+	drum.radial_segments = 10
+	drum.rings = 1
+	st.append_from(drum,0,Transform3D(Basis.IDENTITY,Vector3(0.0,drum.height*0.5,0.0)))
+	var deck := BoxMesh.new()
+	deck.size = Vector3(2.6,0.3,3.0)*k
+	st.append_from(deck,0,Transform3D(Basis.IDENTITY,Vector3(0.0,DECK_LIFT-1.35*k,0.1*k)))
+	for x: float in [-0.95,0.95]:
+		var cheek := BoxMesh.new()
+		cheek.size = Vector3(0.4,1.6,1.7)*k
+		st.append_from(cheek,0,Transform3D(Basis.IDENTITY,Vector3(x*k,DECK_LIFT-0.4*k,0.1*k)))
+	var mount := st.commit()
+	mount.surface_set_material(0,wood)
+	var barrel: Mesh
+	var cannons: MeshInstance3D = _model.find_child("Cannons",true,false) if _model != null else null
+	var empty: Node3D = _model.find_child("Gun_R_01",true,false) if _model != null else null
+	if cannons != null and empty != null:
+		var into := _model.global_transform.affine_inverse()
+		var frame: Transform3D = into*empty.global_transform
+		var source: Transform3D = into*cannons.global_transform
+		var trunnion := Transform3D(frame.basis,frame.origin+frame.basis.z*DECK_MUZZLE/DECK_SIZE)
+		var swap := {}
+		for si in cannons.mesh.get_surface_count():
+			var mat: Material = cannons.mesh.surface_get_material(si)
+			if mat != null and mat.resource_path.ends_with("_in.tres") and ResourceLoader.exists(mat.resource_path.replace("_in.tres",".tres")):
+				swap[mat] = load(mat.resource_path.replace("_in.tres",".tres"))
+		barrel = ShipGuns.cut(cannons.mesh,func(q: Vector3) -> bool: return ShipGuns.in_gun(source*q,frame,6.5,1.2,0.9,1.2),Transform3D(Basis.from_scale(Vector3.ONE*DECK_SIZE))*trunnion.affine_inverse()*source,
+			func(m: Material) -> bool: return m == null or not m.resource_path.get_file().begins_with("wood"),swap)
+	if barrel == null or barrel.get_surface_count() == 0:
+		var box := BoxMesh.new()
+		box.size = Vector3(1.0,1.0,0.0)*DECK_SIZE+Vector3(0.0,0.0,DECK_MUZZLE+1.8)
+		barrel = box
+		box.material = _mat(GUN_C)
+		var shift := ArrayMesh.new()
+		var arrays := box.get_mesh_arrays()
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in v.size(): v[i] += Vector3(0.0,0.0,0.9-DECK_MUZZLE*0.5)
+		arrays[Mesh.ARRAY_VERTEX] = v
+		shift.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+		shift.surface_set_material(0,_mat(GUN_C))
+		barrel = shift
+	return [mount,barrel]
 
 func _look(box: AABB, mat: Material, under: Node3D = self) -> MeshInstance3D:
 	var m := MeshInstance3D.new()
