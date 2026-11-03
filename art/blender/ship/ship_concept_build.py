@@ -34,22 +34,28 @@ BOW_Z = -57.0           # the hull's end behind the head
 SHEER = [(-57, 25.0), (-48, 24.0), (-40, 22.5), (-30, 19.5), (-15, 17.6), (0, 17.0),
 		 (12, 17.5), (22, 19.5), (30, 23.0), (40, 27.5), (50, 30.5), (58, 32.0)]
 # The midship section's half breadth by height: a round belly, tumblehome above.
-SECTION = [(-6.0, 2.5), (-4.0, 7.5), (-2.0, 10.6), (0.0, 12.6), (2.5, 13.8), (5.0, 14.4),
-		   (8.0, 14.5), (11.0, 14.1), (13.0, 13.6), (15.0, 12.9), (17.0, 12.3), (24.0, 11.2), (32.0, 10.2)]
-ROWS = [-6.0, -4.0, -2.0, 0.0, 0.8, 2.5, 4.0, 5.0, 7.0, 9.0, 11.0, 12.0, 13.0, 14.0, 14.6, 16.4, 17.0]
+SECTION = [(-6.0, 1.5), (-5.0, 4.5), (-4.0, 7.2), (-2.5, 10.0), (-1.0, 11.8), (0.5, 13.0), (2.5, 13.9),
+		   (5.0, 14.4), (8.0, 14.5), (11.0, 14.0), (13.4, 13.3), (15.0, 12.6), (17.0, 11.8), (24.0, 10.4), (32.0, 9.2)]
+ROWS = [-6.0, -5.0, -4.0, -2.5, -1.0, 0.0, 0.8, 2.6, 4.0, 5.0, 7.0, 9.0, 11.0, 12.0, 13.4, 14.0, 14.6, 16.4, 17.0]
 UPPER = [0.0, 0.55, 0.62, 0.86, 1.0]   # rows above 17 m, as shares of the way to the rail
 DECKS = [  # (name, top y, z from, z to)
 	("main", 15.0, -40.0, 30.0), ("quarter", 22.0, 30.0, 58.0), ("poop", 28.0, 44.0, 58.0),
 	("fore", 21.0, -57.0, -38.0)]
 MASTS = [  # (z, foot y, height top y, [(yard y, drop, top width, foot width, glyph)])
-	(-30.0, 15.0, 92.0, [(40.0, 17.0, 42.0, 47.0, "sun"), (61.0, 18.0, 34.0, 41.0, "plain"), (78.0, 14.0, 25.0, 31.0, "plain")]),
-	(2.0, 15.0, 104.0, [(44.0, 20.0, 47.0, 53.0, "face"), (67.0, 20.0, 39.0, 46.0, "plain"), (86.0, 16.0, 29.0, 36.0, "plain"), (100.0, 11.0, 20.0, 26.0, "plain")]),
+	(-30.0, 15.0, 92.0, [(40.0, 17.0, 42.0, 47.0, "fore"), (61.0, 18.0, 34.0, 41.0, "plain"), (78.0, 14.0, 25.0, 31.0, "plain")]),
+	(2.0, 15.0, 104.0, [(44.0, 20.0, 47.0, 53.0, "sun"), (67.0, 20.0, 39.0, 46.0, "plain"), (86.0, 16.0, 29.0, 36.0, "plain"), (100.0, 11.0, 20.0, 26.0, "plain")]),
 	(33.0, 22.0, 80.0, [(48.0, 16.0, 31.0, 35.0, "plain"), (66.0, 15.0, 24.0, 29.0, "plain")]),
 ]
 BRACE = math.radians(34.0)
 HULL_GUNS = (-32.0, 0.0, 32.0)        # Gun_*_01..03, y 8
 SHUT_PORTS = (-16.0, 16.0, 44.0, -46.0)
 DECK_GUNS = (-12.0, 16.0)             # DeckGun_*_01..02 on the main deck
+# The carved head at the bow is parked (--head brings it back); without it the bow
+# is a framed portal round the exit, a beak under it, and a bowsprit.
+HEAD = "--head" in sys.argv
+# The fore course's glyph (--fore spiral|serpent|sun): the options for the user to pick.
+FORE = sys.argv[sys.argv.index("--fore") + 1] if "--fore" in sys.argv else "spiral"
+SPRIT_TIP = (0.0, 44.0, -100.0)
 
 # Dark brown wood with grey stone and iron, no yellow; they differ in how dark the
 # hull is, the sails' canvas, and the accent (none, faded teal, a little red).
@@ -60,7 +66,7 @@ SCHEMES = {
 		"hull": "221d1a", "upper": "272220", "band": "1f1a17", "wale": "151210", "boot": "5c5650", "bottom": "2a2420",
 		"rail": "5f5a54", "deck": "4e4136", "wood": "2e2621", "iron": "2b2c2e", "plug": "2e2620", "glass": "2c3238",
 		"stone": "6b6a67", "pig1": "4f4d4a", "pig2": "3e3c3a", "bone": "b3ada2", "dark": "141312",
-		"sail": "8d8a84", "ink": "2a2622", "g1": "3e342c", "g2": "5e5952", "acc": "c4beb2", "flag1": "3a332d", "flag2": "6e6a64",
+		"sail": "65696e", "ink": "1f1d1b", "g1": "3e342c", "g2": "5e5952", "acc": "c4beb2", "flag1": "3a332d", "flag2": "6e6a64",
 		"frieze": ("4a3e34", "8f8b84", "2a2420"),
 	},
 	# Dark brown hull and canvas, light glyphs, a little faded teal.
@@ -76,7 +82,7 @@ SCHEMES = {
 		"hull": "57524b", "upper": "5f5a53", "band": "514c45", "wale": "2e2b28", "boot": "77726a", "bottom": "3a2c26",
 		"rail": "38302a", "deck": "6a5745", "wood": "42352b", "iron": "2b2c2e", "plug": "302822", "glass": "2c3238",
 		"stone": "7b7a76", "pig1": "7a3a2e", "pig2": "55524d", "bone": "b8b2a6", "dark": "131211",
-		"sail": "a7a296", "ink": "2b2520", "g1": "4a3c31", "g2": "6a655e", "acc": "7a3a2e", "flag1": "3a302a", "flag2": "7a3a2e",
+		"sail": "7c7f82", "ink": "2b2520", "g1": "4a3c31", "g2": "6a655e", "acc": "7a3a2e", "flag1": "3a302a", "flag2": "7a3a2e",
 		"frieze": ("4e4236", "8f8a82", "2d2620"),
 	},
 }
@@ -109,19 +115,45 @@ def rail(z):
 	return lerp_table(SHEER, z)
 
 
+def stem_z(y):
+	"""The stem, raked: further forward the higher it goes."""
+	return -72.0 - 0.25 * y
+
+
 def half(y, z):
-	"""Half breadth at height y, station z."""
-	w = lerp_table(SECTION, y)
+	"""Half breadth at height y, station z: a plan that narrows all along, a run
+	aft, and a prow that closes to the raked stem."""
+	w = lerp_table(SECTION, y) * (1.0 - 0.06 * (z / 58.0) ** 2)
 	if z > 34.0:   # the run aft: the bottom tucks in, the castle squares off
 		t = (z - 34.0) / (STERN_Z - 34.0)
-		w *= 1.0 - (0.55 * t * t if y < 3.0 else 0.12 * t * t) * (1.0 if y < 3.0 else 1.0)
+		w *= 1.0 - (0.55 * t * t if y < 3.0 else 0.12 * t * t)
 		if y < 3.0:
 			w = max(w, 1.0)
-	if z < -38.0:  # the entrance: wide over the corridor, fine under it
-		t = (-38.0 - z) / (-38.0 - BOW_Z)
-		low = 0.62 * t * t if y < 1.5 else 0.14 * t * t
-		w *= 1.0 - low
+	if z < -40.0:  # the prow
+		t = min(1.0, (-40.0 - z) / (-40.0 - stem_z(y)))
+		w *= max(0.0, 1.0 - t ** 2.2) ** 0.5
 	return w
+
+
+def rake(p):
+	"""The stern rakes: the counter over the exit leans out aft, the sternpost tucks in."""
+	x, y, z = p
+	if z > 40.0:
+		t = min(1.0, (z - 40.0) / (STERN_Z - 40.0)) ** 2
+		z += t * (0.32 * max(0.0, y - 14.0) - 0.45 * max(0.0, 2.6 - y))
+	return (x, y, z)
+
+
+def cross_z(y, x=10.4):
+	"""Where the prow's side at height y comes in to x: the exit's edge."""
+	lo, hi = stem_z(y), -40.0
+	for _ in range(30):
+		mid = (lo + hi) * 0.5
+		if half(y, mid) < x:
+			lo = mid
+		else:
+			hi = mid
+	return hi
 
 
 # --- Images -----------------------------------------------------------------------
@@ -303,18 +335,126 @@ def sun_glyph(c, cx, cy, r, ink, a, b, bone, acc, sy=1.0):
 	c.disc(cx, cy, r * 0.1, ink, sy)
 
 
-def sail_image(s, glyph, path):
-	"""Canvas with a plain border; a course carries one bold glyph."""
+class Glyph:
+	"""A square brush-painted glyph: colour and coverage, painted in strokes."""
+
+	def __init__(self, n=512):
+		self.n = n
+		self.a = np.zeros((n, n, 3), np.float32)
+		self.m = np.zeros((n, n), np.float32)
+		ys, xs = np.mgrid[0:n, 0:n].astype(np.float32)
+		self.X, self.Y = (xs + 0.5) / n, (ys + 0.5) / n
+		self.rng = np.random.default_rng(11)
+
+	def put(self, mask, col):
+		if col is None:
+			self.m[mask] = 0.0
+		else:
+			self.a[mask] = col
+			self.m[mask] = 1.0
+
+	def stroke(self, pts, ws, col):
+		"""A brush stroke along pts, its width ws at each point, a little uneven."""
+		pts = np.array(pts, np.float32)
+		ws = np.array(ws, np.float32) * (1.0 + 0.18 * (self.rng.random(len(pts)) - 0.5))
+		mask = np.zeros(self.X.shape, bool)
+		for i in range(len(pts) - 1):
+			(x0, y0), (x1, y1) = pts[i], pts[i + 1]
+			r = max(ws[i], ws[i + 1])
+			lo_x, hi_x = int(max(0, (min(x0, x1) - r) * self.n)), int(min(self.n, (max(x0, x1) + r) * self.n + 1))
+			lo_y, hi_y = int(max(0, (min(y0, y1) - r) * self.n)), int(min(self.n, (max(y0, y1) + r) * self.n + 1))
+			if lo_x >= hi_x or lo_y >= hi_y:
+				continue
+			X, Y = self.X[lo_y:hi_y, lo_x:hi_x], self.Y[lo_y:hi_y, lo_x:hi_x]
+			dx, dy = x1 - x0, y1 - y0
+			t = np.clip(((X - x0) * dx + (Y - y0) * dy) / (dx * dx + dy * dy + 1e-9), 0, 1)
+			d = np.hypot(X - (x0 + t * dx), Y - (y0 + t * dy))
+			mask[lo_y:hi_y, lo_x:hi_x] |= d < ws[i] + (ws[i + 1] - ws[i]) * t
+		self.put(mask, col)
+
+	def disc(self, cx, cy, r, col):
+		self.put((self.X - cx) ** 2 + (self.Y - cy) ** 2 < r * r, col)
+
+	def arc(self, cx, cy, r, a0, a1, w0, w1, col, n=40, wob=0.0):
+		ts = np.linspace(0, 1, n)
+		ang = a0 + (a1 - a0) * ts
+		rr = r + wob * np.sin(ts * 9.0)
+		self.stroke(list(zip(cx + np.cos(ang) * rr, cy + np.sin(ang) * rr)), list(w0 + (w1 - w0) * ts), col)
+
+	def worn(self):
+		"""Worn into the canvas: patchy coverage, a few bare flecks."""
+		fleck = vnoise(self.n, 48, 48, self.rng) > 0.8
+		patch = 0.75 + 0.25 * vnoise(self.n, 5, 5, self.rng)
+		self.m *= np.where(fleck, 0.25, patch)
+
+
+def glyph_art(kind, ink, a, b, acc):
+	g = Glyph()
+	if kind == "spiral":   # wind: a breath spiral in an uneven ring, curls on the four quarters
+		g.arc(0.5, 0.5, 0.42, 0, 2 * math.pi, 0.03, 0.03, ink, 90, 0.008)
+		ts = np.linspace(0, 1, 120)
+		ang = 0.4 + ts * 3.3 * math.pi
+		rr = 0.04 + 0.27 * ts
+		g.stroke(list(zip(0.5 + np.cos(ang) * rr, 0.5 + np.sin(ang) * rr)), list(0.018 + 0.045 * ts), ink)
+		g.disc(0.5, 0.5, 0.05, acc)
+		for k in range(4):
+			c = k * math.pi / 2 + math.pi / 4
+			cx, cy = 0.5 + math.cos(c) * 0.42, 0.5 + math.sin(c) * 0.42
+			g.arc(cx + math.cos(c) * 0.04, cy + math.sin(c) * 0.04, 0.05, c + math.pi, c + 2.6 * math.pi, 0.022, 0.006, b, 30)
+	elif kind == "serpent":   # a serpent in profile, its body in an S, a crest of feathers
+		ts = np.linspace(0, 1, 90)
+		xs = 0.06 + 0.64 * ts
+		ys = 0.56 + 0.2 * np.sin(ts * 2.0 * math.pi + 0.3) * (0.4 + 0.6 * ts)
+		g.stroke(list(zip(xs, ys)), list(0.022 + 0.075 * ts ** 0.7), ink)
+		for k in range(6):   # crest along the back
+			t = 0.25 + k * 0.12
+			i = int(t * 89)
+			x, y = xs[i], ys[i]
+			g.stroke([(x, y - 0.04), (x - 0.05, y - 0.19), (x - 0.1, y - 0.23)], [0.03, 0.02, 0.006], b)
+		hx, hy = 0.74, ys[-1] - 0.02
+		g.disc(hx, hy, 0.12, ink)
+		g.stroke([(hx - 0.02, hy - 0.04), (hx + 0.12, hy - 0.07), (hx + 0.16, hy - 0.04)], [0.05, 0.04, 0.02], ink)  # upper jaw
+		g.stroke([(hx, hy + 0.04), (hx + 0.11, hy + 0.07), (hx + 0.14, hy + 0.11)], [0.04, 0.03, 0.012], ink)       # lower jaw
+		g.stroke([(hx + 0.08, hy + 0.0), (hx + 0.16, hy + 0.01), (hx + 0.2, hy - 0.01)], [0.008, 0.006, 0.003], acc)  # tongue
+		g.disc(hx + 0.02, hy - 0.035, 0.024, acc)
+		g.disc(hx + 0.025, hy - 0.035, 0.01, ink)
+	else:   # the sun with curved rays
+		for k in range(12):
+			c = k * math.pi / 6
+			g.arc(0.5, 0.5, 0.0, 0, 0, 0, 0, ink, 2)
+			ts = np.linspace(0, 1, 24)
+			ang = c + 0.45 * ts
+			rr = 0.25 + 0.2 * ts
+			g.stroke(list(zip(0.5 + np.cos(ang) * rr, 0.5 + np.sin(ang) * rr)), list(0.04 - 0.034 * ts), ink if k % 2 == 0 else b)
+		g.disc(0.5, 0.5, 0.2, ink)
+		g.arc(0.5, 0.5, 0.15, 0, 2 * math.pi, 0.012, 0.012, acc, 60, 0.004)
+		g.disc(0.5, 0.5, 0.07, b)
+	g.worn()
+	return g
+
+
+def sail_image(s, glyph, path, aspect=3.0):
+	"""Canvas with a plain border; a course carries one glyph at its own aspect
+	(aspect: the sail's width over its depth), centred."""
 	sail, ink, a, b, bone, acc = (rgb(s[k]) for k in ("sail", "ink", "g1", "g2", "bone", "acc"))
-	c = Canvas(512, 512, sail)
+	c = Canvas(1024, 512, sail)
 	c.rect(0, 0, 1, 0.03, ink)
 	c.rect(0, 0.97, 1, 1, ink)
-	c.rect(0, 0, 0.02, 1, ink)
-	c.rect(0.98, 0, 1, 1, ink)
-	if glyph == "face":
-		face_glyph(c, 0.18, 0.12, 0.82, 0.86, ink, a, b, bone, acc)
-	elif glyph == "sun":
-		sun_glyph(c, 0.5, 0.5, 0.36, ink, a, b, bone, acc)
+	c.rect(0, 0, 0.012, 1, ink)
+	c.rect(0.988, 0, 1, 1, ink)
+	if glyph != "plain":
+		g = glyph_art(glyph, np.array(ink), np.array(a), np.array(b), np.array(acc))
+		gh = 0.8                              # of the sail's depth
+		gw = gh / aspect                      # of its width: the glyph stays square on the cloth
+		rows = int(gh * c.h)
+		cols = int(gw * c.w)
+		r0, c0 = (c.h - rows) // 2, (c.w - cols) // 2
+		ri = (np.arange(rows) * g.n / rows).astype(int)
+		ci = (np.arange(cols) * g.n / cols).astype(int)
+		col = g.a[ri][:, ci]
+		m = g.m[ri][:, ci][..., None]
+		region = c.a[r0:r0 + rows, c0:c0 + cols]
+		c.a[r0:r0 + rows, c0:c0 + cols] = region * (1 - m) + col * m
 	c.weather(len(glyph) * 7 + 1)
 	return c.save(path)
 
@@ -440,24 +580,32 @@ def sb(M, s, xa, xb, y0, y1, z0, z1, mat):
 
 
 def hull(M, U):
-	zs = list(np.linspace(STERN_Z, BOW_Z, 48))
+	zs = list(np.linspace(STERN_Z, -40.0, 46)) + list(np.linspace(-40.8, stem_z(32.0), 46))
 	grid = []
 	for z in zs:
 		r = rail(z)
 		ys = ROWS + [17.0 + t * max(r - 17.0, 0.01) for t in UPPER[1:]]
-		grid.append([(half(y, z), y + (0.16 * math.sin(z * 0.23 + j * 1.3) if 0.5 < y and j < len(ys) - 1 else 0.0), z)
-					 for j, y in enumerate(ys)])
+		end = max(min(1.0, (z - 30.0) / 28.0), min(1.0, (-z - 30.0) / 42.0), 0.0) ** 2
+		row = []
+		for j, y in enumerate(ys):
+			zz = max(z, stem_z(y))
+			yy = y * (1.0 - 0.5 * end) if y < 0.0 else y     # the keel rises toward the ends
+			yy += 0.16 * math.sin(z * 0.23 + j * 1.3) if 0.5 < y and j < len(ys) - 1 and abs(y - 2.6) > 0.1 and abs(y - 13.4) > 0.1 else 0.0
+			row.append((half(y, zz), yy, zz))
+		grid.append(row)
 	band = []
 	for y0, y1 in zip(ROWS, ROWS[1:]):
 		mid = (y0 + y1) * 0.5
-		band.append("bottom" if mid < 0.8 else "boot" if mid < 2.5 else "wale" if mid < 4.0 else "band" if mid < 12.0
-					else "wale" if mid < 13.0 else "hull" if mid < 14.6 else "frieze" if mid < 16.4 else "wale")
+		band.append("bottom" if mid < 0.8 else "boot" if mid < 2.6 else "wale" if mid < 4.0 else "band" if mid < 12.0
+					else "wale" if mid < 13.4 else "hull" if mid < 14.6 else "frieze" if mid < 16.4 else "wale")
 	band += ["upper", "frieze", "upper", "rail"]
 	for s in (1, -1):
 		for i in range(len(zs) - 1):
 			for j in range(len(grid[0]) - 1):
 				a, b = grid[i][j], grid[i + 1][j]
 				c, d = grid[i + 1][j + 1], grid[i][j + 1]
+				if 2.5 < (a[1] + d[1]) * 0.5 < 13.5 and ROWS[0] <= a[1] and a[2] < -50.0 and max(q[0] for q in (a, b, c, d)) < 10.45:
+					continue   # the exit cut through the prow
 				P = [(s * p[0], p[1], p[2]) for p in (a, b, c, d)]
 				if s < 0:
 					P = P[::-1]
@@ -471,7 +619,7 @@ def hull(M, U):
 				M.quad(*P, mat, uvs)
 	M = U
 	# the ends: the transom aft, a dark bulkhead behind the head
-	for idx, z, mat in ((0, STERN_Z, "upper"), (-1, BOW_Z, "dark")):
+	for idx, z, mat in ((0, STERN_Z, "upper"),):
 		col = grid[idx]
 		pts = [(p[0], p[1], z) for p in col] + [(-p[0], p[1], z) for p in col[::-1]]
 		M.face(pts if idx == 0 else pts[::-1], mat)
@@ -549,6 +697,42 @@ def taper(y0, y1, k, front=-62.0):
 	return f
 
 
+def bow(M, Mast, Sails):
+	"""The bow without a head: a raked prow with the exit cut through it, a short tunnel
+	lined in dark wood back to the plate, a timber surround, catheads, bowsprit and jib.
+	Nothing enters the exit's rectangle (|x| < 9, 3 < y < 13) carried forward."""
+	z0 = BOW_Z
+	M.box((-COR_W / 2 - 0.4, COR_FLOOR - 0.4, z0 - 0.3), (COR_W / 2 + 0.4, COR_TOP + 0.4, z0), "plug")   # the bow's plate
+	for k in range(7):
+		x = -COR_W / 2 + 0.6 + k * 2.75
+		M.box((x, COR_FLOOR, z0 - 0.55), (x + 2.1, COR_TOP, z0 - 0.3), "wood")
+	zc = max(cross_z(y) for y in np.linspace(2.6, 13.4, 9))
+	for s_ in (1, -1):   # the tunnel's walls, back to the plate
+		sb(M, s_, 10.4, 11.2, 2.6, 13.4, zc, z0, "wale")
+	for y, mat, up in ((2.6, "deck", True), (13.4, "wale", False)):   # its floor, the prow's lip over it
+		zz = np.linspace(z0 + 0.5, stem_z(y), 18)
+		ring = [(half(y, z), y, z) for z in zz]
+		pts = ring + [(-p[0], p[1], p[2]) for p in ring[::-1]]
+		M.face(pts[::-1] if up else pts, mat)
+	for s_ in (1, -1):   # the surround: timbers round the cut
+		side = [(s_ * 10.4, y, cross_z(y)) for y in np.linspace(2.6, 13.4, 7)]
+		for p0, p1 in zip(side, side[1:]):
+			M.cyl(p0, p1, 0.6, 0.6, "wood", 8)
+		for y, yt in ((2.6, 2.0), (13.4, 14.0)):   # centred 0.6 m off the lips, clear of the exit
+			edge = [(s_ * half(y, z), yt, z) for z in np.linspace(cross_z(y), stem_z(y), 9)]
+			for p0, p1 in zip(edge, edge[1:]):
+				M.cyl(p0, p1, 0.6, 0.6, "wood", 8)
+	M.box((-1.6, 13.6, stem_z(14.0) - 0.6), (1.6, 16.6, stem_z(14.0) + 2.4), "stone")   # a stone boss at the stem's head
+	ring = [(half(21.0, z) - 0.3, 21.0, z) for z in np.linspace(-38.0, stem_z(21.0) + 0.6, 16)]   # the forecastle's deck
+	M.face([(-p[0], p[1], p[2]) for p in ring] + ring[::-1], "deck")
+	hw = half(19.0, -52.0)
+	for s_ in (1, -1):   # catheads
+		M.cyl((s_ * (hw - 1.0), 19.0, -50.0), (s_ * (hw + 3.2), 19.4, -52.5), 0.7, 0.6, "wood", 8)
+	Mast.cyl((0, 21.0, -50.0), SPRIT_TIP, 1.2, 0.5, "wood", 10)
+	tack, head_, clew = (0.0, 37.0, -84.0), (0.0, 45.0, -42.0), (2.0, 28.0, -57.0)
+	Sails.face([tuple(np.array(tack) + (0, -0.6, 0)), head_, clew], "sail_plain", [(1, 0), (0.5, 1), (0, 0)])
+
+
 def head(M, D):
 	"""The figurehead: a carved face whose open jaws frame the corridor's exit.
 
@@ -618,7 +802,7 @@ def head(M, D):
 			M.quad(q[i], back[i], back[j], q[j], "stone")
 
 
-def sail_sheet(M, cx, cz, yard, drop, wt, wf, mat, brace, belly=0.13, nx=12, ny=8):
+def sail_sheet(M, cx, cz, yard, drop, wt, wf, mat, brace, belly=0.2, nx=14, ny=10):
 	grid = []
 	for j in range(ny + 1):
 		v = j / ny
@@ -675,8 +859,9 @@ def rig(Mast, Sails, Ropes, Flags):
 			col = "flag1" if (k // 2) % 2 == 0 else "flag2"
 			Flags.quad((a[0], a[1], a[2]), (b[0], b[1], b[2]), (b[0], b[1] - w1, b[2]), (a[0], a[1] - w0, a[2]), col)
 	(fz, ft), (mz, mt), (az, at) = tops
-	Ropes.cyl((0, ft * 0.98, fz), (0, 37.0, -59.0), 0.22, 0.22, "rope", 5, False)       # forestay to the crown
-	Ropes.cyl((0, ft * 0.6, fz), (0, 30.0, -57.0), 0.22, 0.22, "rope", 5, False)
+	stay = (0, 37.0, -59.0) if HEAD else SPRIT_TIP                                       # to the crown, or the bowsprit
+	Ropes.cyl((0, ft * 0.98, fz), stay, 0.22, 0.22, "rope", 5, False)
+	Ropes.cyl((0, ft * 0.6, fz), (0, 30.0, -57.0) if HEAD else (0, 33.0, BOW_Z - 16.0), 0.22, 0.22, "rope", 5, False)
 	Ropes.cyl((0, mt * 0.98, mz), (0, ft * 0.82, fz), 0.2, 0.2, "rope", 5, False)
 	Ropes.cyl((0, mt * 0.55, mz), (0, ft * 0.5, fz), 0.2, 0.2, "rope", 5, False)
 	Ropes.cyl((0, at * 0.98, az), (0, mt * 0.8, mz), 0.2, 0.2, "rope", 5, False)
@@ -788,29 +973,30 @@ def build(scheme, out):
 	mats["glass"] = material("glass", rgb(s["glass"]))
 	mats["rope"] = material("rope", rgb("2b241d"))
 	mats["frieze"] = material("frieze", img=frieze_image(s, tex / "frieze.png"))
-	for g in ("face", "sun", "plain"):
-		mats["sail_" + g] = material("sail_" + g, img=sail_image(s, g, tex / ("sail_%s.png" % g)))
+	mats["sail_plain"] = material("sail_plain", img=sail_image(s, "plain", tex / "sail_plain.png"))
+	for _, _, _, sails in MASTS:
+		for yard, drop, wt, wf, g in sails:
+			if g != "plain":
+				art = FORE if g == "fore" else g
+				mats["sail_" + g] = material("sail_" + g, img=sail_image(s, art, tex / ("sail_%s_%s.png" % (g, art)), (wt + wf) * 0.5 / drop))
 	mats["ensign"] = material("ensign", img=flag_image(s, tex / "ensign.png"))
 	H, U, Hd, Hc, Ma, Sa, Ro, Fl = (Mesh(n) for n in ("Hull", "Upperworks", "Figurehead", "Carving", "Masts", "Sails", "Rigging", "Flags"))
 	hull(H, U)
-	head(Hd, Hc)
+	if HEAD:
+		head(Hd, Hc)
+	else:
+		bow(U, Ma, Sa)
 	rig(Ma, Sa, Ro, Fl)
-	H.build(mats, split=50.0)
-	u = U.build(mats, bevel=0.12)
+	H.build(mats, split=50.0, warp=rake)
+	u = U.build(mats, bevel=0.35, warp=rake)
 	tex2 = bpy.data.textures.new("warp", "CLOUDS")
 	tex2.noise_scale = 3.0
 	dm2 = u.modifiers.new("warp", "DISPLACE")
 	dm2.texture = tex2
 	dm2.texture_coords = "GLOBAL"
 	dm2.strength = 0.14
-	crude(Hd.build(mats, warp=lean, split=0.0))
-	hc = Hc.build(mats, bevel=0.4, segments=3, warp=lean, split=0.0)
-	tex = bpy.data.textures.new("rough", "CLOUDS")
-	tex.noise_scale = 1.4
-	dm = hc.modifiers.new("rough", "DISPLACE")
-	dm.texture = tex
-	dm.texture_coords = "LOCAL"
-	dm.strength = 0.25
+	if HEAD:
+		figurehead(mats, Hd, Hc)
 	Ma.build(mats)
 	Sa.build(mats, split=0.0)
 	Ro.build(mats)
@@ -825,13 +1011,25 @@ def build(scheme, out):
 			e = bpy.data.objects.new("DeckGun_%s_%02d" % (side, i + 1), None)
 			e.location = bv((s_ * (half(16.0, z) + 1.8), 17.6, z))
 			bpy.context.scene.collection.objects.link(e)
-	path = out / ("ship_%s.glb" % scheme)
+	path = out / ("ship_%s%s.glb" % (scheme, "" if FORE == "spiral" else "_" + FORE))
 	bpy.ops.export_scene.gltf(filepath=str(path), export_format="GLB", use_selection=False, export_apply=True,
 							  export_yup=True, export_materials="EXPORT", export_normals=True, export_vertex_color="ACTIVE", export_animations=False,
 							  export_cameras=False, export_lights=False, export_image_format="AUTO")
 	tris = sum(sum(len(p.vertices) - 2 for p in o.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.polygons)
 			   for o in bpy.context.scene.objects if o.type == "MESH")
 	print("wrote %s (%d triangles)" % (path, tris))
+
+
+
+def figurehead(mats, Hd, Hc):
+	crude(Hd.build(mats, warp=lean, split=0.0))
+	hc = Hc.build(mats, bevel=0.4, segments=3, warp=lean, split=0.0)
+	tex = bpy.data.textures.new("rough", "CLOUDS")
+	tex.noise_scale = 1.4
+	dm = hc.modifiers.new("rough", "DISPLACE")
+	dm.texture = tex
+	dm.texture_coords = "LOCAL"
+	dm.strength = 0.25
 
 
 def main():
