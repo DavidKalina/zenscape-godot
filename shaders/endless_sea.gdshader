@@ -1375,7 +1375,11 @@ void fragment() {
 	// The mirror: the sky, the cloud field, and what stands on screen.
 	vec3 reflected = reflect(-eye, calm);
 	reflected.y = abs(reflected.y);
-	vec3 sky = clamp(zsSkyGradient(reflected), vec3(0.0), vec3(0.98));
+	// Held under 0.98 by its brightest channel, not each channel: a low sun's
+	// hot orange band clipped channel by channel went yellow, and pale yellow
+	// over the dark water read lime at dawn and dusk.
+	vec3 sky = max(zsSkyGradient(reflected), vec3(0.0));
+	sky *= min(1.0, 0.98 / max(max(sky.r, sky.g), max(sky.b, 1e-4)));
 	vec4 shade_at = zs_sea_shade_at();
 	if (cloud_mirror > 0.0 && shade_at.w > 0.0 && reflected.y > 0.02) {
 		// Where the mirrored ray meets the cloud's height, the shade map's
