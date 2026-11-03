@@ -42,6 +42,7 @@ extends Node
 const Audio = preload("res://scripts/genesis_audio.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const AmbientSound = preload("res://scripts/endless/ambient_sound.gd")
 
 const SFX := &"SFX"
 const AIR := &"SFX Air"
@@ -198,6 +199,8 @@ var skid: Bed
 var breeze: Bed
 var thin: Bed
 var shore: Bed
+## The living ground's beds and calls (scripts/endless/ambient_sound.gd); null under --ambient-sound=0.
+var ambient: Node
 
 # State read each frame (public for probes).
 ## How close stone is round the plane (0 open air, 1 skimming it), how
@@ -327,6 +330,9 @@ func _ready() -> void:
 	for bed in [breeze,thin,shore]:
 		bed.attack = 0.7
 		bed.release = 0.6
+	if AmbientSound.wanted():
+		ambient = AmbientSound.new()
+		add_child(ambient)
 	if not audible: return
 	for i in range(8):
 		var p := AudioStreamPlayer.new()
@@ -473,6 +479,7 @@ func step(delta: float, game: Node3D, events: Dictionary, boost: float) -> void:
 		_read_place(game)
 	_ambience(on_wheels)
 	for bed in _beds: bed.step(delta)
+	if ambient != null: ambient.step(delta,game,self)
 
 ## The pull and the dive: the flight path's turn rate and its sink.
 func _flight(delta: float, velocity: Vector3, speed: float, on_wheels: bool) -> void:
