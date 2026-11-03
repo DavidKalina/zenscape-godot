@@ -31,6 +31,7 @@ extends Node3D
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const FlightSound = preload("res://scripts/endless/flight_sound.gd")
+const SwimFish = preload("res://scripts/endless/swim_fish.gd")
 
 const MODEL := "res://assets/models/fish/hero_fish.glb"
 const SKIN := "res://assets/models/fish/hero_fish_skin.png"
@@ -182,6 +183,8 @@ class Leap:
 	var mark := -1
 
 var sea: RefCounted
+## The big fish that swims beside the plane (scripts/endless/swim_fish.gd), or null.
+var swim: Node3D
 var _field: RefCounted
 var _rng := RandomNumberGenerator.new()
 var _clock := 0.0
@@ -273,6 +276,11 @@ func setup(field: RefCounted) -> void:
 		f.top_level = true
 		add_child(f)
 		_pool.append(f)
+	if SwimFish.wanted():
+		swim = SwimFish.new()
+		swim.name = "Swim"
+		add_child(swim)
+		swim.setup(self,mesh,shader,skin)
 	_s_mat = ShaderMaterial.new()
 	_s_mat.shader = load("res://shaders/wake_splash.gdshader")
 	_s_mat.set_shader_parameter("gravity",GRAVITY)
@@ -393,6 +401,7 @@ func step(delta: float, eye: Vector3, plane: RefCounted) -> void:
 	_read(delta,eye,plane)
 	_wait(delta)
 	_fly(delta)
+	if swim != null: swim.step(delta)
 	_plops(eye)
 	_draw(delta)
 	ms = (Time.get_ticks_usec()-began)/1000.0
@@ -431,7 +440,7 @@ func _wait(delta: float) -> void:
 	if not _low: return
 	water_s += delta
 	_left -= delta
-	if _left > 0.0 or _speed < 5.0 or not _leaps.is_empty(): return
+	if _left > 0.0 or _speed < 5.0 or not _leaps.is_empty() or (swim != null and swim._on): return
 	# The last one isn't among them, and neither is one that couldn't be placed.
 	var chosen := _choose()
 	if chosen == "":
@@ -778,4 +787,4 @@ func _draw(delta: float) -> void:
 
 ## The numbers' line (--numbers).
 func note() -> String:
-	return "\nleaping fish: low over a lake %.0f s, next in %.0f s, %s  %.2f ms (%.2f)" % [water_s,_left,str(moments),ms,ms_avg]
+	return "\nleaping fish: low over a lake %.0f s, next in %.0f s, %s  %.2f ms (%.2f)" % [water_s,_left,str(moments),ms,ms_avg]+(swim.note() if swim != null else "")
