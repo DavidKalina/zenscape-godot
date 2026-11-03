@@ -801,6 +801,10 @@ func fence(p: Vector3, heading: float) -> Vector2:
 	if absf(angle_difference(heading,home)) < PI*0.5: return Vector2.ZERO
 	return Vector2(smoothstep(FENCE_FROM,FENCE_FULL,off),home)
 
+## The world's edge line (centre x, z, half side, corner radius; half 0: none).
+func edge() -> Vector4:
+	return _edge
+
 ## The coast's islands (coast_isles.gd), or null.
 func isles() -> RefCounted:
 	return _isles

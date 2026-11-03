@@ -665,7 +665,9 @@ func _ready() -> void:
 	tunnels.setup(field,look.ground if look != null else null,look.sun.global_transform.basis.z if look != null else Vector3.ZERO)
 	if look != null:
 		tunnels.clouds = look.clouds
-		if look.water != null: tunnels.sea = look.water.material
+		if look.water != null:
+			tunnels.sea = look.water.material
+			look.water.set_edge(field.edge())
 	ice = LandIceTunnel.new()
 	ice.name = "IceTunnel"
 	add_child(ice)
@@ -1174,7 +1176,7 @@ func _solid(p: Vector3) -> bool:
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
 func sea_height(p: Vector3) -> float:
-	if look == null or look.water == null or p.y > Field.SEA_Y+12.0: return 0.0
+	if look == null or look.water == null or p.y > Field.SEA_Y+12.0+look.water.surge_room(p.x,p.z): return 0.0
 	# Land well over the sea has none, and low land sits inside the 12 m: every
 	# probe of a low flight would march the waves.
 	if field.height(p.x,p.z) > Field.SEA_Y+preload("res://scripts/burrower/game_land.gd").SWELL_ROOM: return 0.0

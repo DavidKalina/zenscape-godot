@@ -539,6 +539,93 @@ float zs_body_gust(vec2 p, float t) {
 	return smoothstep(0.45, 0.8, zs_body_noise(gp + vec2(9.1, 3.7)) * 0.7 + zs_body_noise(gp * 2.7 + vec2(1.3, 8.8)) * 0.3);
 }
 
+// The surge: the big swell round the edge of a world with one (EndlessSea
+// `set_edge`; mirrored for the plane by EndlessSea `surge_at`). Three long
+// waves over the sea's own, the first two with their fronts along the edge
+// line (`surge_edge`: centre x, z, half side, corner radius; half 0 none), so
+// they roll in toward the land on every side. They start `surge_belt.x` m past
+// the line and are whole by `.y`; the sheet heaves with them out to `.z` m from
+// the eye, fading by `.w`, and past that they are shading alone. Sets (crests
+// rising and dying as they run in) and peaks along a crest keep them from
+// reading as rings. `surge_size` scales their height, `surge_peak` how sharp
+// the crests get.
+uniform vec4 surge_edge = vec4(0.0);
+uniform vec4 surge_belt = vec4(-200.0, 700.0, 2200.0, 3200.0);
+uniform float surge_size = 1.0;
+uniform float surge_peak = 0.85;
+const float SURGE_LENGTH[3] = float[3](180.0, 130.0, 90.0);
+const float SURGE_SIZE[3] = float[3](9.0, 5.0, 2.2);
+const vec2 SURGE_SET = vec2(0.007, 0.059);
+
+// How far `p` lies past the edge line, and the way out from it there.
+float zs_surge_off(vec2 p, out vec2 way_out) {
+	vec2 rel = p - surge_edge.xy;
+	vec2 q = abs(rel) - vec2(surge_edge.z - surge_edge.w);
+	vec2 o = max(q, vec2(0.0));
+	float len = length(o);
+	vec2 n = len > 1e-3 ? o / len : (q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+	way_out = n * vec2(rel.x < 0.0 ? -1.0 : 1.0, rel.y < 0.0 ? -1.0 : 1.0);
+	return len + min(max(q.x, q.y), 0.0) - surge_edge.w;
+}
+
+// The surge at rest xz `p`: the shove and rise (`shift`), the sheet's squeeze
+// (`jac`), how far up the wave this is (`lift`, 0 trough .. 1 crest), how
+// whole the belt is (`share`), the breaking crests' foam (`white`) and the
+// slope of the displaced sheet (returned).
+vec2 zs_surge(vec2 p, float t, float footprint, out vec3 shift, out float jac, out float lift, out float share, out float white) {
+	shift = vec3(0.0);
+	jac = 1.0;
+	lift = 0.5;
+	share = 0.0;
+	white = 0.0;
+	vec2 way_out;
+	float off = zs_surge_off(p, way_out);
+	share = smoothstep(surge_belt.x, surge_belt.y, off);
+	if (share <= 0.0) return vec2(0.0);
+	float warp_a = zs_body_noise(p / 900.0 + vec2(3.7, 1.9));
+	float warp_b = zs_body_noise(p / 560.0 + vec2(6.1, 8.3));
+	float sets = 0.5 + 0.5 * sin(-off * SURGE_SET.x - t * SURGE_SET.y + warp_a * 5.0);
+	float lobe = smoothstep(0.25, 0.75, zs_body_noise(p / 260.0 + vec2(t * 0.012, 4.2)));
+	float grown = (0.3 + 0.7 * sets * sets) * (0.55 + 0.9 * lobe);
+	float size = surge_size * share * grown;
+	vec2 d[3];
+	d[0] = -way_out;
+	d[1] = -way_out;
+	d[2] = normalize(swell_heading);
+	float ks[3], omega[3], amps[3], phases[3];
+	float total = 0.0;
+	for (int i = 0; i < 3; i++) {
+		ks[i] = TAU / SURGE_LENGTH[i];
+		omega[i] = sqrt(GRAVITY * ks[i]);
+		amps[i] = SURGE_SIZE[i] * size;
+		total += amps[i] * ks[i];
+	}
+	phases[0] = -off * ks[0] - omega[0] * t + warp_a * 2.6;
+	phases[1] = -off * ks[1] - omega[1] * t + warp_b * 3.4 + 2.39;
+	phases[2] = dot(p, d[2]) * ks[2] - omega[2] * t + warp_a * 1.5 + 4.78;
+	float q = surge_peak / max(total, 0.2);
+	vec2 slope = vec2(0.0);
+	vec3 j = vec3(1.0, 1.0, 0.0);
+	for (int i = 0; i < 3; i++) {
+		float held = 1.0 - smoothstep(SURGE_LENGTH[i] * 0.1, SURGE_LENGTH[i] * 0.28, footprint);
+		float cp = cos(phases[i]), sp = sin(phases[i]);
+		float steep = amps[i] * ks[i];
+		shift.xz += d[i] * q * amps[i] * cp * held;
+		shift.y += amps[i] * sp * held;
+		slope += d[i] * steep * cp * held;
+		j -= vec3(d[i].x * d[i].x, d[i].y * d[i].y, d[i].x * d[i].y) * q * steep * sp * held;
+	}
+	jac = j.x * j.y - j.z * j.z;
+	lift = smoothstep(-1.0, 1.0, shift.y / (8.0 * surge_size));
+	// Only the tall crests break: a band along the crest and a tail of foam
+	// on the back it has just run from.
+	float tall = smoothstep(0.75, 1.2, grown) * share;
+	float since = fract((PI * 0.5 - phases[0]) / TAU);
+	white = tall * max(smoothstep(0.6, 0.2, jac) * 0.8, exp(-since * 18.0) * 0.5);
+	float det = max(jac, 0.1);
+	return vec2(j.y * slope.x - j.z * slope.y, j.x * slope.y - j.z * slope.x) / det;
+}
+
 const float FFT_N = 256.0;
 
 // Cascade `c`'s map coordinates at rest xz `p` (layer c; + 3 for slopes).
@@ -980,6 +1067,12 @@ void vertex() {
 		zs_swell(world.xz, zs_flow_time, cell, shift, crest, rough);
 	}
 	VERTEX += shift * near * (1.0 - zs_river_calm(world.xz));
+	if (sea_body > 0 && surge_edge.z > 0.0) {
+		vec3 surge;
+		float surge_jac, surge_lift, surge_share, surge_white;
+		zs_surge(world.xz, zs_flow_time, cell * 0.6, surge, surge_jac, surge_lift, surge_share, surge_white);
+		VERTEX += surge * (1.0 - smoothstep(surge_belt.z, surge_belt.w, reach));
+	}
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
@@ -1026,6 +1119,13 @@ void fragment() {
 	slope *= 1.0 - still;
 	shift *= 1.0 - still;
 	crest *= 1.0 - still;
+	// The surge: its slope joins the swell's; its height is kept apart, the
+	// body's light scaled to waves a thousandth its size.
+	float surge_jac = 1.0, surge_lift = 0.5, surge_share = 0.0, surge_white = 0.0;
+	if (sea_body > 0 && surge_edge.z > 0.0) {
+		vec3 surge;
+		slope += zs_surge(rest_xz, t, footprint, surge, surge_jac, surge_lift, surge_share, surge_white);
+	}
 	vec2 detail;
 	// The FFT sea (sea_fft 1): the wind sea's slope joins the swell's, the
 	// finer cascades are the chop, and the folds make the fresh caps.
@@ -1111,6 +1211,8 @@ void fragment() {
 		float scale = body_swell.x * 0.9 + body_swell.y * 0.3 + 0.05;
 		lift = smoothstep(-1.0, 1.0, shift.y / scale);
 		lift = mix(lift, 0.5, smoothstep(body_value_fade.x, body_value_fade.y, length(world_position - CAMERA_POSITION_WORLD)));
+		lift = mix(lift, surge_lift, surge_share);
+		jac = min(jac, surge_jac);
 		rough_here = zs_body_rough(rest_xz, t);
 		vec3 up_tint = mix(column, sss_color * zs_palette_water * 0.55, 0.07);
 		column = mix(column * body_value.x, up_tint * body_value.y, lift) * mix(1.0, 0.85, rough_here);
@@ -1148,6 +1250,9 @@ void fragment() {
 		lace_density = max(left.x, caps);
 		lace_youth = max(left.y, min(caps * 1.5, 1.0));
 		churned = max(mix(left.x * 0.7, held.b, in_buffer) * open_sea, caps);
+		lace_density = max(lace_density, surge_white);
+		lace_youth = max(lace_youth, surge_white * 0.9);
+		churned = max(churned, surge_white);
 		wake_laid = held.a * in_buffer * wake;
 		// The churned water round them, lighter and greener.
 		water = mix(water, mix(tint_mid, sss_color, 0.25) * zs_palette_water * light * 1.15, smoothstep(0.02, 0.6, churned) * 0.12 * foam_lace.w);
@@ -1303,7 +1408,7 @@ void fragment() {
 		float back = smoothstep(-0.1, 0.7, dot(view, sun)) * 0.6 + 0.4 * pow(clamp(dot(normalize(view.xz + vec2(1e-4)), sun_flat), 0.0, 1.0), 3.0);
 		float thin = smoothstep(0.62, 0.95, lift) * (0.2 + 0.8 * smoothstep(0.95, 0.65, jac));
 		float toward_eye = clamp(dot(normal.xz, eye.xz) * 4.0 + 0.35, 0.0, 1.0);
-		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth);
+		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth) * mix(1.0, 0.65, surge_share);
 		water += sss_color * (key * 1.2 + ambient * 0.3) * glow;
 		fresnel *= 1.0 - 0.15 * rough_here;
 	}
