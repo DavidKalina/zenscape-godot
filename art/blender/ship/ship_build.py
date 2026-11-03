@@ -967,7 +967,7 @@ STONE = (0.14, 0.138, 0.134)
 
 def build_timbers(g):
 	"""Keel, stem, sternpost, rudder, the transom's corner posts."""
-	dk = (0.05, 0.036, 0.027)
+	dk = (0.02, 0.015, 0.012)    # vertex colour is linear: this sits with the tar
 	tim = (0.34, 0.28, 0.22)
 	# The stem, up the prow's edge: under the cut, and from over it to the rail.
 	for z0, z1 in ((KEEL_Z, TUNNEL_LO - 0.2), (TUNNEL_HI + 0.2, rail(Y_BOW) + 0.8)):
@@ -1296,6 +1296,17 @@ def build_decks(g):
 	bulkhead(BREAK_POOP, DECK_Z, DECK_POOP, 1.0)
 	bulkhead(BREAK_HIGH, DECK_POOP, DECK_HIGH, 1.0)
 	bulkhead(BREAK_FORE, DECK_Z, DECK_FORE, -1.0)
+	# A rail across each castle's edge: posts and a capping rail, open where the
+	# stairs come up.
+	for y, z, face, stairs in ((BREAK_POOP, DECK_POOP, 1.0, True), (BREAK_HIGH, DECK_HIGH, 1.0, False), (BREAK_FORE, DECK_FORE, -1.0, True)):
+		w = half_at(y, z + 1.0) - 0.5
+		yy = y + face * 0.05
+		gaps = [(-STAIR_X - 1.7, -STAIR_X + 1.7), (STAIR_X - 1.7, STAIR_X + 1.7)] if stairs else []
+		for a, b, _, _ in spans_of(gaps, -w, w):
+			for x in frange(a, b, 1.25):
+				g.beam((x, yy, z + 0.2), (x, yy, z + 1.35), 0.26, 0.26, "paint", RAIL_WOOD, up=(1.0, 0.0, 0.0))
+			g.beam((a - 0.15, yy, z + 1.45), (b + 0.15, yy, z + 1.45), 0.42, 0.24, "paint", TRIM)
+			g.beam((a, yy, z + 0.55), (b, yy, z + 0.55), 0.2, 0.16, "paint", RAIL_WOOD)
 	cap = (0.045, 0.032, 0.024)
 	for side in (-1.0, 1.0):
 		S = Side(side)
@@ -1309,6 +1320,24 @@ def build_decks(g):
 			for a, b in zip(pts, pts[1:]):
 				if (Vector(a) - Vector(b)).length > 0.05:
 					g.beam(a, b, w, h, "paint", col, up=(0.0, 0.0, 1.0))
+		# Timberheads along the waist's rail with a light rail over them, open where the
+		# deck guns swing over it.
+		runs, run = [], []
+		for y in frange(BREAK_POOP + 2.0, BREAK_FORE - 2.0, 3.0):
+			if min(abs(y - gy) for gy in DECK_GUN_Y) < 6.0:
+				if run:
+					runs.append(run)
+				run = []
+				continue
+			q = S.p(y, rail(y))
+			run.append(Vector((q.x - side * 0.15, q.y, q.z + 0.3)))
+		if run:
+			runs.append(run)
+		for run in runs:
+			for q in run:
+				g.beam(q - Vector((0, 0, 0.1)), q + Vector((0, 0, 0.85)), 0.42, 0.42, "paint", cap, up=(1.0, 0.0, 0.0))
+			for a, b in zip(run, run[1:]):
+				g.beam(a + Vector((0, 0, 0.95)), b + Vector((0, 0, 0.95)), 0.5, 0.22, "paint", TRIM, up=(0.0, 0.0, 1.0))
 		# The channels: plank shelves outboard of the masts that spread the shrouds.
 		for my, _, _, _ in MASTS:
 			c0, c1 = my - 5.5, my + 5.5
@@ -1332,7 +1361,7 @@ def build_decks(g):
 		if a % 4 == 0:
 			g.beam((0.15, wy, wz), (0.15, wy + math.cos(t0) * 1.6, wz + math.sin(t0) * 1.6), 0.18, 0.18, "wood", (0.22, 0.15, 0.1))
 	for s in (-1.0, 1.0):
-		x = s * 6.5 * WIDEN
+		x = s * STAIR_X
 		for yy, z1, d, run in ((BREAK_POOP + 10.0, DECK_POOP, -1.0, 10.0), (BREAK_FORE - 5.5, DECK_FORE, 1.0, 5.5)):
 			n = int(run / 0.75)
 			for i in range(n):
@@ -1348,7 +1377,7 @@ def build_decks(g):
 
 def build_stern(g):
 	"""The transom's dress: gallery windows, balconies, the crown, the lanterns."""
-	trim = (0.16, 0.15, 0.14)
+	trim = (0.034, 0.027, 0.022)     # vertex colours are linear, the maps' numbers aren't: these sit darker
 	dark_wood = (0.05, 0.036, 0.028)
 	oxblood = TRIM
 	top = rail(-STERN_U)
@@ -1361,7 +1390,7 @@ def build_stern(g):
 		n = 7
 		pitch = wbot * 2.0 / n
 		# The band of panes.
-		g.quad(Vector((-wbot, y - 0.18, rz)), Vector((wbot, y - 0.18, rz)), Vector((wtop, yt - 0.18, rz + h)), Vector((-wtop, yt - 0.18, rz + h)), "glass", (0.075, 0.09, 0.1), hint=Vector((0, -1, 0)))
+		g.quad(Vector((-wbot, y - 0.18, rz)), Vector((wbot, y - 0.18, rz)), Vector((wtop, yt - 0.18, rz + h)), Vector((-wtop, yt - 0.18, rz + h)), "glass", GLASS, hint=Vector((0, -1, 0)))
 		# Lattice and posts.
 		for i in range(n + 1):
 			t = i / n
@@ -1401,8 +1430,10 @@ def build_stern(g):
 		y = stern_y(top) + 0.2
 		g.tube([(x, y, z), (x, y, z + 1.0 * r)], [0.22 * r, 0.3 * r], 6, "iron", (0.09, 0.09, 0.09))
 		g.tube([(x, y, z + 1.0 * r), (x, y, z + 1.15 * r), (x, y, z + 3.4 * r), (x, y, z + 3.55 * r), (x, y, z + 4.3 * r), (x, y, z + 5.0 * r)], [0.3 * r, 1.0 * r, 1.25 * r, 1.25 * r, 0.5 * r, 0.1 * r], 6, "iron", (0.075, 0.075, 0.08))
-	# Quarter galleries: the stern's corners, a bulge of windows on each side, leaning
-	# out with the counter.
+	build_sun(g)
+	# Quarter galleries: the stern's corners, a bulge on each side, leaning out with
+	# the counter: three lights a tier, each a frame round small panes, planked
+	# between, so the glass never reads as one sheet.
 	for s in (-1.0, 1.0):
 		S = Side(s)
 		u0, u1 = -STERN_U + 1.5, -STERN_U + 11.0
@@ -1412,9 +1443,19 @@ def build_stern(g):
 			h0, i0, h1, i1 = S.p(u0, z0), S.p(u1, z0), S.p(u0, z1), S.p(u1, z1)
 			o = Vector((s * 1.1, 0.0, 0.0))
 			a0, b0, a1, b1 = h0 + o, i0 + o, h1 + o, i1 + o
-			g.quad(a0, b0, b1, a1, "glass", (0.075, 0.09, 0.1), hint=Vector((s, 0, 0)))
-			for t in frange(0.0, 1.0, 0.25):
-				g.beam(a0.lerp(b0, t) + Vector((s * 0.1, 0, 0)), a1.lerp(b1, t) + Vector((s * 0.1, 0, 0)), 0.5, 0.26, "paint", trim, up=(1.0, 0.0, 0.0))
+			g.quad(a0, b0, b1, a1, "wood", (0.1, 0.075, 0.06), hint=Vector((s, 0, 0)))
+			def at(t, v, out):
+				return a0.lerp(b0, t).lerp(a1.lerp(b1, t), v) + Vector((s * out, 0.0, 0.0))
+			for t0 in (0.07, 0.385, 0.7):
+				t1, v0, v1 = t0 + 0.23, 0.13, 0.87
+				g.quad(at(t0, v0, 0.06), at(t1, v0, 0.06), at(t1, v1, 0.06), at(t0, v1, 0.06), "glass", GLASS, hint=Vector((s, 0, 0)))
+				for p, q in ((at(t0, v0, 0.12), at(t1, v0, 0.12)), (at(t0, v1, 0.12), at(t1, v1, 0.12)), (at(t0, v0, 0.12), at(t0, v1, 0.12)), (at(t1, v0, 0.12), at(t1, v1, 0.12))):
+					g.beam(p, q, 0.36, 0.24, "paint", trim, up=(1.0, 0.0, 0.0))
+				g.beam(at((t0 + t1) * 0.5, v0, 0.1), at((t0 + t1) * 0.5, v1, 0.1), 0.12, 0.12, "paint", dark_wood, up=(1.0, 0.0, 0.0))
+				for v in (lerp(v0, v1, 1.0 / 3.0), lerp(v0, v1, 2.0 / 3.0)):
+					g.beam(at(t0, v, 0.1), at(t1, v, 0.1), 0.12, 0.12, "paint", dark_wood, up=(1.0, 0.0, 0.0))
+			for t in (0.0, 1.0):    # a post at each end of the bulge
+				g.beam(at(t, 0.0, 0.1), at(t, 1.0, 0.1), 0.5, 0.3, "paint", trim, up=(1.0, 0.0, 0.0))
 			# The sill, the head, and the skirt of planks back to the hull.
 			for q0, q1, hz in ((a0, b0, -0.3), (a1, b1, 0.3)):
 				g.beam(q0 + Vector((s * 0.2, 0, hz)), q1 + Vector((s * 0.2, 0, hz)), 0.6, 0.6, "paint", oxblood)
@@ -1427,8 +1468,45 @@ def build_stern(g):
 			g.quad(i0, b0, b1, i1, "wood", (0.14, 0.1, 0.08), hint=Vector((0, 1, 0)))
 
 
+RAIL_WOOD = (0.03, 0.022, 0.017)
+STAIR_X = 6.5 * WIDEN        # the stairs up to the quarterdeck and the forecastle
+DECK_GUN_Y = (-19.0, 11.0)    # where the deck guns stand (pirate_ship.gd DECK_GUNS: Godot z = -y)
 GALLERIES = (16.6, 23.4)      # the sills of the transom's two window rows
-TRIM = (0.13, 0.125, 0.12)    # dark iron-grey paint where the old build had oxblood
+TRIM = (0.028, 0.027, 0.026)   # dark iron-grey paint where the old build had oxblood
+GLASS = (0.06, 0.072, 0.08)
+SUN_Z = 30.6                  # the carved sun's centre on the transom, over the upper gallery
+SUN_R = 2.8                   # its rays' reach
+SUN_STONE = (0.042, 0.041, 0.04)    # slate, a step over the tar: vertex colour is linear
+
+
+def build_sun(g):
+	"""A sun carved in slate on the transom's crown, as the main course carries it: a
+	boss, a ring, curved rays, all in relief on the raked face."""
+	zc = SUN_Z
+	n = Vector((0.0, -1.0, -COUNTER)).normalized()     # the counter's face looks aft, and down a little
+	up = Vector((0.0, -COUNTER, 1.0)).normalized()     # up the face
+	right = Vector((1.0, 0.0, 0.0))
+	c = Vector((0.0, stern_y(zc), zc)) + n * 0.04
+	def on(r, a, d):
+		return c + right * (r * math.cos(a)) + up * (r * math.sin(a)) + n * d
+	stone = SUN_STONE
+	# The disc, a low drum, and a boss proud of it.
+	g.tube([c, c + n * 0.3], [1.15, 1.15], 14, "paint", stone, up=tuple(up))
+	g.tube([c + n * 0.3, c + n * 0.45, c + n * 0.62, c + n * 0.7], [0.62, 0.6, 0.42, 0.12], 10, "paint", (stone[0] * 0.85, stone[1] * 0.85, stone[2] * 0.85), cap=False, up=tuple(up))
+	# The ring round it.
+	ring = [on(1.5, k * math.tau / 20, 0.12) for k in range(21)]
+	g.tube(ring, [0.17] * len(ring), 5, "paint", stone, cap=False, up=tuple(n))
+	# Twelve rays, each a blade that sweeps round as it goes out and thins to a point.
+	rng = random.Random(5)
+	for k in range(12):
+		a0 = k * math.tau / 12 + rng.uniform(-0.04, 0.04)
+		reach = SUN_R * (1.0 if k % 2 == 0 else 0.86) * rng.uniform(0.96, 1.03)
+		pts, rad = [], []
+		for i in range(6):
+			t = i / 5
+			pts.append(on(lerp(1.75, reach, t), a0 + 0.34 * t * t, 0.1 + 0.08 * (1.0 - t)))
+			rad.append(lerp(0.36, 0.05, t ** 0.8))
+		g.tube(pts, rad, 5, "paint", stone, up=tuple(n), squash=0.6)
 
 
 def build_backing(g):
@@ -1712,6 +1790,17 @@ def paint_hull(W):
 	boot = mix(C(0.27, 0.255, 0.235)[None, None], C(0.38, 0.36, 0.335)[None, None], tint * 0.6 + 0.4 * wash)
 	col = np.where((base >= DECK_Z)[..., None], upper, tar)
 	col = np.where(((base > 0.8) & (base < TUNNEL_LO))[..., None], boot, col)
+	# The frieze: a stepped fret painted along the strake under the waist's wale, by
+	# hand (its lines wander), a dull slate on a darker ground, worn with the rest.
+	fz0, fz1 = row_z(FRIEZE_ROW), row_z(FRIEZE_ROW + 1)
+	inband = (base >= fz0) & (base < fz1)
+	bv = (fz1 - base) / (fz1 - fz0) + 0.12 * (blot - 0.5) + 0.03 * (fine - 0.5)
+	av = np.mod(Y / FRIEZE_CELL + 0.1 * (wash - 0.5) + 0.012 * (fine - 0.5), 1.0)
+	key = fret(av, bv) & inband
+	edge_line = ((bv < 0.1) | (bv > 0.9)) & inband
+	col = np.where(inband[..., None], col * 0.7, col)
+	col = mix(col, FRIEZE_INK * (0.85 + 0.3 * tint)[..., None], key * 0.9)
+	col = mix(col, FRIEZE_INK * 0.75, edge_line * 0.85)
 	band = (base > row_z(PORT_ROW) - STRAKE) & (base < row_z(PORT_ROW + PORT_ROWS) + STRAKE)
 	# Paint worn through to wood: patches, plank edges, and more at the band.
 	edge = np.maximum(sst(0.22, 0.0, frac), sst(0.82, 1.0, frac))
@@ -1748,7 +1837,32 @@ def paint_hull(W):
 	col = mix(col, C(0.015, 0.012, 0.01)[None, None], butt * 0.8)
 	# Height, for the normal map.
 	hgt = 0.5 + (grain - 0.5) * 0.9 + (grain2 - 0.5) * 0.45 + (fine - 0.5) * 0.3 - seam * 1.3 - butt * 1.0 + bar * 0.5
+	hgt -= (inband & ~key & ~edge_line) * 0.5    # the ground cut back round the fret
 	return np.clip(col, 0, 1), hgt
+
+
+FRIEZE_ROW = 17               # the strake 14.6 to 15.8, between the tunnel's roof wale and the waist's
+FRIEZE_CELL = 2.4             # m along her a fret
+FRIEZE_INK = np.array((0.25, 0.237, 0.222), dtype=np.float32)
+
+
+def fret(a, b):
+	"""A stepped fret's ink, a stair and a squared hook per cell (the concept's), from
+	a across the cell (0..1) and b down the band (0 at its top)."""
+	y0, y1 = 0.14, 0.86
+	h = y1 - y0
+	def r(x0, v0, x1, v1):
+		return (a >= x0) & (a < x1) & (b >= v0) & (b < v1)
+	m = np.zeros(a.shape, bool)
+	for s in range(4):
+		m |= r(s * 0.12, y0 + h * (0.75 - s * 0.17), s * 0.12 + 0.12, y1)
+	hx, t = 0.48, 0.09
+	m |= r(hx, y0 + h * 0.12, hx + 0.44, y0 + h * 0.26)
+	m |= r(hx + 0.44 - t, y0 + h * 0.12, hx + 0.44, y1 - h * 0.1)
+	m |= r(hx + 0.12, y1 - h * 0.24, hx + 0.44, y1 - h * 0.1)
+	m |= r(hx + 0.12, y0 + h * 0.42, hx + 0.12 + t, y1 - h * 0.1)
+	m |= r(hx + 0.12, y0 + h * 0.42, hx + 0.3, y0 + h * 0.54)
+	return m
 
 
 def paint_stern(W):
