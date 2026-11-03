@@ -13,6 +13,11 @@ extends Node3D
 ## the pad the solids are grown by. The wing rays get a StaticBody on layer 1
 ## that goes with the node.
 ##
+## She rides the swell (`rock`, ROCK_*, `_ride_step`): the sea under her fitted to
+## a heave, pitch and roll, eased through heavy springs, on the node itself, so
+## the model, guns, plates, shards, StaticBody and `local` all go with it, and
+## her records carry her whole frame (`xf`, `inv`) for LandArches to read.
+##
 ## A record's `strike` is what SurgeSmash `_hit` calls for a plate. The other
 ## plate stays stone, but the surge is held hot while the plane is in the
 ## corridor, so it breaks too on the way out. Both plates come back once the
@@ -83,6 +88,22 @@ const INNER_FAR := 700.0
 ## The model's sway, for the eye only: roll, pitch (rad), each one's period (s).
 const SWAY := Vector2(0.014,0.005)
 const SWAY_S := Vector2(9.0,13.0)
+## Her ride on the swell (`rock`, --ship-rock=K; 0 is the fixed height and the
+## SWAY above). The sea is read at ROCK_X across by ROCK_Z along her (her frame,
+## m; the body's long waves are 52 to 118 m, she's 130) every ROCK_EVERY frames,
+## the two ships on turns, and fitted to a heave, a pitch and a roll. Each goes
+## through a damped spring of its own: natural period (s), damping ratio
+## (heave, pitch, roll). Her whole frame rides it, solids and all.
+const ROCK_X := [-11.0,11.0]
+const ROCK_Z := [-60.0,-40.0,-20.0,0.0,20.0,40.0,60.0]
+const ROCK_EVERY := 2
+const ROCK_T := Vector3(8.0,8.5,11.0)
+const ROCK_DAMP := Vector3(0.7,0.5,0.32)
+## At `rock` 1: her pitch and roll past the sea's own slope under her, so it reads
+## from the air (the heave is the sea's, at most); her lean out of the route's
+## turns (rad).
+const ROCK_GAIN := Vector2(3.0,3.0)
+const ROCK_LEAN := 0.03
 ## A thrown shard: fall (m/s²), what a bounce keeps, how fast the floor stops it
 ## (1/s), its room from the gun deck's walls (m), still under this (m/s).
 const SHARD_DROP := 16.0
@@ -320,6 +341,16 @@ var _plank_mat: Material
 var _sails: RefCounted
 var _mists: Array[Dictionary] = []
 var _planks: Array[Dictionary] = []
+## Her ride (ROCK_*): how much (0 off); Vector3(heave m, pitch, roll rad) now, its
+## rate, where the sea would have it; the sea read afresh next step (a return); the
+## frames counted for ROCK_EVERY; her yaw a step ago, for the lean.
+var rock := 1.0
+var ride := Vector3.ZERO
+var _ride_v := Vector3.ZERO
+var _ride_to := Vector3.ZERO
+var _ride_fresh := true
+var _ride_n := 0
+var _yaw_was := NAN
 
 ## The oval at `s` m along: [Vector2 place (from its middle), Vector2 way]. 0 is
 ## the middle of the north straight, going +x. `a` is the straights' length.
@@ -369,6 +400,8 @@ func setup(g: Node3D, at := ROUTE_AT, label := "coast/ship", first: Node3D = nul
 	game = g
 	name = "PirateShip"
 	handle = label
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--ship-rock="): rock = maxf(a.trim_prefix("--ship-rock=").to_float(),0.0)
 	twin = first
 	_leg = leg
 	if first != null: first.twin = self
@@ -389,6 +422,7 @@ func setup(g: Node3D, at := ROUTE_AT, label := "coast/ship", first: Node3D = nul
 	refill = "--full-meter" in args
 	for a: String in args:
 		if a.begins_with("--ship-return="): return_wait = a.trim_prefix("--ship-return=").to_float()
+	_ride_n = 0 if first == null else 1
 
 ## The middle of the gun deck (her frame's y): the relic hangs here.
 static func deck_mid(h: float) -> float:
@@ -402,6 +436,9 @@ func _pose() -> void:
 	way = Vector2(wd.x,wd.z)
 	yaw = atan2(-wd.x,-wd.z)
 	transform = Transform3D(Basis(Vector3.UP,yaw),_route*Vector3(p.x,0.0,p.y))
+	if rock > 0.0:
+		transform.basis = transform.basis*Basis.from_euler(Vector3(ride.y,0.0,ride.z))
+		transform.origin.y += ride.x
 	var shake := 0.0
 	if sink_t >= 0.0:
 		var s := sink_pose(sink_t)
@@ -411,15 +448,76 @@ func _pose() -> void:
 	_inv = transform.affine_inverse()
 	if _model != null:
 		var t := along/SPEED
-		_model.rotation = Vector3(SWAY.y*sin(TAU*t/SWAY_S.y)+shake,0.0,SWAY.x*sin(TAU*t/SWAY_S.x)+shake*0.6)
+		if rock > 0.0: _model.rotation = Vector3(shake,0.0,shake*0.6)
+		else: _model.rotation = Vector3(SWAY.y*sin(TAU*t/SWAY_S.y)+shake,0.0,SWAY.x*sin(TAU*t/SWAY_S.x)+shake*0.6)
 	if _hull.is_empty(): return
 	_place(_hull)
 	for part: String in plates: _place(plates[part].record)
 
+## Her record in `loose` where she is now; riding the swell, her whole frame too
+## (LandArches reads `xf` and `inv` over `cos` and `sin`).
 func _place(r: Dictionary) -> void:
 	r.pos = position
 	r.cos = cos(yaw)
 	r.sin = sin(yaw)
+	if rock > 0.0:
+		r.xf = transform
+		r.inv = _inv
+	elif r.has("inv"):
+		r.erase("xf")
+		r.erase("inv")
+
+## One step of her ride: the sea under her read (every ROCK_EVERY frames) and
+## fitted, her lean from how fast she's turning, and the springs eased toward them.
+func _ride_step(delta: float) -> void:
+	if rock <= 0.0 or delta <= 0.0: return
+	var turn := 0.0 if is_nan(_yaw_was) else wrapf(yaw-_yaw_was,-PI,PI)/delta
+	_yaw_was = yaw
+	_ride_n += 1
+	if _ride_fresh or _ride_n%ROCK_EVERY == 0:
+		_ride_to = sea_under()
+		_ride_to = Vector3(_ride_to.x*minf(rock,1.0),_ride_to.y*ROCK_GAIN.x*rock,_ride_to.z*ROCK_GAIN.y*rock)
+	# Turning to port (yaw growing) she leans out, to starboard: roll down that side.
+	var to := _ride_to+Vector3(0.0,0.0,-ROCK_LEAN*rock*clampf(turn*ROUTE_R/SPEED,-1.5,1.5))
+	if _ride_fresh:
+		_ride_fresh = false
+		ride = to
+		_ride_v = Vector3.ZERO
+		return
+	var left := minf(delta,0.25)
+	while left > 0.0:
+		var dt := minf(left,1.0/30.0)
+		left -= dt
+		for i in 3:
+			var w := TAU/ROCK_T[i]
+			_ride_v[i] += (w*w*(to[i]-ride[i])-2.0*ROCK_DAMP[i]*w*_ride_v[i])*dt
+			ride[i] += _ride_v[i]*dt
+
+## The sea under her, level in her frame: Vector3(its mean height over the rest
+## level, m; the pitch and roll (rad) of the plane fitted through it), read at
+## ROCK_X by ROCK_Z. ZERO with no sea.
+func sea_under() -> Vector3:
+	var look: Variant = game.get("look")
+	if look == null or look.water == null: return Vector3.ZERO
+	var water: RefCounted = look.water
+	var right := Vector3(cos(yaw),0.0,-sin(yaw))
+	var back := Vector3(sin(yaw),0.0,cos(yaw))
+	var sum := 0.0
+	var sx := 0.0
+	var sz := 0.0
+	var xx := 0.0
+	var zz := 0.0
+	for z: float in ROCK_Z:
+		for x: float in ROCK_X:
+			var q := position+right*x+back*z
+			var h: float = water.height_at(q.x,q.z)
+			sum += h
+			sx += x*h
+			sz += z*h
+			xx += x*x
+			zz += z*z
+	# Higher to starboard rolls her up that side (+z turn); higher astern, bow down.
+	return Vector3(sum/float(ROCK_X.size()*ROCK_Z.size()),-atan(sz/zz),atan(sx/xx))
 
 ## The world's moment in her frame.
 func local(p: Vector3) -> Vector3:
@@ -455,6 +553,7 @@ func before(delta: float) -> void:
 		return
 	if state == SINKING: sink_t += delta
 	along += SPEED*delta*(1.0 if state == AFLOAT else clampf(1.0-sink_t/SINK_WAY_S,0.0,1.0))
+	_ride_step(delta)
 	_pose()
 	if _sails != null: _sails.step(delta,position,way,state == SINKING)
 	var p: Vector3 = game.plane.position
@@ -992,6 +1091,8 @@ func _come_back(s: float) -> void:
 	along = s
 	visible = true
 	_ghost = false
+	_ride_fresh = true
+	_yaw_was = NAN
 	_every = EVERY
 	for g: Dictionary in _guns: g.rest = 0.0
 	_pose()

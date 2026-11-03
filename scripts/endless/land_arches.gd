@@ -455,6 +455,9 @@ func stretches(p: Vector3, pad := -1.0) -> Array:
 		var ox := p.x-o.x
 		var oz := p.z-o.z
 		if absf(ox) > float(r.reach) or absf(oz) > float(r.reach): continue
+		if r.has("inv"):
+			_tilted(r,p,pad,out)
+			continue
 		BoxSolid.stretches(r.solid,ox*float(r.cos)-oz*float(r.sin),ox*float(r.sin)+oz*float(r.cos),pad,o.y,out)
 	var c := Plan.cell_of(p.x,p.z)
 	for dz in range(-1,2):
@@ -484,8 +487,24 @@ func record_at(p: Vector3, pad: float) -> Dictionary:
 		var ox := p.x-o.x
 		var oz := p.z-o.z
 		if absf(ox) > float(r.reach) or absf(oz) > float(r.reach): continue
-		if BoxSolid.inside(r.solid,Vector3(ox*float(r.cos)-oz*float(r.sin),p.y-o.y,ox*float(r.sin)+oz*float(r.cos)),pad): return r
+		var l: Vector3 = (r.inv as Transform3D)*p if r.has("inv") else Vector3(ox*float(r.cos)-oz*float(r.sin),p.y-o.y,ox*float(r.sin)+oz*float(r.cos))
+		if BoxSolid.inside(r.solid,l,pad): return r
 	return {}
+
+## A loose record that tilts (pirate_ship.gd riding the swell: `xf` its frame,
+## `inv` the world into it): its stretches at `p`'s own spot in its frame, their
+## ends put back in the world. Exact at `p`'s height, a hair out far above or
+## below it (as her wreck's, `wreck_ground`).
+static func _tilted(r: Dictionary, p: Vector3, pad: float, out: Array) -> void:
+	var l: Vector3 = (r.inv as Transform3D)*p
+	var xf: Transform3D = r.xf
+	var n := out.size()
+	BoxSolid.stretches(r.solid,l.x,l.z,pad,0.0,out)
+	for i in range(n,out.size()):
+		var s: Vector2 = out[i]
+		var a: float = (xf*Vector3(l.x,s.x,l.z)).y
+		var b: float = (xf*Vector3(l.x,s.y,l.z)).y
+		out[i] = Vector2(minf(a,b),maxf(a,b))
 
 ## SkyGlide's `ground` at `p` over land of height `h`: a float (the land,
 ## raised by what stands on it) or Vector2(top, underside) for a span the
