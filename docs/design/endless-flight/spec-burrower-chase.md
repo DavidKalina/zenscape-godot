@@ -82,6 +82,22 @@ or fly.
    real player's input path through the driver, fix what doesn't read in rendered
    stills, and write the handoff.
 
+5. **Clear out the push-ups (spec change, the user's ask).** Orbs, bells and gongs
+   are gone from the game: `scripts/burrower/push_ups.gd` and its orb shader, the
+   orb setup, flags and `CATCH_PRIZE` in `burrower_flight.gd`, their scoring and
+   glyphs (`line_moves.gd`, `line_tune.json`, `near_glyphs.gd`), and whatever else
+   a repo-wide grep finds. Sweep the words in the HUD, logbook, finds and the
+   controls text too. Keep two things:
+   - The audio files in `assets/audio/burrower/`: the line's multiplier
+     (`flight_sound.gd`) and the find marks (`find_marks.gd`) play them.
+   - The surge-roll catch and its `caught` signal, which the finds table
+     listens to. A catch just drops no prize now.
+   The burrower study (`run-burrower-study.command`) keeps working without them.
+   If that scene has nothing left to show, say so in the handoff rather than
+   deleting it. Tests that need the push-ups aren't changed: list them in the
+   handoff. Add a line to `docs/archive.md` naming the last commit that has them.
+   Update `burrower-chase-handoff.md`.
+
 ## Where it plays
 
 `studies/endless_flight.tscn`, seed 1. Meet him (from step 1):
