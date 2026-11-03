@@ -208,6 +208,14 @@ with a landing bot (`scripts/landing_bot.gd`, `landing_course.gd`,
 - The launchers of every cut scene (`run-*.command`), and
   `selection-garden.json` (the old diorama editor's selection).
 
+### The burrower's push-ups
+
+The orbs, bells and gongs he threw up ahead of the plane went on 2026-11-02.
+The last commit that has them is `34788c41` (branch `iter/burrower-cave`):
+`scripts/burrower/push_ups.gd`, `shaders/burrower_orb.gdshader`,
+`shaders/burrower_halo.gdshader`, and their scoring and glyphs in `line_moves.gd`,
+`line_tune.json` and `near_glyphs.gd`. The surge-roll catch stayed, with no prize.
+
 ## What stayed
 
 Endless flight and everything it reaches: the land, sky, clouds, sea,

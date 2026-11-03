@@ -37,7 +37,7 @@ extends Node
 ##          landing that fans the grass out (GUST_REACH, GUST_FRONT), then a
 ##          band of lean riding downwind with the parcel (GUST_ROLL).
 ##
-##   wake   the burrower's gust through a wood (`gust_strip`, `gust_disc`,
+##   wake   the burrower's gust through a wood (`gust_strip`,
 ##          from scripts/burrower/tree_shudder.gd): not a push on this map but
 ##          a second one, the trees' alone (zs_gust_map, WAKE_*, shaders/
 ##          wake_gust_stamp.gdshader), so it can go further and last longer than
@@ -461,10 +461,6 @@ var gust_gain := 1.0
 ## along `way` (unit), out to `reach` m each side, `strength` 0..1.
 func gust_strip(at: Vector2, way: Vector2, half: float, reach: float, strength: float) -> void:
 	_wake_add(Color(at.x,at.y,way.x,way.y),Color(half,reach,time,strength),reach)
-
-## The gust straight out from `at`, to `reach` m (a push-up through the crowns).
-func gust_disc(at: Vector2, reach: float, strength: float) -> void:
-	_wake_add(Color(at.x,at.y,0.0,0.0),Color(0.0,reach,time,strength),reach)
 
 func _wake_add(where: Color, shape: Color, reach: float) -> void:
 	if not enabled or _wake_mesh == null: return

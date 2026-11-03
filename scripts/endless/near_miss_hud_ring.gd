@@ -121,13 +121,12 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		if band == "razor": _hold(0.25,50)
 		if not _bank.is_empty() and not _bank.has("cut"): _bank.cut = float(_bank.age)
 		if not _loss.is_empty(): _loss.age = maxf(float(_loss.age),LOSS_TIME-0.2)
-		# A push-up has no clearance to show.
-		if not bool(m.get("chime",false)) and is_finite(float(m.clear)): _clear = {"m":float(m.clear),"band":band,"age":0.0}
+		if is_finite(float(m.clear)): _clear = {"m":float(m.clear),"band":band,"age":0.0}
 		var filler := bool(m.get("filler",false))
 		# A filler moment takes no pop; the ring needs a glyph only if it's the line's first.
 		if not filler or _moves.is_empty():
 			_moves.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
-				"points":float(m.points),"clear":float(m.clear),"age":1.0 if filler else 0.0,"chime":bool(m.get("chime",false))})
+				"points":float(m.points),"clear":float(m.clear),"age":1.0 if filler else 0.0})
 			if _moves.size() > 64: _moves.resize(64)
 		if not filler:
 			_jolt = 0.0

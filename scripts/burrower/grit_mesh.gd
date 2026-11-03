@@ -1,7 +1,6 @@
 ## Faceted, irregular earth meshes for the burrower: crumbs and clods (a low
-## icosphere with each corner pushed in or out, flat normals) and the push-up
-## dome (a lumpy hemisphere). The soil shader (shaders/burrower_soil.gdshader)
-## paints them gritty.
+## icosphere with each corner pushed in or out, flat normals). The soil shader
+## (shaders/burrower_soil.gdshader) paints them gritty.
 class_name GritMesh
 extends RefCounted
 
@@ -41,39 +40,6 @@ static func lump(seed_: int, rough := 0.35, subdiv := 1) -> ArrayMesh:
 	var verts: Array = []
 	for p in pts:
 		verts.append((p as Vector3)*0.5*(1.0+rough*rng.randf_range(-1.0,0.7))*sq)
-	return _flat(verts,faces)
-
-## A lumpy hemisphere of radius 1, base at y = -0.12 (buried), top at y = 1.
-static func dome(seed_: int, rough := 0.2, around := 16, rings := 5) -> ArrayMesh:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_
-	var verts: Array = []
-	var faces: Array = []
-	var grid: Array = []
-	for r in rings+1:
-		var a := float(r)/rings*PI*0.5
-		var row: Array = []
-		for k in around:
-			var th := float(k)/around*TAU
-			var rad := (1.0+rough*rng.randf_range(-1.0,0.8)) if r > 0 and r < rings else 1.0
-			var q := Vector3(cos(th)*cos(a),sin(a),sin(th)*cos(a))*rad
-			if r == 0: q.y = -0.12
-			elif r == rings: q = Vector3(0.0,1.0+rough*0.3*rng.randf_range(-0.5,1.0),0.0)
-			verts.append(q)
-			row.append(verts.size()-1)
-		grid.append(row)
-	for r in rings:
-		for k in around:
-			var k2 := (k+1)%around
-			var a: int = grid[r][k]
-			var b: int = grid[r][k2]
-			var c: int = grid[r+1][k2]
-			var d: int = grid[r+1][k]
-			if r == rings-1:
-				faces.append([a,b,d])
-			else:
-				faces.append([a,b,c])
-				faces.append([a,c,d])
 	return _flat(verts,faces)
 
 static func _flat(verts: Array, faces: Array) -> ArrayMesh:

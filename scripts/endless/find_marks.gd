@@ -11,8 +11,8 @@ extends RefCounted
 ## fixed-size star that flares now and then, as old gold catches the sun, not a
 ## glow. It is depth tested, so land hides it.
 ##
-## Sounds are stand-ins from what is on disk (see BELLS, CRACKS): the burrower's
-## bells and gongs over foley rock breaks, pitched up the scale as the count grows.
+## Sounds are stand-ins from what is on disk (see BELLS, CRACKS): the bell and gong
+## recordings in assets/audio/burrower over foley rock breaks, pitched up the scale as the count grows.
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const NORMAL := "res://assets/textures/ruin_stone_normal.png"

@@ -39,7 +39,8 @@ extends RefCounted
 ## `plane_ground` either side, NORMAL_STEP m apart) for a ride; a brushed
 ## face's way out, or the land's slope where that is steep (a cliff); down
 ## under an underside; up on the water. On a Peak tower, any touch: the rock's
-## own way out (PeakTowers `face`), and the hit says "tower".
+## own way out (PeakTowers `face`), and the hit says "tower". On a burrower's spur
+## in a bore, likewise: the rock's own way out (BoreSpurs `face`).
 
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 
@@ -94,6 +95,13 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if str(hit.what) == "tree" and game.get("knock") != null:
 		var k: Dictionary = game.knock.at_hit(game,hit.at)
 		if not k.is_empty(): return {"knock":k}
+	# A spur's rock has a real normal too: none near, nothing here changes.
+	var tunnels = game.get("tunnels")
+	if tunnels != null and tunnels.spurs != null:
+		var off_spur: Vector3 = tunnels.spurs.face(plane.position,float(game.solid_pad))
+		if off_spur != Vector3.ZERO:
+			hit.normal = off_spur
+			hit.what = "stone"
 	# A Peak tower's rock has a real normal (PeakTowers `face`): off the towers
 	# this is ZERO and nothing here changes.
 	var face := Vector3.ZERO
