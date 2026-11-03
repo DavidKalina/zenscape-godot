@@ -30,10 +30,23 @@ extends Node3D
 ## --raider-tell (TELL_S), --raider-hit (HIT_R), --raider-near (NEAR_R),
 ## --raider-shove (SHOVE), --raider-fill (DODGE_FILL), --raider-turn (TURN_MAX).
 ##
-## `--raider-mode=chase` makes it the chase instead (scripts/endless/
-## raider_chase.gd, state `flee`): it shows up ahead and runs low through
-## trees and arches, and skimming builds the plane's speed. `dogfight` (the
-## default) is the above.
+## `--raider-mode=` picks the fight. `dogfight` is the above alone. `chase`
+## is the chase alone (scripts/endless/raider_chase.gd, state `flee`): it
+## shows up ahead and runs low through trees and arches, and skimming builds
+## the plane's speed. `mix` (the default) moves between them:
+## - It shows up for the dogfight. After MIX_PASSES rams (hits, dodges and
+##   misses alike) it breaks off the next time it's ahead of the plane or
+##   abeam, within MIX_BREAK_M m and flying away from it, and runs (`flee`;
+##   the marker reads "RUNS" for a moment).
+## - Sat on its tail (ahead within MIX_TAIL_M m, the plane's nose within
+##   MIX_TAIL_DEG of it) for MIX_TAILED_S s, it runs whatever the count: it
+##   can't ram you from there.
+## - Lost (the chase's rule: too far, or behind the view, for a while) after
+##   MIX_GRACE s of running, or after MIX_CHASE_MOST s of running with the
+##   plane more than MIX_NEAR_M m off, it turns and comes back at you: the
+##   dogfight again, with a fresh count of passes. Lost sooner (it ran before
+##   you could turn after it), it comes round ahead and runs again.
+## - A kill ends either; the next one shows up for the dogfight.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -118,6 +131,20 @@ const ROLL_FILL := 0.08
 const PEEL_S := 3.0
 ## A hot surge roll within KILL_R m of it kills it.
 const KILL_R := 10.0
+
+## The mix: rams before it breaks off and runs (picked between the two each
+## time), how near ahead it breaks off (m), and the longest run (s).
+const MIX_PASSES := Vector2i(2,3)
+const MIX_BREAK_M := Vector2(40.0,450.0)
+const MIX_TAIL_M := 220.0
+const MIX_TAIL_DEG := 30.0
+const MIX_TAILED_S := 4.0
+const MIX_CHASE_MOST := 30.0
+const MIX_NEAR_M := 150.0
+const MIX_AWAY := 0.2
+const MIX_GRACE := 10.0
+const MIX_ABEAM := 0.2
+const RUNS_S := 1.6
 ## The broken plane: pieces, their speed out (m/s), life (s).
 const PIECES := 16
 const PIECE_OUT := 22.0
@@ -136,7 +163,7 @@ var speed := 0.0
 var kind := &""
 var ram_dir := Vector3.FORWARD
 ## Counted, for the drivers.
-var stats := {"spawns":0,"tells":0,"rams":0,"hits":0,"dodges":0,"misses":0,"kills":0,"head":0,"tail":0}
+var stats := {"spawns":0,"tells":0,"rams":0,"hits":0,"dodges":0,"misses":0,"kills":0,"head":0,"tail":0,"breaks":0,"returns":0}
 ## The last ram's closest pass (m), and whether the plane was rolling at it.
 var least := INF
 var least_rolled := false
@@ -144,8 +171,18 @@ var least_at := Vector3.ZERO
 ## The closest the plane came over the last frame (m), for `try_kill`.
 var sweep := INF
 var tuning := {}
-## The chase (`--raider-mode=chase`; null in the dogfight).
+## The fight: &"dogfight", &"chase" or &"mix" (`--raider-mode=`).
+var mode := &"mix"
+## The chase (null in the dogfight alone).
 var chase: RefCounted
+## The mix: rams flown since the dogfight began, and how many before it runs.
+var passes := 0
+var passes_want := 3
+## The mix: seconds the plane has sat on its tail.
+var tailed := 0.0
+## The mix: seconds run with the plane not near.
+var run_t := 0.0
+var _rounds_seen := 0
 
 var _wait := FIRST_S
 var _lost := 0.0
@@ -164,6 +201,13 @@ var _rng := RandomNumberGenerator.new()
 static func wanted() -> bool:
 	return "--raider" in LaunchArgs.user_args()
 
+static func mode_of(args: PackedStringArray) -> StringName:
+	for a: String in args:
+		if a.begins_with("--raider-mode="):
+			var m := StringName(a.trim_prefix("--raider-mode="))
+			if m in [&"dogfight",&"chase",&"mix"]: return m
+	return &"mix"
+
 static func _flag(flag: String, default: float) -> float:
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with(flag+"="): return maxf(float(a.trim_prefix(flag+"=")),0.0)
@@ -180,7 +224,8 @@ func setup(g: Node3D) -> void:
 		"near":_flag("--raider-near",NEAR_R),"shove":_flag("--raider-shove",SHOVE),
 		"fill":_flag("--raider-fill",DODGE_FILL.y),"turn":_flag("--raider-turn",TURN_MAX)}
 	flight = SkyTraffic.Flight.new()
-	if RaiderChase.wanted(LaunchArgs.user_args()): chase = RaiderChase.new(self)
+	mode = mode_of(LaunchArgs.user_args())
+	if mode != &"dogfight": chase = RaiderChase.new(self)
 	figure = PlaneFigure.new(LIVERY)
 	figure.name = "RaiderPlane"
 	figure.visible = false
@@ -245,12 +290,21 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 	t += delta
 	match state:
 		&"stalk": _stalk(delta,p,rel,dist,ps,flying)
-		&"flee": chase.step(delta,p,rel,dist,ps)
+		&"flee":
+			chase.step(delta,p,rel,dist,ps)
+			if dist > MIX_NEAR_M: run_t += delta
+			if mode == &"mix":
+				# Lost early (it ran before you could turn after it), it comes round
+				# ahead and runs again (the chase's own way); lost later, it fights.
+				var lost_now: bool = int(chase.stats.rounds) > _rounds_seen
+				_rounds_seen = int(chase.stats.rounds)
+				if (lost_now and t > MIX_GRACE) or run_t > MIX_CHASE_MOST: _fight()
 		&"tell": _tell(delta,p,ps)
 		&"ram": _ram(delta,p,rel,dist,ps)
 		&"over":
 			_fly_to(flight.position+ram_dir*100.0,delta,tuning.turn*0.5,lerpf(speed,ps+STALK_NEAR,minf(t/OVER_S,1.0)))
-			if t >= OVER_S: _go(&"stalk")
+			if _breaks_off(rel,dist): _run()
+			elif t >= OVER_S: _go(&"stalk")
 		&"peel":
 			var away := Vector3(rel.x,0.0,rel.z).normalized() if dist > 1.0 else Vector3.FORWARD
 			_fly_to(flight.position+away*120.0+Vector3.UP*40.0,delta,tuning.turn,ps+STALK_FAR)
@@ -301,12 +355,49 @@ func _spawn() -> void:
 	PlaneGroundScale.grow(figure,WorldScale.plane*SIZE)
 	figure.reset(flight)
 	stats.spawns = int(stats.spawns)+1
-	if chase != null:
+	_count_from()
+	if mode == &"chase":
 		chase.spawn()
 		figure.reset(flight)
 		_prev = Vector3.INF
 		_go(&"flee")
 		return
+	_go(&"stalk")
+
+# --- The mix ------------------------------------------------------------------
+
+## A fresh count of passes before it runs.
+func _count_from() -> void:
+	passes = 0
+	tailed = 0.0
+	passes_want = _rng.randi_range(MIX_PASSES.x,MIX_PASSES.y)
+
+## Off the dogfight: it runs from where it flies.
+func _run() -> void:
+	stats.breaks = int(stats.breaks)+1
+	run_t = 0.0
+	chase.begin()
+	_rounds_seen = int(chase.stats.rounds)
+	game.sound.shot("whoosh",0.8,0.7,flight.position)
+	_go(&"flee")
+
+## The mix's break-off: its passes flown, within MIX_BREAK_M m, ahead of the
+## plane or abeam (no more than MIX_ABEAM behind; in front of the camera) and
+## flying away from it (as a tail run's overshoot, or coming round wide).
+func _breaks_off(rel: Vector3, dist: float) -> bool:
+	if mode != &"mix" or passes < passes_want or dist < MIX_BREAK_M.x or dist > MIX_BREAK_M.y: return false
+	var fwd: Vector3 = game.plane.forward()
+	var flat := Vector3(fwd.x,0.0,fwd.z).normalized()
+	if rel.dot(flat) < -MIX_ABEAM*dist: return false
+	if (game.camera as Camera3D).is_position_behind(flight.position): return false
+	return flight.forward().dot(rel/maxf(dist,0.1)) > MIX_AWAY
+
+## Off the chase: it turns and comes back at you.
+func _fight() -> void:
+	stats.returns = int(stats.returns)+1
+	chase.idle()
+	_count_from()
+	_lost = 0.0
 	_go(&"stalk")
 
 # --- The passes ---------------------------------------------------------------
@@ -326,7 +417,14 @@ func _stalk(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float, flyi
 	if _lost > LOST_S:
 		_spawn()
 		return
-	if not flying or t < STALK_LEAST: return
+	if not flying: return
+	if mode == &"mix":
+		var on_tail := ahead and dist < MIX_TAIL_M and fwd.dot(rel/maxf(dist,0.1)) > cos(deg_to_rad(MIX_TAIL_DEG))
+		tailed = tailed+delta if on_tail else 0.0
+		if _breaks_off(rel,dist) or tailed > MIX_TAILED_S:
+			_run()
+			return
+	if t < STALK_LEAST: return
 	var meet := _meet(p,ps+float(tuning.ram))
 	var nose: Vector3 = flight.forward()
 	var on := nose.dot((meet-flight.position).normalized())
@@ -384,6 +482,7 @@ func _ram_over(p: Vector3) -> void:
 		_dodge(least_at)
 	else:
 		stats.misses = int(stats.misses)+1
+	passes += 1
 	_go(&"over")
 
 func _dodge(at: Vector3) -> void:
@@ -418,6 +517,7 @@ func _hit(p: Vector3, events: Dictionary) -> void:
 	game.sound.shot("crash",1.0,0.9)
 	game.sound.shot("thump",1.0,0.8)
 	rammed.emit(p)
+	passes += 1
 	_go(&"peel")
 
 ## Each frame of a hot surge roll (SurgeSmash `before`): the plane within
@@ -606,6 +706,7 @@ func _hud(on: bool) -> void:
 	m.pulse = _clock
 	m.text = "%d m" % int(flight.position.distance_to(game.plane.position))
 	if state == &"tell": m.text = "RAM!"
+	elif state == &"flee" and mode == &"mix" and t < RUNS_S: m.text = "RUNS"
 	m.queue_redraw()
 
 class Marker extends Control:

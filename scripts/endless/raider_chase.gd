@@ -1,5 +1,5 @@
 extends RefCounted
-## The raider's chase (`--raider-mode=chase`; spec docs/design/endless-flight/
+## The raider's chase (`--raider-mode=chase`, and the run in `mix`; spec docs/design/endless-flight/
 ## spec-raider-combat.md, item 2): the raider (scripts/endless/raider.gd) shows
 ## up ahead and flees, low and fast, and the player trails it.
 ##
@@ -160,11 +160,6 @@ var _openings := {}
 var _want_y := NAN
 var _slope := 0.0
 
-static func wanted(args: PackedStringArray) -> bool:
-	for a: String in args:
-		if a == "--raider-mode=chase": return true
-	return false
-
 func _init(r: Node3D) -> void:
 	raider = r
 	tuning = {"skim":r._flag("--raider-skim",SKIM_GAIN),"pace":maxf(r._flag("--raider-pace",PACE),0.3),
@@ -199,7 +194,17 @@ func spawn() -> void:
 	_drop_route()
 	_seen = (game.near.moments as Array).size()
 
-## Not up (away, dead): no speed from skimming.
+## Breaking off (the mix): it runs from where it flies, as it flies.
+func begin() -> void:
+	var f: SkyTraffic.Flight = raider.flight
+	_want = f.heading
+	_plan_t = 0.0
+	_lost = 0.0
+	phase = &"run"
+	_drop_route()
+	_seen = (raider.game.near.moments as Array).size()
+
+## Not up (away, dead, or back to the dogfight): no speed from skimming.
 func idle() -> void:
 	heat = 0.0
 	skim_over = 0.0
@@ -396,7 +401,8 @@ func _follow(delta: float, pace: float) -> void:
 		# On to the run-in, then onto the line.
 		var to: Vector3 = route[0]-f.position
 		if Vector2(to.x,to.z).length() < 25.0 or (along > -APPROACH+15.0 and lateral.length() < 12.0): leg = 1
-		_fly(_heading_to(route[0]),delta,pace,NAN,false)
+		# Solids read short of the run-in only: the arch past it is the route's.
+		_fly(_heading_to(route[0]),delta,pace,NAN,true,Vector2(to.x,to.z).length())
 		return
 	# Along the line through the middle: down to the opening's height by RUN_IN
 	# m before it (DESCENT a m on before that), held RUN_OUT m past it.
@@ -508,7 +514,7 @@ func _heading_to(aim: Vector3) -> float:
 ## Onto heading `want` at `pace` m/s: the turn capped, the wings banked with
 ## it, the nose to `y` (world; NAN: LOW over what stands ahead), never under
 ## FLOOR over the land.
-func _fly(want: float, delta: float, pace: float, y := NAN, solids := true) -> void:
+func _fly(want: float, delta: float, pace: float, y := NAN, solids := true, reach := INF) -> void:
 	var f: SkyTraffic.Flight = raider.flight
 	var rate := clampf(angle_difference(f.heading,want)*TURN_GAIN,-TURN,TURN)
 	raider.turn = lerpf(raider.turn,rate,raider._ease(0.3,delta))
@@ -518,7 +524,7 @@ func _fly(want: float, delta: float, pace: float, y := NAN, solids := true) -> v
 	var flat := Vector3(fwd.x,0.0,fwd.z).normalized()
 	# Routed through an arch's opening (`y` the line's height, the way checked
 	# clear; `solids` off): only the land and the crowns under it.
-	var under := _floor_y(f.position,flat,solids)
+	var under := _floor_y(f.position,flat,solids,reach)
 	var want_y := y if not is_nan(y) else under+float(tuning.low)
 	# The aim's own climb led (its rise a m on), then the miss closed.
 	var run := maxf(raider.speed*delta,0.01)
@@ -547,16 +553,16 @@ func _fly(want: float, delta: float, pace: float, y := NAN, solids := true) -> v
 ## AHEAD's samples along `flat`, the land, the water and the crowns (read
 ## SIDE m to each side too), and with `solids` the flight's own ground read
 ## from PROBE m over it (`plane_ground`: the tops of rocks, arches, halls),
-## each less CLIMB of its way on. An arch it isn't routed through it flies
-## over, not into.
-func _floor_y(at: Vector3, flat: Vector3, solids: bool) -> float:
+## each less CLIMB of its way on (solids only within `reach` m). An arch it
+## isn't routed through it flies over, not into.
+func _floor_y(at: Vector3, flat: Vector3, solids: bool, reach := INF) -> float:
 	var game: Node3D = raider.game
 	var side := flat.cross(Vector3.UP)
 	var top := -INF
 	for a: float in AHEAD:
 		var q := at+flat*a
 		var h := float(game.field.height(q.x,q.z))
-		if solids:
+		if solids and a <= reach:
 			h = maxf(h,_top(game.plane_ground(Vector3(q.x,at.y+PROBE,q.z),SOLID_PAD)))
 		h = maxf(h,float(game.water_at(q)))
 		if game.trees != null: h = maxf(h,float(game.trees.top_at(q)))
