@@ -27,6 +27,7 @@ const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const BoreLine = preload("res://scripts/endless/bore_line.gd")
 const BoreSpurs = preload("res://scripts/endless/bore_spurs.gd")
+const BorePlugs = preload("res://scripts/endless/bore_plug.gd")
 const BorePlume = preload("res://scripts/endless/bore_plume.gd")
 const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 const RIDGE_SHADER = preload("res://shaders/burrower_bore_ridge.gdshader")
@@ -111,6 +112,7 @@ var _mat: ShaderMaterial
 var _glow: OmniLight3D
 ## The spurs, tunnel by tunnel, and the plume.
 var spurs: BoreSpurs
+var plugs: BorePlugs
 var plume: BorePlume
 ## The rumble's voice (FlightSound Bed) and where it plays from now.
 var rumble_at := Vector3.ZERO
@@ -144,6 +146,9 @@ func setup(tunnels: Node3D) -> void:
 	spurs = BoreSpurs.new()
 	add_child(spurs)
 	spurs.setup(tunnels)
+	plugs = BorePlugs.new()
+	add_child(plugs)
+	plugs.setup(tunnels,spurs.tell(),spurs.rubble())
 	plume = BorePlume.new()
 	add_child(plume)
 	plume.setup()
@@ -180,11 +185,13 @@ func begin(t: Tunnels.Site, end: int, plane: RefCounted) -> void:
 	_mat.set_shader_parameter("head_s",s)
 	_lay(ROWS_A_FRAME)
 	spurs.begin(t,way)
+	plugs.begin(t,way)
 
 ## One frame.
 func step(delta: float, game: Node3D) -> void:
 	_time += delta
 	spurs.step(delta,game.plane.position,game.sound)
+	plugs.step(delta,game.plane.position,game.sound)
 	plume.step(delta)
 	if _sinking > 0.0: _sink(delta)
 	if site == null: return
@@ -204,6 +211,7 @@ func step(delta: float, game: Node3D) -> void:
 	var began := Time.get_ticks_usec()
 	_lay(ROWS_A_FRAME)
 	spurs.passing(s)
+	plugs.passing(s)
 	stats.worst_us = maxi(int(stats.worst_us),Time.get_ticks_usec()-began)
 	_mat.set_shader_parameter("head_s",s)
 	_drop_past(plane_s)
@@ -259,6 +267,7 @@ func finish(why: StringName) -> void:
 	site = null
 	_plane = null
 	spurs.ended()
+	plugs.ended()
 	_glow.visible = false
 	if _rumble != null: _rumble.goal = 0.0
 	stats.why = why

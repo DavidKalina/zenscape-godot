@@ -356,6 +356,8 @@ const DRY_CUTS := 8
 var clouds: Node
 ## The burrower's spurs, stone that stands in the bores (scripts/endless/bore_spurs.gd), or null.
 var spurs: Node3D
+## The plugs he brings down across them (scripts/endless/bore_plug.gd), or null.
+var plugs: Node3D
 ## The land's ground material, which a sunk cave's mouth rock wears.
 var _ground: Material
 ## The sea's material, cut along the sunk tunnels' ramps (`_cut_sea`), or null.
@@ -897,6 +899,7 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 			if _open_nave and _in_nave(t,p): return cover
 			var list: Array = halls.stretches(p,pad)
 			if spurs != null: spurs.stretches(p,grow,list)
+			if plugs != null: plugs.stretches(p,grow,list)
 			list.append(Vector2(b.y,cover))
 			return LandHalls.over(p,b.x,list)
 		if cover > h: return cover
@@ -1037,6 +1040,7 @@ func has_built(tunnel: String) -> bool:
 func inside(p: Vector3) -> bool:
 	if halls.inside(p): return true
 	if spurs != null and spurs.inside(p): return true
+	if plugs != null and plugs.inside(p): return true
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
 		var sh := Tunnels.shaft_at(t,p.x,p.z)
@@ -1070,6 +1074,7 @@ func sight(from: Vector3, to: Vector3) -> float:
 		var p := from.lerp(to,float(i)/n)
 		var got := tube(p)
 		if got == 0 and spurs != null and spurs.inside(p): got = 1
+		if got == 0 and plugs != null and plugs.inside(p): got = 1
 		if got < 0:
 			whole = false
 			if inside(p) or p.y < land_y(p,field.height(p.x,p.z)): got = 1

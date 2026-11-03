@@ -513,6 +513,8 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if _gate_last != Vector3.INF and fast and bool(game.hand_landing.flying()):
 		var arches = game.get("arches")
 		var hit: Dictionary = arches.gate_crossed(_gate_last,p_now) if arches != null else {}
+		# A plug's hole in a bore (BorePlugs `crossed`) is threaded the same way.
+		if hit.is_empty() and game.tunnels != null and game.tunnels.plugs != null: hit = game.tunnels.plugs.crossed(_gate_last,p_now)
 		if not hit.is_empty():
 			_gate.start(maxf(float(hit.room)-WorldScale.span*0.5,0.0))
 			_gate.speed = speed

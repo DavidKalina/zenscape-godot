@@ -578,6 +578,13 @@ func smash(sp: Spur, blast: Vector3) -> void:
 	_near.erase(sp)
 	stats.smashed = int(stats.smashed)+1
 
+## The tell and the rubble, shared with the plugs (scripts/endless/bore_plug.gd).
+func tell() -> BoreTell:
+	return _tell
+
+func rubble() -> BoreRubble:
+	return _rubble
+
 ## Whether `body` is a spur's.
 func holds(body: Object) -> bool:
 	return body is StaticBody3D and (body as Node).get_parent() == self
