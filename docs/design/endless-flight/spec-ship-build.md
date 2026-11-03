@@ -103,6 +103,11 @@ cd /Users/davidkalina/Documents/Projects/zenscape-ship-build && python3 tools/pl
    300 m, the chase camera, the fly-through, sunset; triangle and draw counts, no frame
    times (other agents share the GPU). The handoff `ship-build-handoff.md`, with the
    model-budget table (AGENTS.md, Models).
+   **Spec change (coordinator, after fb374066):** also, from 4b's films: back the gun
+   deck's walls as the tunnel's were, so the plank seams stop showing slits of sky. Look
+   at, and fix if cheap: the white fog haze filling the gun deck when flying toward the
+   sun; the bow burst's dust over the camera for a few frames; the spritsail reading as a
+   flat grey square above the tunnel, bow on. Say in the handoff which were left.
 
 ## Picks
 
