@@ -157,6 +157,7 @@ const HallDoors = preload("res://scripts/endless/hall_doors.gd")
 ## The crown's spirals of cloud (scripts/endless/peak_spirals.gd; --spirals=0 none).
 const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
 const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
+const SurgeSpray = preload("res://scripts/endless/surge_spray.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
@@ -326,6 +327,9 @@ var lines: Node
 var stair: Node3D
 var spirals: Node3D
 var spindrift: Node3D
+## Spray off the big swell's breaking crests (scripts/endless/surge_spray.gd;
+## null with no surge or --spray=0).
+var spray: Node3D
 ## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
 ## --no-burrower: none).
 var burrower: Node
@@ -668,6 +672,10 @@ func _ready() -> void:
 		if look.water != null:
 			tunnels.sea = look.water.material
 			look.water.set_edge(field.edge())
+			if look.water._surge_edge.z > 0.0 and SurgeSpray.wanted():
+				spray = SurgeSpray.new()
+				add_child(spray)
+				spray.setup(self,look.water.material,look.water._surge_edge)
 	ice = LandIceTunnel.new()
 	ice.name = "IceTunnel"
 	add_child(ice)
