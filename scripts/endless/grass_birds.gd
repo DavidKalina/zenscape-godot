@@ -67,8 +67,9 @@ const DROP := Vector2(1.4,3.2)
 const FAN := Vector2(0.35,0.95)
 const RAGGED := Vector2(0.7,1.4)
 const SPLIT_SHARE := 0.35
-## The birds' span over the plane's: about 0.57 m at the sizes' knobs.
-const SIZE := 0.2
+## The birds' span over the plane's: about 0.85 m at the sizes' knobs, the
+## same as the flocks in the trees, so they read from the chase camera on Boost.
+const SIZE := 0.3
 ## What the grass gets where a bird leaves: a shake (m, share of a wash puff's
 ## push) and bits of chaff.
 const SHAKE_REACH := 3.2
