@@ -36,11 +36,13 @@ static func _open(path: String) -> void:
 ## The frame's work starts.
 static func start() -> void:
 	if not on: return
+	if GroundTally.on: GroundTally.file(&"outside")
 	_at = Time.get_ticks_usec()
 
 ## The part just done, named: the time since the last mark.
 static func mark(part: StringName) -> void:
 	if not on: return
+	if GroundTally.on: GroundTally.file(part)
 	var now := Time.get_ticks_usec()
 	var i: int = _index.get(part,-1)
 	if i < 0:

@@ -1128,6 +1128,7 @@ func _size_chase() -> void:
 ## now (WorldScale `reach_rolled`); 0 for a point on the plane's own edge
 ## (NearMiss's body points), which is in the stone only where it truly is.
 func plane_ground(p: Vector3, pad := -1.0) -> Variant:
+	if GroundTally.on: GroundTally.tick(&"plane_ground")
 	if pad < 0.0:
 		pad = solid_pad
 		p += solid_shift
@@ -1149,12 +1150,14 @@ func bore_keep(p: Vector3) -> Vector3:
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
+	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
+	if GroundTally.on: GroundTally.tick(&"floor_at")
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
 	var h: float = field.height(p.x,p.y)
 	if (h < Field.SEA_Y+0.2 and not tunnels.dry(Vector3(p.x,h,p.y))) or _on_river(): return NAN
@@ -1169,6 +1172,7 @@ func _on_river() -> bool:
 
 ## The water under a point: the sea's swell, or a river's level over it.
 func water_at(p: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"water_at")
 	if tunnels != null and tunnels.dry(p): return -INF
 	var level := Field.SEA_Y+sea_height(p)
 	var river: float = field.river_y(p.x,p.z)
@@ -1178,6 +1182,7 @@ func water_at(p: Vector3) -> float:
 ## bore's floor in its tube), for the camera to keep over (GlideCamera
 ## `floor_at`).
 func eye_floor(p: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"eye_floor")
 	if doors != null and doors.holds(p): return doors.hall_floor()
 	var h: float = field.height(p.x,p.z)
 	if _on_river(): h = maxf(h,field.river_drawn())
@@ -1187,12 +1192,14 @@ func eye_floor(p: Vector3) -> float:
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
+	if GroundTally.on: GroundTally.tick(&"_solid")
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
 	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
 func sea_height(p: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"sea_height")
 	if look == null or look.water == null or p.y > Field.SEA_Y+12.0+look.water.surge_room(p.x,p.z): return 0.0
 	# Land well over the sea has none, and low land sits inside the 12 m: every
 	# probe of a low flight would march the waves.
@@ -1204,6 +1211,7 @@ func sea_height(p: Vector3) -> float:
 ## by EYE_CLEAR's half, as `_solid` (GlideCamera `sight`), marched over the
 ## field; in a bore, finer (LandTunnels `sight`).
 func _sight(from: Vector3, to: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"_sight")
 	const STEPS := 10
 	if doors != null and doors.holds(from): return 1.0
 	var bore: float = tunnels.sight(from,to)
@@ -1618,6 +1626,7 @@ func _react(delta: float) -> void:
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
 func _grass_at(x: float, z: float) -> float:
+	if GroundTally.on: GroundTally.tick(&"_grass_at")
 	var h: float = field.height(x,z)
 	return h if h > Field.SEA_Y+3.0 and field.last_river > Field.RIVER_CLEAR else NAN
 

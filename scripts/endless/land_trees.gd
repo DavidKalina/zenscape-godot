@@ -1284,6 +1284,7 @@ func cell_trees(ck: Vector2i) -> PackedFloat32Array:
 
 ## The tallest tree solid over world XZ `p` (world y), or -INF.
 func top_at(p: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"trees.top_at")
 	if _blocks.is_empty(): return -INF
 	var best := -INF
 	var bx := floori(p.x/BUCKET)
@@ -1318,6 +1319,7 @@ func ground(p: Vector3, under: Variant) -> Variant:
 
 ## True inside a tree's solid (the rolling plane stops).
 func inside(p: Vector3) -> bool:
+	if GroundTally.on: GroundTally.tick(&"trees.inside")
 	if not enabled: return false
 	return p.y < top_at(p)
 
@@ -1434,6 +1436,7 @@ static func tree_key(x: float, z: float) -> Vector2i:
 ## deepest in. {ck, i, x, z, foot, height, bottom (crown bottom over the
 ## foot), radius (CROWN_SOLID of the crown), reach, depth (m under its top at `p`)}.
 func tree_in(p: Vector3, body: bool, above := 0.0) -> Dictionary:
+	if GroundTally.on: GroundTally.tick(&"trees.tree_in")
 	if not enabled or _blocks.is_empty(): return {}
 	var best := {}
 	var bx := floori(p.x/BUCKET)
