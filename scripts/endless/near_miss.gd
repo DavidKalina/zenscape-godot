@@ -216,6 +216,9 @@ var _last_ground := INF
 var _near_id := 0
 var _near_c := INF
 var _near_what := "stone"
+## The nearest stone this frame is a burrower's spur (BoreSpurs `holds`).
+var _near_spur := false
+var _near_body: Object
 
 ## One channel's moment.
 class Tracker:
@@ -231,6 +234,8 @@ class Tracker:
 	var closing := 0.0
 	var sides := 0
 	var over := false
+	## It came near a burrower's spur: a graze though the bore is overhead.
+	var spur := false
 	## The roll at the least (radians), and each wing's least (a gap's sides).
 	var roll := 0.0
 	var wl := INF
@@ -241,6 +246,7 @@ class Tracker:
 		closing = 0.0
 		sides = 0
 		over = false
+		spur = false
 		wl = INF
 		wr = INF
 		least = clear
@@ -331,6 +337,7 @@ func measure(delta: float, game: Node3D) -> void:
 	var half := WorldScale.span*0.5
 	var reach := STONE_REACH*WorldScale.span
 	_near_c = INF
+	_near_body = null
 	var xf := Transform3D(Basis.from_euler(Vector3(float(plane.pitch),float(plane.heading),-(float(plane.bank)+float(plane.spin)))),plane.position)
 	touching = {}
 	overhead = false
@@ -386,7 +393,9 @@ func measure(delta: float, game: Node3D) -> void:
 			_near_c = c
 			_near_id = hash([hit.collider.get_instance_id(),hit.shape])
 			_near_what = "stone"
+			_near_body = hit.collider
 	if game.tunnels != null and int(game.tunnels.tube(xf.origin)) == 0: overhead = true
+	_near_spur = game.tunnels != null and game.tunnels.spurs != null and game.tunnels.spurs.holds(_near_body)
 	stone_clear = minf(minf(left_clear,right_clear),over_clear)
 
 ## The clearance along one wing (`side` -1 left, 1 right): two rays out
@@ -409,6 +418,7 @@ func _wing(space: PhysicsDirectSpaceState3D, game: Node3D, xf: Transform3D, side
 			_near_c = c
 			_near_id = hash([hit.collider.get_instance_id(),hit.shape])
 			_near_what = what
+			_near_body = hit.collider
 		if c < 0.0 and touching.is_empty():
 			touching = {"at":hit.position,"normal":-out,"what":what}
 	return best
@@ -458,7 +468,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 			_ground.id = hash(Vector2i(floori(ground_at.x/FARM_CELL),floori(ground_at.z/FARM_CELL)))
 	# The stone's moment.
 	var stone_reach := STONE_REACH*WorldScale.span
-	if _track(_stone,stone_clear,stone_reach,speed,game) and not _stone.over:
+	if _track(_stone,stone_clear,stone_reach,speed,game) and (_stone.spur or not _stone.over):
 		_moment("thread" if _stone.sides == 3 else "graze",_stone,stone_reach,cruise,out,game)
 	if _stone.active:
 		if left_clear < stone_reach: _stone.sides |= 1
@@ -466,6 +476,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		_stone.wl = minf(_stone.wl,left_clear)
 		_stone.wr = minf(_stone.wr,right_clear)
 		if overhead: _stone.over = true
+		if _near_spur and stone_clear < stone_reach: _stone.spur = true
 		if stone_clear <= _stone.least:
 			_stone.at = plane.position
 			_stone.id = _near_id

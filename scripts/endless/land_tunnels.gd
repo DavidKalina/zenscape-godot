@@ -354,6 +354,8 @@ var halls: Node3D
 const DRY_CUTS := 8
 ## The look's clouds (their valley fog hushed in the bore), or null.
 var clouds: Node
+## The burrower's spurs, stone that stands in the bores (scripts/endless/bore_spurs.gd), or null.
+var spurs: Node3D
 ## The land's ground material, which a sunk cave's mouth rock wears.
 var _ground: Material
 ## The sea's material, cut along the sunk tunnels' ramps (`_cut_sea`), or null.
@@ -894,6 +896,7 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 			# the aisle behind, where every way out was a column or the wall.
 			if _open_nave and _in_nave(t,p): return cover
 			var list: Array = halls.stretches(p,pad)
+			if spurs != null: spurs.stretches(p,grow,list)
 			list.append(Vector2(b.y,cover))
 			return LandHalls.over(p,b.x,list)
 		if cover > h: return cover
@@ -1024,11 +1027,16 @@ func land_y(p: Vector3, h: float) -> float:
 func stood() -> Array:
 	return _sites
 
+## Whether the tunnel called `tunnel` stands now.
+func has_built(tunnel: String) -> bool:
+	return _built.has(tunnel)
+
 ## True inside the rock round a bore or a portal's block (the camera keeps
 ## out, the wheels stop): under the tube's floor, over its roof under the
 ## cover, or in the walls beside it under the land.
 func inside(p: Vector3) -> bool:
 	if halls.inside(p): return true
+	if spurs != null and spurs.inside(p): return true
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
 		var sh := Tunnels.shaft_at(t,p.x,p.z)
@@ -1061,6 +1069,7 @@ func sight(from: Vector3, to: Vector3) -> float:
 	for i in range(1,n+1):
 		var p := from.lerp(to,float(i)/n)
 		var got := tube(p)
+		if got == 0 and spurs != null and spurs.inside(p): got = 1
 		if got < 0:
 			whole = false
 			if inside(p) or p.y < land_y(p,field.height(p.x,p.z)): got = 1

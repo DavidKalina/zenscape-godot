@@ -164,7 +164,7 @@ func setup(game: Node3D) -> void:
 	push_ups.taken.connect(_taken.bind(game))
 	bore = BurrowerBore.new()
 	add_child(bore)
-	bore.setup()
+	bore.setup(game.tunnels)
 	bore.ended.connect(_bore_over)
 	_rng.randomize()
 	_every = every_flag()

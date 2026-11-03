@@ -1,15 +1,9 @@
 extends Node3D
 ## The burrower in a sunk tunnel (docs/design/endless-flight/spec-burrower-chase.md):
 ## what happens after `plunge`. He is never drawn. Where he is: `s`, the distance along
-## the path, and `angle_at(s)`, the angle round the bore there. What shows is a ridge of
-## heaved rock on the bore's real surface (the same lumps as the rock's mesh,
-## LandTunnels `rock_grain`, `rock_lump`), winding round the tube ahead of the plane.
-##
-## The angle round the bore is the share of the way round its section: 0 the floor's
-## middle, on over the +d wall, the crown near PI, down the -d wall, TAU the floor again.
-## It is a plain function of the distance, drawn from the tunnel's seed, so the same seed
-## winds the same way on every machine and he reveals a fixed line rather than deciding
-## one. He starts and ends on the floor's middle.
+## the path, and BoreLine `angle_at(s)`, the angle round the bore there. What shows is a
+## ridge of heaved rock on the bore's real surface, winding round the tube ahead of the
+## plane, and the spurs he leaves behind him (scripts/endless/bore_spurs.gd).
 ##
 ## The ridge is laid out ahead of him in rows (`_lay`, a few a frame), joined into pooled
 ## chunks that never change again: `shaders/burrower_bore_ridge.gdshader` raises each row
@@ -27,6 +21,8 @@ signal ended(why: StringName)
 
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
+const BoreLine = preload("res://scripts/endless/bore_line.gd")
+const BoreSpurs = preload("res://scripts/endless/bore_spurs.gd")
 const RIDGE_SHADER = preload("res://shaders/burrower_bore_ridge.gdshader")
 
 ## How far ahead of the plane he runs (m along the bore): about 2 s at speed.
@@ -46,12 +42,6 @@ const LOST_M := 300.0
 const OUT_S := 3.0
 const FOLLOW_S := 5.0
 
-## The winding: about one turn round the bore every WIND_M m, and a wander of up to
-## WIND_SWAY of a turn over about SWAY_M m, so he hangs on a wall and sweeps across it.
-const WIND_M := 340.0
-const WIND_SWAY := 0.4
-const SWAY_M := 300.0
-
 ## The rows: every ROW_M m (the rock's rings are 2 m), ACROSS points HALF_W m each side
 ## of his line, CHUNK rows to a mesh.
 const ROW_M := 2.0
@@ -63,9 +53,6 @@ const REACH_M := 200.0
 const ROWS_A_FRAME := 3
 ## Rows behind the plane by this much (m) are done with.
 const PAST_M := 60.0
-## Where the ridge stands off the rock's section, toward the bore's middle (a share of
-## the crown over the floor).
-const MIDDLE := 0.45
 ## The bow rises this far ahead of him (m; the shader's `bow`).
 const BOW_M := 18.0
 ## The ridge sinks back this long (s) after the chase ends.
@@ -74,9 +61,6 @@ const SINK_S := 4.0
 const GLOW_RANGE := 34.0
 const GLOW_ENERGY := 5.0
 const GLOW_TINT := Color(1.0,0.62,0.36)
-## The rock's mesh: its rings and floor as `_build_rock` lays them out.
-const RING_SEGS := LandTunnels.RING_SEGS
-const FLOOR_SEGS := LandTunnels.FLOOR_SEGS
 
 ## This chase's tunnel (null: no chase), the way he's going along it (1 from mouth A), his
 ## distance along it, his pace, how far he leads the plane.
@@ -104,6 +88,8 @@ var _spare: Array[MeshInstance3D] = []
 var _index := PackedInt32Array()
 var _mat: ShaderMaterial
 var _glow: OmniLight3D
+## The spurs, tunnel by tunnel.
+var spurs: BoreSpurs
 var _rng := RandomNumberGenerator.new()
 ## After the chase: the sink's time left.
 var _sinking := 0.0
@@ -115,7 +101,7 @@ func _init() -> void:
 	name = "BurrowerBore"
 	top_level = true
 
-func setup() -> void:
+func setup(tunnels: Node3D) -> void:
 	_mat = ShaderMaterial.new()
 	_mat.shader = RIDGE_SHADER
 	_mat.set_shader_parameter("bow",BOW_M)
@@ -130,6 +116,9 @@ func setup() -> void:
 	_glow.visible = false
 	add_child(_glow)
 	_index = _strip_index()
+	spurs = BoreSpurs.new()
+	add_child(spurs)
+	spurs.setup(tunnels)
 
 ## The chase is on.
 func running() -> bool:
@@ -161,18 +150,12 @@ func begin(t: Tunnels.Site, end: int) -> void:
 	_mat.set_shader_parameter("sink",0.0)
 	_mat.set_shader_parameter("head_s",s)
 	_lay(ROWS_A_FRAME)
-
-## The angle round the bore at distance `at` along the path of `t` (the header).
-static func angle_at(t: Tunnels.Site, at: float) -> float:
-	var q := clampf(at/t.length,0.0,1.0)
-	var turns := maxf(roundf(t.length/WIND_M),1.0)
-	var hand := 1.0 if (hash([t.seed,"bore wind"]) & 1) == 0 else -1.0
-	var sway := WIND_SWAY*TAU*t.rock.get_noise_2d(at*Tunnels.ROCK_WAVE/SWAY_M,1600.0)*sin(PI*q)
-	return hand*TAU*turns*q+sway
+	spurs.begin(t,way)
 
 ## One frame.
 func step(delta: float, game: Node3D) -> void:
 	_time += delta
+	spurs.step(delta,game.plane.position)
 	if _sinking > 0.0: _sink(delta)
 	if site == null: return
 	_mat.set_shader_parameter("now",_time)
@@ -190,6 +173,7 @@ func step(delta: float, game: Node3D) -> void:
 		return
 	var began := Time.get_ticks_usec()
 	_lay(ROWS_A_FRAME)
+	spurs.passing(s)
 	stats.worst_us = maxi(int(stats.worst_us),Time.get_ticks_usec()-began)
 	_mat.set_shader_parameter("head_s",s)
 	_drop_past(plane_s)
@@ -225,6 +209,7 @@ func _pace(delta: float, game: Node3D, plane_s: float) -> void:
 func finish(why: StringName) -> void:
 	if site == null: return
 	site = null
+	spurs.ended()
 	_glow.visible = false
 	stats.why = why
 	_sinking = SINK_S
@@ -265,27 +250,15 @@ func _lay(most: int) -> void:
 ## One row of the ridge at distance `at`: on the rock, across his line. The rock's ring
 ## is walked by metres from the angle's point, ACROSS points over HALF_W each side.
 func _lay_row(at: float) -> void:
-	var ring := _ring(at)
-	var round_m := PackedFloat32Array()
-	round_m.resize(ring.size())
-	var total := 0.0
-	for i in range(1,ring.size()):
-		total += ring[i].distance_to(ring[i-1])
-		round_m[i] = total
-	var fy := Tunnels.floor_at(site,at)
-	var pr := Tunnels.profile(site,at)
-	var on: Array = Tunnels.at_s(site,at)
-	var c: Vector2 = on[0]
-	var tg: Vector2 = on[1]
-	var n := Vector2(-tg.y,tg.x)
-	var mid := Vector3(c.x,fy+pr.z*MIDDLE,c.y)+Vector3(n.x,0.0,n.y)*((pr.y-pr.x)*0.5)
-	var u0 := fposmod(angle_at(site,at)/TAU,1.0)*total
-	var centre := _on_ring(ring,round_m,total,u0)
-	var up := (mid-centre).normalized()
+	var ring := BoreLine.ring(site,_grain,at)
+	var metres := BoreLine.round_m(ring)
+	var u0 := fposmod(BoreLine.angle_at(site,at)/TAU,1.0)*metres[metres.size()-1]
+	var centre := BoreLine.on_ring(ring,metres,u0)
+	var up := (BoreLine.middle(site,at)-centre).normalized()
 	if _centres.is_empty(): _box = AABB(centre,Vector3.ZERO)
 	for j in ACROSS:
 		var u := -1.0+2.0*j/(ACROSS-1)
-		var v := _on_ring(ring,round_m,total,u0+u*HALF_W)
+		var v := BoreLine.on_ring(ring,metres,u0+u*HALF_W)
 		# A shaft's opening has no rock to heave.
 		var whole := 0.0 if Tunnels.shaft_at(site,v.x,v.z,Tunnels.SHAFT_R-LandTunnels.SHAFT_CUT) >= 0 else 1.0
 		_verts.append(v)
@@ -294,60 +267,6 @@ func _lay_row(at: float) -> void:
 		_uv2.append(Vector2(whole,_rng.randf()))
 		_box = _box.expand(v)
 	_centres.append(centre)
-
-## The rock round the bore at distance `at`, as `_build_rock` lays it out, closed, from
-## the floor's middle on over the +d wall (the angle's way).
-func _ring(at: float) -> PackedVector3Array:
-	var at2: Array = Tunnels.at_s(site,at)
-	var c: Vector2 = at2[0]
-	var tg: Vector2 = at2[1]
-	var n := Vector2(-tg.y,tg.x)
-	var n3 := Vector3(n.x,0.0,n.y)
-	var pr := Tunnels.profile(site,at)
-	var lump := LandTunnels.rock_lump(site,at)
-	var fy := Tunnels.floor_at(site,at)
-	var hw := (pr.x+pr.y)*0.5
-	var arch := PackedVector3Array()
-	arch.resize(RING_SEGS+1)
-	# k 0 at the +d wall's foot, as the angle runs: `_build_rock`'s k backwards.
-	for k in RING_SEGS+1:
-		var q := Tunnels.profile_point(pr,PI*float(k)/RING_SEGS)
-		var x := (q.x-(pr.y-pr.x)*0.5)/hw
-		var y := q.y/pr.z
-		var g := Vector2(signf(x)*pow(absf(x),pr.w-1.0)/hw,pow(y,pr.w-1.0)/pr.z).normalized()
-		var base := Vector3(c.x,fy,c.y)+n3*q.x+Vector3.UP*q.y
-		var nz := clampf(_grain.get_noise_3dv(base)*0.5+0.5,0.0,1.0)
-		var calm := 1.0
-		for sh: Dictionary in site.shafts:
-			calm = minf(calm,smoothstep(LandTunnels.LIP_R+0.5,LandTunnels.LIP_R+4.0,Vector2(base.x,base.z).distance_to(sh.at)))
-		arch[k] = base+(n3*g.x+Vector3.UP*g.y)*lump*nz*calm
-	var plus := arch[0]
-	var minus := arch[RING_SEGS]
-	var half := FLOOR_SEGS/2
-	var ring := PackedVector3Array()
-	for k in range(half,FLOOR_SEGS): ring.append(_floor_point(minus,plus,float(k)/FLOOR_SEGS,lump))
-	ring.append_array(arch)
-	for k in range(1,half+1): ring.append(_floor_point(minus,plus,float(k)/FLOOR_SEGS,lump))
-	return ring
-
-## The floor between the wall's feet, as `_build_rock` drops it.
-func _floor_point(minus: Vector3, plus: Vector3, k: float, lump: float) -> Vector3:
-	var v := minus.lerp(plus,k)
-	if k > 0.0 and k < 1.0:
-		v.y -= lump*(site.rock.get_noise_2d(v.x*3.0,v.z*3.0)*0.5+0.5)
-	return v
-
-## The point `u` m round the ring.
-func _on_ring(ring: PackedVector3Array, round_m: PackedFloat32Array, total: float, u: float) -> Vector3:
-	var at := fposmod(u,total)
-	var lo := 0
-	var hi := round_m.size()-1
-	while hi-lo > 1:
-		var m := (lo+hi)/2
-		if round_m[m] <= at: lo = m
-		else: hi = m
-	var k := (at-round_m[lo])/maxf(round_m[hi]-round_m[lo],0.0001)
-	return ring[lo].lerp(ring[hi],k)
 
 ## The rows so far into a chunk; its last row starts the next.
 func _join() -> void:
@@ -402,7 +321,7 @@ func _place_glow() -> void:
 		return
 	var at := _centres[i].lerp(_centres[i+1],f-i)
 	var c: Vector2 = Tunnels.at_s(site,s)[0]
-	var mid := Vector3(c.x,Tunnels.floor_at(site,s)+Tunnels.profile(site,s).z*MIDDLE,c.y)
+	var mid := Vector3(c.x,Tunnels.floor_at(site,s)+Tunnels.profile(site,s).z*BoreLine.MIDDLE,c.y)
 	_glow.position = at.lerp(mid,0.18)
 	_glow.visible = true
 
