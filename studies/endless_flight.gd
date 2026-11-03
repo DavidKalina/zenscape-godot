@@ -165,6 +165,7 @@ const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
+const Raider = preload("res://scripts/endless/raider.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
@@ -338,6 +339,8 @@ var spray: Node3D
 ## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
 ## --no-burrower: none).
 var burrower: Node
+## The raider plane (scripts/endless/raider.gd; --raider: on).
+var raider: Node3D
 ## The towers that lead from the start to the ruin and the isles (scripts/endless/way_towers.gd).
 var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
@@ -789,6 +792,10 @@ func _ready() -> void:
 	smash = SurgeSmash.new()
 	add_child(smash)
 	smash.setup(self)
+	if Raider.wanted():
+		raider = Raider.new()
+		add_child(raider)
+		raider.setup(self)
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
@@ -1273,6 +1280,8 @@ func tick(delta: float) -> void:
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
 	if coast != null: coast.after(delta,events)
+	if raider != null: raider.step(delta,self,events)
+	FrameLog.mark(&"raider")
 	_near_misses(delta,events)
 	FrameLog.mark(&"near")
 	if water != null: water.step(delta,events)
