@@ -31,8 +31,15 @@ extends Node3D
 ## Flags: --birds=0 off, --birds=X how many flocks wait in the trees (1),
 ## --bird-range=X the flush reach over its default (1), --bird-size=X (1),
 ## --bird-ride=S seconds alongside (6), --ambient-birds=X the far flocks
-## (1; 0 none). The grass flocks have their own: scripts/endless/grass_birds.gd
-## (--grass-birds=X, --bird-look=dark|song); --birds=0 stops them too.
+## (1; 0 none). The grass flush has its own: scripts/endless/grass_birds.gd
+## (--grass-birds=X, --flush-gap=S, --flush-size=X, --flush-sound=N); --birds=0
+## stops it too.
+##
+## The covey (`put_covey`, `_covey`): the grass flush's birds. Each flies itself
+## here, not a place in the flock: one goes, the rest after it, a hard low
+## scramble along the flush's way with jinks and elbowing, a flare off the
+## plane's line as it nears, then level and fanning out, whirring and gliding,
+## and down into the grass one by one.
 ##
 ## Native: with the library built, a flock whose birds all fly (wheeling,
 ## alongside, peeling off or leaving) is flown in C++ (ZenScapeBirds,
@@ -142,10 +149,62 @@ const AMBIENT_GONE := 650.0
 const AMBIENT_OVER := Vector2(28.0,70.0)
 const SPECIES_LIST := ["sparrow","sparrow","robin","goldfinch"]
 
+## The covey. A bird's first spring (up, along its way, m/s); the top of its
+## climb (m/s); how hard it holds its height; how fast it takes up what it
+## wants, panicked and calmed (1/s).
+const COVEY_SPRING := Vector2(7.0,10.5)
+const COVEY_ALONG := 2.5
+const COVEY_CLIMB := 8.5
+const COVEY_HOLD := 4.0
+const COVEY_PANIC := 8.0
+const COVEY_CALM := 2.8
+## Its ragged start (s): the first alone, then the rest within COVEY_FOLLOW,
+## and COVEY_LATE of them, the slow ones, up to COVEY_LATE_BY later still.
+const COVEY_FIRST := 0.14
+const COVEY_FOLLOW := 0.42
+const COVEY_LATE := 0.16
+const COVEY_LATE_BY := Vector2(0.3,0.75)
+## The jinks: a new one every so often (s), this much (m/s across, m/s up).
+const COVEY_JINK := Vector2(0.16,0.42)
+const COVEY_JINK_SIDE := 6.5
+const COVEY_JINK_UP := 3.0
+## Elbow room (m) and how hard they keep it (m/s at touching).
+const COVEY_ROOM := 1.3
+const COVEY_SHOVE := 7.0
+## The flare: the plane this many seconds off and this near its line (m) turns
+## a bird away from the line, up to this much (m/s).
+const FLARE_TIME := 1.1
+const FLARE_NEAR := 15.0
+const FLARE := 26.0
+## The plane going by this near (m) tosses a bird (m/s), and no bird is ever
+## nearer than SWEPT (m).
+const TOSS_NEAR := 7.0
+const TOSS := 5.5
+const SWEPT := 1.8
+## Levelled, it goes on at this share of its pace and this share of its peak;
+## going down, this fast (m/s), and under this (m) it flares in.
+const LEVEL_PACE := 0.72
+const LEVEL_PEAK := 0.55
+const DOWN_SINK := 3.2
+const DOWN_FLARE := 2.0
+## The wings (rad/s; about 10 beats a second), each bird's spread on it, the
+## stroke's share down over up; once level whirring this long (s), then set
+## and gliding this long, drooped at GLIDE_BEAT.
+const COVEY_BEAT := 62.0
+const COVEY_BEATS := Vector2(0.88,1.16)
+const COVEY_STROKE := 1.3
+const WHIRR := Vector2(0.3,0.65)
+const GLIDE := Vector2(0.25,0.55)
+const GLIDE_BEAT := -0.4
+## Past this (s) a covey is over, wherever it is; or this far from the plane.
+const COVEY_LONGEST := 16.0
+const COVEY_GONE := 420.0
+
 ## Flock states. PERCH..WHEEL as before; SCATTER (wheeling over the tree,
 ## flushed on foot), FLIT (off to another tree), SETTLE (each bird coming in
-## to its perch), LEAVE (away, no tree to go to).
-enum { PERCH, BURST, RIDING, PEEL, WHEEL, SCATTER, FLIT, SETTLE, LEAVE }
+## to its perch), LEAVE (away, no tree to go to), COVEY (the grass flush, each
+## bird on its own).
+enum { PERCH, BURST, RIDING, PEEL, WHEEL, SCATTER, FLIT, SETTLE, LEAVE, COVEY }
 ## A bird's own state.
 enum { SAT, HOPPING, GROUND, FLYING, LANDING }
 
@@ -181,6 +240,17 @@ class Bird:
 	var hop_t := -1.0
 	var angle := 0.0             # where round its crown it sits
 	var height := 0.0            # how far up the crown (0 its foot, 1 the tip)
+	# In a covey.
+	var way := Vector3.FORWARD   # its own way off
+	var fan := 0.0               # how far it fans from that, -1..1
+	var peak := 0.0              # the height it climbs to (m)
+	var linger := 1.0            # its stay in the air over the covey's
+	var rate := 1.0              # its wingbeat over the covey's
+	var floor_y := 0.0           # the ground under it
+	var jink := Vector3.ZERO
+	var jink_at := 0.0
+	var whirr := 0.0             # the whirr-and-glide's clock, + beating, - set
+	var tossed := false          # the plane has gone by it
 
 class Crown:
 	var x := 0.0
@@ -214,6 +284,7 @@ class Flock:
 	var until := 0.0
 	var calm := 0.0
 	var nid := -1                # flown natively (ZenScapeBirds), or -1
+	var plan := {}               # a covey's flush (grass_birds.gd `_try`)
 
 var enabled := true
 var density := 1.0
@@ -223,7 +294,7 @@ var ride := RIDE
 var ambient := 1.0
 var flocks: Array = []
 ## The numbers (F1) and the harness: flushes so far, and the last step's ms.
-var stats := {"flushed":0,"rode":0,"peeled":0,"dropped":0,"foot_flushed":0,"settled":0,"hops":0,"ms":0.0,"ms_avg":0.0,"draw_ms":0.0}
+var stats := {"flushed":0,"rode":0,"peeled":0,"dropped":0,"foot_flushed":0,"settled":0,"hops":0,"ms":0.0,"ms_avg":0.0,"draw_ms":0.0,"covey_near":INF}
 
 var _field: RefCounted
 var _trees: Node3D
@@ -247,7 +318,7 @@ var _wing_at := [Vector3.ZERO,Vector3.ZERO]
 var _head_at := Vector3.ZERO
 ## The C++ flying and drawing (ZenScapeBirds), or null for the GDScript.
 var native: Object = null
-## The birds down in the meadow grass.
+## The grass flush: when and where its coveys go.
 var grass: Node3D = null
 
 const NATIVE_CLASS := &"ZenScapeBirds"
@@ -711,6 +782,8 @@ func _flock_step(f: Flock, delta: float, eye: Vector3, pp: Vector3, pv: Vector3,
 			f.av = f.av.move_toward(want,delta*5.0)
 			f.a += f.av*delta
 			if _gone(f,eye,GONE*0.7,25.0): return false
+		COVEY:
+			return _covey(f,delta,pp,pv)
 	# The ground under the anchor, once a frame for the flock.
 	if f.state != WHEEL:
 		f.ground = maxf(_field.height(f.a.x,f.a.z),Field.SEA_Y)
@@ -805,6 +878,208 @@ func _settle(f: Flock) -> void:
 		b.mode = FLYING
 		b.delay = 0.0
 		b.t = _rng.randf_range(-0.6,0.0)
+
+# --- The covey ---------------------------------------------------------------------
+
+func covey_room(n: int) -> bool:
+	return bird_count()+n <= MAX_BIRDS
+
+## A covey down in the grass at `at`, on ground tilted `tilt` (height per m, x
+## and z), going by `plan`. Its birds sit unseen until their turn: first the
+## one nearest `from` (where the plane will cross), the others after it.
+func put_covey(at: Vector3, tilt: Vector2, n: int, from: Vector3, plan: Dictionary) -> Flock:
+	var f := Flock.new()
+	f.state = COVEY
+	f.species = "starling"
+	f.plan = plan
+	f.size = float(plan.size)/SPAN_SHARE
+	f.a = at
+	f.heading = plan.way
+	var line: Vector3 = plan.line
+	var right := line.cross(Vector3.UP)
+	var patch: float = plan.patch
+	var way: Vector3 = plan.way
+	for i in n:
+		var b := _new_bird(f,i,n)
+		var d := Vector2.from_angle(_rng.randf()*TAU)*patch*sqrt((i+_rng.randf())/n)
+		b.spot = at+Vector3(d.x,d.x*tilt.x+d.y*tilt.y,d.y)
+		b.p = b.spot+Vector3.UP*0.1
+		b.floor_y = b.spot.y
+		b.face = Vector3.FORWARD.rotated(Vector3.UP,_rng.randf()*TAU)
+		b.mode = SAT
+		var lat := (b.spot-at).dot(right)
+		# A split covey goes both ways round the line, each to its own side.
+		b.way = way
+		if plan.split and signf(lat) != signf(way.dot(right)):
+			b.way = (way-right*way.dot(right)*2.0).normalized()
+		b.way = b.way.rotated(Vector3.UP,_rng.randf_range(-0.14,0.14))
+		b.fan = clampf(-(b.spot-at).dot(way.cross(Vector3.UP))/patch*0.7+_rng.randf_range(-0.3,0.3),-1.0,1.0)
+		b.peak = float(plan.peak)*_rng.randf_range(0.65,1.3)
+		b.linger = _rng.randf_range(0.75,1.35)
+		b.rate = _rng.randf_range(COVEY_BEATS.x,COVEY_BEATS.y)
+		b.whirr = _rng.randf_range(WHIRR.x,WHIRR.y)
+		f.birds.append(b)
+	_startle(f,from)
+	# The ripple stretched by the flush: one first, alone; a few left behind.
+	var first := INF
+	for b: Bird in f.birds: first = minf(first,b.delay)
+	var opened := false
+	for b: Bird in f.birds:
+		var k := (b.delay-first)/maxf(STARTLE_SPREAD+0.08,0.01)
+		if not opened and b.delay == first:
+			b.delay = 0.0
+			opened = true
+		else:
+			b.delay = COVEY_FIRST+k*COVEY_FOLLOW*float(plan.ragged)+_rng.randf_range(0.0,0.07)
+			if _rng.randf() < COVEY_LATE: b.delay += _rng.randf_range(COVEY_LATE_BY.x,COVEY_LATE_BY.y)
+		b.t = -b.delay
+	flocks.append(f)
+	return f
+
+## One covey's frame; false once it is over.
+func _covey(f: Flock, delta: float, pp: Vector3, pv: Vector3) -> bool:
+	var speed := pv.length()
+	var fwd := pv/speed if speed > 1.0 else f.heading
+	var n := f.birds.size()
+	var shove := PackedVector3Array()
+	shove.resize(n)
+	# Elbows, among those in the air.
+	for i in n:
+		var a: Bird = f.birds[i]
+		if a.mode != FLYING: continue
+		for j in range(i+1,n):
+			var b: Bird = f.birds[j]
+			if b.mode != FLYING: continue
+			var d := a.p-b.p
+			var l := d.length()
+			if l >= COVEY_ROOM or l < 0.001: continue
+			var push := d/l*(1.0-l/COVEY_ROOM)*COVEY_SHOVE
+			shove[i] += push
+			shove[j] -= push
+	var mid := Vector3.ZERO
+	var up := 0
+	var near := INF
+	var read := int(_clock*60.0)
+	for i in n:
+		var b: Bird = f.birds[i]
+		if b.mode == GROUND: continue
+		b.t += delta
+		if b.t < 0.0: continue
+		if b.mode == SAT: _covey_lift(b)
+		if (read+i)%6 == 0: b.floor_y = maxf(_field.height(b.p.x,b.p.z),Field.SEA_Y)
+		near = minf(near,_covey_fly(f,b,delta,pp,fwd,speed,shove[i]))
+		mid += b.p
+		up += 1
+	f.t += delta
+	if up > 0:
+		var was := f.a
+		f.a = mid/up
+		f.av = (f.a-was)/maxf(delta,0.001)
+	stats.covey_near = minf(float(stats.covey_near),near)
+	var waiting := false
+	for b: Bird in f.birds:
+		if b.mode != GROUND: waiting = true
+	return waiting and f.t <= COVEY_LONGEST and (f.a-pp).length() <= COVEY_GONE
+
+## Its turn: up out of the grass, wings flung up for the first stroke.
+func _covey_lift(b: Bird) -> void:
+	b.mode = FLYING
+	b.t = 0.0
+	b.v = Vector3.UP*_rng.randf_range(COVEY_SPRING.x,COVEY_SPRING.y)+b.way*COVEY_ALONG
+	b.beat = PI*0.5
+	b.bound = 0.0
+	b.squash = 1.0
+	b.pitch = 1.0
+	b.face = b.way
+	grass.lifted(b.spot)
+
+## One bird's frame; its distance from the plane.
+func _covey_fly(f: Flock, b: Bird, delta: float, pp: Vector3, fwd: Vector3, speed: float, shove: Vector3) -> float:
+	var plan := f.plan
+	var age := b.t
+	var level: float = plan.level
+	var calm := smoothstep(level,level+0.7,age)
+	var going_down := age > float(plan.drop)*b.linger
+	var over := b.p.y-b.floor_y
+	var way := b.way.rotated(Vector3.UP,b.fan*float(plan.fan)*smoothstep(level*0.7,level+1.0,age))
+	var pace: float = float(plan.pace)*lerpf(1.0,LEVEL_PACE,calm)*smoothstep(-0.2,0.45,age)
+	var hold := b.peak*lerpf(1.0,LEVEL_PEAK,calm)
+	var rise := clampf((hold-over)*COVEY_HOLD,-3.5,COVEY_CLIMB)
+	if going_down:
+		rise = -DOWN_SINK
+		pace *= clampf(over/DOWN_FLARE,0.45,0.8)
+	# The jinks: a new way to dart, less of them as it calms.
+	b.jink_at -= delta
+	if b.jink_at <= 0.0:
+		b.jink_at = _rng.randf_range(COVEY_JINK.x,COVEY_JINK.y)*(1.0+calm*2.5)
+		var across := way.cross(Vector3.UP)
+		b.jink = across*_rng.randf_range(-COVEY_JINK_SIDE,COVEY_JINK_SIDE)+Vector3.UP*_rng.randf_range(-COVEY_JINK_UP,COVEY_JINK_UP)*0.6
+	var want := way*pace+Vector3.UP*rise+b.jink*lerpf(1.0,0.3,calm)+shove
+	# The flare: off the line, the harder the nearer and sooner the plane is.
+	var rel := b.p-pp
+	var along := rel.dot(fwd)
+	var off := rel-fwd*along
+	var off_m := off.length()
+	var soon := along/maxf(speed,1.0)
+	if soon > -0.1 and soon < FLARE_TIME and off_m < FLARE_NEAR:
+		var flat := Vector3(off.x,off.y*0.4,off.z)
+		var side := flat.normalized() if flat.length() > 0.4 else b.way
+		want += side*FLARE*(1.0-maxf(soon,0.0)/FLARE_TIME)*(1.0-off_m/FLARE_NEAR)
+	if not b.tossed and along < 0.0:
+		b.tossed = true
+		if off_m < TOSS_NEAR:
+			var side := off.normalized() if off_m > 0.2 else Vector3.UP
+			b.v += (side+Vector3(0.0,_rng.randf_range(-0.5,0.6),0.0))*TOSS*(1.0-off_m/TOSS_NEAR)
+			b.roll += _rng.randf_range(-1.0,1.0)
+			b.jink_at = 0.0
+	b.v = b.v.lerp(want,1.0-exp(-delta*lerpf(COVEY_PANIC,COVEY_CALM,calm)))
+	b.p += b.v*delta
+	var dist := (b.p-pp).length()
+	if dist < SWEPT:
+		b.p = pp+(b.p-pp)/maxf(dist,0.01)*SWEPT
+		dist = SWEPT
+	over = b.p.y-b.floor_y
+	if going_down and over < 0.4:
+		b.mode = GROUND
+		b.spot = b.p
+		b.peck = 0.0
+		return dist
+	if over < 0.5 and not going_down:
+		b.p.y = b.floor_y+0.5
+		b.v.y = maxf(b.v.y,0.0)
+	_covey_pose(b,delta,calm,going_down,over)
+	return dist
+
+## Facing, bank and a body that follows its climb, more than a flock bird's;
+## the wings beating hard, then whirr and set glide, and hard again to come in.
+func _covey_pose(b: Bird, delta: float, calm: float, going_down: bool, over: float) -> void:
+	var flat := Vector3(b.v.x,0.0,b.v.z)
+	var was := b.face
+	if flat.length_squared() > 0.25: b.face = _turn(b.face,flat.normalized(),1.0-exp(-delta*11.0))
+	var yaw_rate := was.cross(b.face).y/maxf(delta,0.0001)
+	var bank := clampf(atan(yaw_rate*flat.length()/9.8)*0.9,-1.1,1.1)
+	b.roll = lerpf(b.roll,bank,1.0-exp(-delta*9.0))
+	var flaring := going_down and over < DOWN_FLARE
+	var pitch := clampf(atan2(b.v.y,maxf(flat.length(),0.3))*0.9,-0.6,1.25)
+	if flaring: pitch = 0.85
+	b.pitch = lerpf(b.pitch,pitch,1.0-exp(-delta*12.0))
+	b.squash = move_toward(b.squash,0.0,delta*4.0)
+	b.bound = 0.0
+	var beating := calm < 0.5 or flaring
+	if not beating:
+		if b.whirr > 0.0:
+			b.whirr -= delta
+			if b.whirr <= 0.0: b.whirr = -_rng.randf_range(GLIDE.x,GLIDE.y)
+		else:
+			b.whirr += delta
+			if b.whirr >= 0.0: b.whirr = _rng.randf_range(WHIRR.x,WHIRR.y)
+		beating = b.whirr > 0.0
+	if beating:
+		# The down stroke quicker than the way back up.
+		var stroke := COVEY_STROKE if cos(b.beat) < 0.0 else 1.0/COVEY_STROKE
+		b.beat += delta*COVEY_BEAT*b.rate*stroke
+	else:
+		b.beat = lerp_angle(b.beat,GLIDE_BEAT,1.0-exp(-delta*16.0))
 
 # --- The perched life -------------------------------------------------------------------
 

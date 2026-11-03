@@ -366,6 +366,9 @@ func part(at: Vector2, reach: float, strength := 1.0, slot := 0) -> void:
 	s.strength = WALK_STRENGTH*strength*2.2
 	s.last = time
 
+## How fast a shake's push runs out from it (m/s).
+const SHAKE_FRONT := 14.0
+
 ## How long a held stamp waits for its next call before it lets go (more than
 ## a slow frame).
 const HELD_GRACE := 0.25
@@ -448,6 +451,13 @@ func eddy(at: Vector2, way: Vector2, strength: float, reach: float) -> void:
 	# showed the tufts' roots).
 	_add({"at": at, "way": way*0.9, "strength": strength*gust_scale*0.55, "swirl": 0.0,
 		"reach": reach, "front": 0.0, "hold": 0.25, "press": eddy_press})
+
+## Something bursting out of the grass at `at` (the grass flush's birds): a
+## quick shove out from there that springs back and shakes.
+func shake(at: Vector2, reach: float, strength: float) -> void:
+	if not enabled: return
+	_add({"at": at, "way": Vector2.ZERO, "strength": strength, "swirl": 0.0,
+		"reach": reach, "front": SHAKE_FRONT, "hold": 0.0})
 
 # --- The wake (the burrower's gust) ------------------------------------------------
 

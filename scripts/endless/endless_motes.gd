@@ -91,6 +91,10 @@ const KICK_STIR := 3.5
 ## the height under which it is back in the grass and goes.
 const KICK_FROM := Vector2(0.9,1.6)
 const KICK_SINK := 0.6
+## A bird's chaff (`puff`): its fling out and up (m/s) and its size over a blade's.
+const PUFF_OUT := Vector2(0.6,2.4)
+const PUFF_UP := Vector2(2.5,6.0)
+const PUFF_SIZE := 0.5
 ## A skimming eddy's bits a second, and how low it skims (m over the ground).
 const EDDY_RATE := 10.0
 const EDDY_SKIM := 1.2
@@ -496,9 +500,18 @@ func _grass_tint(at: Vector2) -> Color:
 	var t := Patch.tint(at.x,at.y,0.5,g-Field.SEA_Y,1.0)
 	return Color(clampf(t.r,0.5,1.8),clampf(t.g,0.5,1.8),clampf(t.b,0.5,1.8))
 
+## A bird leaving the grass at `at`: a few small bits of chaff up after it.
+func puff(at: Vector2, n: int) -> void:
+	if not kick_on: return
+	var tint := _grass_tint(at)
+	for i in n:
+		var out := Vector2.from_angle(_rng.randf()*TAU)
+		var fling := out*_rng.randf_range(PUFF_OUT.x,PUFF_OUT.y)
+		_throw(at+out*_rng.randf_range(0.0,0.5),Vector3(fling.x,_rng.randf_range(PUFF_UP.x,PUFF_UP.y),fling.y),tint,PUFF_SIZE)
+
 ## A clipped blade thrown from `at` (xz, on the ground there) at `vel`, in
-## the grass's colour there (`tint`).
-func _throw(at: Vector2, vel: Vector3, tint: Color) -> void:
+## the grass's colour there (`tint`), `small` of the size.
+func _throw(at: Vector2, vel: Vector3, tint: Color, small := 1.0) -> void:
 	if native == null and _bits.size() >= KICK: _bits.pop_front()
 	var g := float(_ground.call(at.x,at.y))
 	# It stood in the grass: its length near upright, leaning the way it is
@@ -526,7 +539,7 @@ func _throw(at: Vector2, vel: Vector3, tint: Color) -> void:
 		colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),0.65)*_rng.randf_range(0.8,0.95)
 	var bit := {"pos": Vector3(at.x,g+_rng.randf_range(KICK_FROM.x,KICK_FROM.y),at.y), "vel": vel, "ground": g,
 		"age": 0.0, "life": _rng.randf_range(KICK_LIFE.x,KICK_LIFE.y),
-		"length": _rng.randf_range(KICK_LEN.x,KICK_LEN.y)*0.65, "width": _rng.randf_range(KICK_WIDTH.x,KICK_WIDTH.y)*0.8,
+		"length": _rng.randf_range(KICK_LEN.x,KICK_LEN.y)*0.65*small, "width": _rng.randf_range(KICK_WIDTH.x,KICK_WIDTH.y)*0.8*small,
 		"basis": turn, "spin": axis*spin, "phase": _rng.randf(), "landed": false,
 		"settle": _rng.randf_range(KICK_SETTLE.x,KICK_SETTLE.y), "rest": _rng.randf_range(KICK_SINK,KICK_FROM.y),
 		"colour": colour}

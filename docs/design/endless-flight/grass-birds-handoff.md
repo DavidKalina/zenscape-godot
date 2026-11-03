@@ -1,116 +1,150 @@
 # Grass birds handoff
 
-Prototype round, 2026-11-02. Birds down in the meadow grass go up in a wave
-along the plane's line as it skims low and fast, drawn dark by default.
+Second round, 2026-11-02. The first round's wave along the plane's line was
+played and rejected: too many birds, bats, a bad whirr. It's gone. Now, every
+45 s or so of flying low over meadow, a small covey goes up out of the grass
+ahead of the nose, the plane catches them and they scatter.
 
 ## Fly it
 
 ```
 .\run-endless-flight.cmd
-python tools/play.py -- --bird-look=song
-python tools/play.py -- --grass-birds=2
-python tools/play.py -- --grass-birds=0
 python tools/play.py -- --no-title --at=1093,921 --heading=-131.4 --alt=8
+python tools/play.py -- --flush-gap=12 --flush-sound=2
+python tools/play.py -- --flush-size=1.4
+python tools/play.py -- --grass-birds=0
 ```
 
-The last one starts low over a rich meadow on seed 1.
+The second starts low over a rich meadow on seed 1. Use a short `--flush-gap`
+to see several in a flight, for the look and the sound.
+
+| flag | what | default |
+|---|---|---|
+| `--flush-gap=S` | mean seconds of low meadow between flushes; a draw is S x 0.66 to 1.34 | 45 |
+| `--flush-size=X` | bird size over the default span, about 0.57 m | 1 |
+| `--flush-sound=N` | what you hear, below | 1 |
+| `--grass-birds=X` | birds in a covey over 8 to 20; 0 no flushes | 1 |
+
+## Sound
+
+Nobody here can hear them, so these are by description. Choose with `--flush-sound=N`.
+
+| N | what |
+|---|---|
+| 0 | silent |
+| 1 | alarm chatter (default): one short `chirp-*`, then 2 or 3 `twitter-*` clips overlapping within about half a second |
+| 2 | the same chatter over a very soft flutter (`flutter-loop.wav`, a second of it, faded) |
+| 3 | pips only: 3 or 4 short `chirp-*`, spaced out, no twitter |
+| 4 | the soft flutter alone |
+
+The voices sit at the covey and go with it. Gains are `CHATTER_DB`, `PIP_DB`
+and `FLUTTER_DB` in `grass_birds.gd`. By level the chatter is 5 to 13 dB under
+the first round's wings at the same distance, but it sits at 4 to 5 kHz, where
+the engine (centroid about 0.5 kHz) doesn't cover it.
 
 ## What's here
 
-- `scripts/endless/grass_birds.gd`: where coveys are, when they go, the burst,
-  the sound. A child of the birds node, stepped from its `step`.
-- `scripts/endless/dark_bird_body.gd`: the dark bird, 94 triangles, built in code.
-- `shaders/grass_birds.gdshaderinc`: the whole flight and flap, both looks.
-- `shaders/grass_birds_dark.gdshader`, `grass_birds_song.gdshader`: the looks.
+- `scripts/endless/grass_birds.gd`: when, where and how a flush goes, the grass
+  and the sound. A child of the birds node, stepped from its `step`.
+- `scripts/endless/endless_birds.gd`: the covey's flight, `put_covey` and
+  `_covey`, a flock state of its own (COVEY). Drawn with the songbird's six
+  parts through the same `_draw`, so native or not it costs no new path. Flying
+  is GDScript only; `_fly_native` never sees a covey.
+- `scripts/songbird_body.gd`: the `starling` species, dark with warm brown
+  wings and breast. Six more MultiMeshes, empty unless a covey is up.
+- `grass_react.gd` `shake`, `endless_motes.gd` `puff`: the grass where a bird left.
 
-Coveys come from a 36 m grid: a cell's hash and a slow 320 m noise pick cells,
-and only those read the land (meadow over 0.45, flat, off the water), at most
-one read a scan, up to 250 m ahead. The same meadow has them in the same
-places every flight. A covey goes when the wave's front, 1.25 s ahead of the
-nose, reaches it; birds within 62 m of the line go, later toward the sides.
-Height decides how many: all under 16 m, none over 34 m. Speed: none under
-16 m/s, all over 30 (medium cruise is 36.5, Boost 56).
+Removed: `dark_bird_body.gd`, the shader ring, `shaders/grass_birds*`,
+`--bird-look`, the 36 m covey grid and its patches, the whirr.
 
-A burst writes its birds to a MultiMesh ring once. The shader flies each from
-its start time and launch; only `clock` is set each frame, and only while
-birds fly. The song look uses the same flight, with the songbird's body merged
-into one mesh per species and a single stiff wing hinge.
+## How a flush goes
 
-Tuning is at the top of `grass_birds.gd`: `PATCH_OVER` and `CELL_SHARE` for how
-often, `COVEY` and `RADIUS` for how thick, `LEAD` for how far ahead,
-`LAUNCH_*` and `AWAY_*` for how they scatter, `SPAN_DARK` for size. The beat
-rates are at the top of the shader include.
+**When.** Every 0.25 s it reads the place: under 24 m off the ground, off the
+wheels, at least 24 m/s, meadow over 0.45 one second's flight ahead. Only those
+seconds count down, so rarity is in time, whatever the meadow holds. The wait
+is drawn afresh after each flush. A due flush that finds no spot retries at the
+next read. The first of a flight comes at 0.3 to 0.6 of a gap.
 
-## Cost
+**Where.** 1.4 to 1.9 s ahead along the line, bent by the plane's smoothed turn,
+mostly within 4 m of it, 35% of the time 7 to 16 m out. The spot must be meadow,
+flat and dry, on screen, with no rise of land between the eye and it.
 
-Rendered, 1920x1080, Boost, the rich meadow, 9 s, this PC, medium, harness
-preset. Off vs default vs 3x, repeated for off and 3x:
+**How.** The birds fly on ahead of the plane at 13 to 19 m/s and it catches them
+in 2.5 to 3 s at cruise. So each flush is aimed: a miss distance of 1.5 to 10 m
+at the moment it catches them, on the side they rose from or, 30% of the time,
+across the nose; the slant follows from that. Height, pace, count, patch size,
+fan and raggedness are drawn too. A covey close on the line splits round it
+about a third of the time.
 
-| | off | default | 3x |
-|---|---|---|---|
-| birds in the run | 0 | 2786 | 8353 |
-| GPU render, median ms | 11.52, 11.52 | 11.71 | 11.72, 11.69 |
-| GPU render, p99 ms | 12.53, 12.57 | 12.66 | 12.77, 12.65 |
-| render CPU, p95 ms | 2.43, 2.32 | 2.33 | 2.30, 2.40 |
-| birds step, worst frame ms | 0.38, 0.30 | 0.63 | 1.42, 1.47 |
-| birds step, mean ms | 0.10, 0.10 | 0.13 | 0.14, 0.15 |
-
-So about 0.2 ms GPU with the ring full (1500 birds, shadows on). A burst is
-0.15 to 0.4 ms in GDScript on the frame it goes, and a land read about 0.1 ms.
-
-This is a driven run, not a hand flight. The real check is a user flight with
-`--frame-log`, looking at the `birds` part.
-
-## Native
-
-No C++ was added and NATIVE_VERSION is still 1: there is no per-bird work
-after the burst to move. If a port is ever wanted, `_burst`'s loop is it. The
-toolchain is on this PC (SCons 4.8.1 under Python 3.11, BuildTools MSVC,
-`builds/godot-cpp` in the main checkout), but no build was run this round.
+**The birds.** One goes first, alone. The rest follow nearest the line first
+over about half a second; about one in six is late by up to 0.75 s more. Each
+flies itself: a hard low scramble to 2 to 8 m with jinks and elbowing, a flare
+off the plane's line in the last second (`FLARE_*`), a toss from the plane going
+by, then level, fanning, whirr and set glide, and down into the grass. Tuning is
+at the top of each file: `COVEY_*`, `FLARE_*`, `WHIRR`, `GLIDE` in `endless_birds.gd`.
 
 ## Proof
 
-Smoke passes, dark and song. Driven through the real input (`scratch/gb_pass.gd`,
-`gb_wave.gd`, `gb_view.gd`, not committed), medium, stick wobble on:
+Smoke passes. `scratch/` drivers, not committed: `flush_low.gd`, `flush_film.gd`,
+`flush_close.gd`, `flush_same.gd`, `flush_ms.gd`.
 
-| flight | bursts | birds |
-|---|---|---|
-| 7 m over the rich meadow, 10 s | 22 | 1732 |
-| same on Boost | 34 | 2710 |
-| 24 m | 21 | 780 |
-| 45 m | 0 | 0 |
-| another meadow, 30 s | 39, then none for the last 12 s | 3098 |
-| the start, Boost, 30 s | 1 | 67 |
+**The gaps.** Ten simulated minutes each through the real loop, medium, 9 m with
+a stick wobble, the driver hopping to a new meadow when one ran out or it crashed
+(38 and 54 hops). Seconds of low meadow between flushes, the first one left out:
 
-Start delay against distance along the line correlates about 0.7 per burst:
-nearest first, with the side delay and jitter on top.
+| flight | flushes | low meadow | gaps (s), low meadow | mean | wall-clock gaps (s) |
+|---|---|---|---|---|---|
+| no Boost, 36 m/s | 10 | 461 s of 600 | 34.5, 35.8, 40.3, 40.5, 41.8, 44.0, 47.5, 49.0, 50.5 | 43.4 | 47 to 68 |
+| Boost, 54 m/s | 9 | 412 s of 600 | 32.5, 37.5, 38.5, 39.5, 43.3, 46.0, 53.5, 56.0 | 44.8 | 44 to 82 |
+
+The draw can't go below 29.7 or above 60.3 s of low meadow at the default, and a
+failed spot adds up to a few reads. Birds came no nearer than 7.8 m in these
+runs. Across both: 8 to 20 birds, 5 crossed the nose, 7 split round it.
+
+**Cost.** Rendered, 1440x900, medium, flying the rich meadow, the birds' whole
+step: median 0.41 ms with a covey up, against 0.13 without; p99 0.89 and most
+2.55 with, 0.75 and 1.42 without. A flush going is 0.3 to 0.5 ms and a read
+0.05 ms. No C++: 20 birds for a few seconds in 45, and it stays well under a
+perched flock's worst frame.
+
+**Never touches the flight.** The same scripted stick with flushes and with
+`--grass-birds=0`, three flushes in the first, down to a landing and a stop:
+identical to the printed digits, touchdown at 14.15 s in both. Nothing here
+writes to the plane; birds have no colliders, and none comes nearer than
+`SWEPT` (1.8 m).
+
+Motion was judged from consecutive frames, chase camera, 20 stills a second,
+medium, stick wobble on, plus a fixed eye in the meadow beside the covey. It
+read as a ragged scatter of small birds and the close view as real birds with
+real wing poses. Those sequences are in `scratch/film/` (not committed).
 
 ## Not verified
 
-- The sound by ear. Five voices played the clips in rendered runs, but whether
-  they sit over the engine at speed is a guess from levels: `wings-1..4.wav` are
-  about -20 dB RMS, the engine loop -15, and they get +1 to +9 dB. `WING_DB` is
-  the knob.
-- Mac and low presets. Shadows are on and were not measured apart.
-- By hand. The stills are from a straight autopilot.
-- Whether the wing blur reads in motion: the stills show poses, not the 17 Hz
-  beat as seen at 60 fps.
+- The sound by ear, all options. Levels are from the files, and that the voices
+  play is from the run below.
+- Whether it feels panicked in motion. Stills show poses and paths, not the
+  10 Hz beat or the timing at 60 fps. The user's eye decides.
+- The grass shake by eye. The stamps go in (14 to 19 more alive than without),
+  but no still shows it clearly. The chaff shows as pale specks up close, not
+  from the chase camera. The fixed-eye film draws a far-grass view, not the near
+  tufts, so it can't show it either.
+- By hand. Everything is a stick script with a wobble. With a big turn the bent
+  line guesses wrong and a covey goes wider of the nose.
+- Size. 0.57 m reads as specks until the plane is close; `--flush-size` is there.
+- The fan and the drop into the grass mostly happen behind the camera. Their
+  frames were only seen from the fixed eye, and only the early part.
+- Mac, low presets. No test touches the birds; the full suite wasn't run.
 
 ## Seen and left
 
-- Birds passing in front of clouds leave a faint grey ghost in the cloud, and
-  any opaque edge there (a spruce too) gets a thin blue fringe. It looks like
-  the clouds' own pass rather than the birds, but that wasn't traced.
-- In a rich meadow the bursts run almost without a break (0.1 to 1.5 s apart).
-  That is the running trail asked for; if it's too constant, raise `PATCH_OVER`.
-- A bird climbing near a hillside can go through it: the shader doesn't know
-  the land. Coveys are on flat ground, so it's rare and far behind the plane.
-- No test touches the birds, so none breaks. The full suite wasn't run.
+- The first birds sit visible on the ground for a moment where the grass is thin.
+  In the near tufts they're hidden; from the chase camera they're too far to tell.
+- `film` views other than `play` draw the ground without near tufts and with
+  clouds reflected into it. It's the harness's camera, not the game.
 
 ## Model budget
 
-The dark bird is 94 triangles with no textures, so most of the list doesn't
-apply: no sculpt bake, parallax, rigid parts or grime, and silhouette geometry
-is the mesh itself. Import LODs: none. A far LOD with fewer body sides would
-save perhaps 30 triangles a bird, about 45k across 1500, under 0.05 ms at the
-0.2 ms measured; not worth a second draw call. Song uses the existing meshes.
+No new geometry: the songbird's meshes in a new palette, so sculpt bake, parallax,
+rigid parts and grime don't apply. Birds are drawn at any distance with no LOD;
+a far LOD would save little at 20 birds, about 9k triangles at most for a few
+seconds, well under 0.1 ms.

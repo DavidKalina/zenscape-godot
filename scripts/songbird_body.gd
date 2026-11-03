@@ -13,6 +13,7 @@ const SPECIES := {
 	"sparrow":{"title":"House sparrow","body":"8c6c4e","head":"7d6450","wing":"6a4f37","breast":"b49c80","tail":"5c4431","beak":"8a7a66","legs":"5b4a3a"},
 	"robin":{"title":"Robin","body":"7a6752","head":"7a6752","wing":"6a5845","breast":"c7663f","tail":"5f4f40","beak":"3a3330","legs":"6b5847"},
 	"goldfinch":{"title":"Goldfinch","body":"b89a52","head":"c8a948","wing":"3f3a33","breast":"d9c27a","tail":"34302b","beak":"d9c3a5","legs":"8a7a6a"},
+	"starling":{"title":"Starling","body":"38302a","head":"302925","wing":"4e3826","breast":"5a4230","tail":"2a2421","beak":"6e5c3c","legs":"4a3a2c"},
 }
 const HEAD_AT := Vector3(0,0.29,-0.12)
 const SHOULDER := Vector3(0.12,0.18,0.045)
