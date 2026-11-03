@@ -16,9 +16,9 @@ const PRIORITY := 7
 ## The rings: tile (m), shown from, gone by (m from the eye), card size (m),
 ## cards, life (s, least and most), climb (m).
 const RINGS := [
-	{"tile":720.0, "from":0.0, "to":340.0, "size":7.0, "cards":1800, "life":Vector2(1.6,2.6), "climb":8.0},
-	{"tile":1900.0, "from":280.0, "to":900.0, "size":15.0, "cards":1800, "life":Vector2(2.0,3.2), "climb":12.0},
-	{"tile":4800.0, "from":760.0, "to":2300.0, "size":34.0, "cards":2000, "life":Vector2(2.4,3.8), "climb":16.0},
+	{"tile":720.0, "from":0.0, "to":340.0, "size":6.0, "cards":1800, "life":Vector2(1.2,2.0), "climb":4.0},
+	{"tile":1900.0, "from":280.0, "to":900.0, "size":10.0, "cards":1800, "life":Vector2(1.4,2.4), "climb":5.0},
+	{"tile":4800.0, "from":760.0, "to":2300.0, "size":17.0, "cards":2000, "life":Vector2(1.6,2.8), "climb":6.0},
 ]
 ## The surge uniforms the cards read as the sea does (EndlessSea's material).
 const SHARED := ["surge_edge","surge_belt","surge_size","surge_peak","surge_break","swell_heading"]
