@@ -19,6 +19,7 @@
 #include "land_field_bind.h"
 #include "land_carve_bind.h"
 #include "ground_bind.h"
+#include "tree_solid_bind.h"
 #include "grass_cell.h"
 #include "tree_cell.h"
 #include "flight_fx.h"
@@ -331,6 +332,7 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeLandBand>();
     ClassDB::register_class<ZenScapeCarve>();
     ClassDB::register_class<ZenScapeGround>();
+    ClassDB::register_class<ZenScapeTreeSolid>();
     ClassDB::register_class<ZenScapeGrass>();
     ClassDB::register_class<ZenScapeTrees>();
     ClassDB::register_class<ZenScapeMotes>();

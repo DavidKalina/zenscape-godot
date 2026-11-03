@@ -59,6 +59,13 @@ stay GDScript. `carve_version` (LandField `CARVE_VERSION`) gates a stale
 library; `--ground-native=0` (or `--gdscript-kernels`) cuts them in GDScript.
 Like the field it uses land_math.h's sin/cos/atan2 unless `--land-libm`.
 
+`tree_solid_bind.h` (`ZenScapeTreeSolid`) is LandTrees `tree_in` / `top_at`
+over the stood trees' flight solid: each plan cell's `solid` is published
+as its block stands, a tree in it is knocked or the block goes, and a query
+reads the 3 x 3 buckets in C++ in double, bit for bit the GDScript's. Main
+thread only. `version` (LandTrees `SOLID_VERSION`) gates a stale library;
+`--ground-native=0` (or `--gdscript-kernels`) asks the GDScript.
+
 ## The endless grass
 
 `grass_cell.h` is `scripts/endless/endless_grass.gd` `grow_cell` past its

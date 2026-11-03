@@ -236,6 +236,7 @@ static func flags_of(w: RefCounted) -> Dictionary:
 
 func setup(land_seed: int) -> void:
 	seed = land_seed
+	_solid_setup()
 	world = WorldProfile.current()
 	var f := flags()
 	enabled = f.on
@@ -1155,6 +1156,7 @@ func _commit(done: Dictionary) -> void:
 	if not (done.floor as Dictionary).is_empty(): holder.add_child(_floor_node(done.floor,_near_floor))
 	add_child(holder)
 	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n),"tiles":done.get("tiles",{}),"sprites":grouped,"sprite_at":{}}
+	for ck: Vector2i in done.cells: _publish_cell(ck,done.cells[ck].solid)
 	if not grouped.is_empty(): _regroup(_group_of(key))
 	if not knocked.is_empty():
 		var here := _knocked_in(key.x*BLOCK,key.y*BLOCK,BLOCK)
@@ -1190,6 +1192,7 @@ func _free_block(key: Vector2i) -> void:
 		if t.x == key.x and t.y == key.y: _tiles.erase(t)
 	stats.trees -= int(b.n)
 	for ck: Vector2i in b.cells:
+		if _solid_n != null: _solid_n.drop_cell(ck.x,ck.y)
 		if _bodies.has(ck):
 			(_bodies[ck] as Node).queue_free()
 			_bodies.erase(ck)
@@ -1268,6 +1271,34 @@ func _shrink_sprite(bkey: Vector2i, v: int, i: int, at: Vector3) -> void:
 
 # --- The solid -----------------------------------------------------------------
 
+## The stood trees' solid in C++ (ZenScapeTreeSolid, native/terrain_kernels/
+## tree_solid_bind.h): each plan cell's `solid` published as its block stands,
+## a tree in it is knocked or the block goes; `tree_in` and `top_at` ask it
+## (one call, not 9 bucket lookups in GDScript), bit for bit the GDScript's.
+## Off with --ground-native=0, --gdscript-kernels, no library or a stale one.
+const SOLID_CLASS := &"ZenScapeTreeSolid"
+const SOLID_VERSION := 1
+var _solid_n: Object
+## The native solid answers (false: the GDScript below, for comparisons).
+var solid_native := false
+
+func _solid_setup() -> void:
+	_solid_n = null
+	solid_native = false
+	if not GroundNative.wanted() or not Field.native_available() or not ClassDB.class_exists(SOLID_CLASS): return
+	var n: Object = ClassDB.instantiate(SOLID_CLASS)
+	if int(n.version()) != SOLID_VERSION: return
+	n.setup(BUCKET,Plan.CELL)
+	_solid_n = n
+	solid_native = true
+	for key: Vector2i in _blocks:
+		var cells: Dictionary = _blocks[key].cells
+		for ck: Vector2i in cells: _solid_n.set_cell(ck.x,ck.y,cells[ck].solid)
+
+## The solid of cell `ck` to the native side.
+func _publish_cell(ck: Vector2i, solid: PackedFloat32Array) -> void:
+	if _solid_n != null: _solid_n.set_cell(ck.x,ck.y,solid)
+
 func _cell_data(ck: Vector2i) -> Variant:
 	var per := int(BLOCK/Plan.CELL)
 	var b: Variant = _blocks.get(Vector2i(floori(float(ck.x)/per),floori(float(ck.y)/per)))
@@ -1286,6 +1317,7 @@ func cell_trees(ck: Vector2i) -> PackedFloat32Array:
 func top_at(p: Vector3) -> float:
 	if GroundTally.on: GroundTally.tick(&"trees.top_at")
 	if _blocks.is_empty(): return -INF
+	if solid_native: return float(_solid_n.top_at(p.x,p.z))
 	var best := -INF
 	var bx := floori(p.x/BUCKET)
 	var bz := floori(p.z/BUCKET)
@@ -1438,6 +1470,14 @@ static func tree_key(x: float, z: float) -> Vector2i:
 func tree_in(p: Vector3, body: bool, above := 0.0) -> Dictionary:
 	if GroundTally.on: GroundTally.tick(&"trees.tree_in")
 	if not enabled or _blocks.is_empty(): return {}
+	if solid_native:
+		var hit: PackedFloat64Array = _solid_n.tree_in(p.x,p.y,p.z,body,above)
+		if hit.is_empty(): return {}
+		var hck := Vector2i(int(hit[0]),int(hit[1]))
+		var hs: PackedFloat32Array = _cell_data(hck).solid
+		var q := int(hit[2])*8
+		return {"ck":hck,"i":int(hit[2]),"x":hs[q],"z":hs[q+1],"foot":hs[q+2],"height":hs[q+3],"bottom":hs[q+4],
+			"radius":hs[q+6],"reach":hs[q+5],"depth":hit[3]-p.y}
 	var best := {}
 	var bx := floori(p.x/BUCKET)
 	var bz := floori(p.z/BUCKET)
@@ -1549,7 +1589,9 @@ func _hide_block(bkey: Vector2i, keys: Dictionary, out: Dictionary) -> void:
 				out.variant = v
 				out.trunk = Transform3D(Basis(Vector3.UP,pose[t*3+2]).scaled(Vector3(sc*wide,sc,sc*wide)),foot)
 				out.tone = _tone_of(bkey,bi)
-		if changed: cell.solid = solid
+		if changed:
+			cell.solid = solid
+			_publish_cell(ck,solid)
 	# The detail squares: out of their buffers, and those standing made again.
 	var tiles: Dictionary = b.get("tiles",{})
 	var per_sub := int(BLOCK/DETAIL_TILE)
