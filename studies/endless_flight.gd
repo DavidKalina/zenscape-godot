@@ -108,7 +108,8 @@ extends Node3D
 ## (scripts/endless/land_trees.gd): --no-trees, --forest=X (their share, 1),
 ## --forest-meadows=X (how far onto the meadows, as groves, 1; 0 none).
 ## The birds (scripts/endless/endless_birds.gd): --birds=0 off, --birds=X,
-## --bird-range=X, --bird-size=X, --bird-ride=S, --ambient-birds=X.
+## --bird-range=X, --bird-size=X, --bird-ride=S, --ambient-birds=X; the grass
+## flush: --grass-birds=X, --flush-gap=S, --flush-size=X, --flush-sound=N.
 ## Other planes (scripts/endless/endless_traffic.gd): --traffic=0 off,
 ## --traffic=N how many (3), --trails=0 no smoke trails.
 ## The plane's speed (SkyPlane FLIGHT_SPEED, use_flight_speed): --plane-speed=X
@@ -713,6 +714,9 @@ func _ready() -> void:
 				snow = PeakSnow.new()
 				add_child(snow)
 				snow.setup(seed,look.ground,peak,field)
+	if birds.grass != null:
+		birds.grass.react = react
+		birds.grass.motes = motes
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	_build_ui()
 	_hud.visible = _numbers
