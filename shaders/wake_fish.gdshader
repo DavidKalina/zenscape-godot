@@ -147,10 +147,10 @@ void fragment() {
 	float sky_luma = dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722));
 	vec3 lift = mix(zs_hemi_sky, vec3(sky_luma), 0.7) * zs_hemi_energy * shade_lift * mix(0.1, 1.0, zs_daylight) * mix(1.0, 0.3, sunward);
 	EMISSION = base * (hemi * fill_here + lift) + mix(base, vec3(0.85), 0.6) * flank_share * (sky * mirror + vec3(sun_in_it * flash * zs_daylight));
-	// A wet fin out of the water: the sky off it, most where it's seen edge on.
-	if (fin > 0.5 && fin_wet > 0.0) {
+	// A wet fin or back out of the water: the sky off it, most where it's seen edge on.
+	if (fin_wet > 0.0) {
 		float edge_on = 1.0 - abs(dot(NORMAL, VIEW));
-		EMISSION += sky * fin_wet * (0.08 + 0.92 * edge_on * edge_on * edge_on);
+		EMISSION += sky * fin_wet * (fin > 0.5 ? 1.0 : 0.8) * (0.08 + 0.92 * edge_on * edge_on * edge_on);
 	}
 	// Under the water its colours go to the water's, and the sun's shine with them.
 	if (under > 0.0) {

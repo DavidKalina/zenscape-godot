@@ -60,7 +60,7 @@ const FORE := Vector2(-2.0,4.0)
 const CRUISE_ON := 5.0
 const BOOST_SPEED := Vector2(42.0,54.0)
 const SIDE := Vector2(5.0,6.5)
-const DEPTH := 0.9
+const DEPTH := 0.5
 const START := Vector3(-16.0,11.0,4.0)
 const GONE := Vector3(-30.0,13.0,5.5)
 ## How far its slot wanders (m; down only, never shallower than DEPTH) and how
@@ -88,7 +88,7 @@ const FIN_TOP := 0.167
 ## fin alone grows to it (shaders/wake_fish.gdshader `dorsal_lift`), the body
 ## stays down. Margin over the swell `height_at` misses, so it doesn't sink in
 ## and out at speed.
-const FIN_OUT := 0.75
+const FIN_OUT := 0.4
 ## Under the water its tail's upper lobe is this much lower (a share of its
 ## height), back to whole as it comes out: the swell's troughs, which `height_at`
 ## doesn't all follow, laid it bare as a black cut-out.

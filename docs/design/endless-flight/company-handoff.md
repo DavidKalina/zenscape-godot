@@ -15,7 +15,7 @@ Loop `ITER(company)`, spec `spec-sky-and-water-company.md`. Two lanes, merged on
 
 ## Open
 
-- The swimmer's fin now stands 0.75 m out with spray (judged in stills, noon and 16.2, Boost and cruise); not yet played. Its back still breaks a trough as a black patch now and then (about 1 still in 25): `height_at` misses the FFT chop. The gap driver wasn't rerun and the droplets' frame cost wasn't measured.
+- The swimmer's fin was a grown stalk 0.9 m over a body painted by the sea, and read detached when the camera panned. Now the fish rides 0.5 m down and its own dorsal (barely lifted) cuts the surface; judged in free-camera stills (side, ahead, behind, high, low, 8-25 m, noon and 18:00) and the chase film; not yet played. Its back now breaks the surface as a dark wet shape in troughs (a sheen added). The gap driver wasn't rerun and the droplets' frame cost wasn't measured. No foam collar was added: the existing spray and bow wave mark the waterline.
 - Off Boost at evening (24 m from the eye) the fin is a small dark mark.
 - With a hill ahead, some escort birds end up against land instead of sky.
 - The escort's timing is seeded by the land, so the same flight repeats the same sequence.
