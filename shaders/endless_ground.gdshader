@@ -823,7 +823,9 @@ void fragment() {
 		rp_swell = zs_region_mix3(rw, grass_swell_r);
 	}
 	// The wind by place (wind_field): windy grass rolls, calm grass stands.
-	if (rp_swell.x > 0.0) rp_swell.x *= zs_wind_swell_at(p.xz);
+	// (Read once here for the whole pixel: zs_wind_here.)
+	vec2 wind_h = zs_wind_here(p.xz);
+	if (rp_swell.x > 0.0) rp_swell.x *= zs_wind_swell_here(wind_h);
 	vec3 n = normalize(world_normal);
 	if (!FRONT_FACING) n = -n;
 	// A pixel's footprint on the ground (m): between its short and long
@@ -1018,7 +1020,7 @@ void fragment() {
 		float crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
 		crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
 		crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
-		float air = clamp(zs_wind_local(gxz), 0.0, 2.0);
+		float air = clamp(zs_wind_local_here(wind_h), 0.0, 2.0);
 		// (Grass that blows as one keeps their mean: the swell carries the motion.)
 		float crest = mix(crest_near * 0.35 + crest_far * 0.65, 0.35, rp_swell.x) * air * wind_sheen;
 		// Velvet: turf seen low catches the light along its blades.
@@ -1164,7 +1166,7 @@ void fragment() {
 			// (From high up the lattice-free drive; near, the tufts' own, so the two meet.)
 			float silver_flip = zs_silver_drive(gxz, fp);
 			if (high_paint_old < 0.5 && wc_up > 0.0) silver_flip = mix(silver_flip, zs_silver_drive_smooth(gxz, fp), wc_up);
-			if (rp_swell.x > 0.0) silver_flip = mix(silver_flip, zs_swell_silver(zs_sheen_field(gxz, fp, rp_swell.x)), rp_swell.x * zs_wind_silver_at(gxz));
+			if (rp_swell.x > 0.0) silver_flip = mix(silver_flip, zs_swell_silver(zs_sheen_field_here(gxz, fp, rp_swell.x, wind_h)), rp_swell.x * zs_wind_silver_here(wind_h));
 			grass = zs_silver_paint_hue(grass, silver_flip, 1.0 - thin * 0.6, 0.8, rp_silver);
 		}
 		// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
@@ -1172,9 +1174,9 @@ void fragment() {
 			float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
 			// From high up the paint's washes take over, but where the field's wind
 			// rolls the grass its swells keep reading (zs_wind_up_sheen).
-			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up * (1.0 - zs_wind_up_sheen(gxz, rp_swell.x)));
+			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up * (1.0 - zs_wind_up_sheen_here(wind_h, rp_swell.x)));
 			float sheen_s = 0.0;
-			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field(gxz, fp, rp_swell.x);
+			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field_here(gxz, fp, rp_swell.x, wind_h);
 			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s * rp_swell.z, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
 			// The far grass as a fine lawn (far_lawn.gdshaderinc), from past the tufts.
 			if (grass_lawn.x > 0.0) {
@@ -1502,8 +1504,8 @@ void fragment() {
 		// cat's paws on windy stretches (dark: their ripples dull the mirror).
 		float paw = 0.0;
 		if (zs_wind_on() && river_paws.x > 0.0) {
-			float paw_reach = zs_wind_reach(p.xz);
-			float paw_ww = zs_wind_local(p.xz);
+			float paw_reach = wind_h.y;
+			float paw_ww = zs_wind_local_here(wind_h);
 			float paw_pool = 1.0 - smoothstep(0.05, 0.3, spd);
 			float paw_glass = (1.0 - smoothstep(river_paw_wind.z, river_paw_wind.w, paw_ww)) * paw_pool * river_paws.w * paw_reach;
 			slope *= 1.0 - paw_glass;

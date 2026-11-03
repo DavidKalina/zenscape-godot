@@ -76,7 +76,8 @@ float zs_sheen_band(vec2 position, float travel) {
 // -1..1: how far the blades at `p` lean downwind of their mean, a pixel there
 // `fp` m across, `swell` grass_swell.x there. Each train fades to its mean as
 // the pixel outgrows it.
-float zs_sheen_field(vec2 p, float fp, float swell) {
+// `h` the wind field read there (zs_wind_here; zs_sheen_field reads it).
+float zs_sheen_field_here(vec2 p, float fp, float swell, vec2 h) {
 	float travel = zs_sheen_distance;
 	vec4 crest = vec4(
 		zs_sheen_crest(p, grass_sheen_waves.x, ZS_BREEZE_WAVE_SPEED, zs_grass_offset, travel),
@@ -92,9 +93,12 @@ float zs_sheen_field(vec2 p, float fp, float swell) {
 	// blades hard downwind.
 	float band = zs_sheen_band(p, travel);
 	// (A world's wind field: the breeze at `p`, near still where it's calm.)
-	float air = zs_wind_on() ? clamp(zs_wind_breeze_at(p) / 0.53, 0.1, 1.6) : clamp(zs_breeze_air() / 0.53, 0.35, 1.6);
+	float air = zs_wind_on() ? clamp(zs_wind_breeze_here(h) / 0.53, 0.1, 1.6) : clamp(zs_breeze_air() / 0.53, 0.35, 1.6);
 	float s = w * mix(ZS_SWELL_GAIN.x, ZS_SWELL_GAIN.y, swell) * band * air + zs_front_at(p, 0.0) * 1.2;
 	return clamp(s, -1.0, 1.0);
+}
+float zs_sheen_field(vec2 p, float fp, float swell) {
+	return zs_sheen_field_here(p, fp, swell, zs_wind_here(p));
 }
 
 // How far the undersides show from the swell's lean `s`, for grass that blows

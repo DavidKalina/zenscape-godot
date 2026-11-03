@@ -253,6 +253,14 @@ zs_wind_patch_4={
 "type": "vec4",
 "value": Vector4(0, 0, 1, 0)
 }
+zs_wind_near_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wind_near_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_inversion={
 "type": "vec2",
 "value": Vector2(0, 0.21)

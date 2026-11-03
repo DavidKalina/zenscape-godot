@@ -118,25 +118,56 @@ Spots on seed 1 at the afternoon peak (add `--at=x,z`):
 
 ## Cost
 
-A first number from held views on the Mac (the harness's
-`tools/harness/look_views.gd --time=300`, 1440x900 at 3D scale 0.8, vsync
-off, 15:00 breezy vs `--wind=off`, two runs each, median ms per frame):
+Measured on the Mac (M5 Pro, 1440x900 at 3D scale 0.8, vsync off, 15:00
+breezy), held views, median ms per frame. Separate runs drift by a ms or
+more (other work on the machine), so the split was measured in one run:
+`scratch/cost_ab.gd` (a look_views driver, uncommitted) alternates 40-frame
+blocks with the field's shader paths on (`full`) and off (`zs_wind_field.w`
+0: the old paths, the same eye wind) and takes each one's median.
 
-| View | Wind on | Wind off | Cost |
-|---|---|---|---|
-| meadow_low (5 m over a meadow) | 28.6 / 30.1 | 26.2 / 26.4 | about +3 ms |
-| forest (14 m by the woods) | 48.6 / 49.4 | 46.7 / 46.3 | about +2.5 ms |
-| wood (60 m up, a wood ahead) | 30.6 / 32.1 | 31.4 / 30.6 | in the noise |
-| cruise (45 m up) | 31.2 / 31.8 | 30.9 / 31.0 | about +0.5 ms |
-| high (260 m up) | 23.0 / 22.9 | 23.6 / 24.9 | none |
+| meadow_low (5 m over a meadow) | before | after |
+|---|---|---|
+| `--wind=off` | 26.3 | 26.3 |
+| breezy, field paths off | 27.4 | 26.8 |
+| breezy | 28.55 | 27.2 |
+| the wind's cost | +2.25 | about +0.9 |
 
-So near the ground it costs about 10% of the Mac's frame; from height,
-next to nothing. It isn't the swell: `--swell=0` (field on, swell paths
-off) measured the same (29.2, 48.6). Not split yet between the CPU (the
-eddies' GDScript: each head's trail and up to ~110 moved stamps a frame on
-a windy spot) and the GPU (the field's texture read and blobs per near
-crown vertex, per tuft, per ground and water pixel). Not measured on the
-PC, and not in a flown flight: a frame log of a low, fast flight
-(`python3 tools/play.py -- --frame-log=res://scratch/f1.csv`, then
-`python3 tools/frame_report.py scratch/f1.csv`, once with `--wind=off`)
-would split it.
+The forest view (14 m by the woods): 48.9 before, 48.0 after, 46.4 with
+`--wind=off` (+2.5 to +1.6). From height it costs next to nothing (the
+older table: cruise about +0.5, high and wood in the noise).
+
+Where it went, and what was cut (the look kept: stills before and after
+match to SSIM 0.9999, PSNR 61 to 65 dB, in scratch/trim_shots/*_pre.png vs *_post2.png):
+
+- It was the GPU, not the eddies. Held views don't run the eddies at all
+  and still paid it; with the field's paths off in the same run, 1.1 ms
+  went. Of that, the field's texture fetch, five blobs and reach were
+  ~0.85 ms (`fixed` field: +0.25).
+- Most of it was the far tufts (20 to 230 m, millions of vertices): a
+  stand-in field there alone took 1.3 ms off. Each vertex read the field
+  twice (its swell share, then the sheen's breeze) and the ground pixel up
+  to five times. Now each reads it once (`zs_wind_here` and the `*_here`
+  helpers in `wind_field.gdshaderinc`; the ground, far and near tufts):
+  -0.9 ms.
+- A far tuft reads it only when it shows (its ring keep over 0).
+- The far tufts (all within 230 m of the eye) take the patches' sum as its
+  second-order form round the eye (`ZS_WIND_NEAR_ONLY`,
+  `zs_wind_spots_near`; EndlessLook publishes `zs_wind_near_0/1` from
+  `WindField.spots_near` each frame), not five exps: under 0.007 a blob
+  off within 400 m. -0.5 ms, repeated (27.77/27.75 vs 27.27/27.13).
+- What's left: ~0.4 ms of the field paths (one texture fetch a vertex and
+  pixel) and ~0.5 ms that comes with the wilderness's swell paint
+  (`grass_swell`, `zs_grass_lean`): it stays even at `--swell=0`, and
+  dropping any one of its paint lines took off about half; not pinned down.
+- The eddies' CPU (headless, parked at the windy meadow, frame log marks):
+  0.9 ms a frame with the field (14 ribbons: the isle ribbons' steps 0.53,
+  the bands' trail, lay and set_flows 0.35), 0.7 ms with `--wind=off` (fewer
+  ribbons). The ribbons' own steps are the old isle code (four ground reads
+  a ribbon a step, 3.2 us each, and their dictionaries); not cut. Held views
+  hid this; on the Mac the frame waits on the GPU, so it shows only where
+  the CPU is the limit.
+
+Not measured on the PC, and not in a flown flight: a frame log of a low,
+fast flight (`python3 tools/play.py -- --frame-log=res://scratch/f1.csv`,
+then `python3 tools/frame_report.py scratch/f1.csv`, once with
+`--wind=off`) would show it where it's flown.

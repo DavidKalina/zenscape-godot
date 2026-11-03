@@ -404,6 +404,29 @@ func patch_at(x: float, z: float) -> float:
 		p += b.w*exp(-(dx*dx+dz*dz)/(b.z*b.z))
 	return minf(p,1.0)
 
+## The patches' sum round (x, z) to second order, for the shaders' near
+## reads (wind_field.gdshaderinc zs_wind_spots_near): [Vector4(x, z, sum,
+## d2/dxdz), Vector4(d/dx, d/dz, d2/dx2, d2/dz2)], unclamped. The blobs are
+## 1800 m and more across, so within 400 m it is the sum to under 0.007 a blob.
+func spots_near(x: float, z: float) -> Array[Vector4]:
+	var s := 0.0
+	var g := Vector2.ZERO
+	var hxx := 0.0
+	var hzz := 0.0
+	var hxz := 0.0
+	for b in blobs:
+		var dx := x-b.x
+		var dz := z-b.y
+		var r2 := b.z*b.z
+		var f := b.w*exp(-(dx*dx+dz*dz)/r2)
+		s += f
+		g += Vector2(dx,dz)*(-2.0*f/r2)
+		var k := 4.0*f/(r2*r2)
+		hxx += k*dx*dx-2.0*f/r2
+		hzz += k*dz*dz-2.0*f/r2
+		hxz += k*dx*dz
+	return [Vector4(x,z,s,hxz),Vector4(g.x,g.y,hxx,hzz)]
+
 ## The wind's strength at (x, z) now (zs_wind_strength's scale).
 func wind_at(x: float, z: float) -> float:
 	if mode == "fixed": return fixed

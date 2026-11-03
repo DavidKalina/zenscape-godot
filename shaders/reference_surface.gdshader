@@ -693,11 +693,12 @@ void vertex() {
 				// rings meet), each tuft swaying slowly round it.
 				if (zs_grass_lean > 0.0) {
 					// (By the wind at its root, as the far tufts': windy grass rolls, calm stands.)
-					float comb_swell = zs_wind_swell_at(root);
-					float comb = zs_sheen_field(root, 0.0, comb_swell);
+					vec2 comb_h = zs_wind_here(root);
+					float comb_swell = zs_wind_swell_here(comb_h);
+					float comb = zs_sheen_field_here(root, 0.0, comb_swell, comb_h);
 					float comb_sway = sin(zs_motion_time * 1.5 + dot(root, zs_wind_direction) * 0.14 + phase);
 					comb_push = zs_wind_direction * zs_grass_lean * comb_swell * (0.45 + 0.55 * comb + 0.14 * comb_sway) * bend * sway_shape.y * instance_scale;
-					grass_bow = max(grass_bow, smoothstep(0.1, 1.0, comb) * 0.6 * comb_swell * zs_wind_silver_at(root));
+					grass_bow = max(grass_bow, smoothstep(0.1, 1.0, comb) * 0.6 * comb_swell * zs_wind_silver_here(comb_h));
 				}
 				grass_tilt = (motion + comb_push) / max(sway_shape.y * instance_scale, 0.1) * 0.6;
 			}

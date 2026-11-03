@@ -777,6 +777,9 @@ func _publish_field() -> void:
 	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now,wind.come_in() if _wind_texture != null else 0.0,fixed,1.0))
 	for i in 5:
 		RenderingServer.global_shader_parameter_set("zs_wind_patch_%d" % i,wind.blobs[i] if i < wind.blobs.size() else Vector4(0.0,0.0,1.0,0.0))
+	var near := wind.spots_near(_eye.x,_eye.z)
+	RenderingServer.global_shader_parameter_set("zs_wind_near_0",near[0])
+	RenderingServer.global_shader_parameter_set("zs_wind_near_1",near[1])
 
 ## The Peak's collar keeps its own sky: the land's hour below the band
 ## (`lo`..`hi`, m over the sea, as EndlessClouds.set_collar), the collar's

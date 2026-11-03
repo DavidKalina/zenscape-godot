@@ -22,6 +22,8 @@ shader_type spatial;
 // alpha k/16: wash_colours[k-1] on its upper blades) comes up over `wash_in`
 // instead, as the drawn flowers go.
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
+// Every tuft is within 230 m of the eye: the wind patches' near form (wind_field).
+#define ZS_WIND_NEAR_ONLY
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 #include "res://shaders/endless_ring.gdshaderinc"
@@ -98,8 +100,6 @@ void vertex() {
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
 		swell = zs_region_mix3(rw, grass_swell_r);
 	}
-	// The wind by place (wind_field): windy grass rolls, calm grass stands.
-	swell.x *= zs_wind_swell_at(root.xz);
 	float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, root);
 	float ring_rank = fract(sin(dot(root.xz, vec2(19.31, 71.87))) * 43758.5453);
 	float ring_at = mix(grass_ring.x, grass_ring.y, ring_rank);
@@ -113,6 +113,13 @@ void vertex() {
 	float in_rank = fract(sin(dot(root.xz, vec2(41.37, 17.93))) * 24634.6345);
 	float in_at = mix(band.x, band.y, in_rank);
 	ring_keep *= smoothstep(in_at, in_at + band.z, ring_d);
+	// The wind by place (wind_field), read once at the root and only for a
+	// tuft that shows: windy grass rolls, calm grass stands.
+	vec2 wind_h = vec2(0.0);
+	if (ring_keep > 0.0) {
+		wind_h = zs_wind_here(root.xz);
+		swell.x *= zs_wind_swell_here(wind_h);
+	}
 	if (far_morph.y > 0.0) VERTEX += CUSTOM0.xyz * smoothstep(far_morph.x, far_morph.y, ring_d);
 	vec2 size = mix(grow_near, grass_ring_grow.zw, smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d));
 	VERTEX.xz *= ring_keep * size.x;
@@ -129,7 +136,7 @@ void vertex() {
 		float sheen_seen = length(CAMERA_POSITION_WORLD - root);
 		float sheen_rise = max(normalize(CAMERA_POSITION_WORLD - root).y, 0.08);
 		float sheen_fp = sheen_seen * 0.0016 * (0.6 + 0.4 / sheen_rise);
-		swell_s = zs_sheen_field(root.xz, sheen_fp, swell.x);
+		swell_s = zs_sheen_field_here(root.xz, sheen_fp, swell.x, wind_h);
 		if (grass_sheen.x > 0.0) sheen = mix(vec3(1.0), zs_sheen_tone(swell_s * swell.z, root.xz, CAMERA_POSITION_WORLD, ring_d, zs_key_irradiance), smoothstep(grass_sheen.y, grass_sheen.z, ring_d));
 	}
 	// Grass that blows as one (grass_swell): the tuft itself bends over on the
@@ -161,7 +168,7 @@ void vertex() {
 		float seen = length(CAMERA_POSITION_WORLD - root);
 		float rise = max(normalize(CAMERA_POSITION_WORLD - root).y, 0.08);
 		silver = zs_silver_drive(root.xz, seen * 0.0016 * (0.6 + 0.4 / rise));
-		silver = mix(silver, zs_swell_silver(swell_s), swell.x * zs_wind_silver_at(root.xz));
+		silver = mix(silver, zs_swell_silver(swell_s), swell.x * zs_wind_silver_here(wind_h));
 	}
 }
 
