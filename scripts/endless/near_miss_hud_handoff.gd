@@ -20,8 +20,9 @@ extends Control
 ##   white, gold, orange, burning as it climbs, growing, breathing, rocking,
 ##   then burning with embers at the cap.
 ## - the bank: total and multiplier slide together and slam into one gold
-##   number sized to the run (a nod, big, huge), counting up, then pouring
-##   into the meter; under it the line reads back (READ_TIME s from the
+##   number sized to the run (a nod, big, huge), counting up, then fading
+##   where it is (the meter fills live, flaring as each moment scores into
+##   it); under it the line reads back (READ_TIME s from the
 ##   bank, cut short by the next move): its moves' badges in order, the land
 ##   it crossed, its name if it earned one and the money paid; a scrape
 ##   freezes 60 ms, cracks the total in coral,
@@ -127,6 +128,8 @@ var _prev_mult := 1.0
 var _bank := {}
 var _loss := {}
 var _flare := 0.0
+## The meter last frame: it flares as it rises (it fills live, each moment).
+var _prev_meter := 0.0
 var _hold_until := 0
 var _hold_scale := 1.0
 var _clock := 0.0
@@ -286,6 +289,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		_loss.age += delta*float(_loss.pace)
 		if _loss.age >= 1.4: _loss = {}
 	_flare = maxf(_flare-delta,0.0)
+	_meter_rise(near)
 	_step_gap(delta,near,crash or events.has("scrape"))
 	_place_block()
 	_place_halves()
@@ -678,6 +682,11 @@ func _bar(ci: CanvasItem, r: Rect2, share: float, key: float, cols: Array, from_
 		var cb: Color = b[1]
 		ci.draw_polygon(PackedVector2Array([Vector2(xa,y0),Vector2(xb,y0),Vector2(xb,y0+h),Vector2(xa,y0+h)]),PackedColorArray([ca,cb,cb,ca]))
 
+## The meter rose this frame (a moment scored into it): it flares.
+func _meter_rise(near: NearMiss) -> void:
+	if near.meter > _prev_meter+0.0005: _flare = 0.4
+	_prev_meter = near.meter
+
 func _draw_meter(ci: CanvasItem, mid: Vector2, sz: Vector2, s: float) -> void:
 	var fill := clampf(_near.meter,0.0,1.0)
 	var glow := maxf(_flare/0.4,1.0 if fill >= 0.999 else 0.0)
@@ -720,14 +729,12 @@ func _draw_bank(s: float) -> void:
 	var at := Vector2(-w*0.5 if tag else 0.0,TOTAL_Y*s)
 	var grow := 1.0+0.25*(1.0-smoothstep(0.0,0.12,slam))
 	var alpha := 1.0
+	# Then it fades where it is (the meter filled live, as the moments scored).
 	var pour := slam-count_t-0.25
-	var meter_at := _meter_mid_in_block()
 	if pour > 0.0:
 		var k := clampf(pour/0.3,0.0,1.0)
-		at = at.lerp(meter_at,k*k)
 		grow *= lerpf(1.0,0.3,k)
 		alpha = 1.0-k*k
-		if k >= 1.0: _flare = 0.4
 	_draw_readback(s)
 	if alpha <= 0.0: return
 	var shake := float(tier[4])*s
