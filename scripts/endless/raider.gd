@@ -29,12 +29,18 @@ extends Node3D
 ## Tuning flags (each a number): --raider-every, --raider-ram (RAM_OVER),
 ## --raider-tell (TELL_S), --raider-hit (HIT_R), --raider-near (NEAR_R),
 ## --raider-shove (SHOVE), --raider-fill (DODGE_FILL), --raider-turn (TURN_MAX).
+##
+## `--raider-mode=chase` makes it the chase instead (scripts/endless/
+## raider_chase.gd, state `flee`): it shows up ahead and runs low through
+## trees and arches, and skimming builds the plane's speed. `dogfight` (the
+## default) is the above.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const RaiderChase = preload("res://scripts/endless/raider_chase.gd")
 
 signal killed(at: Vector3)
 signal rammed(at: Vector3)
@@ -138,6 +144,8 @@ var least_at := Vector3.ZERO
 ## The closest the plane came over the last frame (m), for `try_kill`.
 var sweep := INF
 var tuning := {}
+## The chase (`--raider-mode=chase`; null in the dogfight).
+var chase: RefCounted
 
 var _wait := FIRST_S
 var _lost := 0.0
@@ -172,6 +180,7 @@ func setup(g: Node3D) -> void:
 		"near":_flag("--raider-near",NEAR_R),"shove":_flag("--raider-shove",SHOVE),
 		"fill":_flag("--raider-fill",DODGE_FILL.y),"turn":_flag("--raider-turn",TURN_MAX)}
 	flight = SkyTraffic.Flight.new()
+	if RaiderChase.wanted(LaunchArgs.user_args()): chase = RaiderChase.new(self)
 	figure = PlaneFigure.new(LIVERY)
 	figure.name = "RaiderPlane"
 	figure.visible = false
@@ -225,6 +234,7 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 			if flying:
 				_wait -= delta
 				if _wait <= 0.0: _spawn()
+			if chase != null: chase.idle()
 			_hud(false)
 			_prev = Vector3.INF
 			return
@@ -235,6 +245,7 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 	t += delta
 	match state:
 		&"stalk": _stalk(delta,p,rel,dist,ps,flying)
+		&"flee": chase.step(delta,p,rel,dist,ps)
 		&"tell": _tell(delta,p,ps)
 		&"ram": _ram(delta,p,rel,dist,ps)
 		&"over":
@@ -290,6 +301,12 @@ func _spawn() -> void:
 	PlaneGroundScale.grow(figure,WorldScale.plane*SIZE)
 	figure.reset(flight)
 	stats.spawns = int(stats.spawns)+1
+	if chase != null:
+		chase.spawn()
+		figure.reset(flight)
+		_prev = Vector3.INF
+		_go(&"flee")
+		return
 	_go(&"stalk")
 
 # --- The passes ---------------------------------------------------------------
