@@ -15,6 +15,12 @@ extends RefCounted
 ##   plus KICK.y per m/s into it (SkyPlane `scrape`). For GRACE s after one
 ##   another touch only crashes.
 ##
+## In the big swell's belt (the sea's surge round the world's edge, scripts/
+## endless/endless_sea.gd `surge_room`) a scrape of the water going into it
+## slower than ROSE_INTO m/s (level, or climbing and caught) is a wave come
+## up under it: graded as any scrape, but marked "rose", and the study keeps
+## the line through it (studies/endless_flight.gd `_near_misses`).
+##
 ## In the pirate ship's gun deck (PirateShip `deck_way_off`) no touch crashes:
 ## it is glanced off the wall, roof or floor it met. So too anywhere on her as
 ## she sinks.
@@ -51,6 +57,7 @@ const SCRAPE_COST := 0.012
 const SCRAPE_LEAST := 0.6
 const KICK := Vector2(2.2,0.35)
 const GRACE := 0.45
+const ROSE_INTO := 1.0
 const GLANCE_KICK := 0.4
 ## The middle's touch whose normal's up part is under this is a jamb's side
 ## (a glance); over it, a sill's or a head's, graded as anywhere.
@@ -128,7 +135,13 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	_grace = GRACE
 	scrapes += 1
 	out["keep"] = keep
+	if str(hit.what) == "water" and into < ROSE_INTO and _in_swell(game,plane.position): out["rose"] = true
 	return {"scrape":out}
+
+## Over the big swell's belt at `p`.
+func _in_swell(game: Node3D, p: Vector3) -> bool:
+	var look = game.get("look")
+	return look != null and look.water != null and float(look.water.surge_room(p.x,p.z)) > 0.0
 
 ## A forgiving knife slot's jamb glanced off (KnifeGlance), `normal` across
 ## toward the slot's middle, at `at`: a scrape (its speed kept as a scrape's

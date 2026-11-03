@@ -250,6 +250,9 @@ const SPRAY_FAST := 0.7
 const CRASH_BACK := 45.0
 const CRASH_UP := 14.0
 const CRASH_LOOK := 140.0
+## Over the swell's belt the top is at least this share of the tallest a
+## wave there may stand (EndlessSea `surge_room`).
+const CRASH_SWELL := 0.75
 ## Into a tower's wall (`_off_tower`): how far out from the face it flies on,
 ## and the level part of the face's normal that makes it a wall, not its top.
 const CRASH_OFF := 40.0
@@ -1421,7 +1424,8 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 	if hit.has("scrape"):
 		var s: Dictionary = hit.scrape
 		events["scrape"] = s
-		var lost := near.lose()
+		# A wave of the swell come up under it (FlightContact "rose") keeps the line.
+		var lost := 0.0 if bool(s.get("rose",false)) else near.lose()
 		if lost > 0.0: events["lost"] = {"points":lost}
 		if water != null and str(s.what) == "water": water.splash(s.at,0.5+clampf(float(s.get("into",0.0))/7.0,0.0,1.0)*0.5,events)
 		else: debris.hit(str(s.what),s.at,s.normal)
@@ -1488,6 +1492,10 @@ func crash(hit := {}) -> void:
 		var h: float = field.height(q.x,q.y)
 		var under: Variant = plane_ground(Vector3(q.x,h+300.0,q.y))
 		top = maxf(top,(under as Vector2).x if under is Vector2 else (float(under) if under != null else h))
+		# Over the swell's belt, over CRASH_SWELL of the tallest a wave there may
+		# stand (crests over 19 m are rare): the crests run on toward it, so
+		# their height now is no guide.
+		if look != null and look.water != null: top = maxf(top,Field.SEA_Y+CRASH_SWELL*float(look.water.surge_room(q.x,q.y)))
 	crashes += 1
 	_launch(Vector3(back.x,top+CRASH_UP,back.y),atan2(-way.x,-way.y))
 	_fade_left = FADE_TIME
