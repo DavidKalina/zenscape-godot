@@ -7,6 +7,8 @@ extends "res://scripts/endless/world/world_profile.gd"
 ## and the world changes.
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const WindField = preload("res://scripts/endless/wind_field.gd")
+const GrassSheen = preload("res://scripts/endless/grass_sheen.gd")
 
 func _init() -> void:
 	id = "wilderness"
@@ -24,10 +26,20 @@ func _init() -> void:
 	flora = {"forest":1.0,"forest_meadows":1.0,"tree_weights":PackedFloat32Array(),"grass":1.0,"flowers":true}
 	# The paint: the alpine morning at 8.6 (EndlessLook MOOD, HOUR), the
 	# ground and sea shaders' own defaults (the watercolour meadows, the high
-	# paint, the sea's tints), no shader globals past the season reset; the
-	# wind by place and hour (scripts/endless/wind_field.gd; absent: the
+	# paint, the sea's tints), no shader globals past the season reset (but
+	# the swell's lean below); the wind by place and hour (scripts/endless/wind_field.gd; absent: the
 	# mood's one wind everywhere).
 	paint = {"mood":"alpine_morning","hour":8.6,"ground":{},"sea":{},"globals":{},"wind":"field"}
+	# Its grass blows as one where the field blows hard (the Amberlands'
+	# swell, GrassSheen; shaders/wind_field.gdshaderinc scales it by the wind
+	# at each spot): its own colours, the swell's motion and sheen. Not with
+	# the old single wind (--wind=off).
+	if WindField.wanted_mode(LaunchArgs.user_args()) != "off":
+		var swell := GrassSheen.swell()
+		paint.ground["grass_swell"] = swell
+		paint["far"] = {"grass_swell":swell}
+		paint["sheen_pace"] = GrassSheen.pace()
+		paint.globals["zs_grass_lean"] = swell.x*swell.y
 	# Every dressing layer. The rock shapes: sea stacks along the coasts
 	# (--no-rocks turns them off). No hoodoos (taken out 2026-10-27: they
 	# read as clay; --hoodoos=2.5 brings back the pockets they had).

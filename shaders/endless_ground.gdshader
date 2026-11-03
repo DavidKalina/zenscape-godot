@@ -783,6 +783,8 @@ void fragment() {
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
 		rp_swell = zs_region_mix3(rw, grass_swell_r);
 	}
+	// The wind by place (wind_field): windy grass rolls, calm grass stands.
+	if (rp_swell.x > 0.0) rp_swell.x *= zs_wind_swell_at(p.xz);
 	vec3 n = normalize(world_normal);
 	if (!FRONT_FACING) n = -n;
 	// A pixel's footprint on the ground (m): between its short and long
@@ -977,7 +979,7 @@ void fragment() {
 		float crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
 		crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
 		crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
-		float air = clamp(zs_wind_strength, 0.0, 2.0);
+		float air = clamp(zs_wind_local(gxz), 0.0, 2.0);
 		// (Grass that blows as one keeps their mean: the swell carries the motion.)
 		float crest = mix(crest_near * 0.35 + crest_far * 0.65, 0.35, rp_swell.x) * air * wind_sheen;
 		// Velvet: turf seen low catches the light along its blades.

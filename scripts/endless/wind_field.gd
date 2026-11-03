@@ -19,7 +19,7 @@ extends RefCounted
 ## wind's clock (seconds), so the same seed and time give the same wind on
 ## every machine. `wind_at(x, z)` is the query for GDScript (the plane, the
 ## sound, the leaves); the shaders get the baked exposure and the patches'
-## blobs (next round).
+## blobs (shaders/wind_field.gdshaderinc, published by EndlessLook).
 ##
 ## Flags: --wind=calm|breezy|gusty (every day's temper), --wind=X (strength
 ## X everywhere, no hour, no place), --wind=off (the old single wind, the
@@ -284,9 +284,19 @@ func _place_blobs() -> void:
 		var at := centre+along_dir*along+across_dir*across
 		blobs.append(Vector4(at.x,at.y,r,amount))
 
-## The baked exposure at (x, z), 0..1 (bilinear; 0.5 off the bake).
+## The baked exposure at (x, z), 0..1 (bilinear; 0.5 before the bake, the
+## bake easing in over FADE_IN s once it lands).
 func exposure_at(x: float, z: float) -> float:
 	if not baked: return 0.5
+	var k := smoothstep(0.0,1.0,_in)
+	if k < 1.0: return lerpf(0.5,_exposure_at(x,z),k)
+	return _exposure_at(x,z)
+
+## How far the baked exposure has come in (0..1): the shaders' zs_wind_field.y.
+func come_in() -> float:
+	return smoothstep(0.0,1.0,_in) if baked else 0.0
+
+func _exposure_at(x: float, z: float) -> float:
 	var u := (x-origin.x)/CELL
 	var v := (z-origin.y)/CELL
 	if u < 0.0 or v < 0.0 or u > n-1 or v > n-1: return 0.8
@@ -300,13 +310,37 @@ func exposure_at(x: float, z: float) -> float:
 
 ## How far (x, z) is inside the bake's land (1) rather than past it (0, past
 ## REACH_FADE m beyond the bake's square): there the world's own wind holds
-## (the doors' amberlands half).
+## (the doors' amberlands half). Before the bake lands the field blows with an
+## even exposure (exposure_at), so nothing pops when it does.
 func reach(x: float, z: float) -> float:
-	if not baked: return 1.0 if mode == "fixed" else 0.0
+	if mode == "fixed" or n < 2: return 1.0
 	var half := (n-1)*CELL*0.5
 	var c := origin+Vector2(half,half)
 	var d := maxf(absf(x-c.x),absf(z-c.y))-half
-	return (1.0-smoothstep(0.0,REACH_FADE,d))*smoothstep(0.0,1.0,_in)
+	return 1.0-smoothstep(0.0,REACH_FADE,d)
+
+## The shaders' zs_wind_rect: x, z of the exposure texture's corner, its side
+## (m; cell k's centre at origin + k CELL), the bake's half side.
+func rect() -> Vector4:
+	return Vector4(origin.x-CELL*0.5,origin.y-CELL*0.5,n*CELL,(n-1)*CELL*0.5)
+
+## The baked exposure as a texture (n x n, R8, cell centres at texel centres).
+func texture() -> ImageTexture:
+	if not baked or n < 2: return null
+	var bytes := PackedByteArray()
+	bytes.resize(n*n)
+	for k in n*n: bytes[k] = clampi(int(round(exposure[k]*255.0)),0,255)
+	return ImageTexture.create_from_image(Image.create_from_data(n,n,false,Image.FORMAT_R8,bytes))
+
+## The breeze plants lean in (zs_breeze's scale; 0.53 a light day) for wind
+## strength `w` (shaders/wind_field.gdshaderinc zs_wind_breeze_of).
+static func breeze_of(w: float) -> float:
+	return clampf(0.06+0.7*w,0.06,1.8)
+
+## How far grass blows as one (a share of the world's grass_swell) for wind
+## strength `w` (zs_wind_swell_of): calm grass stands, windy grass rolls.
+static func swell_of(w: float) -> float:
+	return smoothstep(0.25,0.95,w)
 
 ## The patches' windiness at (x, z) now, 0..1.
 func patch_at(x: float, z: float) -> float:

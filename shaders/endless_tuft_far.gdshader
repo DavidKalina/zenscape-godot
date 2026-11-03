@@ -98,6 +98,8 @@ void vertex() {
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
 		swell = zs_region_mix3(rw, grass_swell_r);
 	}
+	// The wind by place (wind_field): windy grass rolls, calm grass stands.
+	swell.x *= zs_wind_swell_at(root.xz);
 	float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, root);
 	float ring_rank = fract(sin(dot(root.xz, vec2(19.31, 71.87))) * 43758.5453);
 	float ring_at = mix(grass_ring.x, grass_ring.y, ring_rank);

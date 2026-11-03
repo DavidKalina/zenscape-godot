@@ -12,6 +12,7 @@
 // Opt-in: `grass_sheen.x` 0 (the default) draws nothing and costs nothing.
 #ifndef ZS_GRASS_SHEEN
 #define ZS_GRASS_SHEEN
+#include "res://shaders/wind_field.gdshaderinc"
 
 // x strength (0 off), y..z the ring distance (m) over which it comes in
 // past the near tufts, w how much more it reads far off (at 400 m).
@@ -90,7 +91,8 @@ float zs_sheen_field(vec2 p, float fp, float swell) {
 	// The gust bands swell and calm it with the breeze; a gust front lays the
 	// blades hard downwind.
 	float band = zs_sheen_band(p, travel);
-	float air = clamp(zs_breeze_air() / 0.53, 0.35, 1.6);
+	// (A world's wind field: the breeze at `p`, near still where it's calm.)
+	float air = zs_wind_on() ? clamp(zs_wind_breeze_at(p) / 0.53, 0.1, 1.6) : clamp(zs_breeze_air() / 0.53, 0.35, 1.6);
 	float s = w * mix(ZS_SWELL_GAIN.x, ZS_SWELL_GAIN.y, swell) * band * air + zs_front_at(p, 0.0) * 1.2;
 	return clamp(s, -1.0, 1.0);
 }
