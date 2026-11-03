@@ -102,6 +102,11 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 		if off_spur != Vector3.ZERO:
 			hit.normal = off_spur
 			hit.what = "stone"
+	if tunnels != null and tunnels.plugs != null:
+		var off_plug: Vector3 = tunnels.plugs.face(plane.position,float(game.solid_pad))
+		if off_plug != Vector3.ZERO:
+			hit.normal = off_plug
+			hit.what = "stone"
 	# A Peak tower's rock has a real normal (PeakTowers `face`): off the towers
 	# this is ZERO and nothing here changes.
 	var face := Vector3.ZERO

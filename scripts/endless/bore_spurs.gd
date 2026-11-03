@@ -1,8 +1,8 @@
 extends Node3D
 ## The spurs the burrower leaves in a sunk tunnel (docs/design/endless-flight/
 ## spec-burrower-chase.md). The layout is fixed per tunnel, drawn from its seed (`plan`):
-## which spurs, how far along, how long; the angle is his line's there (BoreLine), so the
-## ridge marks each spot. He reveals them as he passes, whichever way he runs, and they
+## which spurs, how far along, how long; the angle is reckoned off his line's there
+## (BoreLine), so the ridge marks each spot. He reveals them as he passes, whichever way he runs, and they
 ## fire off him, not off the plane: `passing` starts a spur's clock and its tell (the crack,
 ## the grit, the light: scripts/endless/bore_tell.gd), HOLD_S later it snaps out of the
 ## bore. Each stays out for as long as its tunnel stays built. Nothing goes in the save,
@@ -15,23 +15,67 @@ extends Node3D
 ## `inside`, through LandTunnels `ground`, `inside` and `sight`). FlightContact takes its
 ## normal from `face`. The bore overhead doesn't cancel a graze on one (NearMiss, `holds`).
 ##
+## A surge smashes a spur that's out (`struck`, `smash`; scripts/endless/surge_smash.gd): it
+## bursts into rubble (scripts/endless/bore_rubble.gd), its body goes back to the pool and its
+## crack stays on the rock, and it stays broken for as long as its tunnel stays built.
+##
+## The layout is spots, each one of a few patterns (`plan`): a **single** spur on the ridge; a
+## **pair**, one on the ridge and one across the bore from it, out at once; a **gate**, two
+## spurs side by side astride the ridge, standing parallel, his line the gap between them; a
+## **corkscrew**, CORK_COUNT spurs in a run, each CORK_STEP m on and CORK_TURN of the way
+## round past the last. Every spur keeps its own tell; a pair's and a gate's fire together,
+## a corkscrew's ripple round the bore as he passes each.
+##
 ## The gap: a spur stops short of the far rock by at least WorldScale.opening(TOY_PAST),
 ## measured against the bore's real ring at its spot (`_lay`); a spot that can't leave
-## that and still stand REACH_LEAST m out has no spur.
+## that and still stand REACH_LEAST m out has no spur. A pair's and a gate's second spur
+## also stays that far off its first (a gate's, WorldScale.opening(TOY_GATE): the gate's
+## gap is a way through), shortened till it does, or dropped.
 
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const BoreLine = preload("res://scripts/endless/bore_line.gd")
 const BoreTell = preload("res://scripts/endless/bore_tell.gd")
+const BoreRubble = preload("res://scripts/endless/bore_rubble.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SPUR_SHADER = preload("res://shaders/burrower_bore_spur.gdshader")
 
-## One spur about every this many metres of tunnel: the knob flying tunes.
-const SPUR_EVERY := 85.0
-## None this close to either mouth (m), and how far a spot wanders off its even place
-## (a share of the spacing): at 0.2 no two stand under about 0.9 s apart at his pace.
+## None this close to either mouth (m), and how far the room after a spot wanders (a share
+## of it).
 const SPUR_ENDS := 130.0
 const SPUR_WANDER := 0.2
+## The patterns: how often a spot draws each (weights, summed), and the room after one
+## before the next spot (m, from its last spur): the knobs flying tunes.
+const SINGLE := "single"
+const PAIR := "pair"
+const GATE := "gate"
+const CORKSCREW := "corkscrew"
+const WEIGHT_SINGLE := 0.35
+const WEIGHT_PAIR := 0.2
+const WEIGHT_GATE := 0.25
+const WEIGHT_CORKSCREW := 0.2
+const AFTER_SINGLE := 85.0
+const AFTER_PAIR := 110.0
+const AFTER_GATE := 110.0
+const AFTER_CORKSCREW := 130.0
+## A corkscrew: how many spurs (least, most), how far apart along the path (m), and how far
+## round each steps past the last (a share of a turn; which way is drawn).
+const CORK_COUNT := Vector2i(3,5)
+const CORK_STEP := 24.0
+const CORK_TURN := 0.14
+## A gate's gap, toy width (WorldScale `opening`), and how far each spur's root stands off
+## its edge round the ring (m: a gate spur's girth and some, so on a curved wall the gap is
+## mostly right before `_lay` trims the second spur). How far across a gate's spurs reach
+## (a share; they leave TOY_PAST past their tips like any spur), and their girth (a share
+## of the usual), thinner so the gap reads.
+const TOY_GATE := 5.0
+const GATE_ROOT := 6.0
+const GATE_SHARE := Vector2(0.62,0.85)
+const GATE_THIN := 0.75
+## How far a pair's second spur stands round from its first (a share of a turn).
+const PAIR_TURN := 0.5
+## How much shorter a pattern's second spur gets each try at the gap (a share).
+const TRIM := 0.92
 ## The way left past a spur's tip, toy width (WorldScale `opening`).
 const TOY_PAST := 4.0
 ## How far it stands out: a share of the way across the bore from its root, and the most
@@ -81,6 +125,14 @@ const FACE_ROOM := 0.8
 ## with no body: no room here, no spur.
 class Spur:
 	var s := 0.0
+	## Its pattern, and where round the bore it stands off the ridge: a share of a turn,
+	## then metres round the ring. A pair's or gate's second spur keeps its `first`.
+	var kind := SINGLE
+	var turn := 0.0
+	var side := 0.0
+	var first: Spur
+	## Once laid: its root's share of the way round its ring (the tell's patch sits there).
+	var round := 0.0
 	var share := 0.0
 	var thick := 0.0
 	var tilt := 0.0
@@ -89,6 +141,8 @@ class Spur:
 	var shape := 0
 	var laid := false
 	var fired := false
+	## Smashed by a surge: gone for as long as its tunnel stays built.
+	var broken := false
 	var clock := 0.0
 	## How far out it is (0..1).
 	var out := 0.0
@@ -127,8 +181,9 @@ var _meshes: Array[ArrayMesh] = []
 var _hulls: Array[PackedVector3Array] = []
 var _mat: ShaderMaterial
 var _tell: BoreTell
-## For drivers: the worst frame's work (us), spurs fired, spots dropped.
-var stats := {"worst_us": 0, "fired": 0, "dropped": 0}
+var _rubble: BoreRubble
+## For drivers: the worst frame's work (us), spurs fired, spots dropped, spurs smashed.
+var stats := {"worst_us": 0, "fired": 0, "dropped": 0, "smashed": 0}
 
 func _init() -> void:
 	name = "BoreSpurs"
@@ -141,6 +196,9 @@ func setup(tunnels: Node3D) -> void:
 	_tell = BoreTell.new()
 	add_child(_tell)
 	_tell.setup(HOLD_S,SNAP_S)
+	_rubble = BoreRubble.new()
+	add_child(_rubble)
+	_rubble.setup()
 	var rng := RandomNumberGenerator.new()
 	for i in SHAPES:
 		rng.seed = hash(["bore spur",i])
@@ -151,25 +209,64 @@ func setup(tunnels: Node3D) -> void:
 ## seed. Every spot draws all its numbers, so one with no room changes no other.
 static func plan(t: Tunnels.Site) -> Array[Spur]:
 	var out: Array[Spur] = []
-	var n := int((t.length-2.0*SPUR_ENDS)/SPUR_EVERY)
-	if n < 1: return out
-	var every := (t.length-2.0*SPUR_ENDS)/n
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([t.seed,"bore spurs"])
-	for i in n:
-		var sp := Spur.new()
-		sp.s = SPUR_ENDS+(i+0.5+rng.randf_range(-SPUR_WANDER,SPUR_WANDER))*every
-		sp.share = rng.randf()
-		sp.thick = rng.randf()
-		sp.tilt = rng.randf_range(-TILT,TILT)
-		sp.lean = rng.randf_range(-LEAN,LEAN)
-		sp.roll = rng.randf_range(0.0,TAU)
-		sp.shape = rng.randi()%SHAPES
-		var hall := false
-		for piece: Dictionary in t.pieces:
-			if piece.kind == "hall" and sp.s >= float(piece.s0) and sp.s <= float(piece.s1): hall = true
-		if not hall: out.append(sp)
+	var s := SPUR_ENDS+AFTER_SINGLE*0.5
+	var weights := [WEIGHT_SINGLE,WEIGHT_PAIR,WEIGHT_GATE,WEIGHT_CORKSCREW]
+	var whole := 0.0
+	for w: float in weights: whole += w
+	while true:
+		# The spot's numbers, all drawn whatever it turns out to be.
+		var pick := rng.randf()*whole
+		var wander := rng.randf_range(-SPUR_WANDER,SPUR_WANDER)
+		var count := rng.randi_range(CORK_COUNT.x,CORK_COUNT.y)
+		var hand := 1.0 if rng.randf() < 0.5 else -1.0
+		var spurs: Array[Spur] = []
+		for k in CORK_COUNT.y:
+			var sp := Spur.new()
+			sp.share = rng.randf()
+			sp.thick = rng.randf()
+			sp.tilt = rng.randf_range(-TILT,TILT)
+			sp.lean = rng.randf_range(-LEAN,LEAN)
+			sp.roll = rng.randf_range(0.0,TAU)
+			sp.shape = rng.randi()%SHAPES
+			spurs.append(sp)
+		var kind := CORKSCREW
+		for k in weights.size():
+			if pick < weights[k]:
+				kind = [SINGLE,PAIR,GATE,CORKSCREW][k]
+				break
+			pick -= weights[k]
+		var n := {SINGLE: 1, PAIR: 2, GATE: 2, CORKSCREW: count}[kind] as int
+		var span := CORK_STEP*(n-1) if kind == CORKSCREW else 0.0
+		if s+span > t.length-SPUR_ENDS: break
+		spurs.resize(n)
+		for k in n:
+			var sp := spurs[k]
+			sp.kind = kind
+			sp.s = s
+			if kind == PAIR and k == 1:
+				sp.turn = PAIR_TURN
+				sp.first = spurs[0]
+			elif kind == GATE:
+				# Side by side astride the ridge, alike but for their rock.
+				sp.side = (GATE_ROOT+WorldScale.opening(TOY_GATE)*0.5)*(1.0 if k == 0 else -1.0)
+				sp.share = spurs[0].share
+				sp.tilt = spurs[0].tilt
+				sp.lean = spurs[0].lean
+				if k == 1: sp.first = spurs[0]
+			elif kind == CORKSCREW:
+				sp.s = s+CORK_STEP*k
+				sp.turn = CORK_TURN*k*hand
+			if not _in_hall(t,sp.s): out.append(sp)
+		s += span+{SINGLE: AFTER_SINGLE, PAIR: AFTER_PAIR, GATE: AFTER_GATE, CORKSCREW: AFTER_CORKSCREW}[kind]*(1.0+wander)
 	return out
+
+## Whether distance `at` along `t` is in a hall.
+static func _in_hall(t: Tunnels.Site, at: float) -> bool:
+	for piece: Dictionary in t.pieces:
+		if piece.kind == "hall" and at >= float(piece.s0) and at <= float(piece.s1): return true
+	return false
 
 ## He's in `t`, going `way`: what's left of its layout is his to reveal. A tunnel he's run
 ## before keeps what came out then.
@@ -217,6 +314,7 @@ func passing(at: float) -> void:
 
 ## One frame, `at` the plane: the spurs under way, those near it, tunnels gone.
 func step(delta: float, at: Vector3, sound: Node) -> void:
+	_rubble.step(delta)
 	if _groups.is_empty(): return
 	_tell.step(delta)
 	_mat.set_shader_parameter("now",_tell.now)
@@ -252,45 +350,74 @@ func _pose(sp: Spur) -> void:
 func _lay(g: Group, sp: Spur) -> void:
 	if sp.laid: return
 	sp.laid = true
+	# A pattern's second spur fits round its first, so the first stands first.
+	if sp.first != null: _lay(g,sp.first)
 	var t := g.site
 	var ring := BoreLine.ring(t,g.grain,sp.s)
 	var metres := BoreLine.round_m(ring)
-	var root := BoreLine.on_ring(ring,metres,fposmod(BoreLine.angle_at(t,sp.s)/TAU,1.0)*metres[metres.size()-1])
+	var whole := metres[metres.size()-1]
+	var on := (fposmod(BoreLine.angle_at(t,sp.s)/TAU,1.0)+sp.turn)*whole
+	var u := fposmod(on+sp.side,whole)
+	var root := BoreLine.on_ring(ring,metres,u)
 	var tg: Vector2 = Tunnels.at_s(t,sp.s)[1]
 	var along := Vector3(tg.x,0.0,tg.y)
-	var way := (BoreLine.middle(t,sp.s)-root).slide(along).normalized().rotated(along,sp.tilt)
+	var mid := BoreLine.middle(t,sp.s)
+	# A gate's two aim as the ridge between them does, so they stand parallel.
+	var aim := BoreLine.on_ring(ring,metres,on) if sp.kind == GATE else root
+	var way := (mid-aim).slide(along).normalized().rotated(along,sp.tilt)
 	var across := BoreLine.across(ring,root,way,along)
-	var most := maxf(REACH_MOST,(BoreLine.middle(t,sp.s)-root).dot(way)*REACH_MIDDLE)
-	var long := minf(minf(lerpf(REACH_SHARE.x,REACH_SHARE.y,sp.share)*across,most),across-WorldScale.opening(TOY_PAST))
-	var axis := way.rotated(way.cross(along).normalized(),sp.lean)
-	var tip := root+axis*long
-	if long < REACH_LEAST or Tunnels.shaft_at(t,root.x,root.z,-SHAFT_ROOM) >= 0 or Tunnels.shaft_at(t,tip.x,tip.z,-SHAFT_ROOM) >= 0:
+	var long := 0.0
+	if sp.kind == GATE:
+		long = lerpf(GATE_SHARE.x,GATE_SHARE.y,sp.share)*across
+	else:
+		var most := maxf(REACH_MOST,(mid-root).dot(way)*REACH_MIDDLE)
+		long = minf(lerpf(REACH_SHARE.x,REACH_SHARE.y,sp.share)*across,most)
+	long = minf(long,across-WorldScale.opening(TOY_PAST))
+	sp.root = root
+	sp.axis = way.rotated(way.cross(along).normalized(),sp.lean)
+	sp.round = u/whole
+	_size(sp,long)
+	if sp.first != null and sp.first.body != null:
+		var need := WorldScale.opening(TOY_GATE if sp.kind == GATE else TOY_PAST)
+		while sp.long >= REACH_LEAST and _apart(sp,sp.first) < need: _size(sp,sp.long*TRIM)
+	var tip := root+sp.axis*sp.long
+	if sp.long < REACH_LEAST or Tunnels.shaft_at(t,root.x,root.z,-SHAFT_ROOM) >= 0 or Tunnels.shaft_at(t,tip.x,tip.z,-SHAFT_ROOM) >= 0:
 		stats.dropped = int(stats.dropped)+1
 		return
-	sp.root = root
-	sp.axis = axis
+	sp.left = across-sp.long
+	sp.basis = Basis(Quaternion(Vector3.UP,sp.axis))*Basis(Vector3.UP,sp.roll)
+	sp.body = _take()
+	var rock: MeshInstance3D = sp.body.get_child(0)
+	rock.mesh = _meshes[sp.shape]
+	rock.scale = Vector3(sp.girth,sp.long,sp.girth)
+	var cs: CollisionShape3D = sp.body.get_child(1)
+	var hull := PackedVector3Array(_hulls[sp.shape])
+	for i in hull.size(): hull[i] *= Vector3(sp.girth,sp.long,sp.girth)
+	(cs.shape as ConvexPolygonShape3D).points = hull
+	_pose(sp)
+	_tell.lay(g.site,g.grain,sp)
+
+## Spur `sp` `long` m out from its root along its axis: its girth and its solid.
+func _size(sp: Spur, long: float) -> void:
 	sp.long = long
-	sp.left = across-long
-	sp.girth = minf(long*lerpf(GIRTH_SHARE.x,GIRTH_SHARE.y,sp.thick),GIRTH_MOST)
-	sp.basis = Basis(Quaternion(Vector3.UP,axis))*Basis(Vector3.UP,sp.roll)
+	sp.girth = minf(long*lerpf(GIRTH_SHARE.x,GIRTH_SHARE.y,sp.thick)*(GATE_THIN if sp.kind == GATE else 1.0),GIRTH_MOST)
 	sp.chain.resize(CHAIN)
 	sp.radii.resize(CHAIN)
 	for i in CHAIN:
 		var q := float(i)/(CHAIN-1)
-		sp.chain[i] = axis*(q*long)
+		sp.chain[i] = sp.axis*(q*long)
 		sp.radii[i] = sp.girth*_radius(q)
-	sp.bound_at = root+axis*(long*0.5)
+	sp.bound_at = sp.root+sp.axis*(long*0.5)
 	sp.bound = long*0.5+sp.girth
-	sp.body = _take()
-	var rock: MeshInstance3D = sp.body.get_child(0)
-	rock.mesh = _meshes[sp.shape]
-	rock.scale = Vector3(sp.girth,long,sp.girth)
-	var cs: CollisionShape3D = sp.body.get_child(1)
-	var hull := PackedVector3Array(_hulls[sp.shape])
-	for i in hull.size(): hull[i] *= Vector3(sp.girth,long,sp.girth)
-	(cs.shape as ConvexPolygonShape3D).points = hull
-	_pose(sp)
-	_tell.lay(g.site,g.grain,sp)
+
+## The least room between spurs `a` and `b`, both all the way out (m, rock to rock).
+static func _apart(a: Spur, b: Spur) -> float:
+	var least := INF
+	for i in CHAIN:
+		var p := a.root+a.chain[i]
+		for j in CHAIN:
+			least = minf(least,p.distance_to(b.root+b.chain[j])-a.radii[i]-b.radii[j])
+	return least
 
 ## The spur's radius `q` of the way up, a share of its root's.
 static func _radius(q: float) -> float:
@@ -320,8 +447,8 @@ func _take() -> StaticBody3D:
 ## Tunnel `g` is gone, and its spurs with it.
 func _let_go(g: Group) -> void:
 	for sp: Spur in g.spurs:
-		if sp.body == null: continue
 		_tell.drop(sp)
+		if sp.body == null: continue
 		sp.body.visible = false
 		sp.body.collision_layer = 0
 		_spare.append(sp.body)
@@ -419,6 +546,44 @@ func face(p: Vector3, grow: float) -> Vector3:
 				best = d
 				out = (p-c).normalized()
 	return out
+
+## The spur near the plane that's out (snapping or snapped; one still in its tell isn't
+## there) and within `pad` m of the way from `p` along `way` (unit) for `look` m, or null.
+func struck(p: Vector3, way: Vector3, look: float, pad: float) -> Spur:
+	for sp: Spur in _near:
+		if sp.body == null or sp.out <= 0.0: continue
+		var to := sp.bound_at-p
+		var t := clampf(to.dot(way),0.0,look)
+		if (p+way*t).distance_to(sp.bound_at) > sp.bound+pad: continue
+		var from := sp.root+sp.axis*(sp.long*(sp.out-1.0))
+		for i in CHAIN:
+			var c := from+sp.chain[i]
+			var k := clampf((c-p).dot(way),0.0,look)
+			var r := sp.radii[i]+pad
+			if (p+way*k).distance_squared_to(c) < r*r: return sp
+	return null
+
+## Spur `sp` smashed by the plane going `blast` (m/s): it bursts, and it's gone.
+func smash(sp: Spur, blast: Vector3) -> void:
+	if sp.body == null: return
+	var from := sp.root+sp.axis*(sp.long*(sp.out-1.0))
+	_rubble.burst(from,sp.axis*(sp.long*sp.out),sp.girth,blast)
+	sp.broken = true
+	sp.out = 0.0
+	sp.body.visible = false
+	sp.body.collision_layer = 0
+	_spare.append(sp.body)
+	sp.body = null
+	_moving.erase(sp)
+	_near.erase(sp)
+	stats.smashed = int(stats.smashed)+1
+
+## The tell and the rubble, shared with the plugs (scripts/endless/bore_plug.gd).
+func tell() -> BoreTell:
+	return _tell
+
+func rubble() -> BoreRubble:
+	return _rubble
 
 ## Whether `body` is a spur's.
 func holds(body: Object) -> bool:

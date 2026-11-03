@@ -69,6 +69,8 @@ var _mult_kick := INF
 var _last_mult := 1.0
 var _prev_chain := 0.0
 var _prev_mult := 1.0
+var _prev_meter := 0.0
+var _meter_flash := 0.0
 var _bank := {}
 var _loss := {}
 var _note := {}
@@ -184,6 +186,10 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 	_place_labels(near,u)
 	_prev_chain = near.chain_points
 	_prev_mult = mult
+	# The meter fills live: it whitens as each moment scores into it.
+	_meter_flash = maxf(_meter_flash-delta/0.4,0.0)
+	if near.meter > _prev_meter+0.0005: _meter_flash = 1.0
+	_prev_meter = near.meter
 	queue_redraw()
 	_block.queue_redraw()
 
@@ -331,9 +337,7 @@ func _draw() -> void:
 	draw_rect(Rect2(right-mw-1.0,my-1.0,mw+2.0,5.0*u+2.0),Color(0,0,0,0.3))
 	var fill := clampf(_near.meter,0.0,1.0)
 	var pulse := 0.75+0.25*sin(_clock*TAU*4.0) if bright else 0.9
-	var banked := 0.0
-	if not _bank.is_empty(): banked = 1.0-smoothstep(1.2,BANK_TIME,float(_bank.age))
-	draw_rect(Rect2(right-mw*fill,my,mw*fill,5.0*u),Color(GOLD.lerp(Color.WHITE,banked*0.6),pulse))
+	draw_rect(Rect2(right-mw*fill,my,mw*fill,5.0*u),Color(GOLD.lerp(Color.WHITE,_meter_flash*0.6),pulse))
 	var label := ("SURGE" if bright else "SURGE  ·  %s" % key_name) if _near.meter > 0.0 else "SURGE"
 	_text(self,_caps,label,Vector2(right,my-5.0*u),roundi(13.0*u),Color(CREAM,0.75 if _near.meter > 0.0 else 0.4),u,1.0)
 

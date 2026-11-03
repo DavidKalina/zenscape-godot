@@ -27,9 +27,10 @@ const TALL_LEAST := 3.2
 const ROWS := 7
 const ACROSS := 9
 const ROWS_A_FRAME := 1
-## The burst's quads, how many bursts can run at once, and how long one lasts past the snap.
+## The burst's quads, how many bursts can run at once (a corkscrew fires up to five in
+## under two seconds, a plug two), and how long one lasts past the snap.
 const BITS := 150
-const BURSTS := 4
+const BURSTS := 8
 const BURST_AFTER_S := 1.8
 ## The light: what it starts at, reaches by the snap, jumps to at the snap, how fast it
 ## then dies (s), its range, and how far off the rock it stands (m).
@@ -123,8 +124,8 @@ func _job(t: Tunnels.Site, grain: FastNoiseLite, sp: RefCounted) -> Job:
 	job.grain = grain
 	job.sp = sp
 	job.r = clampf(float(sp.girth)*CRACK_GIRTHS,CRACK_R.x,CRACK_R.y)
-	job.share = fposmod(BoreLine.angle_at(t,sp.s)/TAU,1.0)
-	job.rng.seed = hash([t.seed,"bore crack",sp.s])
+	job.share = float(sp.round)
+	job.rng.seed = hash([t.seed,"bore crack",sp.s,sp.turn,sp.side])
 	return job
 
 ## This frame's rows.
@@ -153,20 +154,25 @@ func light(t: Tunnels.Site, grain: FastNoiseLite, sp: RefCounted) -> void:
 	var crack: MeshInstance3D = sp.crack
 	crack.set_instance_shader_parameter("lit_at",now)
 	crack.visible = true
+	shower(sp.root,(BoreLine.middle(t,sp.s)-sp.root).normalized(),float(crack.get_meta("r")),float(crack.get_meta("tall")))
+
+## Grit and light off the rock at `root`, `up` into the bore, over a patch `wide` m round
+## and `tall` high, with no crack: a spur's, or a plug's dust (scripts/endless/bore_plug.gd).
+## `late`: how long after a spur's hold its snap comes (s; the grit's last burst then).
+func shower(root: Vector3, up: Vector3, wide: float, tall: float, late := 0.0) -> void:
 	var b: Burst = _bursts[_next]
 	_next = (_next+1)%BURSTS
-	var up: Vector3 = (BoreLine.middle(t,sp.s)-sp.root).normalized()
-	b.node.position = sp.root
-	b.node.set_instance_shader_parameter("lit_at",now)
+	b.node.position = root
+	b.node.set_instance_shader_parameter("lit_at",now+late)
 	b.node.set_instance_shader_parameter("up",up)
-	b.node.set_instance_shader_parameter("wide",float(crack.get_meta("r")))
-	b.node.set_instance_shader_parameter("tall",float(crack.get_meta("tall")))
+	b.node.set_instance_shader_parameter("wide",wide)
+	b.node.set_instance_shader_parameter("tall",tall)
 	b.node.visible = true
-	b.light.position = sp.root+up*LIGHT_OFF
+	b.light.position = root+up*LIGHT_OFF
 	b.light.light_energy = LIGHT_FROM
 	b.light.visible = true
-	b.clock = 0.0
-	b.left = _hold+_snap+BURST_AFTER_S
+	b.clock = -late
+	b.left = _hold+_snap+BURST_AFTER_S+late
 
 ## One frame.
 func step(delta: float) -> void:
@@ -181,7 +187,7 @@ func step(delta: float) -> void:
 			b.node.visible = false
 			b.light.visible = false
 			continue
-		b.light.light_energy = _light_at(b.clock)
+		b.light.light_energy = _light_at(maxf(b.clock,0.0))
 
 ## The light `t` s after he passed.
 func _light_at(t: float) -> float:

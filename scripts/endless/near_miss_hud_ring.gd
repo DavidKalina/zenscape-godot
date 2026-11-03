@@ -182,6 +182,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		_loss.age += delta*(1.4 if bool(_loss.crash) else 1.0)
 		if float(_loss.age) >= LOSS_TIME: _loss = {}
 	_flare = maxf(_flare-delta,0.0)
+	_meter_rise(near)
 	_place_ring()
 	_prev_chain = near.chain_points
 	_prev_mult = mult
@@ -493,7 +494,6 @@ func _draw_bank_c(s: float) -> void:
 		var nw := _width(_nums,text,npx)
 		var mpx := 20.0*s
 		_txt(_block,_nums_i,"×%s" % String.num(float(_bank.mult),1),Vector2(at.x+nw+10.0*s,c.y+3.0*s),mpx,Color(CREAM,alpha*k),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
-	if a >= _slam_end() and a < _slam_end()+0.05: _flare = 0.4
 	if has_line and k > 0.0:
 		if _bank.line.has("shape"): _draw_recap(s,c,px,a-read,alpha)
 		else: _draw_banner(s,c,px,a-read,alpha)

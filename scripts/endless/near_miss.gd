@@ -51,11 +51,13 @@ extends RefCounted
 ## `difficulty`) to the multiplier, cut by the farming cut and by its
 ## repeats in the line (a move's nth repeat adds 1/(n+1) of it); a kind new
 ## to a line already under way adds NEW_KIND more. The multiplier starts at
-## x1 and stops at CHAIN_TOP. BANK_AFTER s with no new moment banks it,
-## points x multiplier, into the meter (METER_FULL points fill it), or at once,
-## skimming or holding a move too, when that would fill the meter; reads the
+## x1 and stops at CHAIN_TOP. The meter fills live as the chain grows: its
+## points x multiplier, as they rise, over `meter_full` (none while the surge
+## is held or the smash is hot). BANK_AFTER s with no new moment banks the
+## chain, points x multiplier, into the score only; reads the
 ## line back (`_line`, the frame's "line", paid by `game.book`); a scrape
-## or crash (`lose`) drops what is unbanked. Each moment kicks the speed a
+## or crash (`lose`) drops what is unbanked, and the meter keeps what it
+## has. Each moment kicks the speed a
 ## little (KICK m/s by closeness). The surge (`fly_surge` held) spends the
 ## meter over SURGE_TIME s full, driving the plane past Boost (SkyPlane
 ## `surge`).
@@ -155,7 +157,7 @@ var closing := 0.0
 ## A body point in something (see the header), or {}.
 var touching := {}
 ## The chain: its points (before the multiplier), its moments, the seconds
-## left before it banks, and the meter (0 to 1) it banks into.
+## left before it banks, and the meter (0 to 1) it fills as it grows.
 var chain_points := 0.0
 var chain_count := 0
 ## The multiplier as the line has built it (`multiplier` caps it), and how
@@ -164,6 +166,9 @@ var chain_mult := 1.0
 var _kinds := {}
 var bank_left := 0.0
 var meter := 0.0
+## The unbanked line's points x multiplier already gone into the meter (or
+## passed by while surging): the meter fills live by what's past it.
+var _metered := 0.0
 ## How hard the surge drives now (0 to 1; SkyPlane `surge`).
 var surge := 0.0
 ## The nearest thing in reach now (m; INF: none, or slow, or not flying):
@@ -280,6 +285,7 @@ func _clear_line() -> void:
 	chain_points = 0.0
 	chain_count = 0
 	chain_mult = 1.0
+	_metered = 0.0
 	_kinds.clear()
 	line_moments.clear()
 
@@ -507,6 +513,8 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if _gate_last != Vector3.INF and fast and bool(game.hand_landing.flying()):
 		var arches = game.get("arches")
 		var hit: Dictionary = arches.gate_crossed(_gate_last,p_now) if arches != null else {}
+		# A plug's hole in a bore (BorePlugs `crossed`) is threaded the same way.
+		if hit.is_empty() and game.tunnels != null and game.tunnels.plugs != null: hit = game.tunnels.plugs.crossed(_gate_last,p_now)
 		if not hit.is_empty():
 			_gate.start(maxf(float(hit.room)-WorldScale.span*0.5,0.0))
 			_gate.speed = speed
@@ -550,13 +558,17 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if fast and bool(game.hand_landing.flying()):
 		if ground_clear < reach: gap = maxf(ground_clear,0.0)
 		if stone_clear < stone_reach: gap = minf(gap,maxf(stone_clear,0.0))
-	# The bank: on its timer, or now if it would fill the meter.
-	var fills := chain_points > 0.0 and meter < 1.0 and meter+chain_points*multiplier()/meter_full() >= 1.0
-	if fills or (chain_points > 0.0 and not skimming and not moves.holding):
+	# The meter fills live: the line's points x multiplier as they grow, not
+	# while the surge is held (or the smash is hot).
+	var live := chain_points*multiplier()
+	if live > _metered:
+		if not surge_held: meter = minf(1.0,meter+(live-_metered)/meter_full())
+		_metered = live
+	# The bank, on its timer: into the score only.
+	if chain_points > 0.0 and not skimming and not moves.holding:
 		bank_left -= delta
-		if fills or bank_left <= 0.0:
+		if bank_left <= 0.0:
 			var banked := chain_points*multiplier()
-			meter = minf(1.0,meter+banked/meter_full())
 			var line := _line(banked,game)
 			out["banked"] = {"points":banked,"line":line}
 			out["line"] = line
