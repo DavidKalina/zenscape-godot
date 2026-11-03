@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_disabled, shadows_disabled, fog_disabled;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 // The endless flight's clouds into the scene (scripts/endless/
 // endless_clouds.gd): a sheet over the screen, drawn in the see-through
 // pass just after the sea, that colours the march's light terms
@@ -85,6 +85,11 @@ void fragment() {
 	float bright = clamp(terms.y / 0.95, 0.0, 1.0);
 	float met = b.y / cloud_a;
 	float glow = b.w / cloud_a;
+	// The march stops at the flat sea, and the sea's waves are drawn after it:
+	// set at the cloud's own depth, the depth test hides it behind a crest the
+	// sea has already written.
+	vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(eye + rd * met, 1.0));
+	DEPTH = clamp(clip.z / clip.w, 0.0, 1.0);
 	// In the cloud: the white glow of the fog round the eye, warmer toward
 	// the sun.
 	vec3 glow_col = mix(vec3(0.95, 0.97, 1.0), sun_hue, 0.15) * GLOW * mix(1.0, 0.2, zs_night) * mix(0.6, 1.0, zs_daylight);
