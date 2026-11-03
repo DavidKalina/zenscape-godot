@@ -155,14 +155,16 @@ void vertex() {
 	// The breeze's lean and sway, as conifer_wind bends the near crown: the
 	// quad's top corners go with the tree's upper crown, its foot stays.
 	sprite_sheen = 0.0;
-	float air = zs_tree_air();
+	// The breeze where the tree stands (wind_field.gdshaderinc, via tree_wind).
+	vec2 root = foot.xz;
+	float breeze = zs_wind_breeze_at(root);
+	float air = zs_tree_air_of(breeze);
 	if (air > 0.0) {
 		float tall = fit.x * 2.0 * sc;
 		float k = clamp((VERTEX.y - foot.y) / max(tall, 0.1), 0.0, 1.2);
-		vec2 root = foot.xz;
 		float phase = dot(root, vec2(0.43, 0.71));
-		float wave = zs_tree_wave(root, ZS_SPRITE_LAG * tall * k);
-		float lean = (ZS_SPRITE_LEAN * clamp(zs_breeze, 0.0, 2.5) * ZS_TREE_SWAY_LEAN + wave * ZS_TREE_WAVE_LEAN) * min(zs_tree_alive, 2.0);
+		float wave = zs_tree_wave_air(root, ZS_SPRITE_LAG * tall * k, air);
+		float lean = (ZS_SPRITE_LEAN * breeze * ZS_TREE_SWAY_LEAN + wave * ZS_TREE_WAVE_LEAN) * min(zs_tree_alive, 2.0);
 		float pace = 2.6 / sqrt(max(tall, 0.3));
 		float swing = sin(zs_motion_time * pace + phase - k * 0.9) * 0.7 + sin(zs_motion_time * pace * 1.63 + phase * 1.7 - k * 1.3) * 0.3;
 		vec2 dir = zs_wind_direction;

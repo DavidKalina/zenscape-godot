@@ -50,6 +50,8 @@ const EndlessPost = preload("res://scripts/endless/endless_post.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const DayCycle = preload("res://scripts/endless/day_cycle.gd")
 const LandHorizon = preload("res://scripts/endless/land_horizon.gd")
+const WindField = preload("res://scripts/endless/wind_field.gd")
+const WindMap = preload("res://scripts/endless/wind_map.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -98,6 +100,8 @@ const SHADOW_REACH := 900.0
 ## air's speed (m/s) that rolls the grass's waves and the sea's paws.
 const WIND := 0.75
 const AIR_SPEED := 4.5
+## The breeze plants lean in with no field (zs_breeze's project.godot value).
+const BREEZE := 0.53
 ## The sea's colour by depth (sky_ocean `tint_*`): turquoise over the
 ## shallows, clear teal, deep blue, then the open sea's dark blue, by the
 ## depths in TINT_DEPTHS (m of water looked through).
@@ -185,6 +189,30 @@ var _key_arg := 1.0
 var _fill_arg := 1.0
 ## The wind's heading over the ground now (unit xz).
 var wind_direction := Vector2.RIGHT
+## The wind by place and hour (scripts/endless/wind_field.gd: `wind.wind_at(x,
+## z)`), or null: a world whose paint has no "wind": "field" (the doors world
+## takes its home's, the wilderness's), or --wind=off, blows the mood's one
+## wind everywhere as before; so does the land past the field's bake (the
+## doors' amberlands half).
+var wind: WindField
+## The wind's clock (s): from the day's time at the start, then real seconds.
+var _wind_clock := 0.0
+## The eye last frame (the wind's strength there is the view's).
+var _eye := Vector3.ZERO
+## The field's strength at the eye, eased, and the breeze plants lean in there.
+var _wind_here := -1.0
+var _breeze_here := -1.0
+## The air's own travel (m) by the wind at the eye: with a field it all but
+## stops in calm and runs on in the wind (the pollen's drift, the water's cat's
+## paws); with none, the gusts' travel (`_gust`), as before. And its way: the
+## shaders' zs_wind_offset (m), the air's travel along each frame's heading,
+## so a pattern carried on it slides rigidly as the heading wanders.
+var drift := 0.0
+var _wind_offset := Vector2.ZERO
+## The baked exposure's texture once handed to the shaders (zs_wind_exposure).
+var _wind_texture: ImageTexture
+## The field's map (--wind-map), or null.
+var wind_map: CanvasLayer
 
 ## The season and weather shader globals a title world, isle or study may
 ## have left set (the isle publishes the real date's autumn, its snow, wet
@@ -193,7 +221,9 @@ var wind_direction := Vector2.RIGHT
 ## a green land, dry, no frost, the plants and sky in no season.
 const SEASON_GLOBALS := ["zs_season","zs_sky_season","zs_autumn","zs_snow","zs_ice","zs_ground_wet","zs_foliage_wet","zs_storm_grade","zs_storm_thin","zs_haze","zs_surface_post",
 		"zs_palette_grass","zs_palette_foliage","zs_palette_rock","zs_palette_earth","zs_palette_water",
-		"zs_look_ao","zs_look_rim","zs_look_shore","zs_look_bounce","zs_look_fill","zs_night_style"]
+		"zs_look_ao","zs_look_rim","zs_look_shore","zs_look_bounce","zs_look_fill","zs_night_style",
+		# (The wind field off and the breeze a light day's till a world's field blows.)
+		"zs_wind_field","zs_breeze"]
 
 static func reset_season_globals() -> void:
 	# The plant materials the isle shares through static caches (SkyIslets,
@@ -368,7 +398,16 @@ func setup(land_seed: int) -> void:
 		elif a.begins_with("--haze-height-bias="): haze_bias = a.get_slice("=",1).to_float()
 	ground.set_shader_parameter("haze_height",Vector4(HAZE_RISE,HAZE_SPAN,haze_cut,haze_bias))
 	ground.set_shader_parameter("beach",Field.BEACH)
-	ground.set_shader_parameter("snow_line",Field.new(land_seed).snow_line())
+	var land := Field.new(land_seed)
+	ground.set_shader_parameter("snow_line",land.snow_line())
+	if str(world.paint.get("wind","")) == "field" and WindField.wanted_mode(LaunchArgs.user_args()) != "off":
+		wind = WindField.new()
+		_wind_clock = cycle.t
+		wind.setup(land_seed,land,LaunchArgs.user_args())
+		if "--wind-map" in LaunchArgs.user_args():
+			wind_map = WindMap.new()
+			add_child(wind_map)
+			wind_map.setup(wind)
 	_build_sea()
 	_river_water(land_seed)
 	if EndlessClouds.wanted():
@@ -658,6 +697,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 		sun.light_energy *= _key
 		RenderingServer.global_shader_parameter_set("zs_hemi_energy",float(celestial.state.zs_hemi_energy)*_fill)
 	_sheen_pace = WorldProfile.current().sheen_pace_at(eye.x,eye.z)
+	_eye = eye
 	_publish(delta)
 	_haze(facing)
 	if post != null: post.step(view,self,facing)
@@ -677,10 +717,37 @@ func _publish(delta: float) -> void:
 	# The wind wanders a little round its heading, its strength breathing.
 	var angle := _wind_angle+0.35*sin(_time*0.013)
 	var strength := _wind*(0.85+0.15*sin(_time*0.21)*sin(_time*0.077))
-	var travel := delta*AIR_SPEED*(0.5+0.5*strength/WIND)
+	if wind != null:
+		# The field's: the hour, the day's temper, the place under the eye.
+		_wind_clock += delta
+		wind.step(0.0,_wind_clock,float(celestial.phase)*24.0,cycle.day,cycle.t/cycle.length,delta)
+		# Past the bake (the doors' far half: the amberlands) the mood's one
+		# wind as before.
+		var reach := wind.reach(_eye.x,_eye.z)
+		angle = lerp_angle(angle,wind.heading,reach)
+		var at_eye := wind.wind_at(_eye.x,_eye.z)
+		var here := lerpf(strength,at_eye,reach)
+		var ease := 1.0-exp(-delta*1.5)
+		_wind_here = here if _wind_here < 0.0 else lerpf(_wind_here,here,ease)
+		strength = _wind_here
+		# The breeze the near plants lean in (the near tufts, flowers, spruce):
+		# the field's at the eye; a light day's (zs_breeze's own) past its land.
+		var breeze := lerpf(BREEZE,WindField.breeze_of(at_eye),reach)
+		_breeze_here = breeze if _breeze_here < 0.0 else lerpf(_breeze_here,breeze,ease)
+		RenderingServer.global_shader_parameter_set("zs_breeze",_breeze_here)
+		_publish_field()
+		if wind_map != null: wind_map.step(delta,_eye)
+	var travel := delta*AIR_SPEED*(0.5+0.5*minf(strength,2.0)/WIND)
 	_gust += travel
 	_sheen += travel*_sheen_pace
 	wind_direction = Vector2(cos(angle),sin(angle))
+	# The air's own travel: in the field's land by the wind there alone (none
+	# in a still hollow), past it (and with no field) the gusts' as before.
+	var air := travel
+	if wind != null: air = lerpf(travel,delta*AIR_SPEED*minf(strength,2.0)/WIND,wind.reach(_eye.x,_eye.z))
+	drift += air
+	_wind_offset += wind_direction*air
+	RenderingServer.global_shader_parameter_set("zs_wind_offset",_wind_offset)
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_flow_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_wind_direction",Vector2(cos(angle),sin(angle)))
@@ -688,6 +755,31 @@ func _publish(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust)
 	RenderingServer.global_shader_parameter_set("zs_sheen_distance",_sheen)
 	RenderingServer.global_shader_parameter_set("zs_gust_speed",AIR_SPEED)
+
+## The field's wind at the eye (eased; zs_wind_strength's scale) and how far
+## the eye is in its land (0..1), or (-1, 0) with no field (other worlds,
+## --wind=off).
+func wind_here() -> Vector2:
+	if wind == null or _wind_here < 0.0: return Vector2(-1.0,0.0)
+	return Vector2(_wind_here,wind.reach(_eye.x,_eye.z))
+
+## The wind field to the shaders (shaders/wind_field.gdshaderinc): its factor
+## now, how far its bake has come in, a fixed strength, its patches, and the
+## baked exposure as a texture once it lands.
+func _publish_field() -> void:
+	if wind.baked and _wind_texture == null:
+		_wind_texture = wind.texture()
+		if _wind_texture != null:
+			RenderingServer.global_shader_parameter_set("zs_wind_exposure",_wind_texture)
+			RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
+	if _wind_texture == null and wind.n >= 2: RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
+	var fixed := wind.fixed if wind.mode == "fixed" else -1.0
+	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now,wind.come_in() if _wind_texture != null else 0.0,fixed,1.0))
+	for i in 5:
+		RenderingServer.global_shader_parameter_set("zs_wind_patch_%d" % i,wind.blobs[i] if i < wind.blobs.size() else Vector4(0.0,0.0,1.0,0.0))
+	var near := wind.spots_near(_eye.x,_eye.z)
+	RenderingServer.global_shader_parameter_set("zs_wind_near_0",near[0])
+	RenderingServer.global_shader_parameter_set("zs_wind_near_1",near[1])
 
 ## The Peak's collar keeps its own sky: the land's hour below the band
 ## (`lo`..`hi`, m over the sea, as EndlessClouds.set_collar), the collar's
@@ -831,3 +923,8 @@ func hour() -> float:
 func _exit_tree() -> void:
 	if post != null: post.free_buffers()
 	if water != null: water.finish()
+	if wind != null:
+		wind.finish_bake()
+		# The next scene's shaders blow no field till it publishes its own.
+		RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(0.0,0.0,-1.0,0.0))
+		RenderingServer.global_shader_parameter_set("zs_breeze",BREEZE)

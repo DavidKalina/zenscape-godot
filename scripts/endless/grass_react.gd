@@ -60,8 +60,9 @@ const WAKE_SHADER = preload("res://shaders/wake_gust_stamp.gdshader")
 const MAP_PX := 512
 const MAP_M := 384.0
 const SNAP := 4
-## The most stamps alive at once.
-const MOST := 220
+## The most stamps alive at once (the eddies' rolling bands take up to
+## about 100 of them).
+const MOST := 320
 
 ## The wash, in plane spans (WorldScale TOY_SPAN x the plane's size): how
 ## high it reaches the grass, its puff's reach there (wider the higher it
@@ -255,6 +256,7 @@ func set_enabled(on: bool) -> void:
 		_wake_step(Vector2.ZERO)
 		_stamps.clear()
 		_held = [{},{},{}]
+		_flows.clear()
 		_gusts.clear()
 		for i in SLOTS: _free_parcel(i)
 	_publish_rect()
@@ -452,6 +454,23 @@ func eddy(at: Vector2, way: Vector2, strength: float, reach: float) -> void:
 	_add({"at": at, "way": way*0.9, "strength": strength*gust_scale*0.55, "swirl": 0.0,
 		"reach": reach, "front": 0.0, "hold": 0.25, "press": eddy_press})
 
+## The eddies' rolling bands this frame (scripts/endless/endless_eddies.gd):
+## each a stamp drawn as it is now, with no clock of its own, `at` (xz),
+## `way` (unit), `strength`, `reach`. The eddies move them each frame along
+## each ribbon's path behind its head, so a band rolls through the grass
+## smoothly instead of popping in as a chain of stamps. Replaces last frame's.
+func set_flows(list: Array) -> void:
+	_flows.clear()
+	if not enabled or not gusts_on: return
+	for f: Dictionary in list:
+		# A springy stamp aged well into an endless hold draws its full push.
+		_flows.append({"at": f.at, "way": Vector2(f.way)*0.9, "strength": float(f.strength)*gust_scale,
+			"swirl": 0.0, "reach": f.reach, "front": 0.0, "hold": FLOW_HOLD, "press": eddy_press,
+			"born": time-FLOW_AGE})
+var _flows: Array[Dictionary] = []
+const FLOW_AGE := 1000.0
+const FLOW_HOLD := 1.0e6
+
 ## Something bursting out of the grass at `at` (the grass flush's birds): a
 ## quick shove out from there that springs back and shakes.
 func shake(at: Vector2, reach: float, strength: float) -> void:
@@ -536,7 +555,7 @@ func _draw() -> void:
 		else: i += 1
 	var per_m := MAP_PX/MAP_M
 	var n := 0
-	for s: Dictionary in _held+_stamps:
+	for s: Dictionary in _held+_flows+_stamps:
 		if s.is_empty() or n >= MOST: continue
 		var at: Vector2 = s.at
 		var reach: float = s.reach
@@ -568,7 +587,7 @@ func _draw() -> void:
 ## the CPU as the stamp shader does (for drivers and checks).
 func push_at(p: Vector2) -> Vector3:
 	var sum := Vector3.ZERO
-	for s: Dictionary in _held+_stamps:
+	for s: Dictionary in _held+_flows+_stamps:
 		if s.is_empty(): continue
 		var reach: float = s.reach
 		var o: Vector2 = p-Vector2(s.at)

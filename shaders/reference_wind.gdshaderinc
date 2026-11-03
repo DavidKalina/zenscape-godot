@@ -425,16 +425,22 @@ float zs_ribbon_wake(vec2 p, float lag) {
 // behind the air there. `wave` is how much of the meadow's waves it rides
 // (0 trees, 1 grass), crests `crest_length` m apart rolling at `crest_speed`.
 // `bow` 0..1: how far it is bowed, for the paling of bowed grass.
-float zs_breeze_lean_wave(vec2 root, float lag, float wave, float crest_length, float crest_speed, out float bow) {
+// zs_breeze_lean_wave in breeze `air` (zs_breeze_air's scale; the wind field's
+// at the root, wind_field.gdshaderinc zs_wind_breeze_at).
+float zs_breeze_lean_wave_air(vec2 root, float lag, float wave, float crest_length, float crest_speed, float air, out float bow) {
 	float travel = zs_gust_distance - zs_gust_speed * lag;
 	float g = zs_breeze_field_at(root, travel);
 	float band = zs_gust_band_at(root, travel);
 	float crest_now = wave > 0.0 ? zs_wave_crest_at(root, crest_length, crest_speed, zs_grass_offset, travel) : 0.0;
-	float lean = zs_breeze_air() * (ZS_BREEZE_BASE + ZS_BREEZE_GUST * g * g + ZS_BREEZE_WAVE * crest_now * wave) * band;
+	float lean = air * (ZS_BREEZE_BASE + ZS_BREEZE_GUST * g * g + ZS_BREEZE_WAVE * crest_now * wave) * band;
 	lean += zs_front_at(root, lag) + zs_ribbon_wake(root, lag);
 	lean /= sqrt(1.0 + lean * lean / (ZS_BREEZE_MAX * ZS_BREEZE_MAX));
 	bow = smoothstep(0.08, 0.6, lean);
 	return lean;
+}
+
+float zs_breeze_lean_wave(vec2 root, float lag, float wave, float crest_length, float crest_speed, out float bow) {
+	return zs_breeze_lean_wave_air(root, lag, wave, crest_length, crest_speed, zs_breeze_air(), bow);
 }
 
 float zs_breeze_lean_at(vec2 root, float lag, float wave, out float bow) {

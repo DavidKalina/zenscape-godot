@@ -1589,6 +1589,7 @@ func _react(delta: float) -> void:
 	else: thrust = float(plane.engine)*clampf(0.6+0.4*float(plane.throttle),0.35,1.0)
 	var facing := -camera.global_basis.z
 	if eddies != null:
+		eddies.wind = look.wind
 		eddies.step(delta,camera.global_position,Vector2(facing.x,facing.z),look.wind_direction,1.0,Callable(self,"_grass_at"))
 	FrameLog.mark(&"r_eddies")
 	react.step(delta,camera.global_position,
@@ -1613,7 +1614,7 @@ func _react(delta: float) -> void:
 	if motes != null:
 		var skims: Array = eddies.ribbons.ribbons if eddies != null else []
 		if snow != null: skims = snow.off_snow(skims)
-		motes.step(delta,camera.global_position,look.wind_direction,look._gust,wash,skims,Callable(self,"_grass_at"))
+		motes.step(delta,camera.global_position,look.wind_direction,look.drift,wash,skims,Callable(self,"_grass_at"))
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
 func _grass_at(x: float, z: float) -> float:

@@ -17,9 +17,12 @@ vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float shee
 	// round its lean at a tall tree's slow pace, a beat behind the trunk.
 	float k = clamp(height / conifer_height, 0.0, 1.0);
 	float tall = conifer_height * length(model[1].xyz);
+	// The breeze where the tree stands (the wind field's, wind_field.gdshaderinc).
+	float air = zs_wind_breeze_at(root);
+	float tree_air = zs_tree_air_of(air);
 	float bow;
-	float lean = zs_breeze_lean_at(root, ZS_BREEZE_LAG * tall * k, 0.0, bow);
-	float wave = alive ? zs_tree_wave(root, ZS_BREEZE_LAG * tall * k) : 0.0;
+	float lean = zs_breeze_lean_wave_air(root, ZS_BREEZE_LAG * tall * k, 0.0, ZS_BREEZE_WAVE_LENGTH, ZS_BREEZE_WAVE_SPEED, air, bow);
+	float wave = alive ? zs_tree_wave_air(root, ZS_BREEZE_LAG * tall * k, tree_air) : 0.0;
 	float sway = ZS_BREEZE_SWING;
 	if (alive) {
 		lean = lean * ZS_TREE_SWAY_LEAN + wave * ZS_TREE_WAVE_LEAN;
@@ -48,7 +51,7 @@ vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float shee
 	motion += local.xz / (10.0 + length(local)) * bend * 0.32;
 	// Wide cone rims flutter; the narrow trunk receives no tip flutter.
 	float rim = smoothstep(0.25, 0.85, length(vertex.xz));
-	motion += crosswind * rim * bend * zs_breeze_air() * (0.015 + 0.03 * gust)
+	motion += crosswind * rim * bend * air * (0.015 + 0.03 * gust)
 		* sin(t * 6.5 + height * 4.1 + phase + dot(vertex.xz, vec2(3.1, 2.3)));
 	// The wind tool (scripts/wind_gust.gd) bends the whole tree its own way,
 	// trunk and crown together, with spring-back and a shiver in the rims.
@@ -68,7 +71,7 @@ vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float shee
 	vec3 offset = inverse(mat3(model)) * vec3(motion.x, heave - droop, motion.y) * length(model[1].xyz);
 	if (alive) {
 		float lift;
-		offset += zs_tree_bough(vertex, phase, max(zs_tree_wave(root, 0.0), stir), lift);
+		offset += zs_tree_bough(vertex, phase, max(zs_tree_wave_air(root, 0.0, tree_air), stir), tree_air, lift);
 		sheen = max(wave, stir * 0.8);
 	}
 	return offset;
