@@ -51,19 +51,20 @@ const PACE := Vector2(5.0,8.0)
 const DIVE := 1.6
 ## Its slot: fore of the plane's centre (m, the camera's 12 m behind), out to one
 ## side (m), down from the surface to its middle (m), so about 14-18 m from the
-## eye. Deeper than about 1 m it's lost at that range; shallower than 0.6 its
-## back lies on top. Off Boost the camera's narrower: the slot is further on by
+## eye. Deeper than about 1 m it's lost at that range; shallower than about 0.8
+## its back now and then stands out of a trough the swell's height (EndlessSea
+## `height_at`) misses, a black cut-out. Off Boost the camera's narrower: the slot is further on by
 ## up to CRUISE_ON m. It comes up from behind, wide and deep, and dives back and
 ## away.
 const FORE := Vector2(-2.0,4.0)
 const CRUISE_ON := 5.0
 const BOOST_SPEED := Vector2(42.0,54.0)
 const SIDE := Vector2(5.0,6.5)
-const DEPTH := 0.78
+const DEPTH := 0.9
 const START := Vector3(-16.0,11.0,4.0)
 const GONE := Vector3(-30.0,13.0,5.5)
 ## How far its slot wanders (m) and how fast (rad/s).
-const WANDER := Vector3(2.5,0.8,0.12)
+const WANDER := Vector3(2.5,0.8,0.08)
 const WANDER_RATE := Vector3(0.55,0.4,0.9)
 ## A surge: once in a while it pulls ahead this far (m) for about this long (s).
 const SURGE := 4.0
@@ -86,8 +87,9 @@ const FIN_TOP := 0.167
 ## (shaders/wake_fish.gdshader) this much of the leaping fish's, back to all of it
 ## as it comes out.
 const UNDER_LIGHT := 0.35
-## Its body takes the water's colour this far over the still sea's level (m).
-const WET_BACK := 0.4
+## Its body takes the water's colour this far over the swell it swims under (m):
+## the fin that stands out of it is a fin in the air, not a black cut-out.
+const WET_BACK := 0.08
 ## The kind: a dark back, a dull silver flank, a pale belly.
 const KIND := {"back":Color(0.04,0.06,0.07),"flank":Color(0.36,0.4,0.4),"belly":Color(0.78,0.78,0.74),"spot":Color(0.03,0.04,0.05),"band":Color(0.3,0.32,0.34),"fin":Color(0.08,0.1,0.11),"spots":0.5,"bands":0.0}
 
@@ -273,7 +275,11 @@ func _ready_one(s: Swimmer, long: float, to: Vector3, offset: Vector3) -> void:
 func _world(fore: float, side: float, depth: float) -> Vector3:
 	fore += CRUISE_ON*(1.0-smoothstep(BOOST_SPEED.x,BOOST_SPEED.y,float(wake._speed)))
 	var p: Vector3 = wake._at+wake._ahead*fore+wake._right*side*_sign
-	p.y = Field.SEA_Y-depth
+	# Under the swell, not the still level: in a trough its back stood out of the
+	# water as a flat dark cut-out.
+	var swell := 0.0
+	if wake.sea != null: swell = wake.sea.height_at(p.x,p.z)*(1.0-smoothstep(0.0,0.5,-depth))
+	p.y = Field.SEA_Y+swell-depth
 	return p
 
 func _run(delta: float) -> void:
@@ -301,6 +307,7 @@ func _run(delta: float) -> void:
 	for s: Swimmer in _swim:
 		var want := _slot(s,lead,dive_from)
 		var was := s.pos
+		var was_depth := s.depth
 		var k := 1.0-exp(-delta/0.35)
 		s.fore = lerpf(s.fore,want.x,k if _t > RISE else 1.0)
 		s.side = lerpf(s.side,want.y,k if _t > RISE else 1.0)
@@ -308,6 +315,9 @@ func _run(delta: float) -> void:
 		if s == lead and _air >= 0.0: s.depth = _breach(delta)
 		s.pos = _world(s.fore,s.side,s.depth)
 		s.vel = (s.pos-was)/maxf(delta,1e-4)
+		# It rides the swell level: only its own rise and dive tip its nose, or the
+		# swell's bob lifts its head out of the water.
+		s.vel.y = (was_depth-s.depth)/maxf(delta,1e-4)
 		_pose(s,delta)
 	_water()
 
@@ -386,6 +396,7 @@ func _pose(s: Swimmer, delta: float) -> void:
 	for i in 9: _spine[i] -= Vector3(mid.x,mid.y-(0.42-3.0/8.0),0.0)
 	s.mat.set_shader_parameter("spine",_spine)
 	s.mat.set_shader_parameter("flare",-0.4)
+	s.mat.set_shader_parameter("surface_y",s.pos.y+s.depth+WET_BACK)
 	var lit := lerpf(1.0,UNDER_LIGHT,smoothstep(-0.2,0.6,s.depth))
 	# The flank's shine is the sky's and the sun's off it in the air: under, the
 	# surface takes them, or it shows as a white fish lying on the water.

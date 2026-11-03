@@ -283,6 +283,10 @@ uniform vec4 swim_body0 = vec4(0.0);
 uniform vec4 swim_at1 = vec4(0.0);
 uniform vec4 swim_body1 = vec4(0.0);
 uniform int swim_count = 0;
+// How much of a fish's body shows through the water at its back (bluer and
+// greener than red), and the depth (m) it fades over below that.
+uniform vec3 swim_see = vec3(0.65, 0.9, 0.95);
+uniform float swim_clear = 1.0;
 // 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover,
 // 6 (sea_foam 1): the lace's density, youth, buffer reach and churn, 7: the
 // foam worked out per crest everywhere (no buffer).
@@ -910,11 +914,26 @@ vec2 zs_swim_one(vec2 p, vec2 look, vec4 at, vec4 body, inout float slick, inout
 			float lead = smoothstep(-0.2, 0.05, b);
 			spray = max(spray, exp(-(v * v) / (w * w)) * exp(-max(b, 0.0) / 0.5) * lead * fin * 0.8);
 			float off = abs(v) - 0.36 * max(b, 0.0);
-			float arm = exp(-(off * off) / 0.1) * exp(-max(b, 0.0) / 2.2) * lead * fin;
-			grad.y += sin(off * TAU / 0.45) * arm * 0.35 * sign(v);
+			float arm = exp(-(off * off) / 0.1) * exp(-max(b, 0.0) / 0.9) * lead * fin;
+			grad.y += sin(off * TAU / 0.45) * arm * 0.18 * sign(v);
 		}
 	}
 	return way * grad.x + side * grad.y;
+}
+
+// Whether the bed seen at `r` is a swimming fish's body, under the surface at
+// `top`: inside its length and breadth and no deeper than its belly, where the
+// lake's own bed lies metres down. Its back is no shallow: no shore foam, no
+// clear edge, and the water over it its own.
+vec2 zs_swim_hit(vec3 r, float top, vec4 at, vec4 body) {
+	float l = body.x;
+	if (l <= 0.0 || body.w <= 0.0) return vec2(0.0);
+	vec2 d = r.xz - at.xy;
+	float u = dot(d, at.zw) / (0.75 * l);
+	float v = dot(d, vec2(-at.w, at.z)) / (0.4 * l);
+	float below = top - r.y;
+	float hit = float(u * u + v * v < 1.0 && below < body.y + 0.25 * l + 0.8) * body.w;
+	return vec2(hit, hit * (1.0 - smoothstep(0.15, 0.85, u * u + v * v * 2.5)));
 }
 
 // A wake at `p` (track 0 the plane's, 1 the burrower's): its foam (returned), the stirred water round it
@@ -1213,6 +1232,14 @@ void fragment() {
 	}
 	bed_depth = max(bed_depth, 0.0);
 	float through = depth > 0.0 ? length(receiver - world_position) : DEEP;
+	// A swimming fish seen here (its body, not the lake's bed): where, and how much,
+	// thinning to its nose, tail and sides as water blurs an edge.
+	vec2 swim_seen = vec2(0.0);
+	if (swim_count > 0 && depth > 0.0) {
+		swim_seen = zs_swim_hit(receiver, world_position.y, swim_at0, swim_body0);
+		if (swim_count > 1) swim_seen = max(swim_seen, zs_swim_hit(receiver, world_position.y, swim_at1, swim_body1));
+	}
+	float swim_hit = swim_seen.x;
 
 	// The water's depth here: the map's where it reaches, else the bed seen.
 	float known;
@@ -1224,6 +1251,9 @@ void fragment() {
 	float water_depth = max(mix(fallback, mapped, known), 0.0) * waver;
 
 	vec3 seen = exp(-absorb * through) * exp(-max(bed_depth, through * 0.4) / bed_fade);
+	// Over a fish the water is thicker than a clear shallow's: its back a dark
+	// shape, its sides and belly going to the water's colour as they go down.
+	seen = mix(seen, swim_see * exp(-bed_depth / swim_clear) * swim_seen.y, swim_hit);
 	vec3 bed = textureLod(sea_screen, uv, 0.0).rgb;
 
 	vec3 column = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
@@ -1264,6 +1294,7 @@ void fragment() {
 	// rolling in over the shelf.
 	float near_bed = depth > 0.0 ? min(bed_depth, mix(bed_depth, mapped, known * 0.5)) : mapped;
 	near_bed = mix(near_bed, max(near_bed, mapped), swim_over);
+	near_bed = mix(near_bed, max(near_bed, 4.0), swim_hit);
 	float lap = shore_foam * (0.75 + 0.25 * sin(t * 0.9 + zs_noise(rest_xz * 0.2) * 6.2832));
 	float line = (1.0 - smoothstep(lap * 0.3, lap, near_bed)) * (1.0 - 0.8 * still);
 	float band_phase = water_depth * 1.6 + t * 0.9 + zs_noise(rest_xz * 0.035) * 4.0;
@@ -1311,7 +1342,7 @@ void fragment() {
 		foamed = max(foamed, laced * foam);
 	}
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
-	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still) * (1.0 - swim_over);
+	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still) * (1.0 - max(swim_over, swim_hit));
 	vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
 	// Fresh foam stands up a little: brighter, and lit by its own slope.
 	if (sea_foam > 0) white *= 1.0 + 0.1 * lace_youth + 0.18 * clamp(dot(normal, zs_key_direction), -0.5, 1.0) * float(lace_density > 0.0);
@@ -1462,5 +1493,5 @@ void fragment() {
 	if (debug_view == 2) display_color = vec3(cover, foamed, waked);
 	if (debug_view == 6) display_color = vec3(lace_density, lace_youth, in_buffer * 0.5 + churned * 0.5);
 	ALBEDO = scene_linear_for_display(clamp(display_color, vec3(0.0), vec3(1.0)));
-	ALPHA = depth > 0.0 ? smoothstep(0.0, mix(0.05, river_calm_fade, still), bed_depth) : 1.0;
+	ALPHA = depth > 0.0 ? max(smoothstep(0.0, mix(0.05, river_calm_fade, still), bed_depth), swim_hit) : 1.0;
 }
