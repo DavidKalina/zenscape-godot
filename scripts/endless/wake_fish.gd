@@ -1,8 +1,9 @@
 extends Node3D
 ## Now and then, flying low over a lake, a fish leaps: over the plane's nose when
 ## it skims at about wingtip height, off a wingtip, small and far off in a corner
-## of the view, or a pair. One moment every GAP s or so of time low over a lake,
-## however it's flown, and not the same one twice running.
+## of the view, a pair, or now and then a big one, higher and slower and heavier in
+## the water. One moment every GAP s or so of time low over a lake, however it's
+## flown, and not the same one twice running.
 ##
 ## What seed 1 calls lakes are the sea's level standing inside the land: under
 ## that level and at least LAKE_IN m inside the world's edge line.
@@ -24,7 +25,8 @@ extends Node3D
 ## Nothing here touches the plane.
 ##
 ## --wake-fish=0 none of it. --leap-gap=S the mean gap (s), --leap-size=X the fish
-## times X.
+## times X. --leap-big=S[,X] the big fish's share of the moments (0 none, 1 all of
+## them) and their length times X.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
@@ -47,6 +49,8 @@ const AGAIN := 0.3
 const SIDES := 3
 ## [moment, weight]. A pair's the rare one.
 const MOMENTS := [["over",3.0],["wing",3.0],["far",3.0],["pair",1.2]]
+## The big one's share of the moments (the rest keep their weights among them).
+const BIG_SHARE := 0.2
 
 ## Length (m) drawn.
 const LONG := Vector2(0.4,0.8)
@@ -97,6 +101,23 @@ const STEER_UNDER_RATE := 20.0
 const WING := {"on":Vector2(6.0,12.0),"off":Vector2(0.5,0.78),"peak":Vector2(1.0,2.4),"run":Vector2(2.0,5.0),"through":Vector2(0.35,0.7),"long":Vector2(0.5,1.0)}
 const FAR := {"on":Vector2(55.0,100.0),"off":Vector2(0.28,0.55),"peak":Vector2(1.4,2.9),"run":Vector2(2.5,5.5),"through":Vector2(0.4,0.6),"long":Vector2(0.7,1.0),"big":1.4}
 const PAIR := {"on":Vector2(8.0,18.0),"off":Vector2(0.35,0.65),"peak":Vector2(1.0,2.2),"run":Vector2(2.5,4.5),"through":Vector2(0.35,0.65),"long":Vector2(0.4,0.85)}
+## A big one: its `long` in m, and heavy: it comes up slow and is long in the air.
+## BIG_FAR, this often: it stands well off, the whole arc in the view.
+const BIG := {"on":Vector2(14.0,24.0),"off":Vector2(0.4,0.68),"peak":Vector2(4.6,6.8),"run":Vector2(3.5,6.5),"through":Vector2(0.45,0.62),"long":Vector2(2.6,3.8),"heavy":true}
+const BIG_FAR := {"on":Vector2(30.0,46.0),"off":Vector2(0.25,0.5),"peak":Vector2(5.6,8.0),"run":Vector2(3.5,6.0),"through":Vector2(0.42,0.6),"long":Vector2(3.4,4.6),"heavy":true}
+const BIG_FAR_SHARE := 0.4
+## Its build, deeper and wider for its length; the water's swirl (s), the hang, the
+## slow tail (Hz), a held bend that's stiffer, and a little of the roll.
+const BIG_BUILD := Vector2(1.12,1.2)
+const BIG_SWIRL := Vector2(0.7,0.95)
+const BIG_HANG := Vector2(0.24,0.4)
+const BIG_BEAT_HZ := Vector2(2.6,4.2)
+const BIG_ARCH := Vector2(0.45,0.95)
+const BIG_TWIST := Vector2(0.3,1.1)
+## A second, wider burst of water this long (s) after it goes in, at this share of
+## the first: the hole it left closing.
+const BIG_SLAM_AFTER := 0.16
+const BIG_SLAM := 0.7
 ## How often a fish beside the plane turns its flank to the eye rather than any way.
 const FLANK_SHARE := 0.75
 ## The second of a pair: this much later (s), this far from the first (m).
@@ -129,6 +150,7 @@ class Leap:
 	var mat: ShaderMaterial
 	var kind: Dictionary
 	var long := 0.6
+	var heavy := false
 	var shape := Vector2.ONE
 	var at := Vector3.ZERO
 	var dir := Vector2.ZERO
@@ -170,7 +192,8 @@ var _left := 0.0
 var _look := 0.0
 var _low := false
 var _last := ""
-var _weights := 0.0
+var _moments: Array = []
+var _big_size := 1.0
 var _at := Vector3.ZERO
 var _ahead := Vector3.FORWARD
 var _right := Vector3.RIGHT
@@ -225,9 +248,7 @@ func setup(field: RefCounted) -> void:
 	_gap_mean = maxf(_knob("leap-gap",GAP),0.2)
 	_size = maxf(_knob("leap-size",1.0),0.05)
 	_left = _gap_mean*_rng.randf_range(FIRST.x,FIRST.y)
-	for m: Array in MOMENTS:
-		_weights += float(m[1])
-		moments[m[0]] = 0
+	_set_moments()
 	var scene := (load(MODEL) as PackedScene).instantiate()
 	var found: Array[Node] = scene.find_children("*","MeshInstance3D",true,false)
 	var mesh: Mesh = (found[0] as MeshInstance3D).mesh
@@ -294,6 +315,24 @@ func setup(field: RefCounted) -> void:
 			a.bus = FlightSound.SFX
 			add_child(a)
 			_players.append(a)
+
+## The moments and their weights, the big one's by its knob: a share, or a share and
+## a size.
+func _set_moments() -> void:
+	var share := BIG_SHARE
+	for a: String in LaunchArgs.user_args():
+		if not a.begins_with("--leap-big="): continue
+		var parts := a.get_slice("=",1).split(",")
+		share = clampf(parts[0].to_float(),0.0,1.0)
+		if parts.size() > 1: _big_size = maxf(parts[1].to_float(),0.05)
+	var rest := 0.0
+	moments["big"] = 0
+	if share < 1.0:
+		for m: Array in MOMENTS:
+			moments[m[0]] = 0
+			_moments.append(m)
+			rest += float(m[1])
+	if share > 0.0: _moments.append(["big",rest*share/(1.0-share) if share < 1.0 else 1.0])
 
 ## One splash's mesh (shaders/wake_splash.gdshader says what it carries).
 func _splash_mesh() -> ArrayMesh:
@@ -406,8 +445,8 @@ func _wait(delta: float) -> void:
 func _choose() -> String:
 	var open: Array = []
 	var total := 0.0
-	for m: Array in MOMENTS:
-		if m[0] == _last: continue
+	for m: Array in _moments:
+		if m[0] == _last and _moments.size() > 1: continue
 		open.append(m)
 		total += float(m[1])
 	while not open.is_empty():
@@ -431,6 +470,7 @@ func _moment(kind: String) -> bool:
 			"wing": done = _beside(side,WING)
 			"far": done = _beside(side,FAR)
 			"pair": done = _beside(side,PAIR,true)
+			"big": done = _beside(side,BIG_FAR if _rng.randf() < BIG_FAR_SHARE else BIG)
 		if done: return true
 		side = -side
 	return false
@@ -460,11 +500,13 @@ func _over(side: float) -> bool:
 ## A fish in the view: `spec`'s `on` m from the eye and `off` rad off its axis to
 ## `side` at the moment it's `through` its leap. A pair: another close behind it.
 func _beside(side: float, spec: Dictionary, pair := false) -> bool:
-	var long := _length(spec.long)*float(spec.get("big",1.0))
-	var peak: float = _rng.randf_range(spec.peak.x,spec.peak.y)*clampf(long/0.6,0.75,1.25)
+	var heavy: bool = spec.get("heavy",false)
+	var long := _rng.randf_range(spec.long.x,spec.long.y)*_big_size*_size if heavy else _length(spec.long)*float(spec.get("big",1.0))
+	var peak: float = _rng.randf_range(spec.peak.x,spec.peak.y)*(1.0 if heavy else clampf(long/0.6,0.75,1.25))
 	var run: float = _rng.randf_range(spec.run.x,spec.run.y)
 	var through: float = _rng.randf_range(spec.through.x,spec.through.y)
 	var l := _leap_for(long,peak,run)
+	if heavy: _heavy(l)
 	var moment := l.wait+_to_clock(l,l.air*through)
 	var on: float = _rng.randf_range(spec.on.x,spec.on.y)
 	var off: float = tan(_rng.randf_range(spec.off.x,spec.off.y))*on
@@ -487,6 +529,19 @@ func _beside(side: float, spec: Dictionary, pair := false) -> bool:
 		var beside := dir.orthogonal()*(1.0 if _rng.randf() < 0.5 else -1.0)*_rng.randf_range(SECOND_OFF.x,SECOND_OFF.y)
 		_send(second,Vector2(there.x,there.z)+beside,dir.rotated(_rng.randf_range(-0.3,0.3)),through)
 	return true
+
+## What makes a leap a big fish's.
+func _heavy(l: Leap) -> void:
+	l.heavy = true
+	l.shape *= BIG_BUILD
+	l.wait = _rng.randf_range(BIG_SWIRL.x,BIG_SWIRL.y)
+	l.hang = _rng.randf_range(BIG_HANG.x,BIG_HANG.y)
+	l.beat_hz = _rng.randf_range(BIG_BEAT_HZ.x,BIG_BEAT_HZ.y)
+	l.arch = _rng.randf_range(BIG_ARCH.x,BIG_ARCH.y)
+	l.flips = 1.0
+	l.roll = _rng.randf_range(-0.15,0.15)
+	l.twist = _rng.randf_range(BIG_TWIST.x,BIG_TWIST.y)*(1.0 if _rng.randf() < 0.5 else -1.0)
+	l.wobble = _rng.randf_range(0.05,0.15)
 
 ## It rolls its flank up to the eye (`to_eye`) through the leap, running along
 ## `way`: seen from over it, the back's dark on dark water.
@@ -603,6 +658,7 @@ func _fly(delta: float) -> void:
 			l.went_in = true
 			var into := Vector3(pos.x,l.level,pos.z)+vel.normalized()*Vector3(1,0,1)*l.long*0.42
 			_splash(into,vel,l.long/0.6,true)
+			if l.heavy: _splash(into,vel*0.5,l.long/0.6*BIG_SLAM,true,BIG_SLAM_AFTER)
 			_mark(into,_clock,l.long/0.6*1.3)
 			_plop_later(into,l.long/0.6)
 		if t > l.air*1.08 or (l.went_in and pos.y < l.level-l.long*0.72):
@@ -662,7 +718,7 @@ func _pose(l: Leap, pos: Vector3, vel: Vector3) -> void:
 	l.mat.set_shader_parameter("flare",lerpf(-1.0,0.6,sin(u*PI)))
 
 ## A splash where it goes through the water, `vel` its velocity there.
-func _splash(at: Vector3, vel: Vector3, size: float, going_in: bool) -> void:
+func _splash(at: Vector3, vel: Vector3, size: float, going_in: bool, after := 0.0) -> void:
 	var o := _s_next*16
 	_s_next = (_s_next+1)%SPLASHES
 	var lifted := at+Vector3.UP*LIFT
@@ -672,12 +728,12 @@ func _splash(at: Vector3, vel: Vector3, size: float, going_in: bool) -> void:
 	_s_buf[o+3] = lifted.x
 	_s_buf[o+7] = lifted.y
 	_s_buf[o+11] = lifted.z
-	_s_buf[o+12] = _clock
+	_s_buf[o+12] = _clock+after
 	_s_buf[o+13] = size
 	_s_buf[o+14] = 1.0 if going_in else 0.0
 	_s_buf[o+15] = _rng.randf()
 	_s_mm.buffer = _s_buf
-	_s_until = maxf(_s_until,_clock+2.0)
+	_s_until = maxf(_s_until,_clock+after+3.5)
 
 func _plop_later(at: Vector3, size: float) -> void:
 	if _streams.is_empty(): return
@@ -699,10 +755,12 @@ func _plops(eye: Vector3) -> void:
 		for a: AudioStreamPlayer3D in _players:
 			if a.playing: continue
 			var big := clampf((_p_size[i]-0.6)/0.8,0.0,1.0)
+			# A big fish, lower still.
+			var low := 0.72 if _p_size[i] > 2.0 else 1.0
 			a.stream = _streams[_rng.randi()%_streams.size()]
 			a.global_position = at
 			a.volume_db = lerpf(PLOP_DB.x,PLOP_DB.y,big)+_rng.randf_range(-2.0,2.0)
-			a.pitch_scale = lerpf(1.3,0.9,big)*_rng.randf_range(0.92,1.08)
+			a.pitch_scale = lerpf(1.3,0.9,big)*low*_rng.randf_range(0.92,1.08)
 			a.play()
 			break
 
