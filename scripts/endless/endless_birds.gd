@@ -170,6 +170,11 @@ const COVEY_JINK_SIDE := 6.5
 const COVEY_JINK_UP := 3.0
 ## Elbow room (m) and how hard they keep it (m/s at touching).
 const COVEY_ROOM := 1.3
+## The break to the side: seconds of plane left when a bird goes, its turn off
+## the way (rad) and the time it takes (s).
+const BREAK_SOON := Vector2(0.9,1.5)
+const BREAK_TURN := 1.25
+const BREAK_TIME := 0.45
 const COVEY_SHOVE := 7.0
 ## The flare: the plane this many seconds off and this near its line (m) turns
 ## a bird away from the line, up to this much (m/s).
@@ -246,6 +251,9 @@ class Bird:
 	var peak := 0.0              # the height it climbs to (m)
 	var linger := 1.0            # its stay in the air over the covey's
 	var rate := 1.0              # its wingbeat over the covey's
+	var exit := 1.0              # the side it breaks to (+ the plane's right)
+	var break_soon := 1.0        # seconds of plane left when it breaks
+	var broke := -1.0            # how long since it broke (s), or -1
 	var floor_y := 0.0           # the ground under it
 	var jink := Vector3.ZERO
 	var jink_at := 0.0
@@ -912,6 +920,8 @@ func put_covey(at: Vector3, tilt: Vector2, n: int, from: Vector3, plan: Dictiona
 		b.way = way
 		if plan.split and signf(lat) != signf(way.dot(right)):
 			b.way = (way-right*way.dot(right)*2.0).normalized()
+		b.exit = (signf(lat) if lat != 0.0 else 1.0) if plan.split else float(plan.exit)
+		b.break_soon = _rng.randf_range(BREAK_SOON.x,BREAK_SOON.y)
 		b.way = b.way.rotated(Vector3.UP,_rng.randf_range(-0.14,0.14))
 		b.fan = clampf(-(b.spot-at).dot(way.cross(Vector3.UP))/patch*0.7+_rng.randf_range(-0.3,0.3),-1.0,1.0)
 		b.peak = float(plan.peak)*_rng.randf_range(0.65,1.3)
@@ -1002,6 +1012,14 @@ func _covey_fly(f: Flock, b: Bird, delta: float, pp: Vector3, fwd: Vector3, spee
 	var going_down := age > float(plan.drop)*b.linger
 	var over := b.p.y-b.floor_y
 	var way := b.way.rotated(Vector3.UP,b.fan*float(plan.fan)*smoothstep(level*0.7,level+1.0,age))
+	# The break: with the plane nearly on it, hard off to its side.
+	var rel := b.p-pp
+	var along := rel.dot(fwd)
+	var soon := along/maxf(speed,1.0)
+	if b.broke < 0.0 and soon < b.break_soon: b.broke = 0.0
+	if b.broke >= 0.0:
+		b.broke += delta
+		way = way.rotated(Vector3.UP,-b.exit*BREAK_TURN*smoothstep(0.0,BREAK_TIME,b.broke))
 	var pace: float = float(plan.pace)*lerpf(1.0,LEVEL_PACE,calm)*smoothstep(-0.2,0.45,age)
 	var hold := b.peak*lerpf(1.0,LEVEL_PEAK,calm)
 	var rise := clampf((hold-over)*COVEY_HOLD,-3.5,COVEY_CLIMB)
@@ -1016,11 +1034,8 @@ func _covey_fly(f: Flock, b: Bird, delta: float, pp: Vector3, fwd: Vector3, spee
 		b.jink = across*_rng.randf_range(-COVEY_JINK_SIDE,COVEY_JINK_SIDE)+Vector3.UP*_rng.randf_range(-COVEY_JINK_UP,COVEY_JINK_UP)*0.6
 	var want := way*pace+Vector3.UP*rise+b.jink*lerpf(1.0,0.3,calm)+shove
 	# The flare: off the line, the harder the nearer and sooner the plane is.
-	var rel := b.p-pp
-	var along := rel.dot(fwd)
 	var off := rel-fwd*along
 	var off_m := off.length()
-	var soon := along/maxf(speed,1.0)
 	if soon > -0.1 and soon < FLARE_TIME and off_m < FLARE_NEAR:
 		var flat := Vector3(off.x,off.y*0.4,off.z)
 		var side := flat.normalized() if flat.length() > 0.4 else b.way

@@ -41,32 +41,43 @@ const SLOPE := 0.14
 const SLOPE_REACH := 12.0
 const RIVER_CLEAR := 6.0
 const SEA_CLEAR := 2.5
-## The spot: this many seconds ahead along the plane's curving line, and this
-## far off it (m): mostly close, OFF_SHARE of the time well out to a side.
+## The spot: this many seconds ahead along the plane's curving line at cruise,
+## up to LEAD_FAST at FAST_AT m/s (Boost), so the faster it comes the further
+## off they go; and this far off the line (m): mostly close, OFF_SHARE of the
+## time well out to a side.
 const LEAD := Vector2(1.4,1.9)
+const LEAD_FAST := Vector2(2.0,2.6)
+const CRUISE_AT := 36.5
+const FAST_AT := 57.0
 const OFF_NEAR := 4.0
 const OFF_FAR := Vector2(7.0,16.0)
 const OFF_SHARE := 0.35
 ## A covey: its birds, the patch of grass they sit in (radius, m).
-const COVEY := Vector2i(8,20)
+const COVEY := Vector2i(12,24)
 const PATCH := Vector2(2.5,7.0)
-## Its escape: birds fly on ahead of the plane, slower, and it catches them.
-## It is aimed for that moment: this far off the line (m) when the plane comes
-## by, on the side they rose from unless they cross the nose (CROSS_SHARE).
-## This fast (m/s), up to this height (m); levelled this share of the wait
-## after a bird goes, down this much later (s); the widest a bird fans from the
-## way (rad), how far the ragged start stretches, and how often a covey close
-## on the line splits round it.
+## Its escape: birds fly on ahead of the plane, the way it is going, at this
+## share of its speed, and it catches them slowly, so they are in view all the
+## while. It is aimed for that moment: this far off the line (m) when the plane
+## comes by, on the side they rose from unless they cross the nose
+## (CROSS_SHARE). Up to this height over the plane's eye line (m, the chase
+## camera sits EYE_OVER over the plane), for the sky behind them, PEAK_LEAST
+## over the ground at the least. Levelled this share of the wait after a bird
+## goes, down this much later (s); the widest a bird fans from the way (rad),
+## how far the ragged start stretches, and how often a covey splits, half off
+## each side. With the plane BREAK_SOON s off a bird breaks (`_covey_fly`).
 const MISS := Vector2(1.5,10.0)
 const CROSS_SHARE := 0.3
 const ESCAPE_MOST := 0.95
-const PACE := Vector2(13.0,19.0)
-const PEAK := Vector2(2.2,6.5)
+const PACE := Vector2(0.5,0.62)
+const PACE_LEAST := 14.0
+const EYE_OVER := 3.6
+const PEAK := Vector2(-1.0,4.0)
+const PEAK_LEAST := 4.0
 const LEVEL := Vector2(0.9,1.25)
 const DROP := Vector2(1.4,3.2)
 const FAN := Vector2(0.35,0.95)
 const RAGGED := Vector2(0.7,1.4)
-const SPLIT_SHARE := 0.35
+const SPLIT_SHARE := 0.55
 ## The birds' span over the plane's: about 0.85 m at the sizes' knobs, the
 ## same as the flocks in the trees, so they read from the chase camera on Boost.
 const SIZE := 0.3
@@ -204,7 +215,8 @@ func _read(pp: Vector3, pv: Vector3) -> void:
 ## A spot ahead on the line, in view, or wait for the next read.
 func _try(pp: Vector3, fwd: Vector3, speed: float, over: float) -> void:
 	var t0 := Time.get_ticks_usec()
-	var lead := _rng.randf_range(LEAD.x,LEAD.y)
+	var quick := clampf((speed-CRUISE_AT)/(FAST_AT-CRUISE_AT),0.0,1.0)
+	var lead := lerpf(_rng.randf_range(LEAD.x,LEAD.y),_rng.randf_range(LEAD_FAST.x,LEAD_FAST.y),quick)
 	var dir := fwd.rotated(Vector3.UP,clampf(_turning*lead*0.5,-1.0,1.0))
 	var along := speed*lead
 	var on_line := pp+dir*along
@@ -223,7 +235,7 @@ func _try(pp: Vector3, fwd: Vector3, speed: float, over: float) -> void:
 	var side := signf(off) if absf(off) > 2.0 else (1.0 if _rng.randf() < 0.5 else -1.0)
 	var crossing := _rng.randf() < CROSS_SHARE
 	var split := absf(off) < OFF_NEAR and _rng.randf() < SPLIT_SHARE
-	var pace := _rng.randf_range(PACE.x,PACE.y)
+	var pace := maxf(speed*_rng.randf_range(PACE.x,PACE.y),PACE_LEAST)
 	# When the plane catches them, and the slant that has them there by then.
 	var wait := along/maxf(speed-pace*0.93,6.0)
 	var miss := _rng.randf_range(MISS.x,MISS.y)*(-side if crossing else side)
@@ -232,8 +244,8 @@ func _try(pp: Vector3, fwd: Vector3, speed: float, over: float) -> void:
 	var way := dir.rotated(Vector3.UP,-slant)
 	var level := wait*_rng.randf_range(LEVEL.x,LEVEL.y)
 	var patch := _rng.randf_range(PATCH.x,PATCH.y)
-	var plan := {"way":way,"line":dir,"pace":pace,"peak":_rng.randf_range(PEAK.x,PEAK.y),
-		"level":level,"drop":level+_rng.randf_range(DROP.x,DROP.y),"fan":_rng.randf_range(FAN.x,FAN.y),
+	var plan := {"way":way,"line":dir,"pace":pace,"peak":maxf(over+EYE_OVER+_rng.randf_range(PEAK.x,PEAK.y),PEAK_LEAST),
+		"exit":signf(miss),"level":level,"drop":level+_rng.randf_range(DROP.x,DROP.y),"fan":_rng.randf_range(FAN.x,FAN.y),
 		"ragged":_rng.randf_range(RAGGED.x,RAGGED.y),"split":split,"size":SIZE*size,"patch":patch}
 	# Nearest the plane's line first: the point it will cross, a little short.
 	_flock = host.put_covey(at,Vector2(site.gx,site.gz),n,on_line-dir*patch+Vector3.DOWN*(pp.y-at.y),plan)

@@ -154,3 +154,7 @@ No new geometry: the songbird's meshes in a new palette, so sculpt bake, paralla
 rigid parts and grime don't apply. Birds are drawn at any distance with no LOD;
 a far LOD would save little at 20 birds, about 9k triangles at most for a few
 seconds, well under 0.1 ms.
+
+## After the first play of the flush
+
+The plane whizzed past before the birds could be seen, so the flush now starts further off the faster the plane goes (LEAD to LEAD_FAST: about 50-70 m at cruise, 115-150 m on Boost). Birds fly the plane's way at 0.5-0.62 of its speed and climb to the chase camera's height, for the sky behind them. With the plane 0.9-1.5 s off, each bird breaks hard to its side (BREAK_SOON, BREAK_TURN); a covey splits both ways 55% of the time when close to the line. Bird span is 0.85 m and a covey 12-24.
