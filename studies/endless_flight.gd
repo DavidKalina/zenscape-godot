@@ -166,6 +166,7 @@ const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
+const Parry = preload("res://scripts/endless/parry.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
 ## The Peak's ways up: the couloir's lift.
@@ -342,6 +343,8 @@ var burrower: Node
 var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
 var smash: Node3D
+## The roll's parry of shots (scripts/endless/parry.gd).
+var parry: Node3D
 ## The ground queries' broad phase (GroundNative), or null before the land stands.
 var ground_native: GroundNative
 var flown := 0.0
@@ -415,6 +418,8 @@ const LOW_SPEED := Vector2(25.0,45.0)
 const LOW_STREAK := 0.55
 const BOOST_STREAK := 0.25
 const SURGE_STREAK := 0.45
+## The streaks' lift at a parry (Parry `streak`, 1 at the hit).
+const PARRY_STREAK := 1.2
 const STREAK_FLOW := 30.0
 var _streaks: ColorRect
 var _streak_scale := 1.0
@@ -791,6 +796,9 @@ func _ready() -> void:
 	smash = SurgeSmash.new()
 	add_child(smash)
 	smash.setup(self)
+	parry = Parry.new()
+	add_child(parry)
+	parry.setup(self)
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
@@ -1266,6 +1274,8 @@ func tick(delta: float) -> void:
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)
 	# The roll button on a full meter is the surge roll (scripts/endless/surge_smash.gd).
+	# A roll locked out by a whiffed parry is dropped (scripts/endless/parry.gd).
+	if parry != null: parry.before(input)
 	if coast != null: coast.before(delta)
 	if smash != null: smash.before(delta,input)
 	# The plane skims the swell as drawn, not the sea's rest level, and a
@@ -1301,6 +1311,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"book")
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
+	# The roll's parry window, before the shots fly and meet the plane.
+	if parry != null: parry.step(delta)
 	if coast != null: coast.after(delta,events)
 	_near_misses(delta,events)
 	FrameLog.mark(&"near")
@@ -1711,12 +1723,14 @@ func _streak_step(delta: float) -> void:
 	var centre := Vector2(0.5,0.5)
 	if not hand_landing.on_ground() and _streak_scale > 0.0:
 		var boost := Input.get_action_strength(&"fly_boost")*smoothstep(30.0,50.0,v)
-		want = (STREAK_TOP*smoothstep(STREAK_SPEED.x,STREAK_SPEED.y,v)+LOW_STREAK*_low_k+BOOST_STREAK*boost+SURGE_STREAK*float(plane.surge))*_streak_scale
+		want = (STREAK_TOP*smoothstep(STREAK_SPEED.x,STREAK_SPEED.y,v)+LOW_STREAK*_low_k+BOOST_STREAK*boost+SURGE_STREAK*float(plane.surge)+(PARRY_STREAK*float(parry.streak) if parry != null else 0.0))*_streak_scale
 		var ahead: Vector3 = camera.global_position+plane.velocity.normalized()*200.0
 		if not camera.is_position_behind(ahead):
 			var view := get_viewport().get_visible_rect().size
 			if view.x > 0.0 and view.y > 0.0: centre = (camera.unproject_position(ahead)/view).clamp(Vector2(0.2,0.2),Vector2(0.8,0.8))
-	_streaks.show_state(delta,want,v/STREAK_FLOW,centre,_low_k)
+	# A parry's streaks ease in on the real clock: the hit has slowed the world's.
+	var eased := minf(delta/maxf(Engine.time_scale,0.001),0.1) if parry != null and float(parry.streak) > 0.0 else delta
+	_streaks.show_state(eased,want,v/STREAK_FLOW,centre,_low_k)
 
 ## The wind's buffet past cruise: a small shake of the eye's aim, three
 ## sines out of step, growing to RUSH_SHAKE at Boost's speed. None on the

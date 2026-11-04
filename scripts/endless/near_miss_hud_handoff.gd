@@ -950,6 +950,12 @@ func _draw() -> void:
 	var mid := Vector2(size.x-TAG_METER_AT.x*k-TAG_METER.x*k*0.5,size.y-TAG_METER_AT.y*k)
 	_draw_meter(self,mid,TAG_METER*k,k)
 
+## The meter's middle on the screen (the parry's light flies to it).
+func meter_point() -> Vector2:
+	var k := _k()
+	if tag: return global_position+Vector2(size.x-TAG_METER_AT.x*k-TAG_METER.x*k*0.5,size.y-TAG_METER_AT.y*k)
+	return _block.global_position+Vector2(0.0,METER_Y*_s()+METER.y*_s()*0.5) if _block != null else global_position+size*Vector2(0.85,0.9)
+
 ## 12345 as "12,345".
 static func _grouped(v: float) -> String:
 	var n := str(roundi(v))
