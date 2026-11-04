@@ -420,6 +420,12 @@ var _streaks: ColorRect
 var _streak_scale := 1.0
 var _wide := 0.0
 var _low_k := 0.0
+## Deep in a bore (LandTunnels `deep`) the grass, the land and the trees over
+## the rock are out of sight but drawn all the same (the engine culls by the
+## view only), about half the GPU's frame there: hidden while the eye is
+## deep. `--bury=0` draws them still.
+var _buried := false
+var _bury_on := not ("--bury=0" in preload("res://scripts/launch_args.gd").user_args())
 ## Sinking through a pull-out, for the rumble's thrum: the nose this far
 ## over the path (radians) while it sinks faster than SINK_DOWN m/s knocks
 ## once, and it is felt again once the nose is back within SINK_REARM.
@@ -553,6 +559,7 @@ func _ready() -> void:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
 	FrameLog.begin(preload("res://scripts/launch_args.gd").user_args())
+	if FrameLog.on and not GroundTally.on and "--ground-tally" in preload("res://scripts/launch_args.gd").user_args(): GroundTally.start()
 	LineLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	# The layout file first: the slot halls' sites read its moves when
 	# the land is first looked at (scripts/endless/hall_sites.gd).
@@ -1184,10 +1191,10 @@ func _on_river() -> bool:
 	return field.last_river < 0.0 and field.river_drawn() > Field.SEA_Y+0.05
 
 ## The water under a point: the sea's swell, or a river's level over it.
-func water_at(p: Vector3) -> float:
+func water_at(p: Vector3, land_h := NAN) -> float:
 	if GroundTally.on: GroundTally.tick(&"water_at")
 	if tunnels != null and tunnels.dry(p): return -INF
-	var level := Field.SEA_Y+sea_height(p)
+	var level := Field.SEA_Y+sea_height(p,land_h)
 	var river: float = field.river_y(p.x,p.z)
 	return level if is_nan(river) else maxf(level,river)
 
@@ -1197,12 +1204,17 @@ func water_at(p: Vector3) -> float:
 func eye_floor(p: Vector3) -> float:
 	if GroundTally.on: GroundTally.tick(&"eye_floor")
 	if doors != null and doors.holds(p): return doors.hall_floor()
-	var h: float = field.height(p.x,p.z)
+	return _eye_over(p,field.height(p.x,p.z))
+
+## `eye_floor` past the doors, over the land's height `land` at p's (x, z),
+## just read (the field's last sample is there: `_on_river`).
+func _eye_over(p: Vector3, land: float) -> float:
+	var h := land
 	if _on_river(): h = maxf(h,field.river_drawn())
 	h = tunnels.land_y(p,h)
 	if _stone_near(p) & GroundNative.ICE: h = ice.land_y(p,h)
 	if tunnels.dry(p): return h
-	return maxf(h,Field.SEA_Y+sea_height(p))
+	return maxf(h,Field.SEA_Y+sea_height(p,land))
 
 ## Which of the arches and rocks may hold `p` at their own pads (`inside`'s
 ## default; GroundNative `mask`).
@@ -1214,16 +1226,19 @@ func _solid(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_solid")
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
 	var m := _stone_near(p)
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
+	var land: float = field.height(p.x,p.z)
+	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
-func sea_height(p: Vector3) -> float:
+## `land` the land's height at p's (x, z) where the caller has it.
+func sea_height(p: Vector3, land := NAN) -> float:
 	if GroundTally.on: GroundTally.tick(&"sea_height")
 	if look == null or look.water == null or p.y > Field.SEA_Y+12.0+look.water.surge_room(p.x,p.z): return 0.0
 	# Land well over the sea has none, and low land sits inside the 12 m: every
 	# probe of a low flight would march the waves.
-	if field.height(p.x,p.z) > Field.SEA_Y+preload("res://scripts/burrower/game_land.gd").SWELL_ROOM: return 0.0
+	if (field.height(p.x,p.z) if is_nan(land) else land) > Field.SEA_Y+preload("res://scripts/burrower/game_land.gd").SWELL_ROOM: return 0.0
 	# Up a river's mouth the sea lies still, as the sea shader draws it.
 	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
 
@@ -1234,11 +1249,18 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	if GroundTally.on: GroundTally.tick(&"_sight")
 	const STEPS := 10
 	if doors != null and doors.holds(from): return 1.0
+	var t0 := Time.get_ticks_usec() if FrameLog.on else 0
+	if FrameLog.on: FrameLog.add(&"n_sight",1.0)
 	var bore: float = tunnels.sight(from,to)
+	if FrameLog.on: FrameLog.add(&"s_tube",(Time.get_ticks_usec()-t0)/1000.0)
 	if tunnels.sight_whole: return bore
+	var t1 := Time.get_ticks_usec() if FrameLog.on else 0
 	var ice_bore: float = ice.sight(from,to)
+	if FrameLog.on: FrameLog.add(&"s_ice",(Time.get_ticks_usec()-t1)/1000.0)
 	if ice.sight_whole: return minf(bore,ice_bore)
 	bore = minf(bore,ice_bore)
+	if FrameLog.on: t1 = Time.get_ticks_usec()
+	var got := bore
 	for i in range(1,STEPS+1):
 		var t := float(i)/STEPS
 		if t > bore: break
@@ -1246,8 +1268,18 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		# In a bore's tube the fine march has answered.
 		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0: continue
 		var m := _stone_near(p)
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p): return float(i-1)/STEPS
-	return bore
+		# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
+		var land := NAN
+		var floor_y: float
+		if doors != null and doors.holds(p): floor_y = doors.hall_floor()
+		else:
+			land = field.height(p.x,p.z)
+			floor_y = _eye_over(p,land)
+		if p.y < floor_y+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p):
+			got = float(i-1)/STEPS
+			break
+	if FrameLog.on: FrameLog.add(&"s_march",(Time.get_ticks_usec()-t1)/1000.0)
+	return got
 
 func _process(delta: float) -> void:
 	if not walk_ready: return
@@ -1337,7 +1369,9 @@ func tick(delta: float) -> void:
 	if doors != null: doors.step(delta)
 	FrameLog.mark(&"doors")
 	_frame(delta)
+	_bury(camera.global_position)
 	FrameLog.mark(&"camera")
+	if FrameLog.on: _canary()
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
@@ -1400,6 +1434,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"react")
 	_show_hud()
 	FrameLog.mark(&"hud")
+	if FrameLog.on and GroundTally.on: _tally_row()
 	if FrameLog.on: FrameLog.end((Time.get_ticks_usec()-tick_from)/1000.0,plane.position,float(plane.speed))
 
 ## How hard the vapour pulls off the wingtips (0 to 1): the flight path's
@@ -1668,7 +1703,9 @@ func _frame(delta: float) -> void:
 	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	if coast != null: coast.watch(chase)
+	FrameLog.mark(&"c_look")
 	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (doors != null and doors.holds(plane.position))
+	FrameLog.mark(&"c_tight")
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye
 	var way: Vector3 = chase.look-chase.eye
@@ -1681,6 +1718,52 @@ func _frame(delta: float) -> void:
 	_punch_want *= exp(-delta/PUNCH_FADE)
 	_punch = lerpf(_punch,_punch_want,1.0-exp(-delta/PUNCH_IN)) if delta > 0.0 else _punch_want
 	camera.fov = chase.fov+_punch+_speed_wide(delta)
+
+## Stutter hunt (drop when done): a fixed loop timed each frame (slow while
+## the rest is slow: the main thread is crowded, not our code), whether the
+## land is buried, and the bore's moving spurs.
+func _canary() -> void:
+	var t0 := Time.get_ticks_usec()
+	var s := 0.0
+	for i in 3000: s += sin(float(i))
+	FrameLog.add(&"canary",(Time.get_ticks_usec()-t0)/1000.0+s*0.0)
+	FrameLog.add(&"buried",1.0 if _buried else 0.0)
+	var bf = burrower.get("bore") if burrower != null else null
+	var sp = bf.get("spurs") if bf != null else null
+	FrameLog.add(&"spurs_moving",float((sp.get("_moving") as Array).size()) if sp != null else 0.0)
+	FrameLog.mark(&"canary_self")
+
+## Stutter hunt (drop when done): with --ground-tally, the frame's ground
+## queries per part (GroundTally, filed at each FrameLog mark) as q_<part>
+## columns, and the land's height reads as q_height.
+const TALLY_PARTS := [&"grass",&"near",&"react",&"figure",&"traffic",&"landing",&"land",&"bt_move",&"c_clear",&"b_bore",&"trees",&"look"]
+func _tally_row() -> void:
+	var heights := 0
+	for part: StringName in GroundTally.parts:
+		var d: Dictionary = GroundTally.parts[part]
+		heights += int(d.get(&"field.height",0))+int(d.get(&"field.sample",0))
+	for part: StringName in TALLY_PARTS:
+		var n := 0
+		for k in (GroundTally.parts.get(part,{}) as Dictionary).values(): n += int(k)
+		FrameLog.add(StringName("q_"+part),float(n))
+	FrameLog.add(&"q_height",float(heights))
+	GroundTally.parts.clear()
+	# The workers in flight this frame, per streamer.
+	var g := 0
+	if grass != null: g = (grass.near_layer.pending as Dictionary).size()+(grass.far_layer.pending as Dictionary).size()
+	FrameLog.add(&"w_grass",float(g))
+	FrameLog.add(&"w_land",float((land.get("_pending") as Dictionary).size()) if land != null else 0.0)
+	for pair: Array in [[&"w_trees",trees],[&"w_halls",halls],[&"w_arches",arches],[&"w_rocks",rocks],[&"w_thalls",tunnels.halls if tunnels != null else null]]:
+		var n = pair[1]
+		FrameLog.add(pair[0],float((n.get("_pending") as Dictionary).size()) if n != null and n.get("_pending") is Dictionary else 0.0)
+	FrameLog.add(&"w_tunnels",1.0 if tunnels != null and int(tunnels.get("_task")) >= 0 else 0.0)
+
+func _bury(eye: Vector3) -> void:
+	var down: bool = _bury_on and tunnels.deep(eye)
+	if down == _buried: return
+	_buried = down
+	for n: Node3D in [land,grass,trees]:
+		if n != null: n.visible = not down
 
 ## How low and fast it is over the land (0 to 1): within LOW_SPANS
 ## wingspans of what is under it (the near misses' ground clearance when

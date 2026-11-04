@@ -96,9 +96,11 @@ const SHAFT_ROOM := 6.0
 ## The hold from him passing to the snap (s), the snap's length (s).
 const HOLD_S := 0.8
 const SNAP_S := 0.16
-## The snap's sound.
-const SNAP_GAIN := 0.8
-const SNAP_PITCH := 0.7
+## The snap's sound (FlightSound `bore_burst`: a thump, crack and debris), a thick spur
+## lower; the tell's grind as the crack opens (`bore_tell`).
+const SNAP_GAIN := 1.0
+const SNAP_PITCH := Vector2(1.15,0.85)
+const TELL_GAIN := 1.0
 ## Laid out this far ahead of him (m; one a frame), and counted near the plane this far (m).
 const LAY_AHEAD := 170.0
 const NEAR_M := 45.0
@@ -318,19 +320,22 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 	if _groups.is_empty(): return
 	_tell.step(delta)
 	_mat.set_shader_parameter("now",_tell.now)
+	var moved := not _moving.is_empty()
 	for i in range(_moving.size()-1,-1,-1):
 		var sp := _moving[i]
+		if sp.clock == 0.0: sound.bore_tell(sp.root,TELL_GAIN)
 		sp.clock += delta
 		var k := (sp.clock-HOLD_S)/SNAP_S
 		if k <= 0.0: continue
 		if not sp.body.visible:
 			sp.body.visible = true
 			sp.body.collision_layer = LandTunnels.LAYER
-			sound.shot("crack",SNAP_GAIN,SNAP_PITCH,sp.root)
+			sound.bore_burst(sp.root,SNAP_GAIN,lerpf(SNAP_PITCH.x,SNAP_PITCH.y,clampf(sp.girth/GIRTH_MOST,0.0,1.0)))
 		var o := 1.0-minf(k,1.0)
 		sp.out = 1.0-o*o*o
 		_pose(sp)
 		if k >= 1.0: _moving.remove_at(i)
+	var was := _near.duplicate()
 	_near.clear()
 	var flat := Vector2(at.x,at.z)
 	for tunnel: String in _groups.keys():
@@ -341,6 +346,28 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 		if not g.site.box.has_point(flat): continue
 		for sp: Spur in g.spurs:
 			if sp.out > 0.0 and Vector2(sp.root.x,sp.root.z).distance_to(flat) < NEAR_M+sp.long: _near.append(sp)
+	if moved or _near != was: _solid_moved()
+
+## The near spurs changed or moved: LandTunnels' native sight reads them again.
+func _solid_moved() -> void:
+	if _tunnels != null and _tunnels.has_method(&"solid_moved"): _tunnels.solid_moved()
+
+## The spheres a spur's solid is (`sight_pack`'s stride).
+func sight_chain() -> int:
+	return CHAIN
+
+## The near spurs as `inside` reads them, for LandTunnels' native sight
+## (ZenScapeBoreSight `set_spurs`): per spur its bound (x, y, z, r), then
+## each of its CHAIN spheres (x, y, z, r), worked out as `inside` does.
+func sight_pack() -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	for sp: Spur in _near:
+		out.append_array([sp.bound_at.x,sp.bound_at.y,sp.bound_at.z,sp.bound])
+		var from := sp.root+sp.axis*(sp.long*(sp.out-1.0))
+		for i in CHAIN:
+			var c := from+sp.chain[i]
+			out.append_array([c.x,c.y,c.z,sp.radii[i]])
+	return out
 
 ## Where its body stands, `out` of the way out.
 func _pose(sp: Spur) -> void:
@@ -576,6 +603,7 @@ func smash(sp: Spur, blast: Vector3) -> void:
 	sp.body = null
 	_moving.erase(sp)
 	_near.erase(sp)
+	_solid_moved()
 	stats.smashed = int(stats.smashed)+1
 
 ## The tell and the rubble, shared with the plugs (scripts/endless/bore_plug.gd).

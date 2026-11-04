@@ -41,6 +41,7 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const BoreNative = preload("res://scripts/endless/bore_native.gd")
 
 ## The squares whose hall stands round the eye (m to the square's middle).
 const REACH := 3200.0
@@ -94,8 +95,13 @@ var _old_stone := "--old-ruin-stone" in LaunchArgs.user_args()
 var fixed := {}
 var squares := true
 
+## The flight's solid in C++ (ZenScapeHallSolid; BoreNative), or null: each
+## record published as it commits, takes its near solid and goes.
+var native: Object = null
+
 func setup(land_seed: int) -> void:
 	seed = land_seed
+	native = BoreNative.hall_solid()
 	density = Field.new(seed).halls
 	RuinKit.materials()
 
@@ -316,7 +322,8 @@ func _commit(done: Dictionary) -> void:
 		sec.far_node = mi
 		stats.far_tris += int(sec.tris)
 	_halls[key] = {"name":name,"info":info,"node":root,"frame":frame,"inv":frame.affine_inverse(),"site":info.site,"sections":done.sections,
-		"length":float(done.piece.length)}
+		"length":float(done.piece.length),"key":key}
+	_publish(key)
 	stats.halls += 1
 	stats.sections += (done.sections as Array).size()
 	stats.slowest_commit_ms = maxf(stats.slowest_commit_ms,(Time.get_ticks_usec()-t0)/1000.0)
@@ -324,6 +331,7 @@ func _commit(done: Dictionary) -> void:
 func _free(key: Vector2i) -> void:
 	var r: Dictionary = _halls[key]
 	_halls.erase(key)
+	if native != null: native.drop(BoreNative.key_id(key))
 	if r.is_empty(): return
 	for sec: Dictionary in r.sections:
 		if int(sec.task) >= 0:
@@ -406,6 +414,7 @@ func _stand_near(r: Dictionary, sec: Dictionary) -> void:
 	node.remove_meta("bodies")
 	sec.solid = out.solid
 	sec.exact = true
+	_publish(r.key)
 	sec.near_tris = int(out.tris)
 	stats.near += 1
 	stats.near_tris += int(out.tris)
@@ -530,6 +539,11 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 	# As `stretches`, without building the list (the camera's sight asks
 	# this every half metre).
 	if pad < 0.0: pad = WorldScale.span*0.5
+	if native != null: return native.inside(p,pad)
+	return inside_gd(p,pad)
+
+## `inside` in GDScript, the reference.
+func inside_gd(p: Vector3, pad: float) -> bool:
 	for key: Vector2i in _halls:
 		var r: Dictionary = _halls[key]
 		if r.is_empty(): continue
@@ -540,6 +554,16 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 		for sec: Dictionary in r.sections:
 			if BoxSolid.inside(sec.solid,local,pad): return true
 	return false
+
+## Record `key` to the native solid: its site, frame and each section's
+## solid as they stand now.
+func _publish(key: Vector2i) -> void:
+	if native == null or not _halls.has(key): return
+	var r: Dictionary = _halls[key]
+	if r.is_empty(): return
+	var solids: Array = []
+	for sec: Dictionary in r.sections: solids.append(sec.solid)
+	native.put(BoreNative.key_id(key),r.site,r.inv,(r.frame as Transform3D).origin.y,solids)
 
 ## One line for the numbers HUD.
 func note() -> String:

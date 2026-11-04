@@ -57,6 +57,7 @@ const Sites = preload("res://scripts/endless/hall_sites.gd")
 const Sundered = preload("res://scripts/sundered_hall.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const ChunkNative = preload("res://scripts/endless/chunk_native.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 
 ## The bore's cross-section (m): its half width and its vault's crown over
@@ -422,6 +423,9 @@ class Site extends RefCounted:
 	var rise := PackedFloat32Array()
 	var ramp := Vector2(RAMP_MOST,RAMP_MOST)
 	var grade := GRADE
+	## Its carve in C++ (ZenScapeTunnelCarve, chunk_native.gd), packed once
+	## when the site is made; null: the GDScript (`carve_m_gd`, ...).
+	var native: Object = null
 
 ## The tunnels' density: the world's `tunnels` layer (0: none), then
 ## `--tunnels=X` or `--no-tunnels`.
@@ -483,7 +487,40 @@ static func test_site(impl: Object, seed: int, world: RefCounted) -> Site:
 	impl.detail = was
 	t.name = name
 	t.coded = coded
+	go_native(t)
 	return t
+
+## The site's carve in C++ (ZenScapeTunnelCarve), when the library has it and
+## the flags allow (chunk_native.gd): its tables packed once, read only after.
+static func go_native(t: Site) -> void:
+	if not ChunkNative.wanted(): return
+	t.native = ChunkNative.tunnel_carve(native_pack(t),native_consts())
+
+## What ZenScapeTunnelCarve `setup` reads off a site.
+static func native_pack(t: Site) -> Dictionary:
+	var sh := PackedFloat64Array()
+	for d: Dictionary in t.shafts:
+		var at: Vector2 = d.at
+		sh.append_array([at.x,at.y,float(d.top)])
+	var sv := PackedFloat64Array()
+	for d: Dictionary in t.shelves: sv.append_array([float(d.a),float(d.b),float(d.y)])
+	return {"box":t.box,"origin":t.origin,"way":t.way,"mouth_b":t.mouth_b,"out_b":t.out_b,"ramp":t.ramp,
+		"u_end":t.u_end,"length":t.length,"floor_y":t.floor_y,"crest":t.crest,"grade":t.grade,"sunk":t.sunk,
+		"tv":t.tv,"tc":t.tc,"tsn":t.tsn,"ts":t.ts,"shafts":sh,"shelves":sv,
+		"crest_noise":ChunkNative.noise_pack(t.crest_noise),"gully":ChunkNative.noise_pack(t.gully),"rock":ChunkNative.noise_pack(t.rock)}
+
+## The constants ZenScapeTunnelCarve reads (some are static vars here).
+static var _consts := {}
+static func native_consts() -> Dictionary:
+	_lock.lock()
+	if _consts.is_empty():
+		var c: Dictionary = (load("res://scripts/endless/tunnel_sites.gd") as Script).get_script_constant_map().duplicate()
+		c.HALL_HALF = HALL_HALF
+		c.TRENCH_WIDE = TRENCH_WIDE
+		_consts = c
+	var out := _consts
+	_lock.unlock()
+	return out
 
 static func _h(impl: Object, x: float, z: float) -> float:
 	return (impl.sample(x,z) as Vector2).x
@@ -506,6 +543,7 @@ static func cell_sites(impl: Object, seed: int, density: float, key: Vector2i, l
 		impl.detail = 0.0
 		var t := _make(impl,seed,density,key.x,key.y)
 		impl.detail = was
+		if t != null: go_native(t)
 		got = [] if t == null else [t]
 		_lock.lock()
 		# Whichever thread made it first, every field shares one Site.
@@ -755,6 +793,10 @@ static func _bowl_cut(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: fl
 ## The land `base` with `t`'s sinkholes cut in at (x, z), and the rock's marks
 ## (`_bowl_cut`).
 static func sunk_cut(t: Site, base: float, x: float, z: float, step := 0.0) -> Vector3:
+	if t.native != null: return t.native.sunk_cut(base,x,z,step)
+	return sunk_cut_gd(t,base,x,z,step)
+
+static func sunk_cut_gd(t: Site, base: float, x: float, z: float, step := 0.0) -> Vector3:
 	var a := _bowl_cut(t,base,t.origin,-t.way,x,z,t.ramp.x,step)
 	var b := _bowl_cut(t,a.x,t.mouth_b,t.out_b,x,z,t.ramp.y,step)
 	return Vector3(b.x,maxf(a.y,b.y),maxf(a.z,b.z))
@@ -1432,9 +1474,15 @@ static func carve(t: Site, base: float, x: float, z: float) -> float:
 	return carve_m(t,base,x,z).x
 
 ## carve's height, and how much of a shelf's meadow (x, z) stands on (0..1).
+## Native where the site has its twin (`go_native`), the same bits.
 static func carve_m(t: Site, base: float, x: float, z: float) -> Vector2:
+	if t.native != null: return t.native.carve_m(base,x,z)
+	return carve_m_gd(t,base,x,z)
+
+## `carve_m` in GDScript: the reference.
+static func carve_m_gd(t: Site, base: float, x: float, z: float) -> Vector2:
 	if not t.box.has_point(Vector2(x,z)): return Vector2(base,0.0)
-	if t.sunk: return Vector2(sunk_cut(t,base,x,z).x,0.0)
+	if t.sunk: return Vector2(sunk_cut_gd(t,base,x,z).x,0.0)
 	var q := local(t,x,z)
 	var sm := Vector2(_massif_q(t,q,x,z),0.0)
 	if not t.shelves.is_empty(): sm = _shelve(t,sm.x,q,x,z)
@@ -1494,6 +1542,10 @@ static func _trench(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: floa
 ## coarse land behind the portal would fall farther than its skirts reach.
 const FACE_REACH := 16.0
 static func trench_under(t: Site, x: float, z: float, step: float) -> float:
+	if t.native != null: return t.native.trench_under(x,z,step)
+	return trench_under_gd(t,x,z,step)
+
+static func trench_under_gd(t: Site, x: float, z: float, step: float) -> float:
 	if t.sunk or not t.box.has_point(Vector2(x,z)): return INF
 	var out := INF
 	for mm in 2:

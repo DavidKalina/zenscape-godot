@@ -210,6 +210,9 @@ var _floor_lift := 0.0
 ## when nothing round is clear it may come in to TIGHT_NEAR of `near`.
 var tight := false
 const TIGHT_NEAR := 0.45
+## The last DODGES scan's pick and its clear share (`_scan`).
+var _scan_pick := Vector2.ZERO
+var _scan_clear := 1.0
 ## The game's plane (see the top): framed, its cruise (m/s), the view's
 ## width over height, and the plane's reach from its middle (m).
 var framed := false
@@ -337,10 +340,14 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	look = at.lerp(at+on+Vector3.UP*LOOK_UP*size,1.0-smoothstep(0.3,1.0,absf(swing.x)/PI))
 	roll = lerpf(roll,_lean(float(glide.bank)),_ease(EASE_ROLL*way_lag,delta))
 	clipped = false
+	FrameLog.mark(&"c_spring")
 	if framed:
 		if solid.is_valid() or sight.is_valid(): _keep_clear(delta,at,solid)
+		FrameLog.mark(&"c_clear")
 		_keep_off_floor(delta)
+		FrameLog.mark(&"c_floor")
 		_keep_in_frame(at)
+		FrameLog.mark(&"c_frame")
 	elif solid.is_valid(): _stop_short(at,solid)
 
 ## The glide's speed as a share of the plane's cruise (1 at cruise; of the
@@ -386,14 +393,9 @@ func _keep_clear(delta: float, at: Vector3, solid: Callable) -> void:
 		# scan's own sums), so it eases back without the scan.
 		pick = Vector2.ZERO
 	elif _dodge != Vector2.ZERO or _clear(at,_turned(want,_dodge),solid) < 1.0:
-		var best := -INF
-		for d: Vector2 in DODGES:
-			var c := _clear(at,_turned(want,d),solid)
-			var score := (10.0 if c >= 1.0 else 10.0*c-5.0)-d.length()-d.distance_to(_dodge)*0.5
-			if score > best:
-				best = score
-				pick = d
-				pick_clear = c
+		_scan(at,want,solid)
+		pick = _scan_pick
+		pick_clear = _scan_clear
 	var rate := EASE_DODGE if pick.length() >= _dodge.length() else EASE_DODGE_BACK
 	_dodge = _dodge.lerp(pick,_ease(rate,delta)) if delta > 0.0 else pick
 	if _dodge.length() < 0.002: _dodge = Vector2.ZERO
@@ -408,6 +410,22 @@ func _keep_clear(delta: float, at: Vector3, solid: Callable) -> void:
 	else: _reach = minf(lerpf(_reach,allowed,_ease(EASE_OUT,delta)),full)
 	eye = at+dir*_reach
 	clipped = _dodge != Vector2.ZERO or _reach < full-0.01
+
+## The best of DODGES round `want` into `_scan_pick` (its clear share in
+## `_scan_clear`): clear beats blocked, then the nearest to straight out
+## and to the way it is turned now. A way whose score, clear, can't beat
+## the best so far isn't looked along.
+func _scan(at: Vector3, want: Vector3, solid: Callable) -> void:
+	var best := -INF
+	for d: Vector2 in DODGES:
+		var top := 10.0-d.length()-d.distance_to(_dodge)*0.5
+		if top <= best: continue
+		var c := _clear(at,_turned(want,d),solid)
+		var score := (10.0 if c >= 1.0 else 10.0*c-5.0)-d.length()-d.distance_to(_dodge)*0.5
+		if score > best:
+			best = score
+			_scan_pick = d
+			_scan_clear = c
 
 ## Framed: the eye kept FLOOR_KEEP over the land or water under it
 ## (`floor_at`), lifted at once, let down over EASE_FLOOR. Drawn in short
