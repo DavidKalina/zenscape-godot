@@ -184,8 +184,58 @@ the deck guns are modelled (5.8k).
 | Vertex-colour grime | Yes: the gun deck's light and shade, plank tints, the deck barrels' soot | Replaces real interior lights, about 1-2 ms while inside (estimate) |
 | Merged meshes | Yes (7b): each shut plate's 26 shards drawn as one mesh | Measured: about 50 draw calls a pass at every range to 700 m |
 
-The far form (a low shell swapped in at range) is task 8 of the spec: measured first,
-built only if hiding both ships at range saves enough.
+The far form (a low shell swapped in at range) is task 8 of the spec: measured first
+(below), built only if hiding both ships at range saves enough.
+
+## The far form: what it could save (task 8, measured)
+
+The most a far form could save is what both ships cost at range, so this is both
+ships shown against both hidden (`visible` off on each ship's node; her wake stays).
+Rendered in the play scene at 1440x900 on the Mac (Apple M5 Pro, the 3D drawn at 0.8
+scale), `--ship-start` (two ships, 1833 m apart), the play loop held, fov 70. Six held
+views: on ship 1's sunlit side at 450 m, 600 m and 1 km (`side`; ship 2 is out of
+view, 1.0-1.4 km off), and on the line from ship 2 through ship 1, 450 m, 600 m and
+1 km past her (`both`; ship 2 in the frame behind her at 2.3-2.8 km). Each A/B ran
+ABBA over 10 rounds, 40 frames a state after 10 to settle. Each run held the window
+lock; other agents' windows were open on the Mac between runs (two runs waited for
+one to close), so the GPU was not this loop's alone all session.
+
+`viewport_get_measured_render_time_gpu` reads 0 on Metal, so the GPU times are from
+the same build on Vulkan (MoltenVK, `--rendering-driver vulkan`), run twice. On
+Metal, the game's backend, the wall time from frame to frame (vsync off) and the
+viewport's render CPU time. The wall time holds the GPU's while the GPU is the
+bottleneck, as it is on Vulkan here (its GPU time within 0.05 ms of the wall).
+
+| View | Draw calls, shown / hidden (visible + shadow) | Saved, of the frame's | GPU saved, Vulkan run 1 / run 2 (frame) | Metal wall saved (frame) | Render CPU saved, Vulkan 1 / 2 / Metal |
+|---|---|---|---|---|---|
+| side 450 m | 676 / 510 | 165, 24.4% | -0.37 / -0.24 ms (18.6 / 13.3) | -0.46 / -0.26 ms (16.0 / 14.0) | 0.09 / 0.07 / 0.07, 0.06 ms |
+| side 600 m | 713 / 548 | 165, 23.1% | -0.26 / -0.20 ms (18.2 / 14.4) | -0.24 ms (16.6) | 0.18 / 0.05 / 0.15 ms |
+| side 1 km | 498 / 453 | 45, 9.0% | -0.19 / -0.11 ms (17.1 / 13.6) | -0.20 ms (15.4) | 0.04 / 0.03 / 0.06 ms |
+| both 450 m | 628 / 416 | 212, 33.8% | -0.10 / -0.03 ms (15.8 / 15.5) | -0.25 ms (14.3) | 0.16 / 0.07 / 0.05 ms |
+| both 600 m | 599 / 392 | 207, 34.6% | +0.10 / 0.00 ms (16.0 / 15.3) | +0.06 ms (15.2) | 0.18 / 0.08 / 0.19 ms |
+| both 1 km | 463 / 373 | 90, 19.4% | -0.04 / -0.13 ms (15.9 / 14.5) | +0.01 ms (15.4) | 0.08 / 0.03 / 0.10 ms |
+
+A negative saving is a frame that ran faster with the ships shown. The first Metal
+run's 450 m lines were cut from its printout, so those two views ran again: side
+twice, both once (a third run's `both` view is dropped: its window stopped drawing,
+0.3 ms frames and no change in draws). Triangles: at side 450 m both ships are 68k of
+1.30M visible and 45k of 653k shadow triangles; at both 450 m, 94k and 45k. At 1 km
+she is past the shadows (no shadow draws change). The 450 m views:
+`ship-build-stills/far_cost_side_450.jpg`, `far_cost_both_450.jpg` (ship 2 behind her).
+
+What it says: at these ranges the ships cost the GPU nothing measurable. No view
+saved more than 0.1 ms in either Vulkan run or on Metal, and most ran a little faster
+with them shown (their pixels likely cost less than the sea and sky behind them; at
+450 m she covers about 2% of the frame). What hiding them does save is draw calls: 165-212
+a frame from 450 m to 600 m (23-35% of the frame's), 45-90 at 1 km (9-19%). The CPU
+pays for those: 0.03-0.26 ms of render CPU time a frame here.
+
+The call, by the spec's rule (build only if hiding both saves 0.5 ms of GPU time a
+frame or 10% of the frame's draw calls): the GPU test fails at every view; the draw
+call test passes at 450 m and 600 m (and at 1 km with both in view). So the rule says
+build, and the build's saving would be draw calls and a few tenths of a millisecond
+of render CPU, not GPU time. A far form of 3-4 materials would draw about 4 calls a
+pass a ship in place of about 87.
 
 ## Rebuilding and retuning
 
@@ -232,8 +282,9 @@ Through the real play loop (uncommitted drivers in `scratch/ship_build/`):
 ## Not proved
 
 - PC fidelity: every still is from the Mac.
-- Frame times: none measured (task 8 measures the GPU's time with both ships against
-  none).
+- Frame times in play: task 8's are held views (above), not a flight. The GPU times
+  are from Vulkan on the Mac; Metal reports none. Nothing measured on the PC, where a
+  CPU-bound frame would feel the draw calls more.
 - The jib always bellies to port; the lower shrouds pass through a slack course's aft
   half (braced 34 degrees, as on a real ship; with wind the belly carries it forward).
 - Seen once in a sequenced driver run and not since: a hands-off plane drifting into
