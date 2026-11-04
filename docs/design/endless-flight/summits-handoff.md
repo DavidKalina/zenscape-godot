@@ -54,3 +54,33 @@ chunk on the worker.
   uniforms above.
 - Existing tests: none run (prototype round). `tests/` that check chunk
   CUSTOM3 presence (rock shape) may assume gentle chunks get no shape.
+
+## Round 2 (look only)
+
+Sheets: `scratch/summits/r2/sheet_top{0..3}.png` in the main checkout, three
+columns (old `--summits=old`, round 1, round 2), rows low / near / far.
+
+- **Snow surface.** Summit caps now take the Peak's snow (`psnow_surface`:
+  drifts, wind crust, sastrugi, its light and edge-biting) through `sm_snow`
+  gating `ps_on`; it paints from the unsheared point, so no new fetch.
+- **Swirl.** Cap and alpine-stone masks read `p.xz` (unsheared), not `gxz`.
+  The carved-rock terraces are untouched.
+- **Cap placement.** Gate on n.y is steeper (0.74..0.88), eased by hollows
+  (`land_shape.r`) and the lee side of the Peak's wind; the cap thins on
+  windward and steeper ground.
+- **Slate.** The dark slate was the carved-rock shape now baked on gentle
+  summit chunks. Chunks baked only for height get alpha 200
+  (`RockShape.HIGH_ALPHA`); the shader hands the rock paint alpha 0 for them,
+  so the rock is as before. Alpine stone is also warmer (ER_MID..ER_LIT mix,
+  less grit and lichen).
+- **Far.** Alpine ground and caps grow with camera distance (150..1200 m):
+  more bare, a higher stone share, bigger caps (fp, a pixel's footprint, is
+  about 1 m even at 900 m, so round 1's fp-keyed far fade never fired).
+
+Not fixed: from the far shots only tops 0 and 3 show the tops clearly
+stonier or capped; top 2 (a modest cap) is still near-invisible at 900 m. The
+near snow can read as stark white patches on dark shaded faces (top 0 low).
+Cost: wall-clock median over 240 frames at tops 0 and 2, low and near,
+old vs new, about 1-2 ms more (20 to 21-22 ms, display-bound and noisy; Metal
+gives no GPU time). Indicative only.
+Fly: `python3 tools/play.py -- --no-title` (old look: add `--summits=old`).
