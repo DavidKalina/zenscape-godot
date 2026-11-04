@@ -32,7 +32,7 @@ float zs_body_noise(vec2 p) {
 // ahead of the crest, a long back behind it). `surge_break`: how tall a wave
 // (m, trough to rest) starts to break, and is sure to.
 uniform vec4 surge_edge = vec4(0.0);
-uniform vec4 surge_belt = vec4(-200.0, 700.0, 2200.0, 3200.0);
+uniform vec4 surge_belt = vec4(-2400.0, -300.0, 2200.0, 3200.0);
 uniform float surge_size = 1.0;
 uniform float surge_peak = 0.85;
 uniform vec2 surge_break = vec2(8.0, 13.0);
@@ -41,7 +41,7 @@ const float SURGE_SIZE[3] = float[3](9.0, 5.0, 2.2);
 const vec2 SURGE_SET = vec2(0.007, 0.059);
 const float SURGE_LEAN = 0.35;
 const float SURGE_CREST_LENGTH = 150.0;
-const float SURGE_REACH = 700.0;
+const float SURGE_REACH = 450.0;
 const float SURGE_WANDER = 2300.0;
 const vec2 SURGE_BEND = vec2(14.0, -9.0);
 const float SURGE_BEND_LENGTH = 1700.0;

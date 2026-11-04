@@ -130,6 +130,10 @@ func _init(seed_value: int) -> void:
 			# finest crinkles turned down.
 			if body_wanted():
 				material.set_shader_parameter("sea_body",1)
+				# The ordinary sea's size: the long swell and wind sea up from the shader's
+				# (0.85, 1.0, 0.9), so the middle reads livelier while the edge's surge
+				# stays the big water (--sea-set=body_swell:Vector3(0.85,1.0,0.9) is the old sea).
+				material.set_shader_parameter("body_swell",Vector3(1.7,1.3,0.9))
 				material.set_shader_parameter("detail_strength",Vector3(0.2,0.12,0.045))
 				material.set_shader_parameter("wavelet_strength",0.1)
 				material.set_shader_parameter("wavelet_size",Vector2(3.2,0.7))
@@ -203,7 +207,7 @@ var _swell: Object = null
 ## The shader's defaults for what the mirror reads (a material keeps only
 ## what was set).
 const FOAM_CAPS := Vector3(1.6,6.0,1.0)
-const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foam":Vector3(0.25,0.55,1.2),"fft_patch":Vector2(0.55,1.25),"fft_strength":Vector3(1.0,0.85,0.45),"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0),"surge_belt":Vector4(-200.0,700.0,2200.0,3200.0),"surge_size":1.0,"surge_peak":0.85}
+const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foam":Vector3(0.25,0.55,1.2),"fft_patch":Vector2(0.55,1.25),"fft_strength":Vector3(1.0,0.85,0.45),"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0),"surge_belt":Vector4(-2400.0,-300.0,2200.0,3200.0),"surge_size":1.0,"surge_peak":0.85}
 
 ## The sea's surface height over its rest level (m) at world `x`,`z` now:
 ## the body's swell (0 without the body). The shader's sheet shoves its
@@ -323,7 +327,7 @@ const SURGE_LENGTH := [180.0,130.0,90.0]
 const SURGE_SIZE := [9.0,5.0,2.2]
 const SURGE_SET := Vector2(0.007,0.059)
 const SURGE_LEAN := 0.35
-const SURGE_REACH := 700.0
+const SURGE_REACH := 450.0
 const SURGE_WANDER := 2300.0
 const SURGE_BEND := Vector2(14.0,-9.0)
 const SURGE_BEND_LENGTH := 1700.0

@@ -32,7 +32,7 @@ var _sea: ShaderMaterial
 var _edge := Vector4.ZERO
 var _reach := 0.0
 ## Where the belt starts past the edge line (m; surge_belt.x).
-var _belt_from := -200.0
+var _belt_from := -2400.0
 var _mat: ShaderMaterial
 var _inst: MeshInstance3D
 var _wait := 0.0
