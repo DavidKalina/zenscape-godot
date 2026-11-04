@@ -1184,10 +1184,10 @@ func _on_river() -> bool:
 	return field.last_river < 0.0 and field.river_drawn() > Field.SEA_Y+0.05
 
 ## The water under a point: the sea's swell, or a river's level over it.
-func water_at(p: Vector3) -> float:
+func water_at(p: Vector3, land_h := NAN) -> float:
 	if GroundTally.on: GroundTally.tick(&"water_at")
 	if tunnels != null and tunnels.dry(p): return -INF
-	var level := Field.SEA_Y+sea_height(p)
+	var level := Field.SEA_Y+sea_height(p,land_h)
 	var river: float = field.river_y(p.x,p.z)
 	return level if is_nan(river) else maxf(level,river)
 
@@ -1197,12 +1197,17 @@ func water_at(p: Vector3) -> float:
 func eye_floor(p: Vector3) -> float:
 	if GroundTally.on: GroundTally.tick(&"eye_floor")
 	if doors != null and doors.holds(p): return doors.hall_floor()
-	var h: float = field.height(p.x,p.z)
+	return _eye_over(p,field.height(p.x,p.z))
+
+## `eye_floor` past the doors, over the land's height `land` at p's (x, z),
+## just read (the field's last sample is there: `_on_river`).
+func _eye_over(p: Vector3, land: float) -> float:
+	var h := land
 	if _on_river(): h = maxf(h,field.river_drawn())
 	h = tunnels.land_y(p,h)
 	if _stone_near(p) & GroundNative.ICE: h = ice.land_y(p,h)
 	if tunnels.dry(p): return h
-	return maxf(h,Field.SEA_Y+sea_height(p))
+	return maxf(h,Field.SEA_Y+sea_height(p,land))
 
 ## Which of the arches and rocks may hold `p` at their own pads (`inside`'s
 ## default; GroundNative `mask`).
@@ -1214,16 +1219,19 @@ func _solid(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_solid")
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
 	var m := _stone_near(p)
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
+	var land: float = field.height(p.x,p.z)
+	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
-func sea_height(p: Vector3) -> float:
+## `land` the land's height at p's (x, z) where the caller has it.
+func sea_height(p: Vector3, land := NAN) -> float:
 	if GroundTally.on: GroundTally.tick(&"sea_height")
 	if look == null or look.water == null or p.y > Field.SEA_Y+12.0+look.water.surge_room(p.x,p.z): return 0.0
 	# Land well over the sea has none, and low land sits inside the 12 m: every
 	# probe of a low flight would march the waves.
-	if field.height(p.x,p.z) > Field.SEA_Y+preload("res://scripts/burrower/game_land.gd").SWELL_ROOM: return 0.0
+	if (field.height(p.x,p.z) if is_nan(land) else land) > Field.SEA_Y+preload("res://scripts/burrower/game_land.gd").SWELL_ROOM: return 0.0
 	# Up a river's mouth the sea lies still, as the sea shader draws it.
 	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
 
@@ -1253,7 +1261,14 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		# In a bore's tube the fine march has answered.
 		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0: continue
 		var m := _stone_near(p)
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p):
+		# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
+		var land := NAN
+		var floor_y: float
+		if doors != null and doors.holds(p): floor_y = doors.hall_floor()
+		else:
+			land = field.height(p.x,p.z)
+			floor_y = _eye_over(p,land)
+		if p.y < floor_y+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p):
 			got = float(i-1)/STEPS
 			break
 	if FrameLog.on: FrameLog.add(&"s_march",(Time.get_ticks_usec()-t1)/1000.0)

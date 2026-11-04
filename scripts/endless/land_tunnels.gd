@@ -29,6 +29,7 @@ extends Node3D
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
+const BoreNative = preload("res://scripts/endless/bore_native.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
@@ -346,6 +347,11 @@ class Built extends RefCounted:
 	var ms := 0.0
 
 var field: RefCounted
+## `near`, `tube`, `inside`, `land_y` and `sight` in C++ (ZenScapeBoreSight;
+## BoreNative), or null; `_n_dirty` when the stood sites or the near spurs
+## and plugs changed since it last read them.
+var native: Object = null
+var _n_dirty := true
 var _to_sun := Vector3.ZERO
 var stats := {"tunnels":0,"tris":0,"torches":0,"stretches":0,"lights":0}
 ## The hall stretches' streamer.
@@ -418,6 +424,14 @@ func setup(land_field: RefCounted, ground: Material = null, to_sun := Vector3.ZE
 	add_child(halls)
 	halls.setup(int(field.seed))
 	halls.density = 1.0
+	native = BoreNative.bore_sight() if halls.native != null else null
+	if native != null:
+		native.configure({"STEP":Tunnels.STEP,"PORTAL_OUT":Tunnels.PORTAL_OUT,"PORTAL_IN":Tunnels.PORTAL_IN,"PORTAL_HALF":Tunnels.PORTAL_HALF,
+			"HALL_HALF":Tunnels.HALL_HALF,"HALL_VAULT":Tunnels.HALL_VAULT,"HALL_ROUND":Tunnels.HALL_ROUND,
+			"MOUTH_HALF":Tunnels.MOUTH_HALF,"MOUTH_VAULT":Tunnels.MOUTH_VAULT,"MOUTH_ROUND":Tunnels.MOUTH_ROUND,
+			"SHAFT_R":Tunnels.SHAFT_R,"PORTAL_OVER":PORTAL_OVER,"CAP_OVER":CAP_OVER,"CAP_FLAT":CAP_FLAT,"CAP_FALL":CAP_FALL,
+			"CAP_ROUGH":CAP_ROUGH,"CAP_GRAIN":CAP_GRAIN,"WALL_NEAR":WALL_NEAR,"SIGHT_STEP":SIGHT_STEP,"SIGHT_UP":SIGHT_UP,
+			"hall_pad":WorldScale.span*0.5},Callable(field,&"height"),halls.native)
 	stats.lights = 0
 	stats["flames"] = 0
 	stats["fires"] = 0
@@ -468,6 +482,7 @@ func _commit(b: Built) -> void:
 	_next_id += 1
 	add_child(b.node)
 	_sites.append(b.site)
+	_n_dirty = true
 	_built[b.site.name] = b
 	_by_id[b.id] = b
 	for h: Dictionary in b.stretches:
@@ -494,6 +509,7 @@ func _drop(b: Built) -> void:
 	for body in b.bodies: body.free()
 	b.bodies.clear()
 	_sites.erase(b.site)
+	_n_dirty = true
 	_built.erase(b.site.name)
 	_by_id.erase(b.id)
 	b.node.queue_free()
@@ -1016,6 +1032,13 @@ func _room(t: Tunnels.Site, s: float, h: float) -> Vector2:
 ## The solid's top under `p` over the land's `h`: the bore's floor in the
 ## tube under its roof, else the cover.
 func land_y(p: Vector3, h: float) -> float:
+	if native != null:
+		if _n_dirty: _sync()
+		if native != null: return native.land_y(p,h)
+	return land_y_gd(p,h)
+
+## `land_y` in GDScript, the reference.
+func land_y_gd(p: Vector3, h: float) -> float:
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
 		var sh := Tunnels.shaft_at(t,p.x,p.z)
@@ -1034,10 +1057,53 @@ func stood() -> Array:
 func has_built(tunnel: String) -> bool:
 	return _built.has(tunnel)
 
+# --- The native sight (ZenScapeBoreSight) ----------------------------------------------
+
+## The near spurs or plugs changed or moved (BoreSpurs, BorePlugs).
+func solid_moved() -> void:
+	_n_dirty = true
+
+## The stood sites and the near spurs and plugs to the native sight.
+func _sync() -> void:
+	_n_dirty = false
+	var list: Array = []
+	for t: Tunnels.Site in _sites:
+		var d := _site_pack(t)
+		if d.is_empty():
+			# A site it can't mirror: the GDScript answers from here on.
+			native = null
+			return
+		list.append(d)
+	native.set_sites(list)
+	native.set_spurs(spurs.sight_chain() if spurs != null else 0,spurs.sight_pack() if spurs != null else PackedFloat64Array())
+	if plugs != null:
+		var shape: Array = plugs.sight_shape()
+		native.set_plugs(shape[0],shape[1],shape[2],plugs.sight_pack())
+	else: native.set_plugs(0,0,0.0,PackedFloat64Array())
+
+## Site `t` as the native sight reads it, or {} for one it can't (its rock
+## noise not the plain FBM simplex `_carve_profile` makes).
+static func _site_pack(t: Tunnels.Site) -> Dictionary:
+	var n := t.rock
+	if n == null or n.noise_type != FastNoiseLite.TYPE_SIMPLEX_SMOOTH or n.fractal_type != FastNoiseLite.FRACTAL_FBM or n.domain_warp_enabled 			or n.offset != Vector3.ZERO or n.fractal_lacunarity != 2.0 or n.fractal_gain != 0.5 or n.fractal_weighted_strength != 0.0: return {}
+	var shafts := PackedFloat64Array()
+	for sh: Dictionary in t.shafts: shafts.append_array([(sh.at as Vector2).x,(sh.at as Vector2).y,float(sh.top)])
+	return {"box":t.box,"origin":t.origin,"way":t.way,"mouth_b":t.mouth_b,"out_b":t.out_b,"u_end":t.u_end,"length":t.length,
+		"floor_y":t.floor_y,"sunk":t.sunk,"tv":t.tv,"tc":t.tc,"tsn":t.tsn,"ts":t.ts,"ss":t.ss,"wn":t.wn,"wp":t.wp,"vt":t.vt,
+		"rn":t.rn,"rise":t.rise,"shafts":shafts,"rock_seed":n.seed,"rock_frequency":n.frequency,"rock_octaves":n.fractal_octaves}
+
 ## True inside the rock round a bore or a portal's block (the camera keeps
 ## out, the wheels stop): under the tube's floor, over its roof under the
-## cover, or in the walls beside it under the land.
-func inside(p: Vector3) -> bool:
+## cover, or in the walls beside it under the land. `h` the land's height
+## at p's (x, z) where the caller has it (NAN: asked of the field).
+func inside(p: Vector3, h := NAN) -> bool:
+	if native != null:
+		if _n_dirty: _sync()
+		if native != null: return native.inside(p,h)
+	return inside_gd(p,h)
+
+## `inside` in GDScript, the reference.
+func inside_gd(p: Vector3, given := NAN) -> bool:
 	if halls.inside(p): return true
 	if spurs != null and spurs.inside(p): return true
 	if plugs != null and plugs.inside(p): return true
@@ -1045,7 +1111,7 @@ func inside(p: Vector3) -> bool:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
 		var sh := Tunnels.shaft_at(t,p.x,p.z)
 		if sh >= 0 and p.y < float(t.shafts[sh].top): return p.y < t.floor_y
-		var h: float = field.height(p.x,p.z)
+		var h: float = field.height(p.x,p.z) if is_nan(given) else given
 		var cover := _cover(t,p.x,p.z,h)
 		var b := Tunnels.bore_at(t,p.x,p.z)
 		if not is_nan(b.x) and cover > b.y: return p.y < b.x or (p.y > b.y and p.y < cover)
@@ -1066,18 +1132,28 @@ func inside(p: Vector3) -> bool:
 ## point (nothing else can be in the way there, so the caller's own march
 ## can be skipped).
 func sight(from: Vector3, to: Vector3) -> float:
+	if native != null:
+		if _n_dirty: _sync()
+		if native != null:
+			var got: float = native.sight(from,to)
+			sight_whole = native.sight_whole()
+			return got
+	return sight_gd(from,to)
+
+## `sight` in GDScript, the reference.
+func sight_gd(from: Vector3, to: Vector3) -> float:
 	sight_whole = false
 	if not near(from) and not near(to): return 1.0
 	var n := maxi(1,ceili(from.distance_to(to)/SIGHT_STEP))
 	var whole := true
 	for i in range(1,n+1):
 		var p := from.lerp(to,float(i)/n)
-		var got := tube(p)
+		var got := tube_gd(p)
 		if got == 0 and spurs != null and spurs.inside(p): got = 1
 		if got == 0 and plugs != null and plugs.inside(p): got = 1
 		if got < 0:
 			whole = false
-			if inside(p) or p.y < land_y(p,field.height(p.x,p.z)): got = 1
+			if inside_gd(p) or p.y < land_y_gd(p,field.height(p.x,p.z)): got = 1
 		if got == 1:
 			sight_whole = whole
 			return float(i-1)/n
@@ -1119,6 +1195,9 @@ func _hush_sea(at: Vector3) -> void:
 
 ## Whether `p` is in a tunnel's box, low enough to be in its bore.
 func near(p: Vector3) -> bool:
+	if native != null:
+		if _n_dirty: _sync()
+		if native != null: return native.near(p)
 	for t: Tunnels.Site in _sites:
 		if t.box.has_point(Vector2(p.x,p.z)) and p.y < t.floor_y+SIGHT_UP: return true
 	return false
@@ -1127,6 +1206,13 @@ func near(p: Vector3) -> bool:
 ## shaft), where the land over it can't matter: 1 in the rock or a hall
 ## stretch, 0 open, -1 elsewhere (ask `inside` and `land_y`).
 func tube(p: Vector3) -> int:
+	if native != null:
+		if _n_dirty: _sync()
+		if native != null: return native.tube(p)
+	return tube_gd(p)
+
+## `tube` in GDScript, the reference.
+func tube_gd(p: Vector3) -> int:
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)) or p.y > t.floor_y+SIGHT_UP: continue
 		var sh := Tunnels.shaft_at(t,p.x,p.z)
