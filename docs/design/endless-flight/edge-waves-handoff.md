@@ -93,3 +93,102 @@ constant, so this is the old belt only roughly).
 ## Tests
 
 No test names the surge, the belt or `body_swell`; none expected to break.
+
+# Round 2: the surge stops short of the land (2026-11-03)
+
+Worked on branch `iter/edge-waves-shore` (off `iter/edge-waves`, which was
+checked out in another worktree); fast-forward `iter/edge-waves` to it.
+
+## What was wrong
+
+With the belt pulled in to the shore, the big crests ran up beaches and
+through cliffs and sea stacks: nothing told the surge where the land was.
+
+## What changed
+
+A shore map scales the surge: `EndlessSea.shore_image`, baked once on a worker
+thread when the edge is set (~1.5 s after the sea is made, 582x582 texels of
+32 m over the edge square plus 800 m; land read only where the belt can reach).
+Per texel, the product of:
+
+- distance off the nearest land (chamfer distance): 0 within `SHORE_NEAR`
+  40 m, whole by `SHORE_FULL` 380 m (smoothstep), so a crest dies over two or
+  three wavelengths as it comes in, the way a swell dies in the shallows;
+- shelter: open water between the spot and land lying toward the open sea
+  (along the surge's way out, x and z sweeps weighed by it): sheltered under
+  `SHORE_FETCH.x` 150 m, open again by `.y` 1,600 m, softened with a box blur
+  (`SHORE_BLUR`, 3 texels, two passes). Inner seas, bays whose mouths face
+  sideways and water behind headlands and stacks get little or no surge;
+  inlets whose mouths face the open sea get a streak of it.
+
+It multiplies the surge's `share` at the sheet's rest point, so height,
+sideways shove, foam, the crests' light and spray all fade together:
+`zs_surge_shore` in `shaders/endless_surge.gdshaderinc` (sea and spray), and
+`shore_fade` in `endless_sea.gd` for `surge_at` (inside its Newton loop, at the
+rest point, as the sheet reads it) and `surge_room` (the fade + 0.12 for the
+shove). The CPU reads the same Image bilinearly at texel centres, as the GPU
+does. Past the map the fade is 1 (open sea); until the bake is in, the surge is
+off on both sides (`shore_ready()`). The spray copies `surge_shore_at` from the
+sea each frame (it arrives after the spray's setup).
+
+The previous round's belt, reach and `body_swell` are unchanged.
+
+Flags: `--shore=0` the fade off (the old look, waves onto the land);
+`--shore=near,full,fetch_from,fetch_full` other ramps, e.g. `--shore=50,520`
+(tried: calmer, the waves sit ~500 m off); `--shore-now` bakes on the main
+thread at startup.
+
+## Seen
+
+`captures/edge-waves-shore/` (not committed). `before_*` is `--shore=0`,
+`after_*` the final ramp (40/380), `r380_*` the same ramp by flag; the middle
+panel of the `tri_*` sheets is the first try, 50/520.
+
+- `pair_E_N.png`, `pair_W_S.png`: crests breaking on the east beach and the
+  north stacks before, calm at the shore after.
+- `tri_W_cliff.png` (before / 50-520 / 40-380): the big crest along the west
+  cliffs, gone at the shore; a modest crest remains 150 m out.
+- `tri_N_beach.png`, `tri_E_beach.png`: beaches from 150 m off, 18 m up.
+- `pairs2.png`: the SE corner (unchanged, far from land), the south bay, from
+  150 m (waves out front, calm band at the shore, a sandbar no longer bared by
+  troughs) and the south island.
+- `map_after.png` (white: belt x fade; purple: belt with the fade at 0),
+  `map_fade.png` (the fade alone: the inner seas dark, mouths streaked).
+
+## Play loop check (scratch/shore_fly.gd, not committed)
+
+Hands-off low flight north along the east shore, 70 to 250 m off the beach,
+bobbing 2 to 20 m up, 25 s: the CPU surge under the plane peaked at 0.57 m
+within 100 m of land (5.14 m with `--shore=0`), 0.25 m where the map reads
+0 (the rest point's shove). Scrapes 3 both ways (dips to 2 m in the body
+swell), no crashes. Headless frame time unchanged (7.1 vs 7.9 ms, noise); the
+shader adds one texture read per surge call.
+
+## Launch
+
+    python3 /Users/davidkalina/Documents/Projects/zenscape-godot/.claude/worktrees/agent-aba3ea510bf92a04f/tools/play.py -- --no-title --pilot-file=/tmp/edge_waves_pilot.json --at=-8950,3025 --heading=0 --alt=18
+
+(along the west cliffs, where a big crest ran along the rock). Add
+`--shore=0` for the old. Others: `--at=7550,1100 --heading=270 --alt=25`
+(toward the east beach), `--at=-5637,-7550 --heading=90 --alt=18` (along the
+north beach and stacks), `--at=7900,1100 --heading=270 --alt=150` (from 150 m).
+
+## Not verified
+
+- That the drawn sea and the CPU match pixel for pixel: they read the same
+  map with the same formula; no rendered probe compared them.
+- Frame cost on a GPU (one extra texture read per surge call; not measured
+  rendered) and the PC.
+- The startup pop: the surge appears once the bake is in (~1.5 s, during
+  the load in the runs here). A plane started in the belt on a slow PC may
+  see it come on.
+- Whether the shelter is too strong: water behind stacks and islets gets a
+  calm streak 1 to 1.6 km long, softened by the blur. `--shore=40,380,80,900`
+  shortens it.
+- Lakes and rivers: untouched (inland, not on the sea sheet's belt); not shot.
+- Ships: not shot; a ship near a shore now rides less surge.
+
+## Tests
+
+No test names the surge, `surge_room`, `surge_at` or the sea; none expected
+to break.

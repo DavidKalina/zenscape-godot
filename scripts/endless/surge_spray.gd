@@ -21,7 +21,7 @@ const RINGS := [
 	{"tile":4800.0, "from":760.0, "to":2300.0, "size":17.0, "cards":2000, "life":Vector2(1.6,2.8), "climb":6.0},
 ]
 ## The surge uniforms the cards read as the sea does (EndlessSea's material).
-const SHARED := ["surge_edge","surge_belt","surge_size","surge_peak","surge_break","swell_heading"]
+const SHARED := ["surge_edge","surge_belt","surge_size","surge_peak","surge_break","swell_heading","surge_shore","surge_shore_at"]
 ## How often the sky's haze is read (s).
 const HAZE_EVERY := 0.5
 
@@ -103,6 +103,9 @@ func setup(host: Node, sea: ShaderMaterial, edge: Vector4) -> void:
 
 func _process(delta: float) -> void:
 	if _inst == null: return
+	# The shore map comes in from a worker after setup (EndlessSea `shore_at`).
+	var shore_at: Variant = _sea.get_shader_parameter("surge_shore_at")
+	if shore_at != null: _mat.set_shader_parameter("surge_shore_at",shore_at)
 	var view := get_viewport().get_camera_3d()
 	if view == null: return
 	var eye := view.global_position

@@ -342,6 +342,230 @@ func set_edge(edge: Vector4) -> void:
 	if edge.z <= 0.0 or int(_knob("sea_body")) == 0 or "--surge=0" in LaunchArgs.user_args(): return
 	_surge_edge = edge
 	material.set_shader_parameter("surge_edge",edge)
+	_shore_start(edge)
+
+# --- The surge's shore: where it dies off before the land
+#
+# The surge is scaled by a map over the whole edge square (`shore_image`,
+# baked once on a worker when the edge is set): 0 on land and SHORE_NEAR m off
+# it, whole SHORE_FULL m off, the way a swell dies in the shallows; and low
+# where land lies between the water and the open sea the waves come in from
+# (behind a headland, up a bay, an inner sea), whole again SHORE_FETCH.y m of
+# open water past it. The sheet (zs_surge_shore), the spray and the CPU's copy
+# (`shore_at`) read the one map, at the sheet's rest point. Until it is baked
+# the surge is off everywhere; past the map it is whole (open sea).
+# --shore=0 takes the fade off (the surge runs onto the land, as before).
+
+## The map's texel (m) and how far it runs past the edge line (m).
+const SHORE_TEXEL := 32.0
+const SHORE_PAST := 800.0
+## Distance off the nearest land (m): nothing within .x (the sheet's shove and
+## the map's texel), whole from .y.
+const SHORE_NEAR := 40.0
+const SHORE_FULL := 380.0
+## Open water (m) between a spot and land lying toward the open sea: sheltered
+## under .x, open again by .y.
+const SHORE_FETCH := Vector2(150.0,1600.0)
+## The shelter's soft edge (texels, two box passes): waves bend round a
+## headland's end rather than stopping on a line.
+const SHORE_BLUR := 3
+## Room left on the fade in `surge_room` for the sheet's sideways shove (the
+## map read at the plane, the wave's rest point up to ~25 m off).
+const SHORE_ROOM_SLACK := 0.12
+
+var shore := ImageTexture.new()
+## Corner x, z, side (m), baked (1) or not (0).
+var shore_at := Vector4.ZERO
+var _shore_task := -1
+var _shore_image: Image
+var _shore_next := Vector4.ZERO
+var _shore_data := PackedFloat32Array()
+var _shore_n := 0
+
+func _shore_start(edge: Vector4) -> void:
+	material.set_shader_parameter("surge_shore",shore)
+	material.set_shader_parameter("surge_shore_at",shore_at)
+	if "--shore=0" in LaunchArgs.user_args():
+		_shore_next = Vector4(0.0,0.0,1.0,2.0)
+		_shore_take()
+		return
+	var half := edge.z+SHORE_PAST
+	_shore_n = int(ceil(half*2.0/SHORE_TEXEL))
+	_shore_next = Vector4(edge.x-half,edge.y-half,_shore_n*SHORE_TEXEL,1.0)
+	var s := land_seed
+	var corner := Vector2(_shore_next.x,_shore_next.y)
+	var n := _shore_n
+	# --shore=near,full,fetch_from,fetch_full (m) tries other ramps.
+	var ramp := Vector4(SHORE_NEAR,SHORE_FULL,SHORE_FETCH.x,SHORE_FETCH.y)
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--shore=") and a.get_slice("=",1).contains(","):
+			var parts := a.get_slice("=",1).split(",")
+			for i in mini(parts.size(),4): ramp[i] = float(parts[i])
+	var from: float = Vector4(_knob("surge_belt")).x-ramp.y-200.0
+	if "--shore-now" in LaunchArgs.user_args():
+		_shore_image = shore_image(s,edge,corner,n,from,ramp)
+		_shore_take()
+	else:
+		_shore_task = WorkerThreadPool.add_task(func() -> void: _shore_image = shore_image(s,edge,corner,n,from,ramp),false,"Surge shore map")
+
+## Whether the shore map is in (the surge is off until it is).
+func shore_ready() -> bool:
+	return shore_at.w > 0.5 or _surge_edge.z <= 0.0
+
+func _shore_poll() -> void:
+	if _shore_task < 0 or not WorkerThreadPool.is_task_completed(_shore_task): return
+	WorkerThreadPool.wait_for_task_completion(_shore_task)
+	_shore_task = -1
+	_shore_take()
+
+func _shore_take() -> void:
+	# w 2: no fade (--shore=0); the shader reads past the map as whole.
+	if _shore_next.w > 1.5:
+		shore_at = Vector4(0.0,0.0,1.0,2.0)
+	else:
+		if _shore_image == null: return
+		shore.set_image(_shore_image)
+		_shore_data = _shore_image.get_data().to_float32_array()
+		shore_at = _shore_next
+	material.set_shader_parameter("surge_shore_at",shore_at)
+
+## How whole the surge may be at world `x`,`z` (0 .. 1): the map read as the
+## shader reads it (bilinear between texel centres, clamped at its rim, 1 past it).
+func shore_fade(x: float, z: float) -> float:
+	if shore_at.w < 0.5: return 0.0
+	if shore_at.w > 1.5: return 1.0
+	var u := (x-shore_at.x)/shore_at.z
+	var v := (z-shore_at.y)/shore_at.z
+	if u < 0.0 or v < 0.0 or u > 1.0 or v > 1.0: return 1.0
+	var n := _shore_n
+	var fx := u*n-0.5
+	var fz := v*n-0.5
+	var i0 := int(floor(fx))
+	var j0 := int(floor(fz))
+	var tx := fx-i0
+	var tz := fz-j0
+	var i1 := clampi(i0+1,0,n-1)
+	var j1 := clampi(j0+1,0,n-1)
+	i0 = clampi(i0,0,n-1)
+	j0 = clampi(j0,0,n-1)
+	var a := lerpf(_shore_data[j0*n+i0],_shore_data[j0*n+i1],tx)
+	var b := lerpf(_shore_data[j1*n+i0],_shore_data[j1*n+i1],tx)
+	return lerpf(a,b,tz)
+
+## The shore map over `n`x`n` texels from `corner` (red: how whole the surge
+## may be). Land is read only where the belt can reach (edge distance past
+## `from`); deeper in counts as land.
+static func shore_image(seed_value: int, edge: Vector4, corner: Vector2, n: int, from: float, ramp: Vector4) -> Image:
+	var field := Field.new(seed_value)
+	var t := SHORE_TEXEL
+	field.detail = t
+	var big := 1.0e6
+	var dist := PackedFloat32Array()
+	dist.resize(n*n)
+	var land := PackedByteArray()
+	land.resize(n*n)
+	for j in n:
+		var z := corner.y+(j+0.5)*t
+		for i in n:
+			var x := corner.x+(i+0.5)*t
+			var k := j*n+i
+			var dry := true
+			if Field.GDField.edge_off(edge,x,z) > from: dry = field.height(x,z) >= Field.SEA_Y
+			land[k] = 1 if dry else 0
+			dist[k] = 0.0 if dry else big
+	# Distance off the land: two chamfer passes (texel, diagonal).
+	var d1 := t
+	var d2 := t*sqrt(2.0)
+	for j in n:
+		for i in n:
+			var k := j*n+i
+			var d := dist[k]
+			if d == 0.0: continue
+			if i > 0: d = minf(d,dist[k-1]+d1)
+			if j > 0:
+				d = minf(d,dist[k-n]+d1)
+				if i > 0: d = minf(d,dist[k-n-1]+d2)
+				if i < n-1: d = minf(d,dist[k-n+1]+d2)
+			dist[k] = d
+	for j in range(n-1,-1,-1):
+		for i in range(n-1,-1,-1):
+			var k := j*n+i
+			var d := dist[k]
+			if d == 0.0: continue
+			if i < n-1: d = minf(d,dist[k+1]+d1)
+			if j < n-1:
+				d = minf(d,dist[k+n]+d1)
+				if i < n-1: d = minf(d,dist[k+n+1]+d2)
+				if i > 0: d = minf(d,dist[k+n-1]+d2)
+			dist[k] = d
+	# Open water toward the open sea: along x toward the near side's edge, and
+	# along z, weighed by the way out (the surge's fronts face it).
+	var to_hi := PackedFloat32Array()
+	to_hi.resize(n)
+	var shelter := PackedFloat32Array()
+	shelter.resize(n*n)
+	var fetch_x := PackedFloat32Array()
+	fetch_x.resize(n*n)
+	for j in n:
+		var run := big
+		for i in range(n-1,-1,-1):
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			to_hi[i] = run
+		run = big
+		for i in n:
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			var x := corner.x+(i+0.5)*t
+			fetch_x[k] = to_hi[i] if x > edge.x else run
+	for i in n:
+		var run := big
+		var to_hi_z := PackedFloat32Array()
+		to_hi_z.resize(n)
+		for j in range(n-1,-1,-1):
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			to_hi_z[j] = run
+		run = big
+		var x := corner.x+(i+0.5)*t
+		for j in n:
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			var z := corner.y+(j+0.5)*t
+			var fz := to_hi_z[j] if z > edge.y else run
+			var dx := absf(x-edge.x)-(edge.z-edge.w)
+			var dz := absf(z-edge.y)-(edge.z-edge.w)
+			var ox := maxf(dx,0.0)
+			var oz := maxf(dz,0.0)
+			var wx: float
+			var ol := ox*ox+oz*oz
+			if ol > 1e-6: wx = ox*ox/ol
+			else: wx = 1.0 if dx > dz else 0.0
+			var fetch := fetch_x[k]*wx+fz*(1.0-wx)
+			shelter[k] = smoothstep(ramp.z,ramp.w,fetch)
+	# Soften the shelter's edges (separable box, twice).
+	var tmp := PackedFloat32Array()
+	tmp.resize(n*n)
+	var r := SHORE_BLUR
+	var w := 1.0/float(2*r+1)
+	for pass_i in 2:
+		for j in n:
+			var sum := 0.0
+			for i in range(-r,r+1): sum += shelter[j*n+clampi(i,0,n-1)]
+			for i in n:
+				tmp[j*n+i] = sum*w
+				sum += shelter[j*n+clampi(i+r+1,0,n-1)]-shelter[j*n+clampi(i-r,0,n-1)]
+		for i in n:
+			var sum := 0.0
+			for j in range(-r,r+1): sum += tmp[clampi(j,0,n-1)*n+i]
+			for j in n:
+				shelter[j*n+i] = sum*w
+				sum += tmp[clampi(j+r+1,0,n-1)*n+i]-tmp[clampi(j-r,0,n-1)*n+i]
+	var out := PackedFloat32Array()
+	out.resize(n*n)
+	for k in n*n:
+		out[k] = smoothstep(ramp.x,ramp.y,dist[k])*shelter[k]
+	return Image.create_from_data(n,n,false,Image.FORMAT_RF,out.to_byte_array())
 
 ## How far over the rest level the surge may reach at `x`,`z` (m; 0 outside
 ## its belt), so a look-up can stop short of the waves when it is above them.
@@ -350,7 +574,8 @@ func surge_room(x: float, z: float) -> float:
 	var belt: Vector4 = _knob("surge_belt")
 	var off: float = Field.GDField.edge_off(_surge_edge,x,z)
 	if off <= belt.x: return 0.0
-	return SURGE_TOP*float(_knob("surge_size"))*smoothstep(belt.x,belt.y,off)
+	var fade := minf(1.0,shore_fade(x,z)+SHORE_ROOM_SLACK) if shore_at.w > 0.5 else 0.0
+	return SURGE_TOP*float(_knob("surge_size"))*smoothstep(belt.x,belt.y,off)*fade
 
 ## The sheet's point over world `x`,`z`: Vector3(rest x, rest z, the surge's
 ## rise there, m). The sheet shoves its points far enough here that Newton
@@ -360,7 +585,7 @@ func surge_at(x: float, z: float) -> Vector3:
 	if _surge_edge.z <= 0.0: return Vector3(x,z,0.0)
 	var belt: Vector4 = _knob("surge_belt")
 	var target := Vector2(x,z)
-	if Field.GDField.edge_off(_surge_edge,x,z) <= belt.x: return Vector3(x,z,0.0)
+	if Field.GDField.edge_off(_surge_edge,x,z) <= belt.x or shore_at.w < 0.5: return Vector3(x,z,0.0)
 	var t := _now
 	var size_knob: float = _knob("surge_size")
 	var peak: float = _knob("surge_peak")
@@ -377,7 +602,7 @@ func surge_at(x: float, z: float) -> Vector3:
 		var off := w.x
 		var d := -Vector2(w.y,w.z)
 		var sets := 0.5+0.5*sin(-off*SURGE_SET.x-t*SURGE_SET.y+warp_a*5.0)
-		var size := size_knob*smoothstep(belt.x,belt.y,off-wander)*(0.4+0.6*sets)*(0.6+0.8*lobe)
+		var size := size_knob*smoothstep(belt.x,belt.y,off-wander)*shore_fade(p.x,p.y)*(0.4+0.6*sets)*(0.6+0.8*lobe)
 		var total := 0.0
 		for i in 3:
 			total += float(SURGE_SIZE[i])*size*TAU/float(SURGE_LENGTH[i])
@@ -505,6 +730,7 @@ static func _detail(seed_value: int, frequency: float, octaves: int) -> NoiseTex
 func step(delta: float, eye: Vector3, plane: Vector3, facing := Vector3.FORWARD, time := -1.0, view: Camera3D = null) -> void:
 	_now += delta
 	_depth(eye)
+	_shore_poll()
 	_wake(plane)
 	if fft != null: fft.step(time if time >= 0.0 else _now,view)
 	if foam != null:
