@@ -111,6 +111,10 @@ uniform vec2 alpine_stone = vec2(70.0, 130.0);
 uniform vec2 summit_snow = vec2(70.0, 100.0);
 uniform vec2 summit_proud = vec2(0.50, 0.58);
 uniform float summit_amount : hint_range(0.0, 2.0) = 1.0;
+// Frayed edge of the caps (0 hard), the lee/windward weight, the snow's tint on stone.
+uniform float summit_fray : hint_range(0.0, 1.0) = 0.45;
+uniform float summit_lee : hint_range(0.0, 1.0) = 0.30;
+uniform float summit_dim : hint_range(0.0, 1.0) = 0.24;
 // The normal's up below which the grass gives way to rock (with a ragged
 // edge), and where the turf starts to thin to dry olive.
 uniform float rock_up = 0.80;
@@ -988,6 +992,8 @@ void fragment() {
 	// flats and thins on the steeper, windward ground; the surface and light
 	// are the Peak's snow (psnow_surface, below), which also bites its edge.
 	float sm_snow = 0.0;
+	float sm_cov = 0.0;
+	float sm_dust = 0.0;
 	if (summit_mode > 0.5 && land_shape.a > 0.5 && summit_amount > 0.0) {
 		float proud = smoothstep(summit_proud.x, summit_proud.y, land_shape.b);
 		vec2 sq = p.xz;
@@ -996,13 +1002,29 @@ void fragment() {
 		// Far off a pixel is wider than a patch: the caps grow so they still read.
 		float far_up = smoothstep(150.0, 1200.0, distance(p, CAMERA_POSITION_WORLD));
 		float lift = smoothstep(summit_snow.x - far_up * 35.0, summit_snow.y, over + rag * 24.0);
-		float cap = smoothstep(0.30, 0.46, proud * lift * (0.52 + far_up * 0.45) * summit_amount + rag * 0.5 * proud * summit_amount);
+		float field = proud * lift * (0.52 + far_up * 0.45) * summit_amount + rag * 0.5 * proud * summit_amount;
 		// Hollows (the small radius under its ring) and the lee hold it, the windward
 		// and steeper ground sheds it.
 		float s_hollow = 0.5 - land_shape.r;
 		float s_lee = dot(n.xz, vec2(0.82, 0.57));
 		float s_edge = (zs_noise(sq / 9.0) - 0.5) * 0.10 + s_mid * 0.08;
-		cap *= smoothstep(0.74, 0.88, n.y + s_edge + s_lee * 0.30 + s_hollow * 0.30);
+		float s_gate = n.y + s_edge + s_lee * summit_lee + s_hollow * 0.30;
+		// Frayed edge: fine grit-noise bites the cover (not far off, where it melts
+		// to its mean), a thin speckled dusting lies between full snow and bare stone.
+		float fray = zs_fade(sq + 17.0, 1.1, fp) * 0.35 + zs_fade(sq.yx + 41.0, 3.6, fp) * 0.35 + zs_fade(sq + 9.0, 11.0, fp) * 0.30;
+		// Fine: its own threshold at each spot, so a thin cover breaks into specks.
+		float fine_n = zs_fade(sq + 5.0, 0.45, fp) * 0.3 + zs_fade(sq.yx + 23.0, 1.5, fp) * 0.4 + zs_fade(sq + 63.0, 4.5, fp) * 0.3;
+		float cov = smoothstep(0.04, 0.52, field + (fray - 0.5) * summit_fray * 0.9);
+		cov *= smoothstep(0.50 - far_up * 0.12, 0.82, s_gate + (fray - 0.5) * summit_fray * 0.5);
+		float thr = clamp((fine_n - 0.2) * 1.4, 0.05, 0.75);
+		cov = min(cov * (1.0 + far_up * 1.1), 1.0);
+		cov += (fine_n - 0.5) * 0.9 * cov * (1.0 - cov);
+		float cap = smoothstep(thr - 0.26, thr + 0.26, cov * 1.15 - 0.03);
+		sm_cov = cap;
+		sm_dust = 1.0 - smoothstep(0.65, 0.95, cov);
+		cap *= smoothstep(0.03, 0.14, cov);
+		sm_cov = cap;
+		sm_dust = 1.0 - smoothstep(0.65, 0.95, cov);
 		sm_snow = (1.0 - pk.x) * (1.0 - max(pk.y, pk.z));
 		snowy = max(snowy, cap * sm_snow);
 	}
@@ -1327,7 +1349,16 @@ void fragment() {
 	float ps_on = psnow_on * max(pk.x, sm_snow) * step(0.001, snowy);
 	vec3 ps_n = n;
 	vec3 ps_glit = vec3(0.0);
-	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, psnow_point(p, over), n, eye, distance(p, CAMERA_POSITION_WORLD), 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y), snowy, ps_n, ps_glit), ps_on);
+	// A summit cap keeps its own frayed coverage: the Peak's surface and light
+	// without its crisp edge.
+	float sm_use = (1.0 - pk.x) * sm_snow * step(0.001, sm_cov);
+	float ps_in = mix(snowy, 1.0, sm_use);
+	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, psnow_point(p, over), n, eye, distance(p, CAMERA_POSITION_WORLD), 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y), ps_in, ps_n, ps_glit), ps_on);
+	if (sm_use > 0.0) {
+		snowy = mix(ps_in, sm_cov, sm_use);
+		// Never pure white on a dark face: a cooler, greyer cover, dimmer where thin.
+		snow *= mix(vec3(1.0), vec3(0.935, 0.955, 0.99) * (1.0 - summit_dim * sm_dust), sm_use);
+	}
 
 	vec3 albedo = mix(grass, rock, rocky);
 	// High ground above the grass: scree, lichened stone and short turf in

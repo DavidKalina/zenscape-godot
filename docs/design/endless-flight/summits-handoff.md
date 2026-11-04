@@ -84,3 +84,34 @@ Cost: wall-clock median over 240 frames at tops 0 and 2, low and near,
 old vs new, about 1-2 ms more (20 to 21-22 ms, display-bound and noisy; Metal
 gives no GPU time). Indicative only.
 Fly: `python3 tools/play.py -- --no-title` (old look: add `--summits=old`).
+
+## Round 3 (look only): snow that frays
+
+Sheets: `scratch/summits/r3/sheet_top{0..3}.png` in the main checkout, four
+columns (old, round 1, round 2, round 3), rows low / near / far; 2x crops
+`crop2x_top{0,2}_low_r2_vs_r3.png` (left round 2, right round 3).
+
+- **Coverage, not a cut-out.** The cap is a continuous cover `cov` (wide soft
+  ramp on the crown field, a wider n.y gate, hollows and lee), then each spot
+  has its own threshold from fine noise (0.45 / 1.5 / 4.5 m) with a wide
+  smoothstep, so a thin cover breaks into patches and specks and partial
+  alpha reads as dusting over the stone. All world-xz noise through zs_fade
+  (melts to its mean far off); no new fetch.
+- **Edge.** Caps no longer take the Peak's crisp re-threshold: the Peak's
+  surface and light are used (psnow_surface called with snowy 1 on caps) and
+  the cap keeps its own frayed coverage.
+- **Colour.** Cap snow is a cooler, greyer tint, dimmer where thin
+  (`summit_dim`), so never pure white on a dark face.
+- **Far.** `cov` grows with camera distance (x up to 2.1, gate eased).
+
+Still not right: top 0 low keeps big snow sheets and the bare dark slate
+beside them still reads cow-ish (that is the carved rock, left alone); the
+bare patches in top 0's crown show a dark ochre stain (stone/old paint under
+thin cover); top 2 low snow is soft but still smooth inside; far views show
+caps only a little more than round 2 (tops 1 and 2 still faint); there is no
+extra grit poking through inside the snow. Not measured on a GPU; about 6 more
+noise evaluations inside the cap branch.
+
+Uniforms: `summit_fray` (0.45; 0 hard edges), `summit_lee` (0.30; lee and
+windward weight), `summit_dim` (0.24; thin-cover darkening), plus round 1's
+`summit_snow`, `summit_proud`, `summit_amount`. `--summits=old` unchanged.
