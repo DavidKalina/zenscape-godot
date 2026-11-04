@@ -128,6 +128,7 @@ STRAKE = 1.2              # a plank's height; the ports, the tunnel's lips and d
 LINER_T = 0.7             # the shell's thickness, outer plank to inner
 LINER_BACK = 0.1          # the gun deck liner's dark backing, this far outboard of it
 LINER_LAP = 0.12          # and how far each run of it laps the strakes over and under
+BOW_BACK = 0.06           # the slot over the bow plate's bulkhead backed this far aft of it
 LINER_DARK = (0.012, 0.011, 0.01)
 RIB_PITCH = 4.0
 RIB_FIRST = 2.0           # ribs fall at +-2, +-6...: between the ports
@@ -1234,6 +1235,14 @@ def build_interior(g):
 		l = inner_light(p) * 0.55
 		return (0.5 * l, 0.42 * l, 0.33 * l)
 	deck_strip(g, lambda y: CEIL, y0, y1, ceil_w, under, 3.0, 1.6, mat="wood_in")
+	# The bow plate's hole runs up to the tunnel's roof (13.4), over the funnel's roof at
+	# the plate (13.0), and the ceiling is higher still (CEIL). So once the plate burst,
+	# the chase camera by it looked up through the slot into the void over the tunnel
+	# (sky through the decks, which are one-sided). A dark backing, facing aft, closes
+	# it; while the plate is shut it lies inside the plug.
+	wb = half_beam(Y_BOW - 0.5, CEIL - 0.3) - LINER_T + 0.3
+	yb = Y_BOW - BOW_BACK
+	g.quad(Vector((-wb, yb, COR_TOP + 0.01)), Vector((wb, yb, COR_TOP + 0.01)), Vector((wb, yb, CEIL + 1.2)), Vector((-wb, yb, CEIL + 1.2)), "dark", (0.008, 0.007, 0.006), hint=Vector((0, -1, 0)))
 	c_beam = inner((0.52, 0.43, 0.33))
 	c_rib = inner((0.6, 0.47, 0.34))
 	c_iron = inner((0.14, 0.14, 0.145))
