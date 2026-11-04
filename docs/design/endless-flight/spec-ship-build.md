@@ -121,10 +121,17 @@ cd /Users/davidkalina/Documents/Projects/zenscape-ship-build && python3 tools/pl
    materials and swapped in from about 450 m. It keeps her silhouette, colours and
    both glyphs, doesn't pop visibly at the swap (stills either side of it), and rocks
    and sinks as she does now. Measure again; before and after go in the handoff.
+   **Spec change (coordinator, after de398046):** measured, and not built (see Picks).
 
 ## Picks
 
 - Figurehead: **none.** The user saw the three options (e6b007e6) and said "Looks rough. Let's axe it for now." Task 6 is dropped: no figurehead on the build. Leave the options in the concept script behind `--fig` (off); don't port them.
+- Far form: **not built.** Hiding both ships at 450 m to 1 km saved no GPU time
+  (≤0.1 ms, noise) and at most 0.26 ms of render CPU, though 23-35% of the frame's draw
+  calls. The draw-call share passed the rule's second test, but it only stood in for
+  time. The user's condition was "only if it's gonna significantly help with
+  performance", and the time saved is not significant. Task 8 is done at the
+  measurement (de398046).
 
 ## Checks every iteration
 

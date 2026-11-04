@@ -184,8 +184,8 @@ the deck guns are modelled (5.8k).
 | Vertex-colour grime | Yes: the gun deck's light and shade, plank tints, the deck barrels' soot | Replaces real interior lights, about 1-2 ms while inside (estimate) |
 | Merged meshes | Yes (7b): each shut plate's 26 shards drawn as one mesh | Measured: about 50 draw calls a pass at every range to 700 m |
 
-The far form (a low shell swapped in at range) is task 8 of the spec: measured first
-(below), built only if hiding both ships at range saves enough.
+The far form (a low shell swapped in at range) is task 8 of the spec: measured (below)
+and not built.
 
 ## The far form: what it could save (task 8, measured)
 
@@ -236,6 +236,20 @@ call test passes at 450 m and 600 m (and at 1 km with both in view). So the rule
 build, and the build's saving would be draw calls and a few tenths of a millisecond
 of render CPU, not GPU time. A far form of 3-4 materials would draw about 4 calls a
 pass a ship in place of about 87.
+
+**Not built.** The user asked for the far form "only if it's gonna significantly help
+with performance". The draw-call share was a stand-in for time, and the time it
+stands for is small: at most 0.26 ms of render CPU and no GPU time on the Mac. So the
+coordinator stopped task 8 at the measurement. Revisit it if a flight measured on the
+PC (`tools/frame_report.py`, AGENTS.md "Stutter and frame rate") shows render CPU
+time near the ships, since a CPU-bound frame feels draw calls more.
+
+## Open for the user
+
+- The sails read blue-grey with strong vertical streaks at the opening hour. Whether
+  they should be more neutral or less streaky is the user's call.
+- At golden hour (`--hour=17`) the low sun warms them toward tan, against "never beige".
+  Keeping them grey then would take a hue clamp in the cloth's shader.
 
 ## Rebuilding and retuning
 
