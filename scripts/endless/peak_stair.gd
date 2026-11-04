@@ -178,6 +178,7 @@ func _build(f: Dictionary) -> void:
 		f.xf = xf
 		f.inv = xf.affine_inverse()
 	f.built = true
+	GroundNative.bump(GroundNative.PART_STAIR)
 	stats.built = int(stats.built)+1
 
 ## The plane's ground at `p` with the stair standing on `h` (world y): over a

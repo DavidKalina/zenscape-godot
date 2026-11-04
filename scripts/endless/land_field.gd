@@ -757,6 +757,7 @@ func region_pick(x: float, z: float, u: float) -> int:
 
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
+	if GroundTally.on: GroundTally.tick(&"field.sample")
 	_p_on = false
 	_t_on = false
 	_m_on = false
@@ -1131,6 +1132,7 @@ func sea_calm(x: float, z: float) -> float:
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
+	if GroundTally.on: GroundTally.tick(&"field.height")
 	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
 	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	if _isles != null and _isles.reaches(x,z): return sample(x,z).x

@@ -342,6 +342,8 @@ var burrower: Node
 var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
 var smash: Node3D
+## The ground queries' broad phase (GroundNative), or null before the land stands.
+var ground_native: GroundNative
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's sky of its own hour stands over this band (m over the sea: up
@@ -800,6 +802,9 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
+	ground_native = GroundNative.new()
+	ground_native.setup(arches,rocks,towers,stair,ice)
 	# --full-meter: a surge roll ready at once; again whenever the ship's plates
 	# come back (pirate_ship.gd `refill`).
 	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
@@ -1128,13 +1133,20 @@ func _size_chase() -> void:
 ## now (WorldScale `reach_rolled`); 0 for a point on the plane's own edge
 ## (NearMiss's body points), which is in the stone only where it truly is.
 func plane_ground(p: Vector3, pad := -1.0) -> Variant:
+	if GroundTally.on: GroundTally.tick(&"plane_ground")
 	if pad < 0.0:
 		pad = solid_pad
 		p += solid_shift
-	var g: Variant = ice.ground(p,tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad),pad)
+	# Only the arches, rocks and stair standing near `p` are asked (GroundNative).
+	var m: int = ground_native.mask(p,pad) if ground_native != null else GroundNative.ALL
+	var g: Variant = field.height(p.x,p.z)
+	if m & GroundNative.ARCHES: g = arches.ground(p,g,pad)
+	if m & GroundNative.ROCKS: g = rocks.ground(p,g,pad)
+	g = tunnels.ground(p,halls.ground(p,trees.ground(p,g),pad),pad)
+	if m & GroundNative.ICE: g = ice.ground(p,g,pad)
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
-	if stair != null: g = stair.ground(p,g,pad)
+	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
 ## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
@@ -1149,18 +1161,22 @@ func bore_keep(p: Vector3) -> Vector3:
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
+	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
+	var m := _stone_near(p)
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
+	if GroundTally.on: GroundTally.tick(&"floor_at")
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
 	var h: float = field.height(p.x,p.y)
 	if (h < Field.SEA_Y+0.2 and not tunnels.dry(Vector3(p.x,h,p.y))) or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
 	var q := Vector3(p.x,plane.position.y if plane != null else h,p.y)
-	return ice.land_y(q,tunnels.land_y(q,h))
+	h = tunnels.land_y(q,h)
+	return ice.land_y(q,h) if _stone_near(q) & GroundNative.ICE else h
 
 ## Whether the field's last sample was on a river's water (not the sea's
 ## mouth, which the sea takes).
@@ -1169,6 +1185,7 @@ func _on_river() -> bool:
 
 ## The water under a point: the sea's swell, or a river's level over it.
 func water_at(p: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"water_at")
 	if tunnels != null and tunnels.dry(p): return -INF
 	var level := Field.SEA_Y+sea_height(p)
 	var river: float = field.river_y(p.x,p.z)
@@ -1178,21 +1195,31 @@ func water_at(p: Vector3) -> float:
 ## bore's floor in its tube), for the camera to keep over (GlideCamera
 ## `floor_at`).
 func eye_floor(p: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"eye_floor")
 	if doors != null and doors.holds(p): return doors.hall_floor()
 	var h: float = field.height(p.x,p.z)
 	if _on_river(): h = maxf(h,field.river_drawn())
-	h = ice.land_y(p,tunnels.land_y(p,h))
+	h = tunnels.land_y(p,h)
+	if _stone_near(p) & GroundNative.ICE: h = ice.land_y(p,h)
 	if tunnels.dry(p): return h
 	return maxf(h,Field.SEA_Y+sea_height(p))
 
+## Which of the arches and rocks may hold `p` at their own pads (`inside`'s
+## default; GroundNative `mask`).
+func _stone_near(p: Vector3) -> int:
+	return ground_native.mask(p,0.0) if ground_native != null else GroundNative.ALL
+
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
+	if GroundTally.on: GroundTally.tick(&"_solid")
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	var m := _stone_near(p)
+	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
 func sea_height(p: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"sea_height")
 	if look == null or look.water == null or p.y > Field.SEA_Y+12.0+look.water.surge_room(p.x,p.z): return 0.0
 	# Land well over the sea has none, and low land sits inside the 12 m: every
 	# probe of a low flight would march the waves.
@@ -1204,6 +1231,7 @@ func sea_height(p: Vector3) -> float:
 ## by EYE_CLEAR's half, as `_solid` (GlideCamera `sight`), marched over the
 ## field; in a bore, finer (LandTunnels `sight`).
 func _sight(from: Vector3, to: Vector3) -> float:
+	if GroundTally.on: GroundTally.tick(&"_sight")
 	const STEPS := 10
 	if doors != null and doors.holds(from): return 1.0
 	var bore: float = tunnels.sight(from,to)
@@ -1217,7 +1245,8 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		var p := from.lerp(to,t)
 		# In a bore's tube the fine march has answered.
 		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0: continue
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p): return float(i-1)/STEPS
+		var m := _stone_near(p)
+		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p): return float(i-1)/STEPS
 	return bore
 
 func _process(delta: float) -> void:
@@ -1618,6 +1647,7 @@ func _react(delta: float) -> void:
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
 func _grass_at(x: float, z: float) -> float:
+	if GroundTally.on: GroundTally.tick(&"_grass_at")
 	var h: float = field.height(x,z)
 	return h if h > Field.SEA_Y+3.0 and field.last_river > Field.RIVER_CLEAR else NAN
 

@@ -422,6 +422,7 @@ func _commit_one(done: Dictionary, sliced := false, began := 0) -> bool:
 		var reach := maxf(maxf(absf(sx.x),absf(sx.y)),absf(float(solid.z0))+int(solid.nz)*BoxSolid.CELL)+40.0
 		records.append({"name":name,"kind":String(spec.get("form",spec.kind)),"node":node,"pos":xf.origin,"cos":cos(yaw),"sin":sin(yaw),
 			"solid":solid,"reach":reach,"spec":spec})
+		GroundNative.touch_arch(key)
 		stats.arches += 1
 	stats.cells = _cells.size()
 	stats.slowest_commit_ms = maxf(stats.slowest_commit_ms,(Time.get_ticks_usec()-t0)/1000.0)
@@ -433,6 +434,7 @@ func _free_cell(key: Vector2i) -> void:
 		(r.node as Node).queue_free()
 		stats.arches -= 1
 	_cells.erase(key)
+	GroundNative.touch_arch(key)
 	stats.cells = _cells.size()
 
 ## Every arch standing now: [{name, kind, pos, spec, ...}].
