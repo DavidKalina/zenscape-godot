@@ -96,9 +96,11 @@ const SHAFT_ROOM := 6.0
 ## The hold from him passing to the snap (s), the snap's length (s).
 const HOLD_S := 0.8
 const SNAP_S := 0.16
-## The snap's sound.
-const SNAP_GAIN := 0.8
-const SNAP_PITCH := 0.7
+## The snap's sound (FlightSound `bore_burst`: a thump, crack and debris), a thick spur
+## lower; the tell's grind as the crack opens (`bore_tell`).
+const SNAP_GAIN := 1.0
+const SNAP_PITCH := Vector2(1.15,0.85)
+const TELL_GAIN := 1.0
 ## Laid out this far ahead of him (m; one a frame), and counted near the plane this far (m).
 const LAY_AHEAD := 170.0
 const NEAR_M := 45.0
@@ -321,13 +323,14 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 	var moved := not _moving.is_empty()
 	for i in range(_moving.size()-1,-1,-1):
 		var sp := _moving[i]
+		if sp.clock == 0.0: sound.bore_tell(sp.root,TELL_GAIN)
 		sp.clock += delta
 		var k := (sp.clock-HOLD_S)/SNAP_S
 		if k <= 0.0: continue
 		if not sp.body.visible:
 			sp.body.visible = true
 			sp.body.collision_layer = LandTunnels.LAYER
-			sound.shot("crack",SNAP_GAIN,SNAP_PITCH,sp.root)
+			sound.bore_burst(sp.root,SNAP_GAIN,lerpf(SNAP_PITCH.x,SNAP_PITCH.y,clampf(sp.girth/GIRTH_MOST,0.0,1.0)))
 		var o := 1.0-minf(k,1.0)
 		sp.out = 1.0-o*o*o
 		_pose(sp)
