@@ -441,7 +441,17 @@ func setup(land_field: RefCounted, ground: Material = null, to_sun := Vector3.ZE
 	for t: Tunnels.Site in fixed: _commit(_make(t,field))
 	# The flame and light pools at the start (about 57 ms), not in flight as the
 	# first tunnel with torches stands.
-	if float(field.get("tunnels") if field.get("tunnels") != null else 0.0) > 0.0: _ensure_pools(true)
+	if float(field.get("tunnels") if field.get("tunnels") != null else 0.0) > 0.0:
+		_ensure_pools(true)
+		# A brazier's parts too (Flame shares them per kind): the first one's
+		# smoke material made its shader as a massif tunnel stood, ~14 ms.
+		var warm: Node3D = Flame.new()
+		warm.set("kind","brazier")
+		warm.set("scale_by",FIRE_SCALE)
+		warm.set("with_light",false)
+		warm.set("burn",0.0)
+		add_child(warm)
+		warm.queue_free()
 
 func _exit_tree() -> void:
 	_quit = true
