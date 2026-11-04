@@ -98,6 +98,19 @@ uniform float sea_y = -40.0;
 #include "res://shaders/peak_tarn.gdshaderinc"
 uniform float beach = 2.2;
 uniform float snow_line = 95.0;
+// High ground and summits (docs/design/endless-flight/summits-handoff.md).
+// summit_mode 0 is the look before it (--summits=old). Above the grass the
+// ground turns to a stylised alpine mix (scree, lichened stone, short turf)
+// from where the tufts thin (alpine_from..alpine_to, on `alpine`), with more
+// stone the higher it goes (alpine_stone, m over the sea). Crowns that stand
+// proud of the land round them (the 40 m radius of land_shape.b, over
+// summit_proud) whiten in broken patches from summit_snow (m over the sea).
+uniform float summit_mode : hint_range(0.0, 1.0) = 1.0;
+uniform vec2 alpine_from = vec2(0.25, 0.95);
+uniform vec2 alpine_stone = vec2(70.0, 130.0);
+uniform vec2 summit_snow = vec2(70.0, 100.0);
+uniform vec2 summit_proud = vec2(0.50, 0.58);
+uniform float summit_amount : hint_range(0.0, 2.0) = 1.0;
 // The normal's up below which the grass gives way to rock (with a ragged
 // edge), and where the turf starts to thin to dry olive.
 uniform float rock_up = 0.80;
@@ -968,6 +981,17 @@ void fragment() {
 			pk_rock = max(pk_rock, rim);
 		}
 	}
+	// A crown standing proud of the land round it (land_shape.b: the 40 m
+	// radius's height over its ring, 0.5 level) wears broken snow below the
+	// snow line, on flat ground only; low hills stay green.
+	if (summit_mode > 0.5 && land_shape.a > 0.5 && summit_amount > 0.0) {
+		float proud = smoothstep(summit_proud.x, summit_proud.y, land_shape.b);
+		float rag = zs_fade(gxz + 2.0, 3.5, fp) * 0.8 + zs_fade(gxz + 6.0, 12.0, fp) * 1.0 + zs_fade(gxz + 40.0, 38.0, fp) * 1.0 + mid * 0.4;
+		float lift = smoothstep(summit_snow.x, summit_snow.y, over + rag * 24.0);
+		float cap = smoothstep(0.30, 0.46, proud * lift * 0.52 * summit_amount + rag * 0.5 * proud * summit_amount);
+		cap *= smoothstep(0.62, 0.80, n.y + rock_edge);
+		snowy = max(snowy, cap * (1.0 - pk.x) * (1.0 - max(pk.y, pk.z)));
+	}
 	// Bare rock lying flat on the Peak is scree: the walls' beds over a floor lie
 	// as rings round every bump, like wood grain.
 	float pk_scree = pk.x * rocky * smoothstep(0.64, 0.82, n.y + rock_edge);
@@ -1289,6 +1313,38 @@ void fragment() {
 	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, psnow_point(p, over), n, eye, distance(p, CAMERA_POSITION_WORLD), 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y), snowy, ps_n, ps_glit), ps_on);
 
 	vec3 albedo = mix(grass, rock, rocky);
+	// High ground above the grass: scree, lichened stone and short turf in
+	// patches, more stone the higher; in on the tufts' own thinning (alpine).
+	if (summit_mode > 0.5) {
+		float bare = smoothstep(alpine_from.x, alpine_from.y, alpine);
+		float stone_up = smoothstep(alpine_stone.x, alpine_stone.y, over + broad * 20.0);
+		bare *= (1.0 - pk.x) * (1.0 - rocky * 0.8) * (1.0 - snowy);
+		if (bare > 0.003) {
+			// Stone patches with ragged edges, broad then small; turf in the gaps.
+			float cut = 0.62 - stone_up * 0.30 - (1.0 - n.y) * 0.8;
+			float f1 = zs_noise(gxz / 30.0 + 3.0) * 0.30 + zs_noise(gxz / 10.0 + 11.0) * 0.35 + zs_noise(gxz / 3.4) * 0.35;
+			float stone = smoothstep(cut - 0.06, cut + 0.06 + fp * 0.01, 1.0 - f1);
+			// (far off the patches melt to their mean share)
+			stone = mix(stone, 0.55 + stone_up * 0.25, smoothstep(40.0, 260.0, fp));
+			vec3 stone_dark = ER_MID * vec3(0.92, 0.90, 0.88);
+			vec3 stone_pale = mix(ER_LIT, vec3(luma(ER_LIT)), 0.35) * 0.80;
+						vec3 st = mix(stone_dark, stone_pale, clamp(0.45 + zs_fade(gxz, 14.0, fp) * 1.2 + zs_fade(gxz + 5.0, 3.0, fp) * 0.8, 0.0, 1.0));
+			// Scree: pale and dark grit, fine near the eye, its mean far off.
+			float grit = zs_fade(gxz + 3.7, 0.55, fp) * 1.4 + zs_fade(gxz.yx + 8.1, 1.7, fp) * 1.0 + zs_fade(gxz + 1.3, 5.0, fp) * 0.8;
+			st *= 1.0 + grit * 0.7;
+			// Lichen: yellow-green and rust crusts on the stone.
+			float lich = smoothstep(0.58, 0.72, zs_noise(gxz / 2.3 + 5.0) * 0.6 + zs_noise(gxz / 7.0 + 2.0) * 0.4) * (1.0 - smoothstep(6.0, 40.0, fp));
+			float rust = smoothstep(0.6, 0.75, zs_noise(gxz / 4.4 + 17.0));
+			st = mix(st, mix(vec3(0.30, 0.33, 0.14), vec3(0.40, 0.23, 0.11), rust), lich * 0.55);
+			// Short turf: a lighter olive-green than the tundra, in patches.
+			vec3 tf = mix(vec3(0.155, 0.225, 0.095), vec3(0.235, 0.285, 0.120), clamp(0.5 + mid + fine, 0.0, 1.0));
+			tf *= 1.0 + zs_fade(gxz + 9.0, 0.9, fp) * 0.6 + zs_fade(gxz, 3.0, fp) * 0.5;
+			vec3 hi = mix(tf, st, stone);
+			// The gentlest ground keeps the most turf; cold shade and damp darker.
+			hi *= mix(vec3(1.0), vec3(0.94, 0.97, 1.04), smoothstep(0.0, -0.4, zs_sun_direction.y));
+			albedo = mix(albedo, hi, clamp(bare, 0.0, 1.0));
+		}
+	}
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, bank_c, banked * (1.0 - rocky * 0.7));
 	// The Peak's valley floor: scree of granite on the boulder field; ice
