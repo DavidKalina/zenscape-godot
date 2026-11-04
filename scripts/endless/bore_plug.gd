@@ -74,11 +74,13 @@ const SHOWERS := 2
 const SHOWER_TURN := 0.09
 const SHOWER_WIDE := 9.0
 const SHOWER_TALL := 4.0
-## The sounds: the rumble when he passes, the thump when it lands.
-const RUMBLE_GAIN := 1.1
-const RUMBLE_PITCH := 0.45
-const LAND_GAIN := 1.3
-const LAND_PITCH := 0.5
+## The sounds (scripts/endless/flight_sound.gd): the grind, pitched down, when he
+## passes (`bore_tell`), a burst, lower and quieter than a spur's, when it lands
+## (`bore_burst`).
+const RUMBLE_GAIN := 1.2
+const RUMBLE_PITCH := 0.7
+const LAND_GAIN := 0.7
+const LAND_PITCH := 0.8
 ## The rubble thrown as it lands: girth of the stick across the crown (a share of the
 ## bore's width), and how hard it's thrown down (m/s).
 const LAND_GIRTH := 0.3
@@ -244,7 +246,7 @@ func _fire(g: Group, pl: Plug) -> void:
 	pl.body.visible = true
 	(pl.body.get_child(0) as MeshInstance3D).set_instance_shader_parameter("lit_at",_now)
 	stats.fired = int(stats.fired)+1
-	if _sound != null: _sound.shot("debris",RUMBLE_GAIN,RUMBLE_PITCH,pl.mid)
+	if _sound != null: _sound.bore_tell(pl.mid,RUMBLE_GAIN,RUMBLE_PITCH)
 	var crown := PI
 	for k in SHOWERS:
 		var a := crown+TAU*SHOWER_TURN*(float(k)-(SHOWERS-1)*0.5)*2.0
@@ -269,8 +271,7 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 		pl.body.collision_layer = LandTunnels.LAYER
 		_moving.remove_at(i)
 		stats.landed = int(stats.landed)+1
-		sound.shot("crash",LAND_GAIN,LAND_PITCH,pl.mid)
-		sound.shot("thump",LAND_GAIN,LAND_PITCH*0.9,pl.mid)
+		sound.bore_burst(pl.mid,LAND_GAIN,LAND_PITCH)
 		var wide := pl.reach*1.4
 		_rubble.burst(pl.mid+Vector3.UP*(pl.top-pl.mid.y-WAIT_OVER-1.0)-pl.side*wide*0.5,pl.side*wide,wide*LAND_GIRTH*0.5,Vector3.DOWN*LAND_THROW)
 	_near.clear()
