@@ -200,7 +200,8 @@ func _batch(label: String, mesh: Mesh, count: int, custom: bool, look: Material 
 	return mm
 
 ## One frame. `eye` the drawing camera; `wind` the breeze's way and `travel`
-## the air's (EndlessLook wind_direction, _gust); `wash` GrassReact
+## the air's (EndlessLook wind_direction, drift: by the wind at the eye, so the
+## specks hang in a still hollow and stream on a windy ridge); `wash` GrassReact
 ## wash_spot; `ribbons` the eddies' live ribbons (or []); `grass` Callable(x,
 ## z) -> height where grass grows, else NAN.
 func step(delta: float, eye: Vector3, wind: Vector2, travel: float, wash: Dictionary, ribbons: Array, grass: Callable) -> void:

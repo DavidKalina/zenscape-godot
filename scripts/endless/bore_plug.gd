@@ -74,11 +74,13 @@ const SHOWERS := 2
 const SHOWER_TURN := 0.09
 const SHOWER_WIDE := 9.0
 const SHOWER_TALL := 4.0
-## The sounds: the rumble when he passes, the thump when it lands.
-const RUMBLE_GAIN := 1.1
-const RUMBLE_PITCH := 0.45
-const LAND_GAIN := 1.3
-const LAND_PITCH := 0.5
+## The sounds (scripts/endless/flight_sound.gd): the grind, pitched down, when he
+## passes (`bore_tell`), a burst, lower and quieter than a spur's, when it lands
+## (`bore_burst`).
+const RUMBLE_GAIN := 1.2
+const RUMBLE_PITCH := 0.7
+const LAND_GAIN := 0.7
+const LAND_PITCH := 0.8
 ## The rubble thrown as it lands: girth of the stick across the crown (a share of the
 ## bore's width), and how hard it's thrown down (m/s).
 const LAND_GIRTH := 0.3
@@ -244,7 +246,7 @@ func _fire(g: Group, pl: Plug) -> void:
 	pl.body.visible = true
 	(pl.body.get_child(0) as MeshInstance3D).set_instance_shader_parameter("lit_at",_now)
 	stats.fired = int(stats.fired)+1
-	if _sound != null: _sound.shot("debris",RUMBLE_GAIN,RUMBLE_PITCH,pl.mid)
+	if _sound != null: _sound.bore_tell(pl.mid,RUMBLE_GAIN,RUMBLE_PITCH)
 	var crown := PI
 	for k in SHOWERS:
 		var a := crown+TAU*SHOWER_TURN*(float(k)-(SHOWERS-1)*0.5)*2.0
@@ -269,10 +271,10 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 		pl.body.collision_layer = LandTunnels.LAYER
 		_moving.remove_at(i)
 		stats.landed = int(stats.landed)+1
-		sound.shot("crash",LAND_GAIN,LAND_PITCH,pl.mid)
-		sound.shot("thump",LAND_GAIN,LAND_PITCH*0.9,pl.mid)
+		sound.bore_burst(pl.mid,LAND_GAIN,LAND_PITCH)
 		var wide := pl.reach*1.4
 		_rubble.burst(pl.mid+Vector3.UP*(pl.top-pl.mid.y-WAIT_OVER-1.0)-pl.side*wide*0.5,pl.side*wide,wide*LAND_GIRTH*0.5,Vector3.DOWN*LAND_THROW)
+	var was := _near.duplicate()
 	_near.clear()
 	var flat := Vector2(at.x,at.z)
 	for tunnel: String in _groups.keys():
@@ -283,6 +285,32 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 		if not g.site.box.has_point(flat): continue
 		for pl: Plug in g.plugs:
 			if pl.solid and Vector2(pl.mid.x,pl.mid.z).distance_to(flat) < NEAR_M+pl.reach: _near.append(pl)
+	if _near != was: _solid_moved()
+
+## The near plugs changed: LandTunnels' native sight reads them again.
+func _solid_moved() -> void:
+	if _tunnels != null and _tunnels.has_method(&"solid_moved"): _tunnels.solid_moved()
+
+## AROUND, RINGS and LIP, for `sight_pack`'s reader.
+func sight_shape() -> Array:
+	return [AROUND,RINGS,LIP]
+
+## The near plugs as `inside` reads them, for LandTunnels' native sight
+## (ZenScapeBoreSight `set_plugs`, with AROUND, RINGS and LIP): per plug
+## its mid, along, side, hole, r, half, outer (AROUND) and thick
+## (RINGS*AROUND).
+func sight_pack() -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	for pl: Plug in _near:
+		out.append_array([pl.mid.x,pl.mid.y,pl.mid.z,pl.along.x,pl.along.y,pl.along.z,pl.side.x,pl.side.y,pl.side.z,
+			pl.hole.x,pl.hole.y,pl.hole.z,pl.r,pl.half])
+		var outer := pl.outer.duplicate()
+		outer.resize(AROUND)
+		var thick := pl.thick.duplicate()
+		thick.resize(RINGS*AROUND)
+		out.append_array(PackedFloat64Array(Array(outer)))
+		out.append_array(PackedFloat64Array(Array(thick)))
+	return out
 
 ## Plug `pl` placed at its spot on the bore's real ring: hidden, up in the crown, till he passes.
 func _lay(g: Group, pl: Plug) -> void:
@@ -430,6 +458,7 @@ func _take() -> StaticBody3D:
 
 ## Tunnel `g` is gone, and its plugs with it.
 func _let_go(g: Group) -> void:
+	_solid_moved()
 	for pl: Plug in g.plugs:
 		_near.erase(pl)
 		_moving.erase(pl)
@@ -578,6 +607,7 @@ func smash(pl: Plug, at: Vector3, blast: Vector3) -> void:
 	pl.body = null
 	_moving.erase(pl)
 	_near.erase(pl)
+	_solid_moved()
 	stats.smashed = int(stats.smashed)+1
 
 ## Whether `body` is a plug's.

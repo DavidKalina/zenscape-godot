@@ -49,6 +49,31 @@ multiply-add, three spots in four move, by up to 3 cm.
 machines. Any change to one field must be made to the other; check with
 `scratch/`'s comparison (the handoff, docs/design/endless-flight/native-land-handoff.md).
 
+`tree_solid_bind.h` (`ZenScapeTreeSolid`) is LandTrees `tree_in` / `top_at`
+over the stood trees' flight solid: each plan cell's `solid` is published
+as its block stands, a tree in it is knocked or the block goes, and a query
+reads the 3 x 3 buckets in C++ in double, bit for bit the GDScript's. Main
+thread only. `version` (LandTrees `SOLID_VERSION`) gates a stale library;
+`--ground-native=0` (or `--gdscript-kernels`) asks the GDScript.
+
+`ground_bind.h` (`ZenScapeGround`) is the flight's ground queries' broad
+phase (scripts/endless/ground_native.gd): the arches, rocks, the Peak's
+towers and stair and the ice tunnel publish world XZ rectangles by an id
+of their own (hashed in 8 m squares with a count per layer, so a change
+re-marks only its squares; the ships' moving arches in a short list), and
+`mask` says which owners may answer at a point, so the study's
+`plane_ground`, `floor_at`, `eye_floor`, `_blocked`, `_solid` and `_sight`
+skip the rest. The owners' own narrow tests stay GDScript. Main thread only.
+`version` (GroundNative `VERSION`) gates a stale library; `--ground-native=0`
+(or `--gdscript-kernels`) asks every owner. The handoff:
+docs/design/endless-flight/ground-native-handoff.md.
+
+After touching a ground owner's `ground` / `inside` / `land_y` or what it
+publishes to the broad phase (arches, rocks, the Peak's towers and stair,
+the ice tunnel), or the tree solid on either side, run
+`python tools/ground_parity.py`: both checks must report 0 mismatches
+(`--break` is its control and must fail).
+
 ## The endless grass
 
 `grass_cell.h` is `scripts/endless/endless_grass.gd` `grow_cell` past its
@@ -81,6 +106,42 @@ profile and its chunk and grid passes (`peak_massif.gd`, `peak_rock.gd`,
 Windows it matches the GDScript bit for bit; `--native-peak=0` (or
 `--gdscript-kernels`) runs the GDScript, and a library without it falls back by
 itself (docs/design/endless-flight/crown-native-handoff.md).
+
+## The camera's sight in the tunnels and the burrower's steering
+
+`bore_sight_bind.h` holds three classes, each a mirror of its GDScript,
+which stays the reference (scripts/endless/bore_native.gd makes them):
+`ZenScapeHallSolid` is LandHalls `inside` over its records' BoxSolid grids
+(each record published as it commits, takes its near solid and goes);
+`ZenScapeBoreSight` is LandTunnels `near`, `tube`, `inside`, `land_y` and
+`sight` over the stood sites' tables, the stretches' HallSolid and the
+bore's near spurs and plugs (packed by BoreSpurs and BorePlugs as their
+near lists change). The land's height stays GDScript (LandField `height`),
+asked through a Callable once a point where an answer needs it.
+`ZenScapeBurrowerSteer` is burrower.gd's trunk gather and its steering
+round them. On Windows each matches the GDScript answer for answer (the
+handoff's `scratch/native_sight_check.gd`); `--sight-native=0` (or
+`--gdscript-kernels`) runs the GDScript, and a library without them falls
+back by itself (docs/design/endless-flight/handoff-native-sight-steer.md).
+
+## A chunk build past the field
+
+`chunk_pass_bind.h` holds two classes (scripts/endless/chunk_native.gd
+makes them), each a mirror of its GDScript, which stays the reference:
+`ZenScapeTunnelCarve` is one tunnel site's carve (tunnel_sites.gd
+`carve_m`, `sunk_cut`, `trench_under`), packed once when the site is made
+(`go_native`) and read only after, so every worker and LandField's
+`sample` ask it; `ZenScapeChunkPass` is the tunnels' pass over a chunk
+(Tunnels.apply_chunk), land_stream's river frame and its ring of samples,
+RockShape.grid's layers and ring heights, and `_portal_holes`' triangles.
+The rings are read off the native field where only it, the ponds and the
+tunnels shape the land there (`ChunkNative.plain_in`), else through
+LandField. Saved-world state like the field: pow, atan2 and sin are
+land_math.h's. On Windows a chunk matches the GDScript's byte for byte
+(the handoff's `scratch/chunk_check.gd`); `--chunk-native=0`,
+`--land-native=0` or `--gdscript-kernels` run the GDScript, and a library
+without them falls back by itself
+(docs/design/endless-flight/handoff-native-chunk-build.md).
 
 ## Build and run
 

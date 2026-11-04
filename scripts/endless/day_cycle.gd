@@ -50,6 +50,9 @@ var length := LENGTH
 var t := 0.0
 ## The clock runs (false: --hour=H, --day=0; T still sweeps to its stops).
 var running := true
+## Days gone round (each time `t` passes the sun's midnight): the wind's
+## day temper (wind_field.gd) rolls per day.
+var day := 0
 ## Held for now (the menu, a driver), whatever `running` says.
 var held := false
 ## SPEEDS index.
@@ -84,10 +87,12 @@ func advance(delta: float) -> void:
 		var gap := fposmod(_skip - t, length)
 		var sweep := gap * (1.0 - exp(-delta * SWEEP))
 		if gap - maxf(step, sweep) < length * 0.0004 or gap > length - length * 0.0004:
+			if _skip < t: day += 1
 			t = _skip
 			_skip = -1.0
 			return
 		step = maxf(step, sweep)
+	if t + step >= length: day += 1
 	t = fposmod(t + step, length)
 
 ## The sun's phase now.

@@ -17,11 +17,15 @@
 #include "water_flow.h"
 #include "isle_kernels.h"
 #include "land_field_bind.h"
+#include "ground_bind.h"
+#include "tree_solid_bind.h"
 #include "grass_cell.h"
 #include "tree_cell.h"
 #include "flight_fx.h"
 #include "peak_massif_bind.h"
 #include "serac_mesh.h"
+#include "bore_sight_bind.h"
+#include "chunk_pass_bind.h"
 
 using namespace godot;
 
@@ -327,6 +331,8 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeIsleKernels>();
     ClassDB::register_class<ZenScapeLandField>();
     ClassDB::register_class<ZenScapeLandBand>();
+    ClassDB::register_class<ZenScapeGround>();
+    ClassDB::register_class<ZenScapeTreeSolid>();
     ClassDB::register_class<ZenScapeGrass>();
     ClassDB::register_class<ZenScapeTrees>();
     ClassDB::register_class<ZenScapeMotes>();
@@ -335,6 +341,11 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeBirds>();
     ClassDB::register_class<ZenScapePeak>();
     ClassDB::register_class<ZenScapeSerac>();
+    ClassDB::register_class<ZenScapeHallSolid>();
+    ClassDB::register_class<ZenScapeBoreSight>();
+    ClassDB::register_class<ZenScapeBurrowerSteer>();
+    ClassDB::register_class<ZenScapeTunnelCarve>();
+    ClassDB::register_class<ZenScapeChunkPass>();
 }
 extern "C" GDExtensionBool GDE_EXPORT zenscape_kernels_init(GDExtensionInterfaceGetProcAddress get_proc,
         GDExtensionClassLibraryPtr library, GDExtensionInitialization *initialization) {

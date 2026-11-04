@@ -137,10 +137,6 @@ func _ready() -> void:
 	if with_smoke and float(_spec.smoke) > 0.0: _smoke = _make_smoke(tallest)
 	for pt: GeometryInstance3D in [_sparks,_smoke]:
 		if pt != null: pt.visibility_range_end = minf(reach,PARTICLE_REACH*maxf(scale_by,1.0))
-	if dark and _smoke != null:
-		var sm := (_smoke.draw_pass_1 as QuadMesh).material as StandardMaterial3D
-		sm.disable_ambient_light = true
-		sm.disable_fog = true
 	if layer_mask != 0:
 		for c in get_children():
 			if c is VisualInstance3D: (c as VisualInstance3D).layers = layer_mask
@@ -198,6 +194,12 @@ func _process(delta: float) -> void:
 			m.set_instance_shader_parameter("lean",lean)
 			m.set_instance_shader_parameter("intensity",glow)
 
+## The sparks' and the smoke's materials and quads, made once per kind, size
+## and darkness and shared: a fire made each its own (two process materials,
+## their ramp and curve textures, two quads and their materials), ~3.8 ms a
+## fire as a tunnel's braziers stood.
+static var _parts := {}
+
 ## Sparks: tiny hot points, rising and whirled, cooling as they go out.
 func _make_sparks(tallest: float) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
@@ -206,6 +208,13 @@ func _make_sparks(tallest: float) -> GPUParticles3D:
 	p.randomness = 0.6
 	p.local_coords = false
 	p.position = Vector3(0.0,tallest*0.35,0.0)
+	var key := "sparks/%s/%s/%s" % [kind,scale_by,dark]
+	if _parts.has(key):
+		p.process_material = _parts[key][0]
+		p.draw_pass_1 = _parts[key][1]
+		p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(p)
+		return p
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
 	pm.emission_sphere_radius = 0.22*scale_by*sqrt(tallest)
@@ -244,6 +253,7 @@ func _make_sparks(tallest: float) -> GPUParticles3D:
 	m.disable_receive_shadows = true
 	q.material = m
 	p.draw_pass_1 = q
+	_parts[key] = [pm,q]
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(p)
 	return p
@@ -255,6 +265,13 @@ func _make_smoke(tallest: float) -> GPUParticles3D:
 	p.lifetime = 5.0
 	p.local_coords = false
 	p.position = Vector3(0.0,tallest*0.85,0.0)
+	var key := "smoke/%s/%s/%s" % [kind,scale_by,dark]
+	if _parts.has(key):
+		p.process_material = _parts[key][0]
+		p.draw_pass_1 = _parts[key][1]
+		p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(p)
+		return p
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
 	pm.emission_sphere_radius = 0.1*tallest
@@ -301,8 +318,13 @@ func _make_smoke(tallest: float) -> GPUParticles3D:
 	m.disable_receive_shadows = true
 	m.proximity_fade_enabled = true
 	m.proximity_fade_distance = 0.6
+	# In the dark (a bore's braziers) the smoke takes no ambient light nor fog.
+	if dark:
+		m.disable_ambient_light = true
+		m.disable_fog = true
 	q.material = m
 	p.draw_pass_1 = q
+	_parts[key] = [pm,q]
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(p)
 	return p

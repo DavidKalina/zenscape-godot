@@ -1392,6 +1392,15 @@ void fragment() {
 		receiver = bent_receiver;
 		bed_depth = depth > 0.0 ? world_position.y - receiver.y : DEEP;
 	}
+	// Something behind standing higher than the water here is no bed: the wave
+	// hides it whole. Nor, on the swell, is anything short of the deep under
+	// it: seen level through a face, the far coast stands behind at the sea's
+	// own height, kilometres off, and showed faint through the clear water as
+	// a grey line at the eye's height (and the far land as grey shapes).
+	if (depth > 0.0 && (receiver.y > world_position.y + 0.05 || (surge_share > 0.0 && receiver.y > sea_level - 2.0))) {
+		depth = 0.0;
+		bed_depth = DEEP;
+	}
 	bed_depth = max(bed_depth, 0.0);
 	float through = depth > 0.0 ? length(receiver - world_position) : DEEP;
 	// A swimming fish seen here (its body, not the lake's bed): where, and how much,

@@ -39,6 +39,7 @@ extends Node3D
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const Ground = preload("res://scripts/burrower/burrower_ground.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
+const BoreNative = preload("res://scripts/endless/bore_native.gd")
 const RIDGE_SHADER = preload("res://shaders/burrower_ridge.gdshader")
 const DUST_SHADER = preload("res://shaders/burrower_dust.gdshader")
 const SOIL_SHADER = preload("res://shaders/burrower_soil.gdshader")
@@ -304,6 +305,11 @@ var _noise := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
 var _obstacles: Array = []
 var _trunks: Array = []
+## The trunk gather and the steering round `_obstacles` and `_trunks` in C++
+## (ZenScapeBurrowerSteer; BoreNative), or null; what it steers round, 5
+## numbers each (x, z, reach, margin, ramp), obstacles then trunks.
+var _steer: Object = BoreNative.steer()
+var _steer_pack := PackedFloat64Array()
 var _trunk_ask := 0.0
 var _wood_ask := 0.0
 var _wood_at := Vector2(NAN,NAN)
@@ -357,6 +363,7 @@ func setup(the_land: Ground, the_react: GrassReact) -> void:
 		_obstacles.append({"at": r.at, "reach": float(r.reach)})
 	for tree: Node3D in land.trees:
 		_obstacles.append({"at": Vector2(tree.position.x,tree.position.z), "reach": TRUNK, "margin": TRUNK_MARGIN, "ramp": TRUNK_RAMP, "tree": true})
+	_pack_steer()
 	shudder = TreeShudder.new()
 	shudder.setup(land)
 	shudder.react = react
@@ -633,13 +640,23 @@ func _feel(look: float, delta: float) -> Vector2:
 func _ask_trunks(look: float, delta: float) -> void:
 	if not land.probes: return
 	if distant:
-		_trunks.clear()
+		if not _trunks.is_empty():
+			_trunks.clear()
+			_pack_steer()
 		return
 	_trunk_ask -= delta
 	if _trunk_ask > 0.0: return
 	_trunk_ask = TRUNK_EVERY
 	_trunks.clear()
 	var fw := forward()
+	if _steer != null and land.has_method(&"cells_near"):
+		var at := pos+fw*look*0.5
+		var r := look*0.5+TRUNK_SIDE
+		for a: Vector2 in _steer.trunks(land.cells_near(at,r),at,r,pos,fw,TRUNK_SIDE,TRUNK_MOST):
+			_trunks.append({"at": a, "reach": TRUNK, "margin": TRUNK_MARGIN, "ramp": TRUNK_RAMP, "tree": true})
+		_pack_steer()
+		stats.trunks = int(stats.get("trunks",0))+_trunks.size()
+		return
 	var t: PackedFloat32Array = land.trees_near(pos+fw*look*0.5,look*0.5+TRUNK_SIDE)
 	var found: Array = []
 	for q in range(0,t.size(),4):
@@ -650,7 +667,17 @@ func _ask_trunks(look: float, delta: float) -> void:
 	found.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	for f: Array in found.slice(0,TRUNK_MOST):
 		_trunks.append({"at": f[1], "reach": TRUNK, "margin": TRUNK_MARGIN, "ramp": TRUNK_RAMP, "tree": true})
+	_pack_steer()
 	stats.trunks = int(stats.get("trunks",0))+_trunks.size()
+
+## `_obstacles` and `_trunks` as ZenScapeBurrowerSteer `steer` reads them.
+func _pack_steer() -> void:
+	if _steer == null: return
+	_steer_pack.clear()
+	for list: Array in [_obstacles,_trunks]:
+		for o: Dictionary in list:
+			var at: Vector2 = o.at
+			_steer_pack.append_array([at.x,at.y,float(o.reach),float(o.get("margin",MARGIN)),float(o.get("ramp",12.0))])
 
 ## A free run's course bent into a stand of trees ahead of the plane.
 func _into_woods(fwd: Vector2, delta: float) -> void:
@@ -829,14 +856,20 @@ func tick(delta: float) -> void:
 	time += delta
 	_ridge_mat.set_shader_parameter("now",time)
 	if active: _move(delta)
+	FrameLog.mark(&"bt_move")
 	_step_clods(delta)
+	FrameLog.mark(&"bt_clods")
 	_step_dust(delta)
 	_step_spray(delta)
+	FrameLog.mark(&"bt_dust")
 	shudder.tick(delta,pos,strength if active and not wet else 0.0,heading,_turn/maxf(speed,1.0))
+	FrameLog.mark(&"bt_shudder")
 	wet_k = move_toward(wet_k,1.0 if active and wet else 0.0,delta/0.25)
 	_feed_pond()
 	_drop_old_chunks()
+	FrameLog.mark(&"bt_chunks")
 	if active or not _samples.is_empty(): _rebuild_live()
+	FrameLog.mark(&"bt_live")
 
 ## Asleep with nothing left of it to move or fade (a host may skip `tick`).
 func settled() -> bool:
@@ -901,7 +934,12 @@ func _move(delta: float) -> void:
 	var ahead_at := pos+forward()*look
 	var nearest := INF
 	_ask_trunks(look,delta)
-	for list: Array in [_obstacles,_trunks]:
+	if _steer != null:
+		var lean := (_goal-pos).normalized() if mode == &"lead" and _plane != null else forward()
+		var got: PackedFloat64Array = _steer.steer(_steer_pack,pos,forward(),look,lean,dir,nearest)
+		dir = Vector2(got[0],got[1])
+		nearest = got[2]
+	for list: Array in ([] if _steer != null else [_obstacles,_trunks]):
 		for o: Dictionary in list:
 			var r := float(o.reach)+float(o.get("margin",MARGIN))
 			var ramp := float(o.get("ramp",12.0))

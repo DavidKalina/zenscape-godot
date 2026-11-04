@@ -498,6 +498,7 @@ var _hall_here := PackedFloat32Array()
 ## (`_tunnel_sites`, `_tunnel_test`). `_t_on`: the last sample's land was
 ## lifted (no river there).
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
+const ChunkNative = preload("res://scripts/endless/chunk_native.gd")
 var tunnels := 0.0
 var _tunnel_sites: Array = []
 var _tunnel_test := false
@@ -757,6 +758,7 @@ func region_pick(x: float, z: float, u: float) -> int:
 
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
+	if GroundTally.on: GroundTally.tick(&"field.sample")
 	_p_on = false
 	_t_on = false
 	_m_on = false
@@ -1131,6 +1133,7 @@ func sea_calm(x: float, z: float) -> float:
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
+	if GroundTally.on: GroundTally.tick(&"field.height")
 	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
 	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	if _isles != null and _isles.reaches(x,z): return sample(x,z).x
@@ -1166,16 +1169,40 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	var sps: Array = splits_in(x0,z0,x0+cells*step,z0+cells*step)
 	var made := _build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
 	if not ps.is_empty(): Ponds.apply_chunk(self,_impl,made,ps,x0,z0,step,cells,skirt_drop)
-	if not ts.is_empty(): Tunnels.apply_chunk(self,_impl,made,ts,x0,z0,step,cells,skirt_drop)
+	if not ts.is_empty(): _tunnel_chunk(made,ts,x0,z0,step,cells,skirt_drop)
 	if not hs.is_empty(): Sites.apply_chunk(self,_impl,made,hs,x0,z0,step,cells,skirt_drop)
 	if not sps.is_empty(): Splits.apply_chunk(self,_impl,made,sps,x0,z0,step,cells,skirt_drop)
 	if _massif != null and _massif.meets(x0,z0,x0+cells*step,z0+cells*step):
-		_massif.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
+		# Its colours off the region's own native field where the chunk (and its
+		# rim) lies in one: the same colours as the blend's, read in C++.
+		_massif.apply_chunk(self,_colour_impl(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step),made,x0,z0,step,cells,skirt_drop)
 		# The tarn after it, as a pond.
 		if _massif.tarn_meets(x0,z0,x0+cells*step,z0+cells*step): Ponds.apply_chunk(self,_impl,made,[_massif.pond],x0,z0,step,cells,skirt_drop)
 	if _isles != null and _isles.meets(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step):
 		_isles.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
 	return made
+
+## The field whose `colour` a chunk pass over the box (x0, z0)..(x1, z1) may
+## read: in the regions world the region's own native field where the box
+## lies wholly in one (the blend's `colour` there is that field's), with the
+## native chunk passes on; else the field doing the work.
+const COLOUR_REACH := 2200.0
+func _colour_impl(x0: float, z0: float, x1: float, z1: float) -> Object:
+	if not _blend or not ChunkNative.wanted(): return _impl
+	# The finest lattice's cells, read one by one: not for the far chunks.
+	if x1-x0 > COLOUR_REACH or z1-z0 > COLOUR_REACH: return _impl
+	var one: int = _impl.one_in(x0,z0,x1,z1)
+	return _impl.kids[one] if one >= 0 and _impl.kid_native[one] else _impl
+
+## The tunnels' pass over a chunk's arrays: in C++ where every site has its
+## native carve (chunk_native.gd), else Tunnels.apply_chunk (the reference).
+func _tunnel_chunk(made: Dictionary, ts: Array, x0: float, z0: float, step: float, cells: int, skirt_drop: float) -> void:
+	var pk: Object = ChunkNative.pass_kernel()
+	var cs: Array = ChunkNative.carves_of(ts) if pk != null else []
+	if cs.size() == ts.size() and not cs.is_empty():
+		pk.tunnel_chunk(made,cs,x0,z0,step,cells,skirt_drop,Callable(self,"height"),_colour_impl(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step))
+	else:
+		Tunnels.apply_chunk(self,_impl,made,ts,x0,z0,step,cells,skirt_drop)
 
 func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
 	if _native: return _impl.build_chunk(x0,z0,step,cells,skirt_drop,flow_max)

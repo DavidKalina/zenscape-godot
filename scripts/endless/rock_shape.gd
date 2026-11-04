@@ -22,7 +22,15 @@ const GRID_STEPS := [2,3,3]
 ## `grid`: a chunk with no ground steeper than this (its normals' up) is no
 ## rock, and gets no shape.
 const STEEP_UP := 0.9
+## `grid`: a chunk with ground over this (world y, m; 70 over the sea) gets a
+## shape too, for the summits' snow (--summits=old: not).
+const HIGH_Y := 30.0
+## Its alpha (of 255): under 0.9 in the shader, so the rock paint skips it.
+const HIGH_ALPHA := 200
 
+const ChunkNative = preload("res://scripts/endless/chunk_native.gd")
+
+static var SUMMITS := "--summits=old" not in preload("res://scripts/launch_args.gd").user_args()
 static var wanted := "--rock-shape=0" not in preload("res://scripts/launch_args.gd").user_args()
 
 ## The format flag to add for `arrays`' shape (0 if it has none).
@@ -119,6 +127,58 @@ static func bake(arrays: Array) -> void:
 ## grid that is the chunk's own reuses its heights and samples only the ring.
 ## Empty for a chunk with no rock (no ground steeper than STEEP_UP).
 static func grid(f: RefCounted, made: Dictionary, x0: float, z0: float, step: float, cells: int) -> PackedByteArray:
+	var pk: Object = ChunkNative.pass_kernel()
+	if pk == null: return grid_gd(f,made,x0,z0,step,cells)
+	var n := cells+1
+	# As `grid_gd`: no steep ground, but high (the summits' snow), alpha HIGH_ALPHA.
+	var alpha := 255
+	if not pk.any_steep(made.normals,n*n,STEEP_UP):
+		if not SUMMITS or not _high(made.heights,n*n): return PackedByteArray()
+		alpha = HIGH_ALPHA
+	var shape := PackedByteArray()
+	shape.resize((n*n+4*n)*4)
+	# The rings read straight off the native field where it alone shapes them
+	# (LandField `grid` would give the same), else through LandField.
+	var reach := 0.0
+	for c in 3: reach = maxf(reach,_ring(c,step).y)
+	var heights_of := func(gx: float, gz: float, g: float, nx: int, nz: int, pad: int) -> PackedFloat32Array: return f.grid(gx,gz,g,nx,nz,pad).heights
+	var plain := ChunkNative.plain_in(f,x0-reach,z0-reach,x0+cells*step+reach,z0+cells*step+reach)
+	if not plain.is_empty():
+		heights_of = func(gx: float, gz: float, g: float, nx: int, nz: int, pad: int) -> PackedFloat32Array: return pk.grid_heights(plain[0],plain[1],plain[3],gx,gz,g,nx,nz,pad)
+	for c in 3:
+		var r: float = RADII[c]
+		var k: int = GRID_STEPS[c]
+		var per := 1 << clampi(roundi(log(r/k/step)/log(2.0)),0,4)
+		var g := per*step
+		k = maxi(1,roundi(r/g))
+		var d := roundi(k*0.7071)
+		var gn := cells/per+1
+		var hs := _padded_by(heights_of,made,x0,z0,step,cells,per,gn,k)
+		var a: float = GAIN[c]/(k*g)*0.0625
+		shape = pk.rock_layer(shape,hs,c,per,k,d,gn,a,cells)
+	shape = pk.rock_finish(shape,cells)
+	if alpha != 255:
+		for v in shape.size()/4: shape[v*4+3] = alpha
+	return shape
+
+## Whether any of the first `count` heights is over HIGH_Y.
+static func _high(hs: PackedFloat32Array, count: int) -> bool:
+	for v in count:
+		if hs[v] > HIGH_Y: return true
+	return false
+
+## Radius `c`'s grid at chunk step `step`: Vector2(its spacing, how far its
+## ring reaches past the chunk) (m), as `grid` reads it.
+static func _ring(c: int, step: float) -> Vector2:
+	var r: float = RADII[c]
+	var k: int = GRID_STEPS[c]
+	var per := 1 << clampi(roundi(log(r/k/step)/log(2.0)),0,4)
+	var g := per*step
+	k = maxi(1,roundi(r/g))
+	return Vector2(g,(k+1)*g)
+
+## `grid` in GDScript: the reference.
+static func grid_gd(f: RefCounted, made: Dictionary, x0: float, z0: float, step: float, cells: int) -> PackedByteArray:
 	var n := cells+1
 	var normals: PackedVector3Array = made.normals
 	var steep := false
@@ -126,10 +186,22 @@ static func grid(f: RefCounted, made: Dictionary, x0: float, z0: float, step: fl
 		if normals[v].y < STEEP_UP:
 			steep = true
 			break
+	# (A chunk baked only for its height has alpha HIGH_ALPHA: the rock paint
+	# ignores its shape, as it did before the summits; the snow reads it.)
+	var alpha := 255
+	# A chunk with high ground gets it too (the summits' snow reads the 40 m
+	# radius), unless --summits=old.
+	if not steep and SUMMITS:
+		var hs: PackedFloat32Array = made.heights
+		for v in n*n:
+			if hs[v] > HIGH_Y:
+				steep = true
+				alpha = HIGH_ALPHA
+				break
 	if not steep: return PackedByteArray()
 	var shape := PackedByteArray()
 	shape.resize((n*n+4*n)*4)
-	for v in n*n: shape[v*4+3] = 255
+	for v in n*n: shape[v*4+3] = alpha
 	for c in 3:
 		var r: float = RADII[c]
 		var k: int = GRID_STEPS[c]
@@ -188,6 +260,32 @@ static func _padded(f: RefCounted, made: Dictionary, x0: float, z0: float, step:
 	var low: PackedFloat32Array = f.grid(x0,z0+(gn+pad)*g,g,m,pad,pad).heights
 	var left: PackedFloat32Array = f.grid(x0,z0+pad*g,g,pad,gn,pad).heights
 	var right: PackedFloat32Array = f.grid(x0+gn*g,z0,g,pad,gn,0).heights
+	for j in pad:
+		for i in m:
+			out[j*m+i] = top[j*m+i]
+			out[(j+pad+gn)*m+i] = low[j*m+i]
+	for j in gn:
+		for i in pad:
+			out[(j+pad)*m+i] = left[j*pad+i]
+			out[(j+pad)*m+pad+gn+i] = right[j*pad+i]
+	return out
+
+## `_padded` with the ring read by `heights_of` (x0, z0, step, nx, nz, pad)
+## -> heights, the same as LandField `grid`'s.
+static func _padded_by(heights_of: Callable, made: Dictionary, x0: float, z0: float, step: float, cells: int, per: int, gn: int, pad: int) -> PackedFloat32Array:
+	var n := cells+1
+	var g := per*step
+	var m := gn+2*pad
+	var out := PackedFloat32Array()
+	out.resize(m*m)
+	var own: PackedFloat32Array = made.heights
+	for j in gn:
+		for i in gn:
+			out[(j+pad)*m+i+pad] = own[j*per*n+i*per]
+	var top: PackedFloat32Array = heights_of.call(x0,z0,g,m,pad,pad)
+	var low: PackedFloat32Array = heights_of.call(x0,z0+(gn+pad)*g,g,m,pad,pad)
+	var left: PackedFloat32Array = heights_of.call(x0,z0+pad*g,g,pad,gn,pad)
+	var right: PackedFloat32Array = heights_of.call(x0+gn*g,z0,g,pad,gn,0)
 	for j in pad:
 		for i in m:
 			out[j*m+i] = top[j*m+i]

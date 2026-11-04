@@ -26,13 +26,20 @@ extends Node
 ##   scripts/endless/flight_rumble.gd reads): a touch's thump by its `k`, a
 ##   greaser's tap, a hop (`bounce`), a `hit`, a slide breaking loose; the
 ##   rumble by ground speed and the skid by the landing's grit.
-## - Ambience: a breeze that grows with height over the ground, a thin high
+## - Ambience: a breeze that grows with height over the ground and swells with
+##   the wind where the plane is (the wind field's, hushed in calm), a thin high
 ##   wind up near the ceiling, and a shore bed near the sea (a ring of land
 ##   samples: water on one side and land on the other is a coast; open sea
 ##   a lesser surf), low only.
 ##
-## Buses (`ensure_buses`): Master > SFX (the Effects volume) > SFX Air;
-## Master > Ambience (the Ambience volume). Settings are user://sound.cfg's
+## - The bore: inside a bore or under rock closed in round the plane (`_bore`),
+##   the plane's voices (engine, wires, the air and its whooshes) and the bore's
+##   own (`bore_burst`, `bore_tell`) go through a short stone room: a reverb and
+##   an EQ (low-mid boom, the hiss damped) on "SFX Bore", eased in over
+##   BORE_IN s and out over BORE_OUT s (`bore_wet`, 0 to 1).
+##
+## Buses (`ensure_buses`): Master > SFX (the Effects volume) > SFX Bore (the
+## stone room) > SFX Air; Master > Ambience (the Ambience volume). Settings are user://sound.cfg's
 ## ("sound", "ambience"; master and mute are genesis_audio's).
 ##
 ## Plays only in a windowed run: headless there are no buses and no players,
@@ -46,11 +53,13 @@ const AmbientSound = preload("res://scripts/endless/ambient_sound.gd")
 
 const SFX := &"SFX"
 const AIR := &"SFX Air"
+const BORE := &"SFX Bore"
 const AMBIENCE := &"Ambience"
 const DEFAULT_AMBIENCE := 0.8
 const KIT := "res://assets/audio/kit/"
 const FOLEY := "res://assets/audio/foley/"
 const BURROWER := "res://assets/audio/burrower/"
+const BORE_AUDIO := "res://assets/audio/bore/"
 const OLD := "res://assets/audio/"
 
 # --- Tuning ----------------------------------------------------------------------
@@ -153,6 +162,16 @@ const KNOCK := 0.45
 ## the shore's.
 const BREEZE := Vector2(0.03,0.08)
 const BREEZE_HEIGHT := Vector2(2.0,120.0)
+## The breeze by the wind where the plane is (EndlessLook wind_here: the wind
+## field's, on top of the height's bed): the bed's share in a still hollow and
+## at full wind (`WIND_SHARE`, by the wind between `WIND_AT`), and the gain the
+## wind adds over it (`WIND_SWELL`, by the wind between `SWELL_AT`), its pitch
+## lift. With no field (other worlds, --wind=off) the height's bed alone.
+const WIND_SHARE := Vector2(0.45,1.0)
+const WIND_AT := Vector2(0.1,0.6)
+const WIND_SWELL := 0.07
+const SWELL_AT := Vector2(0.45,1.4)
+const WIND_PITCH := 0.08
 const THIN := 0.07
 const THIN_HEIGHT := Vector2(50.0,215.0)
 const SHORE := 0.14
@@ -160,6 +179,33 @@ const SHORE := 0.14
 ## between.
 const SURF := 0.45
 const SHORE_HEIGHT := Vector2(30.0,130.0)
+## The bore's stone room (`_bore`, the "SFX Bore" bus): the time (s) it eases in
+## and out over; the reverb's room (0 to 1), damping, pre-delay (ms) and its wet
+## and dry in full; the EQ's gains in full (dB, AudioEffectEQ6's bands: 32, 100,
+## 320, 1000, 3200, 10000 Hz); what's left of the air's low-pass cutoff in full
+## (the high hiss damped). Closed in: rock overhead (NearMiss `overhead`) with
+## `enclosed` past BORE_SIDES counts as in a bore too (a hall, a long arch run).
+const BORE_IN := 0.45
+const BORE_OUT := 0.55
+const BORE_ROOM := 0.32
+const BORE_DAMP := 0.55
+const BORE_PREDELAY := 14.0
+const BORE_WET := 0.34
+const BORE_DRY := 0.85
+const BORE_EQ := [0.0,2.5,4.0,0.5,-3.0,-6.0]
+const BORE_AIR_CUT := 0.6
+const BORE_SIDES := 0.3
+## A spur bursting out of the rock (`bore_burst`): the three layers' gains, and
+## how far its 3D voice carries: full within BORE_UNIT m, falling off to
+## nothing at BORE_REACH m (the plane hears it ahead and to the side; he runs
+## some 40-150 m ahead of it). The tell's grind (`bore_tell`) and its reach.
+const BURST_THUMP := 1.4
+const BURST_CRACK := 1.0
+const BURST_DEBRIS := 0.7
+const BORE_UNIT := 45.0
+const BORE_REACH := 260.0
+const TELL := 0.45
+const TELL_REACH := 180.0
 ## The place read: seconds between, the land samples' rings (m, count).
 const PLACE_TICK := 0.4
 const PLACE_RINGS := [Vector2(0.0,1.0),Vector2(50.0,6.0),Vector2(130.0,8.0)]
@@ -218,9 +264,19 @@ var over := 0.0
 var agl := 0.0
 var alt := 0.0
 var water := 0.0
-## One-shots played, by kind, and the last (kind, gain, pitch): for probes.
+## The wind where the plane is (the field's, eased; 0..2) and how far in its
+## land (0..1); -1 with no field.
+var wind := -1.0
+var wind_reach := 0.0
+## One-shots played, by kind, and the last (kind, gain, pitch, at): for probes.
 var played := {}
 var last_shot := {}
+## The bore's room eased in (0 open air, 1 in a bore: `_bore`), and whether this
+## frame counts as in one. The bore's voices heard, the latest last (at most 64):
+## {kind, at, msec}, for probes.
+var bore_wet := 0.0
+var in_bore := false
+var bore_heard: Array[Dictionary] = []
 ## True when there are players (a windowed run).
 var audible := false
 ## Muffled (0 to 1, set from outside: scripts/endless/water_contact.gd when
@@ -244,6 +300,8 @@ var _place_wait := 0.0
 var _engine_was := -1.0
 var _last_way := Vector3.ZERO
 var _air_lpf: AudioEffectLowPassFilter
+var _reverb: AudioEffectReverb
+var _eq: AudioEffectEQ6
 var _off := false
 
 # --- Buses and settings --------------------------------------------------------
@@ -254,13 +312,29 @@ var _off := false
 static func ensure_buses() -> void:
 	Audio.ensure_buses()
 	_bus(SFX,&"Master",[])
-	_bus(AIR,SFX,[_lpf(2000.0)])
+	if AudioServer.get_bus_index(BORE) < 0:
+		_bus(BORE,SFX,[AudioEffectEQ6.new(),_bore_reverb()])
+		for i in range(2): AudioServer.set_bus_effect_enabled(AudioServer.get_bus_index(BORE),i,false)
+	_bus(AIR,BORE,[_lpf(2000.0)])
 	_bus(AMBIENCE,&"Master",[])
 	for i in range(AudioServer.get_bus_effect_count(0)):
 		if AudioServer.get_bus_effect(0,i) is AudioEffectHardLimiter: return
 	var limiter := AudioEffectHardLimiter.new()
 	limiter.ceiling_db = -0.5
 	AudioServer.add_bus_effect(0,limiter)
+
+## The stone room's reverb, dry in full and no wet (`_bore` eases it).
+static func _bore_reverb() -> AudioEffectReverb:
+	var r := AudioEffectReverb.new()
+	r.room_size = BORE_ROOM
+	r.damping = BORE_DAMP
+	r.spread = 0.7
+	r.hipass = 0.08
+	r.predelay_msec = BORE_PREDELAY
+	r.predelay_feedback = 0.3
+	r.dry = 1.0
+	r.wet = 0.0
+	return r
 
 static func _lpf(hz: float) -> AudioEffectLowPassFilter:
 	var f := AudioEffectLowPassFilter.new()
@@ -315,13 +389,15 @@ func _ready() -> void:
 		Audio.apply_settings(Audio.load_settings())
 		apply_settings(load_settings())
 		_air_lpf = AudioServer.get_bus_effect(AudioServer.get_bus_index(AIR),0) as AudioEffectLowPassFilter
+		_eq = AudioServer.get_bus_effect(AudioServer.get_bus_index(BORE),0) as AudioEffectEQ6
+		_reverb = AudioServer.get_bus_effect(AudioServer.get_bus_index(BORE),1) as AudioEffectReverb
 	rush = _bed(KIT+"air-rush-loop.wav",AIR)
 	whistle = _bed(KIT+"air-whistle-loop.wav",AIR)
 	howl = _bed(KIT+"air-howl-loop.wav",AIR)
-	engine = _bed(KIT+"engine-loop.wav",SFX)
+	engine = _bed(KIT+"engine-loop.wav",BORE)
 	engine.attack = 3.0
 	engine.release = 1.2
-	wires = _bed(KIT+"wire-sing-loop.wav",SFX)
+	wires = _bed(KIT+"wire-sing-loop.wav",BORE)
 	rumble = _bed(KIT+"wheel-rumble-loop.wav",SFX)
 	skid = _bed(KIT+"skid-loop.wav",SFX)
 	breeze = _bed(OLD+"wind-bed.wav",AMBIENCE)
@@ -339,7 +415,7 @@ func _ready() -> void:
 		p.bus = SFX
 		add_child(p)
 		_pool2.append(p)
-	for i in range(8):
+	for i in range(16):
 		var p := AudioStreamPlayer3D.new()
 		p.bus = SFX
 		add_child(p)
@@ -359,6 +435,9 @@ func _ready() -> void:
 		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
 		# The line's multiplier stepping up: a switch's light bell, a flourish's full one.
 		"line-switch":[load(BURROWER+"bell-417300.mp3")],"line-flourish":[load(BURROWER+"bell-531031.mp3")],
+		# The bore (tools/generate_bore_audio.py): a spur's three layers, the tell's grind.
+		"bore-thump":_takes(BORE_AUDIO+"bore-thump-%d.wav",4),"bore-crack":_takes(BORE_AUDIO+"bore-crack-%d.wav",4),
+		"bore-debris":_takes(BORE_AUDIO+"bore-debris-%d.wav",4),"bore-grind":_takes(BORE_AUDIO+"bore-grind-%d.wav",3),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -425,10 +504,12 @@ func _exit_tree() -> void:
 ## One take of `kind` (never the one before), `gain` linear, `pitch` the
 ## centre of a little spread; in the world at `at` (flat: not falling off
 ## with distance), else on the listener.
-func shot(kind: String, gain: float, pitch := 1.0, at := Vector3.INF, bus := SFX, flat := false) -> void:
+## `reach` (m): where a world voice falls off to nothing (and `unit`: full
+## within it), 0 the default (70, 4).
+func shot(kind: String, gain: float, pitch := 1.0, at := Vector3.INF, bus := SFX, flat := false, reach := 0.0, unit := 0.0) -> void:
 	if gain <= 0.0: return
 	played[kind] = int(played.get(kind,0))+1
-	last_shot = {"kind":kind,"gain":gain,"pitch":pitch}
+	last_shot = {"kind":kind,"gain":gain,"pitch":pitch,"at":at}
 	var takes: Array = _clips.get(kind,[])
 	if not audible or takes.is_empty(): return
 	var pick := _rng.randi_range(0,takes.size()-1)
@@ -443,8 +524,8 @@ func shot(kind: String, gain: float, pitch := 1.0, at := Vector3.INF, bus := SFX
 		_next3 = (_next3+1)%_pool3.size()
 		p3.global_position = at
 		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED if flat else AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-		p3.unit_size = 4.0
-		p3.max_distance = 70.0
+		p3.unit_size = unit if unit > 0.0 else 4.0
+		p3.max_distance = reach if reach > 0.0 else 70.0
 		p3.panning_strength = 0.8
 		player = p3
 	player.stream = takes[pick]
@@ -452,6 +533,24 @@ func shot(kind: String, gain: float, pitch := 1.0, at := Vector3.INF, bus := SFX
 	player.volume_db = linear_to_db(gain)+_rng.randf_range(-1.5,1.5)
 	player.pitch_scale = pitch*_rng.randf_range(0.94,1.06)
 	player.play()
+
+## A spur bursting out of the rock at `at` (world): a thump, a crack and a debris
+## tail, each its own take and pitch round `pitch` (a big spur lower), `gain`
+## on top of the BURST_ gains; heard BORE_REACH m off, through the bore's room.
+func bore_burst(at: Vector3, gain := 1.0, pitch := 1.0) -> void:
+	_heard("burst",at)
+	shot("bore-thump",BURST_THUMP*gain,pitch*_rng.randf_range(0.92,1.08),at,BORE,false,BORE_REACH,BORE_UNIT)
+	shot("bore-crack",BURST_CRACK*gain,pitch*_rng.randf_range(0.88,1.12),at,BORE,false,BORE_REACH,BORE_UNIT)
+	shot("bore-debris",BURST_DEBRIS*gain,pitch*_rng.randf_range(0.9,1.1),at,BORE,false,BORE_REACH,BORE_UNIT)
+
+## The tell at `at`: the rock grinding as the crack opens, `gain` on top of TELL.
+func bore_tell(at: Vector3, gain := 1.0, pitch := 1.0) -> void:
+	_heard("tell",at)
+	shot("bore-grind",TELL*gain,pitch,at,BORE,false,TELL_REACH,BORE_UNIT)
+
+func _heard(kind: String, at: Vector3) -> void:
+	bore_heard.append({"kind":kind,"at":at,"msec":Time.get_ticks_msec()})
+	if bore_heard.size() > 64: bore_heard.pop_front()
 
 ## A player not playing, else the next in turn.
 func _free(pool: Array, next: int) -> Node:
@@ -480,10 +579,15 @@ func step(delta: float, game: Node3D, events: Dictionary, boost: float) -> void:
 		_settle_probe(delta)
 	else:
 		_probe_step(delta,game,speed)
+	_bore(delta,game)
 	_air(boost,not on_wheels)
 	_engine(plane,landing,boost,speed,cruise,on_wheels)
 	_wheels(landing,speed,on_wheels)
 	_landing(events)
+	var look = game.get("look")
+	var here: Vector2 = look.wind_here() if look != null and look.has_method("wind_here") else Vector2(-1.0,0.0)
+	wind = here.x
+	wind_reach = here.y
 	_place_wait -= delta
 	if _place_wait <= 0.0:
 		_place_wait = PLACE_TICK
@@ -510,11 +614,33 @@ func _flight(delta: float, velocity: Vector3, speed: float, on_wheels: bool) -> 
 func _air(boost: float, flying: bool) -> void:
 	rush.goal = lerpf(RUSH.x,RUSH.y,pow(fast,1.6))*(1.0 if fast > 0.0 or flying else 0.0)+RUSH_NEAR*near+RUSH_DIVE*dive+RUSH_PULL*pull+RUSH_BOOST*boost*fast
 	rush.pitch_goal = 0.85+0.3*fast+0.08*near+0.06*dive+OVER_PITCH*over
-	if _air_lpf != null: _air_lpf.cutoff_hz = clampf((RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over)*lerpf(1.0,MUFFLE_CUT,clampf(muffle,0.0,1.0)),200.0,18000.0)
+	if _air_lpf != null: _air_lpf.cutoff_hz = clampf((RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over)*lerpf(1.0,MUFFLE_CUT,clampf(muffle,0.0,1.0))*lerpf(1.0,BORE_AIR_CUT,_bore_k()),200.0,18000.0)
 	whistle.goal = WHISTLE*smoothstep(0.4,1.0,fast)+WHISTLE_NEAR*near*fast+WHISTLE_PULL*pull*fast+WHISTLE_DIVE*dive*(0.4+0.6*fast)+WHISTLE_OVER*over
 	whistle.pitch_goal = 0.9+0.25*fast+0.08*dive+OVER_PITCH*over
 	howl.goal = HOWL*enclosed+0.04*near
 	howl.pitch_goal = 0.8+0.4*fast
+
+## In a bore (the study's `plane_figure.bore`: the tube's open middle), or
+## closed in under rock (NearMiss `overhead`, last frame's, and `enclosed`):
+## `bore_wet` eased toward 1 over BORE_IN s, else toward 0 over BORE_OUT s, at a
+## steady rate; the room's wet, dry and EQ follow it on an S-curve, and the two
+## effects sit off while it's 0.
+func _bore(delta: float, game: Node3D) -> void:
+	var figure: Variant = game.get("plane_figure")
+	var near_miss: Variant = game.get("near")
+	in_bore = (figure != null and bool(figure.get("bore"))) or (near_miss != null and bool(near_miss.get("overhead")) and enclosed > BORE_SIDES)
+	var was := bore_wet
+	bore_wet = move_toward(bore_wet,1.0 if in_bore else 0.0,delta/(BORE_IN if in_bore else BORE_OUT))
+	if _reverb == null or (was == bore_wet and bore_wet == 0.0): return
+	var k := _bore_k()
+	var bus := AudioServer.get_bus_index(BORE)
+	for i in range(2): AudioServer.set_bus_effect_enabled(bus,i,bore_wet > 0.0)
+	_reverb.wet = BORE_WET*k
+	_reverb.dry = lerpf(1.0,BORE_DRY,k)
+	for i in range(6): _eq.set_band_gain_db(i,float(BORE_EQ[i])*k)
+
+func _bore_k() -> float:
+	return smoothstep(0.0,1.0,bore_wet)
 
 ## The engine: the throttle and the speed; wires on the knife edge, a drift
 ## and a hard pull.
@@ -676,6 +802,13 @@ func _ambience(on_wheels: bool) -> void:
 	var up := smoothstep(BREEZE_HEIGHT.x,BREEZE_HEIGHT.y,agl)
 	breeze.goal = lerpf(BREEZE.x,BREEZE.y,up)
 	breeze.pitch_goal = 0.9+0.2*up
+	if wind >= 0.0:
+		# The wind by place and hour: a still hollow hushes the bed, a windy
+		# ridge swells it.
+		var share := lerpf(WIND_SHARE.x,WIND_SHARE.y,smoothstep(WIND_AT.x,WIND_AT.y,wind))
+		var swell := smoothstep(SWELL_AT.x,SWELL_AT.y,wind)
+		breeze.goal = lerpf(breeze.goal,breeze.goal*share+WIND_SWELL*swell,wind_reach)
+		breeze.pitch_goal += WIND_PITCH*swell*wind_reach
 	thin.goal = THIN*smoothstep(THIN_HEIGHT.x,THIN_HEIGHT.y,alt)
 	thin.pitch_goal = 0.9+0.15*smoothstep(THIN_HEIGHT.x,THIN_HEIGHT.y,alt)
 	# A coast (water on some sides, land on others) is a shore; open sea a

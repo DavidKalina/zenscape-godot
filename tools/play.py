@@ -49,6 +49,23 @@ def _git(*args: str, timeout: float = 60.0) -> subprocess.CompletedProcess:
                           encoding="utf-8", errors="replace", timeout=timeout, env=env)
 
 
+def _restat_unchanged() -> None:
+    """Re-records files git only thinks changed, so they never block the pull.
+
+    On Windows git checks text files out with CRLF and Godot rewrites its own
+    (.import, .uid) with LF. The content still matches the commit, but the size
+    git recorded doesn't, and git then calls the file modified without looking
+    (`update-index --refresh` can't clear it). `git add` on such a file stages
+    nothing; it only re-records its size."""
+    stat_dirty = set(_git("ls-files", "-m", "-z").stdout.split("\0")) - {""}
+    if not stat_dirty:
+        return
+    changed = set(_git("diff", "--name-only", "-z").stdout.split("\0"))
+    same = sorted(stat_dirty - changed)
+    if same:
+        _git("-c", "core.safecrlf=false", "add", "--", *same)
+
+
 def pull_main() -> None:
     """Fast-forwards a checkout on main to origin's main; says what happened."""
     try:
@@ -57,6 +74,7 @@ def pull_main() -> None:
             print(f"== on branch {branch}, not main: not pulling", flush=True)
             return
         before = _git("rev-parse", "HEAD").stdout.strip()
+        _restat_unchanged()
         print("== pulling main...", flush=True)
         r = _git("pull", "--ff-only", "--quiet", "origin", "main")
     except (OSError, subprocess.SubprocessError) as e:

@@ -316,6 +316,7 @@ func _index(rec: Dictionary) -> void:
 				if not _grid.has(g): _grid[g] = []
 				(_grid[g] as Array).append([rec,i])
 				(rec.grid as Array).append(g)
+				GroundNative.touch_rock(g)
 
 func _free_cell(key: Vector2i) -> void:
 	for r: Dictionary in _cells[key]:
@@ -328,6 +329,7 @@ func _free_cell(key: Vector2i) -> void:
 				if e[0] != r: kept.append(e)
 			if kept.is_empty(): _grid.erase(g)
 			else: _grid[g] = kept
+			GroundNative.touch_rock(g)
 		(r.node as Node).queue_free()
 		stats.groups -= 1
 		stats.pillars -= (r.solid as Array).size()

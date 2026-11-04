@@ -98,6 +98,27 @@ uniform float sea_y = -40.0;
 #include "res://shaders/peak_tarn.gdshaderinc"
 uniform float beach = 2.2;
 uniform float snow_line = 95.0;
+// High ground and summits (docs/design/endless-flight/summits-handoff.md).
+// summit_mode 0 is the look before it (--summits=old). Above the grass the
+// ground turns to a stylised alpine mix (scree, lichened stone, short turf)
+// from where the tufts thin (alpine_from..alpine_to, on `alpine`), with more
+// stone the higher it goes (alpine_stone, m over the sea). Crowns that stand
+// proud of the land round them (the 40 m radius of land_shape.b, over
+// summit_proud) whiten in broken patches from summit_snow (m over the sea).
+uniform float summit_mode : hint_range(0.0, 1.0) = 1.0;
+uniform vec2 alpine_from = vec2(0.25, 0.95);
+uniform vec2 alpine_stone = vec2(70.0, 130.0);
+uniform vec2 summit_snow = vec2(70.0, 100.0);
+uniform vec2 summit_proud = vec2(0.50, 0.58);
+uniform float summit_amount : hint_range(0.0, 2.0) = 1.0;
+// The caps' fine fray (0 a clean edge), the lee's weight (it holds more snow,
+// the windward less), the stones poking through (0 none), the soft crown far
+// off (0 only the patches), the value drift inside a patch (0 flat white).
+uniform float summit_fray : hint_range(0.0, 1.0) = 0.5;
+uniform float summit_lee : hint_range(0.0, 1.0) = 0.30;
+uniform float summit_stones : hint_range(0.0, 1.0) = 0.5;
+uniform float summit_far : hint_range(0.0, 1.0) = 0.85;
+uniform float summit_tone : hint_range(0.0, 1.0) = 0.5;
 // The normal's up below which the grass gives way to rock (with a ragged
 // edge), and where the turf starts to thin to dry olive.
 uniform float rock_up = 0.80;
@@ -314,6 +335,21 @@ uniform vec3 river_pads = vec3(1.0, 1.15, 0.22);
 uniform vec3 river_pad_colour : source_color = vec3(0.42, 0.56, 0.24);
 // How much of the cloud field the water mirrors (the sea's cloud_mirror).
 uniform float river_cloud_mirror = 0.8;
+// The wind on the water (wind_field, only where a field blows): cat's paws,
+// dark ruffled patches carried downwind on the air's travel, where it's
+// windy, and still water lying glassy in calm. x: the paws' ripple strength
+// (0 none of it), y: a patch's size (m), z: how much a paw dulls the mirror,
+// w: how glassy still water lies in calm (its ripples' share taken off).
+uniform vec4 river_paws = vec4(0.35, 16.0, 0.6, 0.9);
+// The wind (zs_wind_strength's scale) the paws come in between (none at .x,
+// all at .y); the calm under which still water goes glassy (all at .z, none
+// by .w).
+uniform vec4 river_paw_wind = vec4(0.3, 1.0, 0.15, 0.5);
+// The paws' ripple tiles (m, two layers), their share of the air's travel
+// they ride at, and the noise level a paw starts at in full wind.
+uniform vec4 river_paw_ripple = vec4(2.6, 1.1, 1.2, 0.47);
+// How much darker a paw's body is.
+uniform float river_paw_dark = 0.3;
 // The flow's look (rivers-flow-handoff.md). White water: from the current's
 // speed .x (m/s) it breaks, by .y it is all white water, .z how much.
 uniform vec3 river_rapids = vec3(1.0, 2.2, 1.0);
@@ -473,6 +509,30 @@ vec2 zs_river_layer(sampler2D tex, vec2 p, vec2 dir, float speed, float size, fl
 	vec2 s = (s0 * w0 + s1 * w1) * inversesqrt(w0 * w0 + w1 * w1);
 	// Back from the flow's frame to the world's (the streak's squeeze too).
 	return dir * s.x / river_streak + across * s.y;
+}
+
+// The wind's cat's paws at `p` (0..1) for a windiness `windy` (0..1):
+// patches of ruffle carried downwind on the air's travel (zs_wind_offset, a
+// rigid slide as the heading wanders), forming and dying slowly as they go,
+// more of the water covered the windier it is.
+float zs_paw_mask(vec2 p, float windy) {
+	vec2 l = (p - zs_wind_offset) / river_paws.y;
+	float n = ep_noise(l) * 0.62 + ep_noise(l * 2.7 + vec2(5.3, 1.7)) * 0.38;
+	float s = 0.5 + 0.5 * sin(zs_motion_time * 0.07);
+	n += (mix(ep_noise(l * 0.5 + vec2(3.1, 7.7)), ep_noise(l * 0.5 + vec2(11.4, 2.9)), s) - 0.5) * 0.3;
+	float lo = mix(river_paw_ripple.w + 0.2, river_paw_ripple.w, windy);
+	return smoothstep(lo, lo + 0.12, n) * smoothstep(0.0, 0.25, windy);
+}
+
+// A paw's ripples: two tiles of the chop map riding the air's travel.
+vec2 zs_paw_ripple(sampler2D tex, vec2 p, float fp) {
+	vec2 q = p - zs_wind_offset * river_paw_ripple.z;
+	float k0 = 1.0 - smoothstep(river_paw_ripple.x * 0.04, river_paw_ripple.x * 0.22, fp);
+	float k1 = 1.0 - smoothstep(river_paw_ripple.y * 0.04, river_paw_ripple.y * 0.22, fp);
+	vec2 s = vec2(0.0);
+	if (k0 > 0.0) s += (texture(tex, q / river_paw_ripple.x).xy * 2.0 - 1.0) * k0;
+	if (k1 > 0.0) s += (texture(tex, (q + vec2(7.3, 2.1)) / river_paw_ripple.y).xy * 2.0 - 1.0) * k1 * 0.7;
+	return s;
 }
 
 // --- The live river (river_live 1) ----------------------------------------
@@ -783,6 +843,10 @@ void fragment() {
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
 		rp_swell = zs_region_mix3(rw, grass_swell_r);
 	}
+	// The wind by place (wind_field): windy grass rolls, calm grass stands.
+	// (Read once here for the whole pixel: zs_wind_here.)
+	vec2 wind_h = zs_wind_here(p.xz);
+	if (rp_swell.x > 0.0) rp_swell.x *= zs_wind_swell_here(wind_h);
 	vec3 n = normalize(world_normal);
 	if (!FRONT_FACING) n = -n;
 	// A pixel's footprint on the ground (m): between its short and long
@@ -864,6 +928,9 @@ void fragment() {
 		float w = 0.012 + fp3 * 0.004;
 		rocky = smoothstep(rock_up + w, rock_up - w, n.y + ragged + rock_edge * 0.4);
 	}
+	// (The rock's own faces, before the high ground's broken rock: the summit
+	// caps keep off them.)
+	float rock_face = rocky;
 	// More rock breaking through the high ground.
 	rocky = max(rocky, smoothstep(0.88, 0.80, n.y + rock_edge) * alpine * (old_rock ? 1.0 : 0.6));
 	// The beach: a strip at the water, wider in bays (the meadows' flats
@@ -925,6 +992,64 @@ void fragment() {
 			pk_rock = max(pk_rock, rim);
 		}
 	}
+	// A crown standing proud of the land round it (land_shape.b: the 40 m
+	// radius's height over its ring, 0.5 level) wears broken snow below the
+	// snow line; low hills stay green. `cov` is how much snow belongs at a
+	// spot (proud, high, flat or hollow, in the lee, off the rock's faces); the
+	// cap is that cover against noise over every scale (38 m fields down to
+	// 0.45 m grit), so a thin cover breaks into patches and specks with a
+	// fairly crisp edge, and a few stones poke through where it is not deep.
+	// Far off the noise melts (zs_fade) and the cap eases to the cover itself,
+	// a soft light crown. From the unsheared world xz (gxz swirls on a slope).
+	// The surface and light are the Peak's snow (psnow_surface, below), not
+	// its edge.
+	float snowy_base = snowy;
+	float sm_snow = 0.0;
+	float sm_cap = 0.0;
+	float sm_tone = 0.0;
+	float sm_far = 0.0;
+	if (summit_mode > 0.5 && land_shape.a > 0.5 && summit_amount > 0.0) {
+		vec2 sq = p.xz;
+		float s_dist = distance(p, CAMERA_POSITION_WORLD);
+		float far_up = smoothstep(150.0, 1200.0, s_dist);
+		// (zs_fade: centred on 0, each scale gone as a pixel outgrows it.)
+		float n38 = zs_fade(sq + 40.0, 38.0, fp);
+		float n12 = zs_fade(sq + 6.0, 12.0, fp);
+		float n4 = zs_fade(sq + 2.0, 3.5, fp);
+		float n1 = zs_fade(sq + 17.0, 1.1, fp);
+		float n05 = zs_fade(sq.yx + 5.0, 0.45, fp);
+		float proud = smoothstep(summit_proud.x, summit_proud.y, land_shape.b);
+		float lift = smoothstep(summit_snow.x - far_up * 35.0, summit_snow.y - far_up * 20.0, over + (n38 + n12) * 24.0);
+		// Flats and hollows (the small radius under its ring) hold it, and the
+		// lee of the Peak's wind; steep ground, the windward and the rock's faces
+		// shed it, so a rocky crown stays mostly bare stone.
+		float s_hollow = 0.5 - land_shape.r;
+		float s_lee = dot(n.xz, vec2(0.82, 0.57));
+		float lies = smoothstep(0.80 - far_up * 0.30, 0.93 - far_up * 0.15, n.y + s_lee * summit_lee * 0.25 + s_hollow * 0.12 + n12 * 0.06);
+		// (Not far off: there a crown's rock faces are a few pixels, and the snow
+		// they hold reads as the crown's light.)
+		lies *= 1.0 - smoothstep(0.15, 0.6, rock_face) * (1.0 - smoothstep(200.0, 700.0, s_dist));
+		float cov = min(proud * lift * lies * summit_amount * (1.0 + far_up * 1.0), 1.0);
+		// (The noise only where some cover is: none of it on ground that sheds snow.)
+		float v = cov * 0.72 + (n38 * 0.55 + n12 * 0.45 + n4 * 0.30 + (n1 * 0.30 + n05 * 0.24) * summit_fray * 2.0) * smoothstep(0.0, 0.35, cov);
+		// Stones through it: the sparse tops of a 2.4 m noise and the grit.
+		float st = zs_fade(sq.yx + 71.0, 2.4, fp) * 0.6 + n1 * 0.7 + n05 * 0.4;
+		float stones = smoothstep(0.29, 0.31, st) * summit_stones;
+		float w = 0.09 + clamp(fp * 0.02, 0.0, 0.15);
+		float cap = smoothstep(0.55 - w, 0.55 + w, v);
+		// Short of the edge a thin dust: specks of the grit, broken, not a fade.
+		float speck = smoothstep(-0.02, 0.14, n05 + n1 * 0.8);
+		cap = max(cap, smoothstep(0.28, 0.50, v) * speck * 0.85 * summit_fray * 2.0);
+		cap *= 1.0 - stones;
+		// Far off: the cover's own mean, a soft light crown.
+		float crown = max(smoothstep(0.03, 0.45, cov), proud * lift * smoothstep(0.50, 0.75, n.y) * 0.75) * 0.9;
+		sm_far = smoothstep(250.0, 900.0, s_dist);
+		cap = mix(cap, max(cap, crown), sm_far * summit_far);
+		sm_snow = (1.0 - pk.x) * (1.0 - max(pk.y, pk.z));
+		sm_cap = cap * sm_snow;
+		sm_tone = clamp(n12 * 0.9 + n4 * 0.9 + n1 * 0.5 + n38 * 0.5, -1.0, 1.0);
+		snowy = max(snowy, sm_cap);
+	}
 	// Bare rock lying flat on the Peak is scree: the walls' beds over a floor lie
 	// as rings round every bump, like wood grain.
 	float pk_scree = pk.x * rocky * smoothstep(0.64, 0.82, n.y + rock_edge);
@@ -977,7 +1102,7 @@ void fragment() {
 		float crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
 		crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
 		crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
-		float air = clamp(zs_wind_strength, 0.0, 2.0);
+		float air = clamp(zs_wind_local_here(wind_h), 0.0, 2.0);
 		// (Grass that blows as one keeps their mean: the swell carries the motion.)
 		float crest = mix(crest_near * 0.35 + crest_far * 0.65, 0.35, rp_swell.x) * air * wind_sheen;
 		// Velvet: turf seen low catches the light along its blades.
@@ -1123,15 +1248,17 @@ void fragment() {
 			// (From high up the lattice-free drive; near, the tufts' own, so the two meet.)
 			float silver_flip = zs_silver_drive(gxz, fp);
 			if (high_paint_old < 0.5 && wc_up > 0.0) silver_flip = mix(silver_flip, zs_silver_drive_smooth(gxz, fp), wc_up);
-			if (rp_swell.x > 0.0) silver_flip = mix(silver_flip, zs_swell_silver(zs_sheen_field(gxz, fp, rp_swell.x)), rp_swell.x);
+			if (rp_swell.x > 0.0) silver_flip = mix(silver_flip, zs_swell_silver(zs_sheen_field_here(gxz, fp, rp_swell.x, wind_h)), rp_swell.x * zs_wind_silver_here(wind_h));
 			grass = zs_silver_paint_hue(grass, silver_flip, 1.0 - thin * 0.6, 0.8, rp_silver);
 		}
 		// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
 		if (grass_sheen.x > 0.0) {
 			float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
-			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
+			// From high up the paint's washes take over, but where the field's wind
+			// rolls the grass its swells keep reading (zs_wind_up_sheen).
+			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up * (1.0 - zs_wind_up_sheen_here(wind_h, rp_swell.x)));
 			float sheen_s = 0.0;
-			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field(gxz, fp, rp_swell.x);
+			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field_here(gxz, fp, rp_swell.x, wind_h);
 			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s * rp_swell.z, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
 			// The far grass as a fine lawn (far_lawn.gdshaderinc), from past the tufts.
 			if (grass_lawn.x > 0.0) {
@@ -1187,7 +1314,10 @@ void fragment() {
 			float fold = 46.0 * sin(dot(p.xz, vec2(0.0041, 0.0029))) + 20.0 * sin(dot(p.xz, vec2(-0.011, 0.007)) + 1.3) + dot(p.xz, vec2(0.11, 0.14));
 			bed_p.y = mix(p.y, (p.y + fold) / PEAK_BEDS, pk.x);
 		}
-		rock = er_rock_shaped(bed_p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, land_shape, lit_n, rock_glow);
+		// (A chunk baked only for the summits' snow has alpha under 0.9: no shape for the rock.)
+		vec4 rock_shape_in = land_shape;
+		if (land_shape.a < 0.9) rock_shape_in.a = 0.0;
+		rock = er_rock_shaped(bed_p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, rock_shape_in, lit_n, rock_glow);
 		// Its bounce glow at the sky fill's strength (ER_REF_FILL its luma at
 		// the reference light), so it eases with the fill.
 		float fill_level = clamp(luma(zs_hemi_sky) * zs_hemi_energy / ER_REF_FILL, 0.25, 2.0);
@@ -1238,12 +1368,60 @@ void fragment() {
 		rock *= 1.0 + PEAK_RIB * clamp(land_carve.y, 0.0, 1.0) * pk.x * pk_sun;
 	}
 	// The Peak's snow has its own surface and light (peak_snow.gdshaderinc).
-	float ps_on = psnow_on * pk.x * step(0.001, snowy);
+	float ps_on = psnow_on * max(pk.x, sm_snow) * step(0.001, snowy);
 	vec3 ps_n = n;
 	vec3 ps_glit = vec3(0.0);
-	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, psnow_point(p, over), n, eye, distance(p, CAMERA_POSITION_WORLD), 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y), snowy, ps_n, ps_glit), ps_on);
+	// The Peak's snow takes the surface's bitten edge (snowy in and out); a
+	// summit cap keeps its own (sm_cap) and only borrows the surface and light.
+	float sm_use = (1.0 - pk.x) * step(0.001, sm_cap);
+	float ps_in = snowy;
+	if (ps_on > 0.0) {
+		snow = mix(snow, psnow_surface(p, psnow_point(p, over), n, eye, distance(p, CAMERA_POSITION_WORLD), 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y), ps_in, ps_n, ps_glit), ps_on);
+		snowy = mix(ps_in, snowy, sm_use);
+	}
+	if (sm_use > 0.0) {
+		// A cap a shade cooler than the Peak's, its value drifting a little
+		// over the patch (old snow, not a sheet).
+		snow *= mix(vec3(1.0), vec3(0.94, 0.955, 0.985) * (1.0 + sm_tone * 0.30 * summit_tone), sm_use);
+	}
 
 	vec3 albedo = mix(grass, rock, rocky);
+	// High ground above the grass: scree, lichened stone and short turf in
+	// patches, more stone the higher; in on the tufts' own thinning (alpine).
+	if (summit_mode > 0.5) {
+		float far_alp = smoothstep(150.0, 1200.0, distance(p, CAMERA_POSITION_WORLD));
+		float bare = smoothstep(alpine_from.x - far_alp * 0.12, alpine_from.y - far_alp * 0.25, alpine);
+		float stone_up = smoothstep(alpine_stone.x, alpine_stone.y, over + broad * 20.0);
+		// (Not under a cap's own cover: the snow mixes over this ground below, and
+		// fading it here too let the grass show through thin snow as a dark stain.)
+		bare *= (1.0 - pk.x) * (1.0 - rocky * 0.8) * (1.0 - snowy_base);
+		if (sm_cap >= 1.0) bare = 0.0;
+		if (bare > 0.003) {
+			// Stone patches with ragged edges, broad then small; turf in the gaps.
+			float cut = 0.62 - stone_up * 0.30 - (1.0 - n.y) * 0.8;
+			float f1 = zs_noise(p.xz / 30.0 + 3.0) * 0.30 + zs_noise(p.xz / 10.0 + 11.0) * 0.35 + zs_noise(p.xz / 3.4) * 0.35;
+			float stone = smoothstep(cut - 0.06, cut + 0.06 + fp * 0.01, 1.0 - f1);
+			// (far off the patches melt to their mean share)
+			stone = mix(stone, 0.70 + stone_up * 0.25, smoothstep(150.0, 1000.0, distance(p, CAMERA_POSITION_WORLD)));
+			vec3 stone_dark = mix(ER_MID, ER_LIT, 0.55) * vec3(0.98, 0.97, 0.95);
+			vec3 stone_pale = mix(ER_LIT, vec3(luma(ER_LIT)), 0.25) * 0.95;
+						vec3 st = mix(stone_dark, stone_pale, clamp(0.45 + zs_fade(p.xz, 14.0, fp) * 1.2 + zs_fade(p.xz + 5.0, 3.0, fp) * 0.8, 0.0, 1.0));
+			// Scree: pale and dark grit, fine near the eye, its mean far off.
+			float grit = zs_fade(p.xz + 3.7, 0.55, fp) * 1.4 + zs_fade(p.zx + 8.1, 1.7, fp) * 1.0 + zs_fade(p.xz + 1.3, 5.0, fp) * 0.8;
+			st *= 1.0 + grit * 0.4;
+			// Lichen: yellow-green and rust crusts on the stone.
+			float lich = smoothstep(0.58, 0.72, zs_noise(p.xz / 2.3 + 5.0) * 0.6 + zs_noise(p.xz / 7.0 + 2.0) * 0.4) * (1.0 - smoothstep(6.0, 40.0, fp));
+			float rust = smoothstep(0.6, 0.75, zs_noise(p.xz / 4.4 + 17.0));
+			st = mix(st, mix(vec3(0.30, 0.33, 0.14), vec3(0.40, 0.23, 0.11), rust), lich * 0.35);
+			// Short turf: a lighter olive-green than the tundra, in patches.
+			vec3 tf = mix(vec3(0.155, 0.225, 0.095), vec3(0.235, 0.285, 0.120), clamp(0.5 + mid + fine, 0.0, 1.0));
+			tf *= 1.0 + zs_fade(p.xz + 9.0, 0.9, fp) * 0.6 + zs_fade(p.xz, 3.0, fp) * 0.5;
+			vec3 hi = mix(tf, st, stone);
+			// The gentlest ground keeps the most turf; cold shade and damp darker.
+			hi *= mix(vec3(1.0), vec3(0.94, 0.97, 1.04), smoothstep(0.0, -0.4, zs_sun_direction.y));
+			albedo = mix(albedo, hi, clamp(bare, 0.0, 1.0));
+		}
+	}
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, bank_c, banked * (1.0 - rocky * 0.7));
 	// The Peak's valley floor: scree of granite on the boulder field; ice
@@ -1322,7 +1500,14 @@ void fragment() {
 		SPECULAR = mix(SPECULAR, ice_spec * (1.0 - shaded) * horizon.x, pk.y);
 		EMISSION += ice_glow * horizon.y * (1.0 - 0.2 * shade);
 	}
-	if (ps_on > 0.0) EMISSION = psnow_emission(EMISSION, snowy * ps_on);
+	if (ps_on > 0.0) {
+		// (A cap's thin cover is part snow, part ground: only the snow's share takes
+		// the snow's extra fill, and near less of it than the Peak's, so a cap in
+		// shade isn't a white sheet on a dark slope. The Peak's edge is crisp, so
+		// it scales the whole.)
+		vec3 sm_fill = mix(snow, vec3(luma(snow)) * night_grade.yzw, night_grade.x) * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) * (PSNOW_FILL * mix(0.62, 1.0, sm_far) - 1.0) * snowy * ps_on;
+		EMISSION = mix(psnow_emission(EMISSION, snowy * ps_on), EMISSION + sm_fill, sm_use);
+	}
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed
@@ -1455,6 +1640,22 @@ void fragment() {
 			float fall = pow(max(spd - 0.35, 0.0) / 9.0, 2.0);
 			slope -= dir * fall;
 		}
+		// The wind on the water (wind_field): still water glassy in calm,
+		// cat's paws on windy stretches (dark: their ripples dull the mirror).
+		float paw = 0.0;
+		if (zs_wind_on() && river_paws.x > 0.0) {
+			float paw_reach = wind_h.y;
+			float paw_ww = zs_wind_local_here(wind_h);
+			float paw_pool = 1.0 - smoothstep(0.05, 0.3, spd);
+			float paw_glass = (1.0 - smoothstep(river_paw_wind.z, river_paw_wind.w, paw_ww)) * paw_pool * river_paws.w * paw_reach;
+			slope *= 1.0 - paw_glass;
+			rough *= (1.0 - paw_glass) * (1.0 - paw_glass);
+			paw = zs_paw_mask(p.xz, smoothstep(river_paw_wind.x, river_paw_wind.y, paw_ww)) * paw_reach;
+			if (paw > 0.0) {
+				slope += zs_paw_ripple(river_detail_b, p.xz, r_fp) * river_paws.x * paw;
+				rough += river_paws.x * river_paws.x * paw * smoothstep(river_paw_ripple.y * 0.04, river_paw_ripple.x * 0.22, r_fp);
+			}
+		}
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
@@ -1550,6 +1751,7 @@ void fragment() {
 		// sea's body_shade), so the chop reads where the mirror is dim.
 		water *= 1.0 + clamp(dot(slope, -normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.5, -0.45, 0.45) * river_body_shade;
 		water *= 1.0 - 0.4 * shaded;
+		water *= 1.0 - river_paw_dark * paw;
 		// The live river's foam and white water.
 		if (river_live > 0.5 && live_foam > 0.0) {
 			vec3 froth = vec3(0.92, 0.96, 1.0) * (ambient * 1.15 + key * 0.85);
@@ -1624,9 +1826,10 @@ void fragment() {
 		}
 		float fres = river_fresnel.x + (1.0 - river_fresnel.x) * pow(1.0 - max(dot(eye, calm), 0.0), river_fresnel.y);
 		fres = clamp(fres * (1.0 + sl * river_slick.z), 0.0, 1.0);
+		fres *= 1.0 - river_paws.z * paw;
 		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - skin) * (1.0 - pad));
 		vec4 path = zs_lake_glint(refl, zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
-		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad));
+		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad) * (1.0 - 0.6 * paw));
 		float spark = smoothstep(0.9993, 0.99955, dot(reflect(-eye, wn), zs_sun_direction)) * (0.0025 / (0.0025 + rough));
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
 		vec3 warm_c = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y)));

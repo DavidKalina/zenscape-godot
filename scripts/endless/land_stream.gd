@@ -24,6 +24,7 @@ extends Node3D
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
+const ChunkNative = preload("res://scripts/endless/chunk_native.gd")
 
 ## Quads along a chunk's side, the finest chunk's size (m, so 1 m quads),
 ## the coarsest level and how many root chunks reach out each way.
@@ -56,6 +57,15 @@ const REPLAN := 6.0
 ## Tasks in flight at once (0: the cores less two, at least one, so the
 ## main and render threads keep a core).
 const MAX_TASKS := 0
+## `--land-tasks=N` for a run (stutter hunt: many chunk builds at once crowd
+## the main thread's GDScript).
+static var _max_tasks := -1
+static func max_tasks() -> int:
+	if _max_tasks < 0:
+		_max_tasks = MAX_TASKS
+		for a: String in preload("res://scripts/launch_args.gd").user_args():
+			if a.begins_with("--land-tasks="): _max_tasks = maxi(int(a.get_slice("=",1)),0)
+	return _max_tasks
 ## Milliseconds a frame for meshes and colliders; at least one a frame.
 const COMMIT_BUDGET := 2.5
 ## The tree is planned round a point led ahead of the eye along the
@@ -322,7 +332,7 @@ static func _tops_of(key: Vector3i, heights: PackedFloat32Array) -> Dictionary:
 	return out
 
 func _ask() -> void:
-	var most := MAX_TASKS if MAX_TASKS > 0 else maxi(OS.get_processor_count()-2,1)
+	var most := max_tasks() if max_tasks() > 0 else maxi(OS.get_processor_count()-2,1)
 	# The colliders' chunks (level 0) go as high priority tasks, at most
 	# NEAR_TASKS at once, and wait in the queue for a slot: low priority
 	# tasks share a few of the pool's threads (threading/worker_pool/
@@ -385,6 +395,33 @@ func _build(key: Vector3i, land_seed: int) -> void:
 ## from the field, so the differences are central everywhere and match the
 ## neighbouring chunks'. Zeros where no river is near.
 static func _river_frame(f: RefCounted, made: Dictionary, x0: float, z0: float, step: float) -> PackedFloat32Array:
+	var pk: Object = ChunkNative.pass_kernel()
+	if pk == null: return _river_frame_gd(f,made,x0,z0,step)
+	var n := CELLS+1
+	if not pk.river_near(made.river,n*n):
+		var frame := PackedFloat32Array()
+		frame.resize((n*n+4*n)*4)
+		return frame
+	var rr := PackedFloat32Array()
+	var ww := PackedFloat32Array()
+	var plain := ChunkNative.plain_in(f,x0-2.0*step,z0-2.0*step,x0+(n+1)*step,z0+(n+1)*step)
+	if not plain.is_empty():
+		var got: Array = pk.river_ring(plain[0],plain[1],plain[2],plain[3],x0,z0,step,CELLS)
+		rr = got[0]
+		ww = got[1]
+	else:
+		# The ring through LandField (its layers), in river_ring's order.
+		var m := n+4
+		for j in m:
+			for i in m:
+				if i >= 2 and i < n+2 and j >= 2 and j < n+2: continue
+				f.sample(x0+(i-2)*step,z0+(j-2)*step)
+				rr.append(clampf(float(f.last_river_r),-1000.0,1000.0))
+				ww.append(float(f.last_river_w))
+	return pk.river_frame(made,rr,ww,step,CELLS)
+
+## `_river_frame` in GDScript: the reference.
+static func _river_frame_gd(f: RefCounted, made: Dictionary, x0: float, z0: float, step: float) -> PackedFloat32Array:
 	var n := CELLS+1
 	var frame := PackedFloat32Array()
 	frame.resize((n*n+4*n)*4)
@@ -480,6 +517,10 @@ static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: fl
 		elif not got.is_empty():
 			for i in mask.size(): mask[i] = mask[i] | got[i]
 	if mask.is_empty(): return
+	var pk: Object = ChunkNative.pass_kernel()
+	if pk != null:
+		pk.portal_tris(made,mask,CELLS,key.x == 0)
+		return
 	var n := CELLS+1
 	var out := PackedInt32Array()
 	var verts: PackedVector3Array = made.verts

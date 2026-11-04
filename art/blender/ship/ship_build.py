@@ -9,16 +9,21 @@ name at its .tres), then reads the glb back and proves the corridor clear
 edit there and a rerun, then a headless import. --fast halves the textures.
 
 Origin on the waterline at the corridor's midpoint. Bow toward Blender +Y
-(Godot -Z), up +Z (Godot +Y), 1 unit = 1 m. Both ends are breakable: a flat
-transom aft and a flat beakhead bulkhead forward, each with a plug of shards
-filling the corridor's end, so the numbers follow "Contract for the model" in
-the gray box's docs/design/endless-flight/pirate-ship-handoff.md. Blender
-(x, y, z) is the contract's (x, -z, y).
+(Godot -Z), up +Z (Godot +Y), 1 unit = 1 m. The hull is the concept's
+(ship_concept_build.py, ship-look-concept.md): a sheer up to the stern castle
+and the forecastle, a round bilge with tumblehome, a raked counter aft and a
+pointed prow forward. Both ends are breakable, each with a plug of shards
+filling the corridor's end at y +-56.5: the transom aft, upright round the
+exit, and a bulkhead forward at the back of a short tunnel cut through the
+prow, out under its upper lip and over its lower one. The numbers follow
+"Contract for the model" in docs/design/endless-flight/pirate-ship-handoff.md.
+Blender (x, y, z) is the contract's (x, -z, y).
 
 Textures are painted here in numpy: `hull` and `stern` are unique maps (one
 for a side's elevation, shared by both sides, one for both flat ends),
 projected straight on, so stains run across the planks; `wood` tiles; `sail`
-is an atlas of patched canvas, its few shot holes and frayed hem a cut-out alpha. Vertex colours carry baked darkness,
+is an atlas of patched canvas, its few shot holes and frayed hem a cut-out alpha,
+the fore and main courses carrying a glyph each; `flag` the ensign and pennants. Vertex colours carry baked darkness,
 shade under decks; the gun deck's light is drawn by its `deck` shader.
 """
 import json
@@ -30,7 +35,7 @@ from pathlib import Path
 
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 ROOT = Path(__file__).resolve().parents[3]
 OUT = ROOT / "assets/models/pirate_ship.glb"
@@ -39,22 +44,39 @@ RES = "res://assets/models/pirate_ship"
 
 # --- The numbers --------------------------------------------------------------
 
-# The hull (m). Y of the bow's flat and of the transom at the corridor's height;
-# the corridor is centred on y = 0.
-LENGTH = 113.0
-BEAM = 24.75
-WIDEN = BEAM / 22.0       # hand-set x numbers below were set on a 22 m beam
-KEEL_Z = -5.75            # the strakes' first line; the keel's timber reaches -6
-Y_BOW = LENGTH * 0.5
-Y_STERN = -LENGTH * 0.5
-Y_STEM = 72.5             # the beak's tip: only below HEAD_Z
-HEAD_Z = 3.0              # the beak's platform, never above the corridor's floor
-STERN_RAKE = 0.05         # the transom leans out aft, m a metre up
-Z_WIDE = 4.0              # the widest waterline, above it the tumblehome
-TUMBLE = 0.27             # how much of the beam is lost by 30 m over Z_WIDE
-TUCK_FROM = 3.0           # below this the run tucks in to the sternpost
-TUCK_TO = -4.0
-END_NARROW = 0.12         # the plan's narrowing at each flat end
+# The hull (m), the concept's shape (ship_concept_build.py, its numbers turned into
+# this frame: y = -its z, z = its y). The plates stay at y +-56.5: the transom round
+# the stern's exit, and the bulkhead at the back of the prow's tunnel.
+LENGTH = 113.0            # plate to plate
+STERN_U = LENGTH * 0.5    # the transom round the exit, upright at the plate
+Y_BOW = LENGTH * 0.5      # the bow's plate, at the back of the tunnel
+Y_STERN = -STERN_U
+BEAM = 29.0               # 14.5 m half breadth at 8 m up
+WIDEN = 24.75 / 22.0      # hand-set x numbers below were set on a 22 m beam (the corridor kept 18)
+KEEL_Z = -5.8             # the strakes' first line: 2.6 and 13.4 fall on strake lines
+# The midship section's half breadth by height: a round belly, tumblehome above.
+SECTION = ((-6.0, 1.5), (-5.0, 4.5), (-4.0, 7.2), (-2.5, 10.0), (-1.0, 11.8), (0.5, 13.0), (2.5, 13.9),
+	(5.0, 14.4), (8.0, 14.5), (11.0, 14.0), (13.4, 13.3), (15.0, 12.6), (17.0, 11.8), (24.0, 10.4), (32.0, 9.2), (40.0, 8.4))
+# The sheer: the rail's height along her (y, z), up to the stern castle and the forecastle.
+SHEER = ((-STERN_U, 32.0), (-48.5, 30.5), (-40.0, 27.5), (-30.0, 23.0), (-22.0, 19.5), (-12.0, 17.5), (0.0, 17.0),
+	(15.0, 17.6), (30.0, 19.5), (40.0, 22.5), (48.0, 24.0), (57.0, 25.0))
+RUN_FROM = 34.0           # aft of this the run narrows: the bottom tucks in, the castle squares off
+PROW_FROM = 40.0          # forward of this the prow closes to the stem
+STEM_Y0 = 72.0            # the stem at the waterline; it rakes forward STEM_RAKE a metre up
+STEM_RAKE = 0.25
+RAKE_FROM = 40.0          # aft of this the counter leans out over the exit, the sternpost tucks in
+COUNTER = 0.32            # m out a metre up, above COUNTER_Z
+COUNTER_Z = 14.0
+TUCK = 0.45               # m in a metre down, below TUCK_Z
+TUCK_Z = 2.6
+KEEL_RISE = 0.5           # the keel's depth lost at each end
+WOBBLE = 0.12             # strake lines wander this much: by hand, not by rule
+# The prow's tunnel: the corridor runs on past the bow's plate between walls lined in
+# dark wood, under the upper lip and over the lower one, out where the sides close in.
+TUNNEL_X = 10.4
+TUNNEL_LO = 2.6
+TUNNEL_HI = 13.4
+CUT_R = 0.6               # the framing timbers round the cut, centred this far outside it
 
 # The corridor: straight along the keel line, a clear box, nothing in it.
 COR_LEN = 110.0
@@ -63,6 +85,15 @@ COR_H = 10.0
 COR_FLOOR = 3.0
 COR_TOP = COR_FLOOR + COR_H
 COR_Z = COR_FLOOR + COR_H * 0.5   # the flight line's height
+# The funnel: the tunnel closes in to the gun deck's lines at the bow's plate, its
+# walls from TUNNEL_X and its floor and roof from the lips, over FUNNEL_LEN forward of
+# the plate, so a plane off the middle coming in from the bow is turned in along
+# them and glances, never meeting a face (pirate_ship.gd FUNNEL, `_way_at`). Its walls
+# meet the plate on the gun deck's wall line.
+FUNNEL_LEN = 6.0
+FUNNEL_IN = COR_W * 0.5 + 0.06
+FUNNEL_STEP = 0.5         # the solid's stations along it (m)
+WALL_BACK = 0.08          # the tunnel walls' backing, this far outboard of their planks
 # The plugs: each fills the corridor's end, this big, in the flat of that end.
 CRACK_W = 18.0
 CRACK_H = 10.0
@@ -93,37 +124,38 @@ PLUG_TONE = 1.0           # the plug's planks against the hull's: shadowed, soot
 BROKE = (0.86, 0.74, 0.62)   # a broken face, over the stern's own weathered map
 
 # The hull's shell and frame.
-STRAKE = 1.25             # a plank's height; the ports and decks fall on these lines
+STRAKE = 1.2              # a plank's height; the ports, the tunnel's lips and decks fall on these lines
 LINER_T = 0.7             # the shell's thickness, outer plank to inner
+LINER_BACK = 0.1          # the gun deck liner's dark backing, this far outboard of it
+LINER_LAP = 0.12          # and how far each run of it laps the strakes over and under
+BOW_BACK = 0.06           # the slot over the bow plate's bulkhead backed this far aft of it
+LINER_DARK = (0.012, 0.011, 0.01)
 RIB_PITCH = 4.0
 RIB_FIRST = 2.0           # ribs fall at +-2, +-6...: between the ports
 PLANK_LIP = 0.11          # each strake stands this proud of the one above
 WALE_LIP = 0.34
 CEIL = COR_TOP + 1.8      # the underside of the upper deck's planks
 DECK_Z = 15.0             # the upper deck (waist)
-BULWARK = 3.0             # the waist's rail over the deck
 
-# Decks along the ship: y of the break, and the deck and rail aft or forward of it.
-BREAK_POOP = -30.0
+# Decks along the ship: the waist, the quarterdeck and poop aft, the forecastle.
+BREAK_POOP = -30.0        # the quarterdeck's break
+BREAK_HIGH = -44.0        # the poop's, over the quarterdeck
 BREAK_FORE = 38.0
-RAIL_POOP = 25.5
-RAIL_FORE = 21.75
-DECK_POOP = 24.0
-DECK_FORE = 20.0
-SHEER_STERN = 1.8         # the rails' lift at the ends (m)
-SHEER_BOW = 1.3
-SHEER_FROM = 15.0         # base heights over which the lift comes in
-SHEER_TO = 22.0
+DECK_POOP = 22.0          # the quarterdeck
+DECK_HIGH = 28.0          # the poop
+DECK_FORE = 21.0
 CROWN = 3.2               # the transom's arc over the poop rail
 
-# Guns: six a side, on a ledge along each wall, muzzles out past the hull.
-PORTS = (-40.0, -24.0, -8.0, 8.0, 24.0, 40.0)    # y; stern first
-DUMMIES = (-48.0, -32.0, -16.0, 0.0, 16.0, 32.0)  # shut ports between, no gun behind
-PORT_W = 2.7
-PORT_ROWS = 2             # strakes tall
-PORT_ROW = 10             # strake index of the port's sill
+# Guns: three a side, on a ledge along each wall, muzzles out past the hull
+# (Gun_*_01..03, Cannon_*_01..03; Godot z 32, 0, -32). Evenly spaced: the deck's
+# shader finds the port a sunbeam came through by PORTS' pitch.
+PORTS = (-32.0, 0.0, 32.0)                # y; stern first
+DUMMIES = (-44.0, -16.0, 16.0, 46.0)      # shut ports between, no gun behind
+PORT_W = 3.0
+PORT_ROWS = 3             # strakes tall
+PORT_ROW = 10             # strake index of the port's sill: 6.2 to 9.8, round the bore
 GUN_Z = 8.0
-GUN_X = BEAM * 0.5 + 3.0  # the muzzle's reach
+GUN_X = 16.25             # the muzzle's reach
 GUN_LEN = 5.5
 GUN_BORE_R = 0.5          # the barrel's reach at the muzzle
 LEDGE_Z = 5.9             # the gun ledge along each wall
@@ -137,21 +169,40 @@ LAMP_Z = COR_TOP - 1.2
 LAMP_BAYS = (-48.0, -32.0, -16.0, 16.0, 32.0, 48.0)
 LAMP_PITCH = 16.0
 
-# The masts: y, lower top, topmast top, truck. Trucks at the collision boxes' tops.
+# The masts: y, lower top, topmast's head (the crosstrees), truck. pirate_ship.gd's
+# solids() stands a box on each, to the truck (Godot z = -y), and HIGH_POINTS has
+# the trucks: keep them in step.
 MASTS = (
-	(22.0, 36.0, 48.0, 55.0),    # Mast_1, fore
-	(-6.0, 38.0, 51.0, 59.0),    # Mast_2, main
-	(-42.0, 39.0, 51.0, 51.0),   # Mast_3, mizzen, its topgallant shot away
+	(30.0, 43.0, 64.0, 92.0),     # Mast_1, fore
+	(-2.0, 47.0, 70.0, 104.0),    # Mast_2, main
+	(-33.0, 51.0, 69.0, 80.0),    # Mast_3, mizzen, on the quarterdeck
 )
-MAST_R = 1.0
-BRACE = -24.0             # the yards swung round (deg), so sails show from abeam
+MAST_R = 1.35             # the main's lower mast; the fore's and mizzen's are thinner (MAST_K)
+MAST_K = (0.9, 1.0, 0.78)
+BRACES = (-34.0, -34.0, -27.0)   # each mast's yards swung round (deg), so sails show from abeam
 # Each mast's sails: (name, yard z, yard length, foot z, foot width, atlas cell, tilt deg).
+# A topsail's foot clears the top's rail (top + 2.2), a topgallant's the crosstrees.
 SAILS = (
-	(("1a", 34.0, 34.0, 21.5, 36.0, 0, 1.5), ("1b", 46.0, 26.0, 36.0, 33.0, 1, -3.0), ("1c", 54.0, 16.0, 47.0, 24.0, 2, 4.0)),
-	(("2a", 36.0, 38.0, 19.5, 41.0, 1, -1.0), ("2b", 49.0, 30.0, 38.0, 37.0, 2, 2.0), ("2c", 57.5, 18.0, 50.0, 28.0, 0, -6.0)),
-	(("3a", 37.0, 28.0, 27.0, 30.0, 2, 3.0), ("3b", 49.0, 22.0, 40.0, 27.0, 0, -9.0)),
+	(("1a", 40.0, 42.0, 23.0, 47.0, 0, 0.6), ("1b", 61.0, 34.0, 45.2, 41.0, 2, -1.2), ("1c", 78.0, 25.0, 64.6, 31.0, 3, 1.5)),
+	(("2a", 44.0, 47.0, 24.0, 53.0, 1, -0.4), ("2b", 67.0, 39.0, 49.2, 46.0, 3, 0.9), ("2c", 86.0, 29.0, 70.6, 36.0, 2, -1.4),
+		("2d", 100.0, 20.0, 89.0, 26.0, 3, 2.0)),
+	(("3a", 48.0, 31.0, 32.0, 35.0, 2, 1.0), ("3b", 66.0, 24.0, 53.2, 29.0, 3, -1.6)),
 )
-BOWSPRIT = ((0.0, 47.0, 19.0), (0.0, 88.0, 35.0))
+BOWSPRIT = ((0.0, 50.0, 21.0), (0.0, 100.0, 44.0))
+# The jib, Sail_0a, hangs from the fore topmast stay (the fore's crosstrees to the
+# bowsprit's end) between these two y's, its clew JIB_DROP under the stay.
+JIB_SPAN = (53.0, 95.0)
+JIB_DROP = 15.0
+JIB_FOOT = 1.2
+JIB_SKEW = -0.55          # the clew aft, toward the head (sail_geo)
+# Flags: a pennant at each truck (Flag_1..3, fore to mizzen) and the ensign on a staff
+# over the taffrail (Flag_E), each a flat sheet off its hoist that ship_flag.gdshader
+# streams down the air on it. Off solids(): the plane goes through cloth.
+PENNANTS = ((22.0, 1.9), (30.0, 2.4), (20.0, 1.7))   # fly, hoist (m)
+PENNANT_TAPER = 0.8       # the share of the hoist the fly's end loses
+ENSIGN_STAFF = ((0.0, -57.8, 28.0), (0.0, -60.0, 50.5))   # foot on the poop, head; HIGH_POINTS has the head
+ENSIGN = (12.0, 8.4)      # fly, hoist
+FLAG_SIZE = 64.0          # the vertex colour's scale, as SAIL_SIZE
 
 # Textures (px wide).
 HULL_TEX = 4096
@@ -159,9 +210,11 @@ STERN_TEX = 2048
 WOOD_TEX = 1024
 WOOD_TILE = 6.0           # the tile's size (m)
 SAIL_TEX = 2048
-SAIL_CELL = (1.6, 0.9)    # a sail's mesh at most this coarse (m across, m down), before crowding to its edges
+SAIL_CELL = (2.0, 1.2)    # a sail's mesh at most this coarse (m across, m down), before crowding to its edges
 SAIL_MIN = (12, 8)        # and at least this many columns and rows
-SAIL_SIZE = 64.0          # the vertex colour's scale: a sail's size (m) / this
+SAIL_SIZE = 64.0          # the vertex colour's scale: a sail's size (m) / this; the main course is 53 wide
+FLAG_TEX = 512
+FLAG_ROWS = ((0, 360), (384, 512))   # the flag map's rows (of 512): the ensign's, the pennants'
 
 WHITE = (1.0, 1.0, 1.0)
 RAW = (0.95, 0.76, 0.54)    # fresh-broken wood, on the wood tile
@@ -182,58 +235,125 @@ def frange(a, b, step):
 
 
 # --- The hull's shape ---------------------------------------------------------
+# A station u along her (u = y off the rake), a base height z (the strake lines);
+# `Side.p` lifts, rakes and wobbles them into the real surface.
 
-def sheer(y):
-	t = y / (LENGTH * 0.5)
-	return SHEER_STERN * max(0.0, -t) ** 2.4 + SHEER_BOW * max(0.0, t) ** 2.6
+def table(t, x):
+	if x <= t[0][0]:
+		return t[0][1]
+	for (x0, y0), (x1, y1) in zip(t, t[1:]):
+		if x <= x1:
+			return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+	return t[-1][1]
 
 
-def lift(y, z):
-	"""A base height at station y, risen with the sheer."""
-	return z + sheer(y) * sstep(SHEER_FROM, SHEER_TO, z)
+def rail(u):
+	"""The rail's height at station u: the sheer."""
+	return table(SHEER, u)
 
 
 def stem_y(z):
-	"""How far forward the hull runs at height z: the flat, or the beak below it."""
-	if z >= HEAD_Z:
-		return Y_BOW - (z - COR_Z) * -STERN_RAKE
-	d = HEAD_Z - z
-	return Y_STEM - 0.1 * d * d
+	"""The stem, raked: further forward the higher it goes."""
+	return STEM_Y0 + STEM_RAKE * z
+
+
+def ends(u):
+	"""0 amidships, 1 at the stern's plate and the stem: how far the keel has risen."""
+	return max(min(1.0, (-u - 30.0) / (STERN_U - 30.0)), min(1.0, (u - 30.0) / 42.0), 0.0) ** 2
+
+
+def lift(u, z):
+	"""A base height at station u, the keel risen toward both ends."""
+	return z * (1.0 - KEEL_RISE * ends(u)) if z < 0.0 else z
+
+
+def rake(u, z):
+	"""How far aft (+) the counter leans out at station u, real height z; the sternpost
+	tucks forward (-) under the exit."""
+	if u >= -RAKE_FROM:
+		return 0.0
+	t = min(1.0, (-u - RAKE_FROM) / (STERN_U - RAKE_FROM)) ** 2
+	return t * (COUNTER * max(0.0, z - COUNTER_Z) - TUCK * max(0.0, TUCK_Z - z))
 
 
 def stern_y(z):
-	return Y_STERN - (z - COR_Z) * STERN_RAKE if z > 1.0 else Y_STERN + 7.0 * STERN_RAKE + (1.0 - z) * 0.55
+	"""The transom at real height z: upright round the exit, raked above and below."""
+	return -STERN_U - rake(-STERN_U, z)
 
 
-def section(z):
-	if z >= Z_WIDE:
-		return 1.0 - TUMBLE * ((z - Z_WIDE) / 30.0) ** 1.25
-	return max(0.0, 1.0 - ((Z_WIDE - z) / (Z_WIDE - KEEL_Z + 0.25)) ** 2.6) ** 0.55
+def half_beam(u, z):
+	"""The hull's half width at station u, base height z (m): a plan that narrows all
+	along, a run aft, and a prow that closes to the raked stem."""
+	u = max(u, -STERN_U)
+	w = table(SECTION, z) * (1.0 - 0.06 * (u / 58.0) ** 2)
+	if u < -RUN_FROM:
+		t = (-u - RUN_FROM) / (STERN_U - RUN_FROM)
+		w *= 1.0 - lerp(0.55, 0.12, sstep(1.0, 3.8, z)) * t * t
+		if z < 3.0:
+			w = max(w, 1.0)
+	if u > PROW_FROM:
+		t = min(1.0, (u - PROW_FROM) / (stem_y(z) - PROW_FROM))
+		w *= max(0.0, 1.0 - t ** 2.2) ** 0.5
+	return w
 
 
-def half_beam(y, z):
-	"""The hull's half width at station y, height z (m)."""
-	if y >= 0.0:
-		t = min(1.0, y / stem_y(z))
-		plan = 1.0 - END_NARROW * t ** 6 if z >= HEAD_Z else (1.0 - t ** 6) ** 0.8
-	else:
-		t = min(1.0, y / stern_y(z))
-		w = sstep(TUCK_FROM, TUCK_TO, z)
-		plan = lerp(1.0 - END_NARROW * t ** 6, (1.0 - t ** 2.2) ** 0.75, w)
-	return BEAM * 0.5 * section(z) * plan
+def u_at(y, z):
+	"""The station whose raked side stands at y, at real height z."""
+	u = y
+	for _ in range(4):
+		u = y + rake(u, z)
+	return u
 
 
-def base_rail(y):
-	if y < BREAK_POOP:
-		z = RAIL_POOP
-	elif y > BREAK_FORE:
-		z = RAIL_FORE
-	else:
-		z = DECK_Z + BULWARK
-	return KEEL_Z + STRAKE * round((z - KEEL_Z) / STRAKE)
+def half_at(y, z):
+	"""The hull's half width at a real y and height z (decks, galleries, dress)."""
+	return half_beam(u_at(y, z), z)
+
+
+def funnel(y):
+	"""How open the funnel is at station y: 0 at the bow's plate, 1 from FUNNEL_LEN on."""
+	return min(1.0, max(0.0, (y - Y_BOW) / FUNNEL_LEN))
+
+
+def tunnel_x(y, inner=FUNNEL_IN):
+	"""The tunnel's walls' half width at station y, `inner` at the plate."""
+	return lerp(inner, TUNNEL_X, funnel(y))
+
+
+def tunnel_lo(y):
+	"""The tunnel's floor at station y: the gun deck's at the plate, the lower lip's on."""
+	return lerp(COR_FLOOR, TUNNEL_LO, funnel(y))
+
+
+def tunnel_hi(y):
+	"""Its roof: the gun deck's at the plate, the upper lip's underside on."""
+	return lerp(COR_TOP, TUNNEL_HI, funnel(y))
+
+
+def cross_y(z, x=None):
+	"""Where the prow's side at base height z comes in to x, or to the tunnel's walls
+	(the funnel's, then TUNNEL_X): the tunnel's mouth."""
+	lo, hi = Y_BOW, stem_y(z)
+	for _ in range(40):
+		mid = (lo + hi) * 0.5
+		if half_beam(mid, z) > (tunnel_x(mid) if x is None else x):
+			lo = mid
+		else:
+			hi = mid
+	return lo
+
+
+def wobble(u, z):
+	"""The hand-laid wander of strake line z, none at the cut's lips, the rail or the keel."""
+	j = (z - KEEL_Z) / STRAKE
+	k = sstep(0.4, 1.4, z) * min(1.0, abs(z - TUNNEL_LO) / STRAKE) * min(1.0, abs(z - TUNNEL_HI) / STRAKE)
+	k *= min(1.0, max(0.0, rail(u) - z) / STRAKE)
+	return WOBBLE * k * math.sin(u * 0.23 + j * 1.3)
 
 
 def base_deck(y):
+	if y < BREAK_HIGH:
+		return DECK_HIGH
 	if y < BREAK_POOP:
 		return DECK_POOP
 	if y > BREAK_FORE:
@@ -265,8 +385,8 @@ class Surface:
 		return frange(u0, u1, 2.5)
 
 
-Z_BOT, Z_TOP = -8.0, 34.0
-Y_BACK, Y_FORE = -76.0, 76.0
+Z_BOT, Z_TOP = -8.0, 38.0
+Y_BACK, Y_FORE = -76.0, 80.0
 
 
 def hull_uv(pt):
@@ -274,40 +394,56 @@ def hull_uv(pt):
 
 
 class Side(Surface):
-	def __init__(self, side):
+	"""A side of the hull, u from the transom to the stem, its top clipped to the rail."""
+
+	def __init__(self, side, clip=True):
 		self.s = side
+		self.clip = clip
 		self.out = (side, 0.0, 0.0)
 
 	def p(self, u, z):
-		zz = lift(u, z)
-		return Vector((self.s * half_beam(u, zz), u, zz))
+		u = min(u, stem_y(z))
+		if self.clip:
+			z = min(z, rail(u))
+		zz = lift(u, z) + wobble(u, z)
+		return Vector((self.s * half_beam(u, z), u + -rake(u, zz), zz))
 
 	def uv(self, pt):
 		return hull_uv(pt)
 
 	def stations(self, u0, u1):
-		# Close together round the bow and the stern's turn.
+		# Close together round the prow and the stern's turn, closer still at the stem.
 		out = [u0]
 		y = u0
 		while True:
 			t = abs(y) / Y_BOW
-			y += 1.1 if (y > 0 and t > 0.84) else (2.0 if t > 0.62 else 4.0)
+			y += 1.1 if (y > 0 and t > 0.72) else (2.0 if t > 0.62 else 4.0)
 			if y >= u1 - 0.3:
 				break
 			out.append(y)
 		out.append(u1)
+		if u1 > PROW_FROM + 20.0:
+			out = sorted(set(q for q in out if q < u1 - 3.6) | {u1 - d for d in (3.4, 2.4, 1.6, 1.0, 0.55, 0.25, 0.08)} | {u1})
+			out = [q for q in out if q >= u0]
 		return out
 
 
 class End(Surface):
-	"""u is x. A flat end of the ship: the transom (-1) or the beakhead (+1)."""
+	"""u is x. A flat end of the ship: the transom (-1), raked, or the bow's plate (+1)
+	at the back of the tunnel."""
 
 	def __init__(self, sign):
 		self.sign = sign
 		self.out = (0.0, sign, 0.0)
 
 	def p(self, u, z):
-		return Vector((u, stem_y(z) if self.sign > 0 else stern_y(z), z))
+		if self.sign > 0:
+			return Vector((u, Y_BOW, z))
+		zz = lift(-STERN_U, z)
+		return Vector((u, stern_y(zz), zz))
+
+	def half_w(self, z):
+		return half_beam(Y_BOW if self.sign > 0 else -STERN_U, z)
 
 	def uv(self, pt):
 		return stern_uv(pt.x, pt.z)
@@ -358,7 +494,8 @@ class Opening:
 		hit = None
 		hw = CRACK_W * 0.5
 		if z1 > COR_Z - CRACK_H * 0.5 + 0.01 and z0 < COR_Z + CRACK_H * 0.5 - 0.01:
-			w = half_beam(self.surf.p(0.0, zm).y * 0.999, zm) - 0.25
+			# The bow's plug reaches just into the funnel's walls, which hide its edge.
+			w = min(self.surf.half_w(zm), TUNNEL_X if self.surf.sign < 0 else FUNNEL_IN + 0.5) - 0.25
 			hit = (-min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)), min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)))
 		self.memo[j] = hit
 		return hit
@@ -389,7 +526,7 @@ def row_z(j):
 	return KEEL_Z + j * STRAKE
 
 
-ROWS = int((RAIL_POOP - KEEL_Z) / STRAKE) + 1
+ROWS = int((rail(-STERN_U) - KEEL_Z) / STRAKE) + 1
 
 
 def inner_light(p):
@@ -409,7 +546,7 @@ def inner(tint=WHITE, k=1.0):
 
 # --- Mesh building ------------------------------------------------------------
 
-MAT_NAMES = ("hull", "stern", "wood", "wood_in", "iron", "sail", "rope", "glass", "dark", "paint", "iron_in", "lamp", "plug")
+MAT_NAMES = ("hull", "stern", "wood", "wood_in", "iron", "sail", "rope", "glass", "dark", "paint", "iron_in", "lamp", "plug", "flag")
 M = {n: i for i, n in enumerate(MAT_NAMES)}
 
 
@@ -591,17 +728,39 @@ def spans_of(cuts, a, b):
 	return out
 
 
-def rail_spans(z1):
-	"""Stretches of the ship where base height z1 is under the rail."""
-	breaks = [-999.0, BREAK_POOP, BREAK_FORE, 999.0]
+def rail_spans(z0, u0=-STERN_U, u1=90.0):
+	"""Stretches of stations where a strake from base height z0 stands under the rail:
+	each runs out to a sliver where the sheer comes down to it."""
+	def under(u):
+		return rail(u) > z0 + 0.05
+	us = frange(u0, u1, 0.5)
 	out = []
-	for a, b in zip(breaks, breaks[1:]):
-		if base_rail((a + b) * 0.5) >= z1 - 1e-3:
-			if out and abs(out[-1][1] - a) < 1e-6:
-				out[-1] = (out[-1][0], b)
+	start = u0 if under(u0) else None
+	for a, b in zip(us, us[1:]):
+		if under(a) != under(b):
+			lo, hi = a, b
+			for _ in range(30):
+				m = (lo + hi) * 0.5
+				if under(m) == under(a):
+					lo = m
+				else:
+					hi = m
+			x = (lo + hi) * 0.5
+			if start is None:
+				start = x
 			else:
-				out.append((a, b))
+				out.append((start, x))
+				start = None
+	if start is not None:
+		out.append((start, u1))
 	return out
+
+
+def strake_end(z0, z1):
+	"""How far forward strake z0..z1 runs: to the stem, or to the tunnel's mouth."""
+	if z0 >= TUNNEL_LO - 0.01 and z1 <= TUNNEL_HI + 0.01:
+		return cross_y((z0 + z1) * 0.5)
+	return stem_y(max(z0, z1))
 
 
 def shot_holes(rng):
@@ -619,17 +778,19 @@ def shot_holes(rng):
 
 
 def build_end(g, teeth, shards, sign, op, rng):
-	"""A flat end across the ship, strake by strake, round the plug."""
+	"""A flat end across the ship, strake by strake, round the plug: the whole transom
+	aft, the tunnel's back forward."""
 	T = op.surf
-	top = RAIL_POOP + sheer(-LENGTH * 0.5) if sign < 0 else RAIL_FORE + sheer(LENGTH * 0.5)
-	crown = CROWN if sign < 0 else 0.0
-	bottom = KEEL_Z if sign < 0 else HEAD_Z
+	if sign < 0:
+		top, crown, bottom = rail(-STERN_U), CROWN, KEEL_Z
+	else:
+		top, crown, bottom = TUNNEL_HI, 0.0, TUNNEL_LO
 	for j in range(ROWS + 4):
 		z0, z1 = row_z(j), row_z(j + 1)
 		zm = (z0 + z1) * 0.5
-		if z0 < bottom - 0.01 or z0 > top + crown:
+		if z0 < bottom - 0.01 or z0 > top + crown - 0.01 or (sign > 0 and z1 > top + 0.01):
 			continue
-		w = half_beam(T.p(0.0, zm).y * 0.999, zm)
+		w = T.half_w(zm)
 		if w < 0.5:
 			continue
 		if zm > top:
@@ -792,10 +953,9 @@ def build_hull(crack_s, crack_b, shards):
 		S = Side(side)
 		for j in range(ROWS):
 			z0, z1 = row_z(j), row_z(j + 1)
-			zm = (z0 + z1) * 0.5
-			for ra, rb in rail_spans(z1):
-				y0 = max(ra, stern_y(lift(-56.0, zm)))
-				y1 = min(rb, stem_y(lift(56.0, zm)))
+			for ra, rb in rail_spans(z0):
+				y0 = max(ra, -STERN_U)
+				y1 = min(rb, strake_end(z0, z1))
 				if y1 - y0 < 0.1:
 					continue
 				cuts = []
@@ -805,37 +965,104 @@ def build_hull(crack_s, crack_b, shards):
 				for hs, hj, h0, h1 in holes:
 					if hs == side and hj == j:
 						cuts.append((h0, h1))
-				wale = j in (7, 8, PORT_ROW + PORT_ROWS + 1, PORT_ROW + PORT_ROWS + 5)
+				wale = j in (ROW_LO, ROW_HI - 1, ROW_RAIL - 1)
 				lip = WALE_LIP if wale else PLANK_LIP
 				for a, b, t0, t1 in spans_of(cuts, y0, y1):
 					near_port = PORT_ROW <= j < PORT_ROW + PORT_ROWS
 					plank(g, S, a, b, z0, z1, "hull", lip=lip, jag=(t0 and not near_port, t1 and not near_port), rng=rng, teeth=teeth)
 	build_end(g, teeth, shards[0], -1.0, crack_s, rng)
 	build_end(g, teeth, shards[1], 1.0, crack_b, rng)
+	build_bottom(g)
 	return g, teeth
 
 
-def build_timbers(g):
-	"""Keel, stem, sternpost, rudder, the corner posts of both flat ends."""
-	dk = (0.05, 0.036, 0.027)
-	# The stem, up the front of the beak, its head under the corridor's floor.
-	zs = frange(-5.8, HEAD_Z - 0.2, 1.0)
-	pts = [(0.0, stem_y(z) - 0.2, z) for z in zs]
-	for a, b in zip(pts, pts[1:]):
-		g.beam(a, b, 0.8, 0.8, "wood", (0.34, 0.28, 0.22), up=(1.0, 0.0, 0.0))
-	g.beam((0.0, stern_y(KEEL_Z) - 1.0, -5.75), (0.0, stem_y(KEEL_Z), -5.75), 1.0, 0.5, "wood", (0.34, 0.28, 0.22))
-	# The rudder: its head stops short of the plug.
-	ry = stern_y(0.0) - 1.6
-	for z0, z1, w in ((KEEL_Z, -2.0, 4.0), (-2.0, COR_FLOOR - 0.6, 2.6)):
-		g.beam((0.0, ry + 0.9 - w * 0.5, z0), (0.0, ry + 0.9 - w * 0.5, z1), 0.7, w, "wood", (0.34, 0.28, 0.22), up=(0.0, 1.0, 0.0))
-	# Corner posts.
+ROW_LO = int(round((TUNNEL_LO - KEEL_Z) / STRAKE))     # the strake on the tunnel's floor
+ROW_HI = int(round((TUNNEL_HI - KEEL_Z) / STRAKE))     # the one over its roof
+ROW_RAIL = int(round((17.0 - KEEL_Z) / STRAKE))        # the waist's rail
+
+
+def build_bottom(g):
+	"""The flat of her floor between the garboards, the keel's line risen at the ends."""
+	S0, S1 = Side(-1.0), Side(1.0)
+	z = KEEL_Z
+	us = frange(-STERN_U, stem_y(z), 2.0)
+	for a, b in zip(us, us[1:]):
+		g.quad(S0.p(a, z), S1.p(a, z), S1.p(b, z), S0.p(b, z), "hull", (0.5, 0.45, 0.4), hint=Vector((0, 0, -1)), uvs=[hull_uv(S0.p(a, z)), hull_uv(S1.p(a, z)), hull_uv(S1.p(b, z)), hull_uv(S0.p(b, z))])
+
+
+def build_tunnel(g):
+	"""The prow's cut: walls back to the bow's plate, the lips' faces over and under the
+	way out, and timbers round the opening, all outside the exit's rectangle. Its last
+	FUNNEL_LEN close in to the gun deck's lines at the plate (`tunnel_x`, `tunnel_lo`,
+	`tunnel_hi`): no face round the plate looks forward."""
+	lining = (0.16, 0.12, 0.095)
+	rng = random.Random(71)
+	in_end = Y_BOW + FUNNEL_LEN
 	for s in (-1.0, 1.0):
-		zs = frange(-1.0, RAIL_POOP + sheer(-LENGTH * 0.5), 2.5)
-		pts = [(s * half_beam(stern_y(z) * 0.999, z), stern_y(z), z) for z in zs]
+		# The walls: planks along her, in from the mouth to the plate's sides.
+		for j in range(ROW_LO, ROW_HI):
+			z0, z1 = row_z(j), row_z(j + 1)
+			y1 = cross_y((z0 + z1) * 0.5) + 0.2
+			t = rng.uniform(0.75, 1.1)
+			col = (lining[0] * t, lining[1] * t, lining[2] * t)
+			ys = [Y_BOW - 0.05] + ([in_end] if in_end < y1 - 0.1 else []) + [y1]
+			for a, b in zip(ys, ys[1:]):
+				xa, xb = s * tunnel_x(a), s * tunnel_x(b)
+				lean = (tunnel_x(b) - tunnel_x(a)) / (b - a)
+				g.quad(Vector((xa, a, z0)), Vector((xb, b, z0)), Vector((xb, b, z1 - 0.03)), Vector((xa, a, z1 - 0.03)), "wood", col, hint=Vector((-s, lean, 0)))
+				# Dark backing behind the seam: the hull's skin outboard is one-sided,
+				# so the seam would show the sky through her.
+				ba, bb = xa + s * WALL_BACK, xb + s * WALL_BACK
+				g.quad(Vector((ba, a, z0)), Vector((bb, b, z0)), Vector((bb, b, z1)), Vector((ba, a, z1)), "wood", (0.02, 0.015, 0.012), hint=Vector((-s, lean, 0)))
+		# The cut's edge up the side, a timber, and one along each lip to the stem.
+		side = [(s * (tunnel_x(cy) + 0.2), cy, z) for z in frange(TUNNEL_LO - 0.3, TUNNEL_HI + 0.3, 1.2) for cy in (cross_y(z),)]
+		g.tube(side, [CUT_R] * len(side), 8, "wood", (0.2, 0.15, 0.11))
+		for z, zt in ((TUNNEL_LO, TUNNEL_LO - CUT_R), (TUNNEL_HI, TUNNEL_HI + CUT_R)):
+			edge = [(s * (half_beam(y, z) + 0.1), y, zt) for y in frange(cross_y(z), stem_y(z) - 0.6, 1.4)]
+			g.tube(edge, [CUT_R] * len(edge), 8, "wood", (0.2, 0.15, 0.11))
+	# The lips' faces: the floor up, the roof down, the hull's width to the stem, each
+	# leaning to the gun deck's floor and roof over the funnel. The floor's runs on
+	# under the plate's foot to the gun deck's own.
+	for z, up, col, at, y0 in ((TUNNEL_LO, 1.0, (0.2, 0.165, 0.13), tunnel_lo, Y_BOW - 0.5), (TUNNEL_HI, -1.0, lining, tunnel_hi, Y_BOW - 0.05)):
+		ys = [y0] + frange(Y_BOW, in_end, 1.0) + frange(in_end, stem_y(z) - 0.02, 1.0)[1:]
+		for a, b in zip(ys, ys[1:]):
+			wa, wb = half_beam(a, z), half_beam(b, z)
+			za, zb = at(a), at(b)
+			g.quad(Vector((-wa, a, za)), Vector((wa, a, za)), Vector((wb, b, zb)), Vector((-wb, b, zb)), "wood", col, hint=Vector((0, 0, up)))
+	# A stone boss at the stem's head, over the cut: a round knob, stepped and domed,
+	# so bow on it reads as carved stone, not a box's face. Slate, a step over the tar.
+	y, zc = stem_y(15.1), 15.1
+	prof = ((y - 2.6, 1.2), (y - 1.4, 1.45), (y - 0.75, 1.5), (y - 0.5, 1.28), (y - 0.15, 1.3), (y + 0.3, 1.1), (y + 0.65, 0.72), (y + 0.85, 0.28))
+	g.tube([(0.0, py, zc) for py, _ in prof], [r for _, r in prof], 14, "paint", STONE)
+
+
+STONE = (0.045, 0.044, 0.042)
+
+
+def build_timbers(g):
+	"""Keel, stem, sternpost, rudder, the transom's corner posts."""
+	dk = (0.02, 0.015, 0.012)    # vertex colour is linear: this sits with the tar
+	tim = (0.34, 0.28, 0.22)
+	# The stem, up the prow's edge: under the cut, and from over it to the rail.
+	for z0, z1 in ((KEEL_Z, TUNNEL_LO - 0.2), (TUNNEL_HI + 0.2, rail(Y_BOW) + 0.8)):
+		zs = frange(z0, z1, 1.0)
+		pts = [(0.0, stem_y(z) - 0.15, lift(stem_y(z), z)) for z in zs]
 		for a, b in zip(pts, pts[1:]):
-			g.beam(a, b, 1.0, 1.0, "paint", dk, up=(0.0, 1.0, 0.0))
-		zs = frange(HEAD_Z, RAIL_FORE + sheer(LENGTH * 0.5), 2.5)
-		pts = [(s * half_beam(stem_y(z) * 0.999, z), stem_y(z), z) for z in zs]
+			g.beam(a, b, 0.8, 0.8, "wood", tim, up=(1.0, 0.0, 0.0))
+	# The keel, rising to both ends.
+	us = frange(-STERN_U + 1.0, stem_y(KEEL_Z), 4.0)
+	pts = [(0.0, u, lift(u, KEEL_Z) - 0.2) for u in us]
+	for a, b in zip(pts, pts[1:]):
+		g.beam(a, b, 1.0, 0.5, "wood", tim)
+	# The rudder, hung on the tucked sternpost: its head stops short of the plug.
+	for z0, z1, w in ((lift(-STERN_U, KEEL_Z), -0.5, 4.0), (-0.5, COR_FLOOR - 0.6, 2.6)):
+		zm = (z0 + z1) * 0.5
+		ry = stern_y(zm) - 0.15
+		g.beam((0.0, ry - w * 0.5, z0), (0.0, ry - w * 0.5, z1), 0.7, w, "wood", tim, up=(0.0, 1.0, 0.0))
+	# The transom's corner posts, up the counter's lean.
+	for s in (-1.0, 1.0):
+		zs = frange(3.8, rail(-STERN_U), 1.5)    # above the tuck's flare, clear of the exit
+		pts = [(s * half_beam(-STERN_U, z), stern_y(lift(-STERN_U, z)), lift(-STERN_U, z)) for z in zs]
 		for a, b in zip(pts, pts[1:]):
 			g.beam(a, b, 1.0, 1.0, "paint", dk, up=(0.0, 1.0, 0.0))
 
@@ -879,7 +1106,7 @@ def build_lids():
 		label = "R" if side > 0 else "L"
 		for i, y in enumerate(PORTS):
 			roll = rng.random()
-			if side < 0 and i == 3:
+			if side < 0 and i == 2:
 				continue    # torn off
 			z1 = row_z(PORT_ROW + PORT_ROWS)
 			hinge = S.p(y, z1) + S.n(y, z1) * 0.1
@@ -900,7 +1127,7 @@ def build_lids():
 			corners = [along2 * -w, along2 * w, along2 * w + down * h, along2 * -w + down * h]
 			t = nn * 0.2
 			outer = (0.13, 0.095, 0.07)
-			red = (0.2, 0.04, 0.03)
+			red = (0.09, 0.085, 0.08)
 			g.quad(*corners, "wood", outer, hint=nn + Vector((0, 0, 0.001)))
 			back = [p - t for p in corners]
 			g.quad(*back, "paint", red, hint=-nn)
@@ -924,17 +1151,28 @@ def liner(g, upper):
 			if z1 < COR_FLOOR - 0.1:
 				continue
 			gun_deck = z0 < DECK_Z
-			for ra, rb in rail_spans(z1):
-				y0 = max(ra, stern_y(lift(-56.0, zm))) + 0.3
-				y1 = min(rb, stem_y(lift(56.0, zm))) - 0.3
+			for ra, rb in rail_spans(z0):
+				y0 = max(ra, -STERN_U) + 0.3
+				y1 = min(rb, Y_BOW if TUNNEL_LO - 0.01 <= z0 and z1 <= TUNNEL_HI + 0.01 else strake_end(z0, z1)) - 0.3
 				if y1 - y0 < 0.1:
 					continue
 				cuts = []
 				if PORT_ROW <= j < PORT_ROW + PORT_ROWS:
 					cuts = [(py - PORT_W * 0.5, py + PORT_W * 0.5) for py in PORTS]
+				# On the gun deck a dark backing LINER_BACK outboard of the liner, each
+				# run reaching LINER_LAP into the strakes over and under it (not into a
+				# port's, nor under the floor), so a seam shows dark, not the sky
+				# through her one-sided skin.
+				lap0 = 0.0 if j == PORT_ROW + PORT_ROWS or z0 < COR_FLOOR else LINER_LAP
+				lap1 = 0.0 if j == PORT_ROW - 1 else LINER_LAP
 				for a, b, _, _ in spans_of(cuts, y0, y1):
 					col = inner((0.75, 0.62, 0.5)) if gun_deck else (0.42, 0.34, 0.27)
 					plank(g if gun_deck else upper, S, a, b, z0, z1, "wood_in" if gun_deck else "wood", col=col, lip=0.0, offset=-LINER_T, inward=True, stations=frange(a, b, 2.0 if gun_deck else 5.0))
+					if gun_deck:
+						# Short of the liner's aft end: the shell turns aft there, and the
+						# backing, less far in, would stand in the stern's mouth.
+						ba = a + 0.3 if a <= y0 + 1e-6 else a
+						plank(g, S, ba, b, z0 - lap0, z1 + lap1, "dark", col=LINER_DARK, lip=0.0, offset=-LINER_T + LINER_BACK, inward=True, stations=[ba] + [u for u in frange(a, b, 2.0) if u > ba + 0.05])
 
 
 def deck_strip(g, z_fn, y0, y1, width_fn, col, step=4.0, plank_w=1.1, mat="wood"):
@@ -997,6 +1235,14 @@ def build_interior(g):
 		l = inner_light(p) * 0.55
 		return (0.5 * l, 0.42 * l, 0.33 * l)
 	deck_strip(g, lambda y: CEIL, y0, y1, ceil_w, under, 3.0, 1.6, mat="wood_in")
+	# The bow plate's hole runs up to the tunnel's roof (13.4), over the funnel's roof at
+	# the plate (13.0), and the ceiling is higher still (CEIL). So once the plate burst,
+	# the chase camera by it looked up through the slot into the void over the tunnel
+	# (sky through the decks, which are one-sided). A dark backing, facing aft, closes
+	# it; while the plate is shut it lies inside the plug.
+	wb = half_beam(Y_BOW - 0.5, CEIL - 0.3) - LINER_T + 0.3
+	yb = Y_BOW - BOW_BACK
+	g.quad(Vector((-wb, yb, COR_TOP + 0.01)), Vector((wb, yb, COR_TOP + 0.01)), Vector((wb, yb, CEIL + 1.2)), Vector((-wb, yb, CEIL + 1.2)), "dark", (0.008, 0.007, 0.006), hint=Vector((0, -1, 0)))
 	c_beam = inner((0.52, 0.43, 0.33))
 	c_rib = inner((0.6, 0.47, 0.34))
 	c_iron = inner((0.14, 0.14, 0.145))
@@ -1095,7 +1341,9 @@ def cannon(g, side, y, x_muzzle, z, col_iron, col_wood):
 
 
 def build_guns():
-	g = Geo()
+	"""Each hull gun a mesh of its own, `Cannon_<side>_<nn>` with its origin at the
+	muzzle (it kicks back along the bore), and its `Gun_<side>_<nn>` empty there."""
+	guns = []
 	empties = []
 	ci = inner((0.1, 0.1, 0.105))
 	cw = inner((0.62, 0.34, 0.21))
@@ -1108,9 +1356,119 @@ def build_guns():
 				if abs(p.x) > half_beam(p.y, GUN_Z) - 0.8:
 					return (0.07, 0.07, 0.075)
 				return base(p)
+			g = Geo()
 			cannon(g, side, y, x, GUN_Z, col_i, cw)
-			empties.append((f"Gun_{label}_{i + 1:02d}", (side * x, y, GUN_Z), side))
-	return g, empties
+			key = f"{label}_{i + 1:02d}"
+			guns.append((f"Cannon_{key}", g, Vector((side * x, y, GUN_Z))))
+			empties.append((f"Gun_{key}", (side * x, y, GUN_Z), side))
+	return guns, empties
+
+
+# Deck guns, two a side on the waist, that turn and lob (ship-guns-handoff.md's
+# contract): `DeckGun_<side>_<nn>` at the pivot on the deck (01 the sternmost, at
+# DECK_GUN_Y), its Godot -z outboard; under it the turning `_Mount`, the `_Barrel`
+# laid on its trunnions DECK_LIFT up (modelled level, bore along -z), and the
+# `_Muzzle` DECK_MUZZLE on. In step with pirate_ship.gd DECK_GUNS, DECK_LIFT,
+# DECK_MUZZLE, DECK_SWING and DECK_RAISE. They don't collide (not in the solid).
+DECK_GUN_X = 7.6
+DECK_LIFT = 3.1
+DECK_MUZZLE = 5.6
+DECK_SWING = 1.05
+DECK_RAISE = (0.2, 0.95)      # a lob never lays under about 0.25
+DG_DAIS = 0.9                 # each stands on a round dais, so its barrel clears the rail
+DG_WOOD = (0.26, 0.19, 0.14)
+DG_DARK = (0.15, 0.11, 0.08)
+DG_IRON = (0.05, 0.051, 0.055)
+
+
+def dg_iron(p):
+	"""The deck guns' iron: a cool dark grey, mottled along and round the barrel so the
+	sun doesn't find one clean tube, sooted toward the muzzle."""
+	k = 0.8 + 0.2 * math.sin(p.x * 3.1 + p.y * 1.7) * math.sin(p.z * 2.3 - p.y * 0.9) + 0.12 * math.sin(p.y * 7.3 + p.z * 5.1)
+	soot = sstep(DECK_MUZZLE - 1.4, DECK_MUZZLE, p.y)
+	k *= 1.0 - 0.45 * soot
+	return (DG_IRON[0] * k, DG_IRON[1] * k, DG_IRON[2] * k)
+# The barrel's outline along its bore from the trunnions (m on, radius): the knob,
+# the breech and its ring, two reinforces, the chase and the swell at the muzzle.
+DG_BORE = ((-1.6, 0.12), (-1.48, 0.2), (-1.38, 0.14), (-1.28, 0.42), (-1.12, 0.7), (-0.98, 0.8), (-0.9, 0.86), (-0.8, 0.8),
+	(1.0, 0.75), (1.06, 0.82), (1.2, 0.72), (3.2, 0.62), (3.26, 0.68), (3.36, 0.6), (4.95, 0.52), (5.1, 0.56), (5.3, 0.64),
+	(5.5, 0.64), (5.6, 0.56))
+# A cheek of the carriage, (along the bore, up) from the pivot: stepped down aft,
+# its corners cut, the trunnion seated in its top.
+DG_CHEEK = ((-1.75, 1.05), (1.3, 1.05), (1.3, 2.45), (0.9, 3.0), (-0.5, 3.0), (-0.62, 2.88), (-0.62, 2.45), (-0.75, 2.32),
+	(-1.15, 2.32), (-1.27, 2.2), (-1.27, 1.8), (-1.4, 1.67), (-1.75, 1.67))
+DG_CHEEK_X = (0.9, 1.26)    # its inner and outer face off the bore's line
+
+
+def prism(g, prof, x0, x1, mat, col):
+	"""A slab of outline `prof` ((y, z) round it) from x0 to x1 (x0 < x1), edges hard."""
+	area = sum(prof[i][0] * prof[(i + 1) % len(prof)][1] - prof[(i + 1) % len(prof)][0] * prof[i][1] for i in range(len(prof)))
+	wind = 1.0 if area > 0 else -1.0
+	a = [Vector((x0, y, z)) for y, z in prof]
+	b = [Vector((x1, y, z)) for y, z in prof]
+	for i in range(len(prof)):
+		j = (i + 1) % len(prof)
+		e = a[j] - a[i]
+		g.quad(a[i], a[j], b[j], b[i], mat, col, hint=Vector((0.0, e.z, -e.y)) * wind)
+	for pts, out in ((a, -1.0), (b, 1.0)):
+		ids = [g.vert(q, (q.y / WOOD_TILE, q.z / WOOD_TILE), col) for q in pts]
+		# Counter-clockwise in (y, z) faces +x.
+		g.f.append(tuple(ids if out * wind > 0 else reversed(ids)))
+		g.m.append(M[mat])
+
+
+def deck_gun_geo():
+	"""A deck gun's [mount, barrel] in their own frames (Blender: y along the bore,
+	outboard; z up): the mount from the pivot on the deck, the barrel from its
+	trunnions. One of each serves all four guns."""
+	mount, barrel = Geo(), Geo()
+	# The dais under the pivot, stepped and iron bound: round, so it turns with the
+	# mount unseen and saves a node.
+	mount.tube([(0.0, 0.0, -DG_DAIS - 0.02), (0.0, 0.0, -0.45)], [2.75, 2.65], 18, "wood", DG_DARK)
+	mount.tube([(0.0, 0.0, -0.45), (0.0, 0.0, -0.4), (0.0, 0.0, 0.0)], [2.35, 2.3, 2.25], 18, "wood", DG_WOOD)
+	mount.tube([(0.0, 0.0, -0.08), (0.0, 0.0, 0.02)], [2.12, 2.12], 18, "iron", DG_IRON, cap=False)
+	mount.tube([(0.0, 0.0, -DG_DAIS + 0.1), (0.0, 0.0, -DG_DAIS + 0.24)], [2.77, 2.76], 18, "iron", DG_IRON, cap=False)
+	# The turning drum on the dais, iron bound, and the bed on it.
+	mount.tube([(0.0, 0.0, 0.0), (0.0, 0.0, 0.55), (0.0, 0.0, 1.05)], [2.0, 1.95, 1.85], 18, "wood", DG_DARK)
+	for z0, z1, r in ((0.08, 0.26, 2.02), (0.84, 0.98, 1.89)):
+		mount.tube([(0.0, 0.0, z0), (0.0, 0.0, z1)], [r, r - 0.02], 18, "iron", DG_IRON, cap=False)
+	mount.box(-1.32, 1.32, -1.85, 1.4, 1.0, 1.14, "wood", DG_WOOD)
+	for side in (-1.0, 1.0):
+		x0, x1 = sorted((side * DG_CHEEK_X[0], side * DG_CHEEK_X[1]))
+		prism(mount, DG_CHEEK, x0, x1, "wood", DG_WOOD)
+		# The cap square over the trunnion and the bolts through the cheek.
+		mount.box(x0 - 0.03, x1 + 0.03, -0.42, 0.42, 3.0, 3.16, "iron", DG_IRON)
+		for y, z in ((0.55, 1.55), (-0.95, 1.4), (0.2, 2.5), (-1.5, 1.4), (1.0, 2.2)):
+			xo = side * (DG_CHEEK_X[1] + 0.04)
+			mount.tube([(side * DG_CHEEK_X[1] - side * 0.02, y, z), (xo, y, z)], [0.09, 0.07], 6, "iron", DG_IRON)
+	# Transoms between the cheeks, under the chase and aft of the breech.
+	mount.box(-0.92, 0.92, 0.95, 1.3, 1.1, 2.0, "wood", DG_WOOD)
+	mount.box(-0.92, 0.92, -1.75, -1.45, 1.1, 1.6, "wood", DG_WOOD)
+	# The barrel, its bore's dark, the trunnions and their rimbases.
+	barrel.tube([(0.0, d, 0.0) for d, _ in DG_BORE], [r for _, r in DG_BORE], 14, "iron", dg_iron, up=(1.0, 0.0, 0.0))
+	barrel.tube([(0.0, DECK_MUZZLE - 0.02, 0.0), (0.0, DECK_MUZZLE + 0.005, 0.0)], [0.36, 0.36], 10, "dark", (0.01, 0.01, 0.01), up=(1.0, 0.0, 0.0))
+	barrel.tube([(-DG_CHEEK_X[1] - 0.05, 0.0, 0.0), (DG_CHEEK_X[1] + 0.05, 0.0, 0.0)], [0.28, 0.28], 8, "iron", DG_IRON, up=(0.0, 0.0, 1.0))
+	for side in (-1.0, 1.0):
+		barrel.tube([(side * 0.7, 0.0, 0.0), (side * (DG_CHEEK_X[0] - 0.04), 0.0, 0.0)], [0.4, 0.4], 10, "iron", DG_IRON, up=(0.0, 0.0, 1.0))
+	return mount, barrel
+
+
+def build_deck_guns(mats):
+	"""The four deck guns, each its chain of nodes (see DECK_GUN_X)."""
+	mount_g, barrel_g = deck_gun_geo()
+	for side in (-1.0, 1.0):
+		label = "R" if side > 0 else "L"
+		for i, y in enumerate(DECK_GUN_Y):
+			name = f"DeckGun_{label}_{i + 1:02d}"
+			pivot = empty(name, (side * DECK_GUN_X, y, base_deck(y) + DG_DAIS), rot=(0.0, 0.0, -side * math.pi * 0.5))
+			bpy.context.view_layer.update()
+			parts = []
+			for part, g, at in (("_Mount", mount_g, (0.0, 0.0, 0.0)), ("_Barrel", barrel_g, (0.0, 0.0, DECK_LIFT))):
+				ob = emit(name + part, g, mats, group="DeckGuns", local=True)
+				ob.parent = pivot if not parts else parts[-1]
+				ob.location = at
+				parts.append(ob)
+			empty(name + "_Muzzle", (0.0, DECK_MUZZLE, 0.0), parent=parts[-1])
 
 
 # --- Above the deck -----------------------------------------------------------
@@ -1118,50 +1476,78 @@ def build_guns():
 def build_decks(g):
 	col_d = (0.74, 0.64, 0.52)
 	def dw(z):
-		return lambda y: half_beam(y, z) - 0.1
-	# Waist, poop, forecastle: flat, at the collision boxes' tops.
+		return lambda y: half_at(y, z) - 0.1
+	# Waist, quarterdeck, poop, forecastle: flat, each a step up the sheer.
 	deck_strip(g, lambda y: DECK_Z, BREAK_POOP - 0.2, BREAK_FORE + 0.2, dw(DECK_Z), col_d, 4.0)
-	deck_strip(g, lambda y: DECK_POOP, stern_y(DECK_POOP) + 0.1, BREAK_POOP, dw(DECK_POOP), col_d, 3.0)
-	deck_strip(g, lambda y: DECK_FORE, BREAK_FORE, stem_y(DECK_FORE) - 0.1, dw(DECK_FORE), col_d, 2.0)
+	deck_strip(g, lambda y: DECK_POOP, BREAK_HIGH - 0.2, BREAK_POOP, dw(DECK_POOP), col_d, 3.0)
+	deck_strip(g, lambda y: DECK_HIGH, stern_y(DECK_HIGH) + 0.1, BREAK_HIGH, dw(DECK_HIGH), col_d, 3.0)
+	deck_strip(g, lambda y: DECK_FORE, BREAK_FORE, stem_y(DECK_FORE) - 0.4, dw(DECK_FORE), col_d, 2.0)
 	bulk = (0.42, 0.31, 0.22)
 	def bulkhead(y, z0, z1, face):
 		n = max(1, int((z1 - z0) / STRAKE))
 		rng = random.Random(int(y * 3 + 91))
 		for i in range(n):
 			a, b = lerp(z0, z1, i / n), lerp(z0, z1, (i + 1) / n)
-			w = half_beam(y, (a + b) * 0.5) - 0.2
+			w = half_at(y, (a + b) * 0.5) - 0.2
 			t = rng.uniform(0.75, 1.1)
 			g.beam((-w, y, (a + b) * 0.5), (w, y, (a + b) * 0.5), 0.3, b - a - 0.05, "wood", (bulk[0] * t, bulk[1] * t, bulk[2] * t), up=(0.0, 0.0, 1.0))
 		# The door and windows of a cabin front; a dark rail along its head.
-		w = half_beam(y, z1) - 0.4
+		w = half_at(y, z1) - 0.4
 		for x in (-w * 0.72, -w * 0.32, w * 0.32, w * 0.72):
 			g.box(x - 0.8, x + 0.8, y + face * 0.3 - 0.06, y + face * 0.3 + 0.06, z0 + (z1 - z0) * 0.42, z0 + (z1 - z0) * 0.78, "dark", (0.012, 0.014, 0.018))
 			g.box(x - 1.0, x + 1.0, y + face * 0.28 - 0.1, y + face * 0.28 + 0.1, z0 + (z1 - z0) * 0.39, z0 + (z1 - z0) * 0.42, "wood", (0.2, 0.15, 0.1))
 		g.box(-1.3, 1.3, y + face * 0.3 - 0.07, y + face * 0.3 + 0.07, z0, z0 + (z1 - z0) * 0.74, "dark", (0.02, 0.016, 0.014))
-		g.beam((-w, y + face * 0.2, z1), (w, y + face * 0.2, z1), 0.8, 0.5, "paint", (0.09, 0.028, 0.02))
+		g.beam((-w, y + face * 0.2, z1), (w, y + face * 0.2, z1), 0.8, 0.5, "paint", TRIM)
 	bulkhead(BREAK_POOP, DECK_Z, DECK_POOP, 1.0)
+	bulkhead(BREAK_HIGH, DECK_POOP, DECK_HIGH, 1.0)
 	bulkhead(BREAK_FORE, DECK_Z, DECK_FORE, -1.0)
-	# Cap rail: a heavy timber along the top of the bulwark, up and down the steps.
+	# A rail across each castle's edge: posts and a capping rail, open where the
+	# stairs come up.
+	for y, z, face, stairs in ((BREAK_POOP, DECK_POOP, 1.0, True), (BREAK_HIGH, DECK_HIGH, 1.0, False), (BREAK_FORE, DECK_FORE, -1.0, True)):
+		w = half_at(y, z + 1.0) - 0.5
+		yy = y + face * 0.05
+		gaps = [(-STAIR_X - 1.7, -STAIR_X + 1.7), (STAIR_X - 1.7, STAIR_X + 1.7)] if stairs else []
+		for a, b, _, _ in spans_of(gaps, -w, w):
+			for x in frange(a, b, 1.25):
+				g.beam((x, yy, z + 0.2), (x, yy, z + 1.35), 0.26, 0.26, "paint", RAIL_WOOD, up=(1.0, 0.0, 0.0))
+			g.beam((a - 0.15, yy, z + 1.45), (b + 0.15, yy, z + 1.45), 0.42, 0.24, "paint", TRIM)
+			g.beam((a, yy, z + 0.55), (b, yy, z + 0.55), 0.2, 0.16, "paint", RAIL_WOOD)
 	cap = (0.045, 0.032, 0.024)
 	for side in (-1.0, 1.0):
-		ys = sorted(set(frange(stern_y(lift(-56.0, RAIL_POOP)) + 0.1, stem_y(lift(56.0, RAIL_FORE)) - 0.1, 4.0)) | {BREAK_POOP - 0.01, BREAK_POOP + 0.01, BREAK_FORE - 0.01, BREAK_FORE + 0.01})
-		pts = []
-		for y in ys:
-			z = lift(y, base_rail(y))
-			pts.append((side * half_beam(y, z), y, z + 0.1))
-		for a, b in zip(pts, pts[1:]):
-			if (Vector(a) - Vector(b)).length > 0.05:
-				g.beam(a, b, 0.8, 0.4, "paint", cap, up=(0.0, 0.0, 1.0))
-		# Timberheads at the steps.
-		for y in (BREAK_POOP, BREAK_FORE):
-			z0 = lift(y, min(base_rail(y - 0.1), base_rail(y + 0.1)))
-			z1 = lift(y, max(base_rail(y - 0.1), base_rail(y + 0.1))) + 0.8
-			g.beam((side * half_beam(y, z0), y, z0 - 2.0), (side * half_beam(y, z1), y, z1), 1.0, 1.0, "paint", (0.055, 0.036, 0.026), up=(0.0, 1.0, 0.0))
+		S = Side(side)
+		# Cap rail: a heavy timber along the sheer, stern to stem; a sheer wale under it.
+		us = frange(-STERN_U, stem_y(rail(Y_BOW)) - 0.3, 2.0)
+		for drop, w, h, col in ((0.0, 0.8, 0.4, cap), (2.2, 0.5, 0.5, (0.06, 0.045, 0.034))):
+			pts = []
+			for u in us:
+				q = S.p(u, rail(u) - drop)
+				pts.append((q.x + side * (0.15 if drop else 0.0), q.y, q.z + (0.1 if not drop else 0.0)))
+			for a, b in zip(pts, pts[1:]):
+				if (Vector(a) - Vector(b)).length > 0.05:
+					g.beam(a, b, w, h, "paint", col, up=(0.0, 0.0, 1.0))
+		# Timberheads along the waist's rail with a light rail over them, open where the
+		# deck guns swing over it.
+		runs, run = [], []
+		for y in frange(BREAK_POOP + 2.0, BREAK_FORE - 2.0, 3.0):
+			if min(abs(y - gy) for gy in DECK_GUN_Y) < 6.0:
+				if run:
+					runs.append(run)
+				run = []
+				continue
+			q = S.p(y, rail(y))
+			run.append(Vector((q.x - side * 0.15, q.y, q.z + 0.3)))
+		if run:
+			runs.append(run)
+		for run in runs:
+			for q in run:
+				g.beam(q - Vector((0, 0, 0.1)), q + Vector((0, 0, 0.85)), 0.42, 0.42, "paint", cap, up=(1.0, 0.0, 0.0))
+			for a, b in zip(run, run[1:]):
+				g.beam(a + Vector((0, 0, 0.95)), b + Vector((0, 0, 0.95)), 0.5, 0.22, "paint", TRIM, up=(0.0, 0.0, 1.0))
 		# The channels: plank shelves outboard of the masts that spread the shrouds.
 		for my, _, _, _ in MASTS:
 			c0, c1 = my - 5.5, my + 5.5
-			z = DECK_Z + 1.9
-			g.beam((side * (half_beam(c0, z) + 0.9), c0, z), (side * (half_beam(c1, z) + 0.9), c1, z), 1.9, 0.3, "wood", (0.2, 0.15, 0.11))
+			z = chain_z(my)
+			g.beam((side * (half_at(c0, z) + 0.9), c0, z), (side * (half_at(c1, z) + 0.9), c1, z), 1.9, 0.3, "wood", (0.2, 0.15, 0.11))
 	hatch = (0.2, 0.15, 0.11)
 	for y, w, l in ((-18.0, 6.0, 8.0), (8.0, 7.0, 10.0), (29.0, 5.0, 6.0)):
 		g.box(-w * 0.5 - 0.3, w * 0.5 + 0.3, y - l * 0.5 - 0.3, y + l * 0.5 + 0.3, DECK_Z, DECK_Z + 0.7, "wood", (0.3, 0.23, 0.17))
@@ -1180,7 +1566,7 @@ def build_decks(g):
 		if a % 4 == 0:
 			g.beam((0.15, wy, wz), (0.15, wy + math.cos(t0) * 1.6, wz + math.sin(t0) * 1.6), 0.18, 0.18, "wood", (0.22, 0.15, 0.1))
 	for s in (-1.0, 1.0):
-		x = s * 6.5 * WIDEN
+		x = s * STAIR_X
 		for yy, z1, d, run in ((BREAK_POOP + 10.0, DECK_POOP, -1.0, 10.0), (BREAK_FORE - 5.5, DECK_FORE, 1.0, 5.5)):
 			n = int(run / 0.75)
 			for i in range(n):
@@ -1196,11 +1582,11 @@ def build_decks(g):
 
 def build_stern(g):
 	"""The transom's dress: gallery windows, balconies, the crown, the lanterns."""
-	trim = (0.2, 0.135, 0.065)
+	trim = (0.034, 0.027, 0.022)     # vertex colours are linear, the maps' numbers aren't: these sit darker
 	dark_wood = (0.05, 0.036, 0.028)
-	oxblood = (0.1, 0.03, 0.022)
-	top = RAIL_POOP + sheer(-LENGTH * 0.5)
-	for rz in (15.7, 20.7):
+	oxblood = TRIM
+	top = rail(-STERN_U)
+	for rz in GALLERIES:
 		h = 3.5
 		wtop = half_beam(stern_y(rz + h) * 0.999, rz + h) - 0.4
 		wbot = half_beam(stern_y(rz) * 0.999, rz) - 0.4
@@ -1209,7 +1595,7 @@ def build_stern(g):
 		n = 7
 		pitch = wbot * 2.0 / n
 		# The band of panes.
-		g.quad(Vector((-wbot, y - 0.18, rz)), Vector((wbot, y - 0.18, rz)), Vector((wtop, yt - 0.18, rz + h)), Vector((-wtop, yt - 0.18, rz + h)), "glass", (0.075, 0.09, 0.1), hint=Vector((0, -1, 0)))
+		g.quad(Vector((-wbot, y - 0.18, rz)), Vector((wbot, y - 0.18, rz)), Vector((wtop, yt - 0.18, rz + h)), Vector((-wtop, yt - 0.18, rz + h)), "glass", GLASS, hint=Vector((0, -1, 0)))
 		# Lattice and posts.
 		for i in range(n + 1):
 			t = i / n
@@ -1249,36 +1635,89 @@ def build_stern(g):
 		y = stern_y(top) + 0.2
 		g.tube([(x, y, z), (x, y, z + 1.0 * r)], [0.22 * r, 0.3 * r], 6, "iron", (0.09, 0.09, 0.09))
 		g.tube([(x, y, z + 1.0 * r), (x, y, z + 1.15 * r), (x, y, z + 3.4 * r), (x, y, z + 3.55 * r), (x, y, z + 4.3 * r), (x, y, z + 5.0 * r)], [0.3 * r, 1.0 * r, 1.25 * r, 1.25 * r, 0.5 * r, 0.1 * r], 6, "iron", (0.075, 0.075, 0.08))
-	# Quarter galleries: the stern's corners, a bulge of windows on each side.
+	build_sun(g)
+	# Quarter galleries: the stern's corners, a bulge on each side, leaning out with
+	# the counter: three lights a tier, each a frame round small panes, planked
+	# between, so the glass never reads as one sheet.
 	for s in (-1.0, 1.0):
-		y0, y1 = stern_y(top) + 1.5, stern_y(top) + 11.0
-		zs = (15.6, 20.2, 24.8)
+		S = Side(s)
+		u0, u1 = -STERN_U + 1.5, -STERN_U + 11.0
+		zs = (GALLERIES[0] - 0.4, GALLERIES[1] - 0.6, GALLERIES[1] + 4.0)
 		for k in range(2):
 			z0, z1 = zs[k], zs[k + 1] - 0.6
-			xa = half_beam((y0 + y1) * 0.5, z0)
-			xb = half_beam((y0 + y1) * 0.5, z1)
-			p = 1.1
-			a0, b0 = Vector((s * (xa + p), y0, z0)), Vector((s * (xa + p), y1, z0))
-			a1, b1 = Vector((s * (xb + p), y0, z1)), Vector((s * (xb + p), y1, z1))
-			g.quad(a0, b0, b1, a1, "glass", (0.075, 0.09, 0.1), hint=Vector((s, 0, 0)))
-			for t in frange(0.0, 1.0, 0.25):
-				g.beam(a0.lerp(b0, t) + Vector((s * 0.1, 0, 0)), a1.lerp(b1, t) + Vector((s * 0.1, 0, 0)), 0.5, 0.26, "paint", trim, up=(1.0, 0.0, 0.0))
+			h0, i0, h1, i1 = S.p(u0, z0), S.p(u1, z0), S.p(u0, z1), S.p(u1, z1)
+			o = Vector((s * 1.1, 0.0, 0.0))
+			a0, b0, a1, b1 = h0 + o, i0 + o, h1 + o, i1 + o
+			g.quad(a0, b0, b1, a1, "wood", (0.1, 0.075, 0.06), hint=Vector((s, 0, 0)))
+			def at(t, v, out):
+				return a0.lerp(b0, t).lerp(a1.lerp(b1, t), v) + Vector((s * out, 0.0, 0.0))
+			for t0 in (0.07, 0.385, 0.7):
+				t1, v0, v1 = t0 + 0.23, 0.13, 0.87
+				g.quad(at(t0, v0, 0.06), at(t1, v0, 0.06), at(t1, v1, 0.06), at(t0, v1, 0.06), "glass", GLASS, hint=Vector((s, 0, 0)))
+				for p, q in ((at(t0, v0, 0.12), at(t1, v0, 0.12)), (at(t0, v1, 0.12), at(t1, v1, 0.12)), (at(t0, v0, 0.12), at(t0, v1, 0.12)), (at(t1, v0, 0.12), at(t1, v1, 0.12))):
+					g.beam(p, q, 0.36, 0.24, "paint", trim, up=(1.0, 0.0, 0.0))
+				g.beam(at((t0 + t1) * 0.5, v0, 0.1), at((t0 + t1) * 0.5, v1, 0.1), 0.12, 0.12, "paint", dark_wood, up=(1.0, 0.0, 0.0))
+				for v in (lerp(v0, v1, 1.0 / 3.0), lerp(v0, v1, 2.0 / 3.0)):
+					g.beam(at(t0, v, 0.1), at(t1, v, 0.1), 0.12, 0.12, "paint", dark_wood, up=(1.0, 0.0, 0.0))
+			for t in (0.0, 1.0):    # a post at each end of the bulge
+				g.beam(at(t, 0.0, 0.1), at(t, 1.0, 0.1), 0.5, 0.3, "paint", trim, up=(1.0, 0.0, 0.0))
 			# The sill, the head, and the skirt of planks back to the hull.
 			for q0, q1, hz in ((a0, b0, -0.3), (a1, b1, 0.3)):
 				g.beam(q0 + Vector((s * 0.2, 0, hz)), q1 + Vector((s * 0.2, 0, hz)), 0.6, 0.6, "paint", oxblood)
-			for p0, p1 in ((Vector((s * xa, y0, z0)), a0), (Vector((s * xa, y1, z0)), b0)):
+			for p0, p1 in ((h0, a0), (i0, b0)):
 				g.beam(p0, p1, 0.2, 0.3, "paint", dark_wood)
-			g.quad(Vector((s * (xb - 0.2), y0, z1 + 0.6)), Vector((s * (xb - 0.2), y1, z1 + 0.6)), b1 + Vector((s * 0.6, 0, 0.6)), a1 + Vector((s * 0.6, 0, 0.6)), "wood", (0.17, 0.12, 0.09), hint=Vector((0, 0, 1)))
-			g.quad(Vector((s * (xa - 0.2), y0, z0 - 1.6)), Vector((s * (xa - 0.2), y1, z0 - 1.6)), b0 + Vector((s * 0.4, 0, -0.5)), a0 + Vector((s * 0.4, 0, -0.5)), "wood", (0.14, 0.1, 0.08), hint=Vector((s, 0, -1)))
+			g.quad(h1 + Vector((-s * 0.2, 0, 0.6)), i1 + Vector((-s * 0.2, 0, 0.6)), b1 + Vector((s * 0.6, 0, 0.6)), a1 + Vector((s * 0.6, 0, 0.6)), "wood", (0.17, 0.12, 0.09), hint=Vector((0, 0, 1)))
+			g.quad(h0 + Vector((-s * 0.2, 0, -1.6)), i0 + Vector((-s * 0.2, 0, -1.6)), b0 + Vector((s * 0.4, 0, -0.5)), a0 + Vector((s * 0.4, 0, -0.5)), "wood", (0.14, 0.1, 0.08), hint=Vector((s, 0, -1)))
 			# Ends.
-			g.quad(Vector((s * xa, y0, z0)), a0, a1, Vector((s * xb, y0, z1)), "wood", (0.14, 0.1, 0.08), hint=Vector((0, -1, 0)))
-			g.quad(Vector((s * xa, y1, z0)), b0, b1, Vector((s * xb, y1, z1)), "wood", (0.14, 0.1, 0.08), hint=Vector((0, 1, 0)))
+			g.quad(h0, a0, a1, h1, "wood", (0.14, 0.1, 0.08), hint=Vector((0, -1, 0)))
+			g.quad(i0, b0, b1, i1, "wood", (0.14, 0.1, 0.08), hint=Vector((0, 1, 0)))
+
+
+RAIL_WOOD = (0.03, 0.022, 0.017)
+STAIR_X = 6.5 * WIDEN        # the stairs up to the quarterdeck and the forecastle
+DECK_GUN_Y = (-14.0, 11.0)    # where the deck guns stand (pirate_ship.gd DECK_GUNS: Godot z = -y)
+GALLERIES = (16.6, 23.4)      # the sills of the transom's two window rows
+TRIM = (0.028, 0.027, 0.026)   # dark iron-grey paint where the old build had oxblood
+GLASS = (0.06, 0.072, 0.08)
+SUN_Z = 30.6                  # the carved sun's centre on the transom, over the upper gallery
+SUN_R = 2.8                   # its rays' reach
+SUN_STONE = (0.042, 0.041, 0.04)    # slate, a step over the tar: vertex colour is linear
+
+
+def build_sun(g):
+	"""A sun carved in slate on the transom's crown, as the main course carries it: a
+	boss, a ring, curved rays, all in relief on the raked face."""
+	zc = SUN_Z
+	n = Vector((0.0, -1.0, -COUNTER)).normalized()     # the counter's face looks aft, and down a little
+	up = Vector((0.0, -COUNTER, 1.0)).normalized()     # up the face
+	right = Vector((1.0, 0.0, 0.0))
+	c = Vector((0.0, stern_y(zc), zc)) + n * 0.04
+	def on(r, a, d):
+		return c + right * (r * math.cos(a)) + up * (r * math.sin(a)) + n * d
+	stone = SUN_STONE
+	# The disc, a low drum, and a boss proud of it.
+	g.tube([c, c + n * 0.3], [1.15, 1.15], 14, "paint", stone, up=tuple(up))
+	g.tube([c + n * 0.3, c + n * 0.45, c + n * 0.62, c + n * 0.7], [0.62, 0.6, 0.42, 0.12], 10, "paint", (stone[0] * 0.85, stone[1] * 0.85, stone[2] * 0.85), cap=False, up=tuple(up))
+	# The ring round it.
+	ring = [on(1.5, k * math.tau / 20, 0.12) for k in range(21)]
+	g.tube(ring, [0.17] * len(ring), 5, "paint", stone, cap=False, up=tuple(n))
+	# Twelve rays, each a blade that sweeps round as it goes out and thins to a point.
+	rng = random.Random(5)
+	for k in range(12):
+		a0 = k * math.tau / 12 + rng.uniform(-0.04, 0.04)
+		reach = SUN_R * (1.0 if k % 2 == 0 else 0.86) * rng.uniform(0.96, 1.03)
+		pts, rad = [], []
+		for i in range(6):
+			t = i / 5
+			pts.append(on(lerp(1.75, reach, t), a0 + 0.34 * t * t, 0.1 + 0.08 * (1.0 - t)))
+			rad.append(lerp(0.36, 0.05, t ** 0.8))
+		g.tube(pts, rad, 5, "paint", stone, up=tuple(n), squash=0.6)
 
 
 def build_backing(g):
 	"""Dark sheets behind each end, over and under the corridor, so a gap reads as depth."""
 	dark = (0.012, 0.011, 0.01)
-	for y, face, top in ((stern_y(COR_Z) + 1.3, -1.0, DECK_POOP), (stem_y(COR_Z) - 1.3, 1.0, DECK_FORE)):
+	for y, face, top in ((stern_y(COR_Z) + 1.3, -1.0, DECK_POOP), (Y_BOW - 1.3, 1.0, DECK_FORE)):
 		for z0, z1 in ((COR_TOP + 0.05, top), (0.0, COR_FLOOR - 0.05)):
 			w = min(half_beam(y, z0), half_beam(y, z1)) - 0.2
 			if w > 0.5:
@@ -1286,121 +1725,133 @@ def build_backing(g):
 
 
 def build_beak(g):
-	"""The head: a grated platform on the beak, under the exit; catheads and anchors beside it."""
+	"""The prow's dress: catheads off the forecastle, an anchor hanging from each, clear
+	of the cut."""
 	dk = (0.05, 0.036, 0.027)
-	red = (0.1, 0.03, 0.022)
-	z = HEAD_Z - 0.3
-	y0, y1 = Y_BOW - 0.2, Y_STEM - 1.0
-	w_at = lambda y: max(0.2, half_beam(y, HEAD_Z - 0.2) - 0.1)
-	for y in frange(y0, y1, 1.1):
-		w = w_at(y)
-		g.beam((-w, y, z), (w, y, z), 0.5, 0.22, "wood", (0.22, 0.16, 0.115))
-	for x in frange(-7.0 * WIDEN, 7.0 * WIDEN, 1.4):
-		if abs(x) < w_at(y0):
-			g.beam((x, y0, z + 0.07), (x, y0 + 15.0 * (1.0 - abs(x) / (8.0 * WIDEN)), z + 0.07), 0.2, 0.14, "wood", (0.16, 0.12, 0.085))
-	# The upper beak: a pointed grating over the exit, swept up to the bowsprit,
-	# the line the eye wants off a flat bow. All of it above the corridor's roof.
-	tip = Vector((0.0, Y_BOW + 13.0, 18.6))
-	root = Y_BOW + 0.3
 	for s in (-1.0, 1.0):
-		a = Vector((s * 7.6 * WIDEN, root, 14.7))
-		b = Vector((s * 3.2 * WIDEN, Y_BOW + 7.0, 15.8))
-		for p0, p1 in ((a, b), (b, tip)):
-			g.beam(p0, p1, 0.5, 0.6, "paint", red)
-		a2, b2 = a + Vector((0, 0, 2.9)), b + Vector((0, 0, 2.2))
-		for p0, p1 in ((a2, b2), (b2, tip + Vector((0, 0, 0.4)))):
-			g.beam(p0, p1, 0.32, 0.4, "paint", dk)
-		for t in (0.0, 0.4, 0.8):
-			g.beam(a.lerp(b, t), a2.lerp(b2, t), 0.28, 0.28, "paint", dk)
-	for y in frange(root, Y_BOW + 11.0, 0.9):
-		t = (y - root) / 13.0
-		w = 7.3 * WIDEN * (1.0 - t) ** 0.9
-		g.beam((-w, y, lerp(14.8, 18.0, t ** 1.6)), (w, y, lerp(14.8, 18.0, t ** 1.6)), 0.42, 0.18, "wood", (0.22, 0.16, 0.115))
-	g.beam((0.0, root, 14.45), (0.0, tip.y - 1.0, 17.9), 1.1, 0.6, "wood", dk, up=(0.0, 0.0, 1.0))
-	g.beam((0.0, tip.y - 1.0, 17.9), tip + Vector((0, 1.2, 1.6)), 0.8, 0.7, "paint", red, up=(0.0, 0.0, 1.0))
-	# Head rails, low, either side: under the corridor's floor.
-	for s in (-1.0, 1.0):
-		ys = frange(y0, y1 + 0.5, 3.0)
-		pts = [(s * (w_at(y) - 0.1), y, HEAD_Z - 0.7 + 0.3 * (y - y0) / 16.0) for y in ys]
-		for a, b in zip(pts, pts[1:]):
-			g.beam(a, b, 0.4, 0.5, "paint", red)
-		# Catheads through the bulkhead, an anchor hanging from each, beside the exit.
-		x = half_beam(Y_BOW, 14.0)
-		g.beam((s * (x - 1.5), Y_BOW - 2.0, 14.8), (s * (x + 1.6), Y_BOW + 2.0, 14.4), 0.8, 0.8, "paint", dk, up=(0.0, 0.0, 1.0))
-		ax, ay = s * (x + 1.2), Y_BOW + 1.5
-		g.tube([(ax, ay, 14.0), (ax, ay, 13.4)], [0.06, 0.06], 3, "iron", (0.03, 0.03, 0.03), cap=False)
-		g.beam((ax, ay, 13.5), (ax, ay, 6.3), 0.34, 0.34, "iron", (0.035, 0.035, 0.035), up=(0.0, 1.0, 0.0))
-		g.beam((ax - s * 0.0, ay - 1.7, 7.5), (ax, ay, 6.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
-		g.beam((ax, ay + 1.7, 7.5), (ax, ay, 6.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
-		g.beam((ax - 1.0, ay, 13.0), (ax + 1.0, ay, 13.0), 0.3, 0.3, "wood", (0.2, 0.15, 0.1))
+		y0, y1, z = 49.0, 52.5, 19.0
+		x = half_at(y0, z)
+		g.beam((s * (x - 1.2), y0, z), (s * (x + 3.0), y1, z + 0.4), 0.8, 0.8, "paint", dk, up=(0.0, 0.0, 1.0))
+		ax, ay = s * (half_at(y1, z) + 2.4), y1 - 0.4
+		g.tube([(ax, ay, z - 0.3), (ax, ay, z - 1.0)], [0.06, 0.06], 3, "iron", (0.03, 0.03, 0.03), cap=False)
+		g.beam((ax, ay, z - 0.9), (ax, ay, z - 8.1), 0.34, 0.34, "iron", (0.035, 0.035, 0.035), up=(0.0, 1.0, 0.0))
+		g.beam((ax, ay - 1.7, z - 6.9), (ax, ay, z - 8.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
+		g.beam((ax, ay + 1.7, z - 6.9), (ax, ay, z - 8.2), 0.3, 0.3, "iron", (0.035, 0.035, 0.035), up=(1.0, 0.0, 0.0))
+		g.beam((ax - 1.0, ay, z - 1.4), (ax + 1.0, ay, z - 1.4), 0.3, 0.3, "wood", (0.2, 0.15, 0.1))
 
 
 # --- Masts, sails, rigging ----------------------------------------------------
 
-def yard_axis(tilt):
-	b = math.radians(BRACE)
+MAST_WOOD = (0.2, 0.165, 0.135)    # on the wood tile: weathered spars, grey-brown over the tar
+SPAR_DARK = (0.07, 0.058, 0.05)    # the tops, caps and yards: tarred
+ROPE = (0.05, 0.042, 0.035)
+BAND = (0.09, 0.09, 0.09)
+
+
+# How far aft of each mast its two backstays come down to the rail: the fore's and
+# the main's led clear of the deck guns' swing (DECK_GUN_Y).
+BACKSTAYS = ((8.0, 10.5), (19.0, 22.0), (12.0, 15.0))
+# And how far aft its course's braces come down to the rail, likewise.
+COURSE_BRACE = (12.0, 20.5, 16.0)
+
+
+def chain_z(y):
+	"""The chains' height at y: the shrouds' feet, a little under the rail."""
+	return rail(y) - 1.2
+
+
+def yard_axis(tilt, brace):
+	b = math.radians(brace)
 	return Vector((math.cos(tilt) * math.cos(b), math.cos(tilt) * math.sin(b), math.sin(tilt)))
 
 
-def mast_geo(index, spec, sails):
+def mast_radii(index):
+	r0 = MAST_R * MAST_K[index]
+	r1 = r0 * 0.6
+	return r0, r1, r1 * 0.55
+
+
+def mast_r(index, z):
+	"""The mast's radius at height z: the lower mast, the topmast, the topgallant."""
+	y, top1, top2, truck = MASTS[index]
+	r0, r1, r2 = mast_radii(index)
+	foot = base_deck(y)
+	if z < top1:
+		return lerp(r0, r0 * 0.75, max(0.0, z - foot - 12.0) / max(top1 - foot - 12.0, 1.0))
+	if z < top2:
+		return lerp(r1, r1 * 0.68, (z - top1) / (top2 - top1))
+	return lerp(r2, r2 * 0.45, (z - top2) / (truck - top2))
+
+
+def jib_stay():
+	"""The fore topmast stay, the fore's crosstrees to the bowsprit's end: the jib's head."""
+	y, top1, top2, truck = MASTS[0]
+	return Vector((0.0, y + 0.5, top2 + 0.5)), Vector(BOWSPRIT[1])
+
+
+def mast_geo(index, spec, sails, brace):
+	"""A mast in three: the lower mast to its top, the topmast to the crosstrees, the
+	topgallant to the truck, and its yards, forward of it."""
 	y, top1, top2, truck = spec
 	g = Geo()
-	wood = (0.28, 0.2, 0.135)
-	dark = (0.1, 0.075, 0.06)
 	foot = base_deck(y)
-	r0 = MAST_R * (1.0 if index == 1 else 0.88)
-	# The lower mast, doubled at the top by the topmast's heel.
-	g.tube([(0.0, y, 0.0 + foot), (0.0, y, foot + 12.0), (0.0, y, top1 - 1.0), (0.0, y, top1 + 2.0)], [r0, r0 * 1.0, r0 * 0.72, r0 * 0.68], 12, "wood", wood)
-	# Iron bands, the partners.
-	for z in frange(foot + 3.0, top1 - 5.0, 7.0):
-		g.tube([(0.0, y, z - 0.18), (0.0, y, z + 0.18)], [lerp(r0, r0 * 0.7, (z - foot) / (top1 - foot)) + 0.04] * 2, 12, "iron", (0.09, 0.09, 0.09), cap=False)
-	g.box(-r0 - 0.7, r0 + 0.7, y - r0 - 0.7, y + r0 + 0.7, foot, foot + 0.6, "wood", dark)
-	# The top: a round platform with a rail, the crosstrees under it.
-	pr = r0 * 3.1
-	g.tube([(0.0, y, top1 - 1.3), (0.0, y, top1 - 0.4), (0.0, y, top1 - 0.2), (0.0, y, top1 + 0.05)], [pr * 0.45, pr * 0.88, pr, pr], 12, "wood", dark)
-	g.tube([(0.0, y, top1 + 0.05), (0.0, y, top1 + 1.5), (0.0, y, top1 + 1.8)], [pr * 0.98, pr * 1.06, pr * 1.06], 12, "wood", (0.13, 0.095, 0.07))
-	# The topmast, and the topgallant unless she has lost it.
-	r1 = r0 * 0.62
-	z2 = top2 + 2.0 if truck > top2 else top2
-	if truck > top2:
-		g.tube([(r0 * 0.9, y, top1 - 3.5), (r0 * 0.9 * 0.8, y, top1 + 8.0), (0.0, y, top2 - 2.0), (0.0, y, top2 + 1.5)], [r1, r1 * 0.95, r1 * 0.58, r1 * 0.55], 10, "wood", wood)
-		r2 = r1 * 0.5
-		g.tube([(r1 * 0.6, y, top2 - 3.0), (0.0, y, top2 + 2.0), (0.0, y, truck)], [r2, r2 * 0.92, r2 * 0.32], 8, "wood", wood)
-		g.tube([(0.0, y, top2 - 0.3), (0.0, y, top2 + 0.2)], [r1 * 1.7, r1 * 1.7], 8, "wood", dark)
-	else:
-		# Shot through: a splintered stump, its broken top leaning off.
-		g.tube([(r0 * 0.9, y, top1 - 3.5), (r0 * 0.7, y, top1 + 8.0), (0.5, y, top2 - 2.0), (0.8, y, top2 + 0.2)], [r1, r1 * 0.95, r1 * 0.62, r1 * 0.2], 10, "wood", wood)
-		rng = random.Random(index + 7)
-		for k in range(7):
-			a = k * math.tau / 7
-			p = Vector((0.5 + math.cos(a) * r1 * 0.5, y + math.sin(a) * r1 * 0.5, top2 - 2.6))
-			tip = p + Vector((math.cos(a) * 0.6, math.sin(a) * 0.6, rng.uniform(1.0, 3.8)))
-			g.tube([p, tip], [r1 * 0.28, 0.02], 4, "wood", (0.8, 0.62, 0.42), cap=False)
-	# The yards, cross the mast forward of it.
+	r0, r1, r2 = mast_radii(index)
+	rng = random.Random(index + 7)
+	# The lower mast, its head running up through the top.
+	g.tube([(0.0, y, foot), (0.0, y, foot + 12.0), (0.0, y, top1 - 1.0), (0.0, y, top1 + 2.6)], [r0, r0, r0 * 0.75, r0 * 0.72], 12, "wood", MAST_WOOD)
+	# Iron hoops up it, a little uneven; the partners at the deck.
+	for z in frange(foot + 3.0, top1 - 4.0, 6.5):
+		z += rng.uniform(-0.6, 0.6)
+		g.tube([(0.0, y, z - 0.2), (0.0, y, z + 0.2)], [mast_r(index, z) + 0.05] * 2, 12, "iron", BAND, cap=False)
+	g.box(-r0 - 0.7, r0 + 0.7, y - r0 - 0.7, y + r0 + 0.7, foot, foot + 0.6, "wood", SPAR_DARK)
+	# The top: a round platform with a rail, its trestles under it.
+	pr = r0 * 3.2
+	g.tube([(0.0, y, top1 - 1.3), (0.0, y, top1 - 0.4), (0.0, y, top1 - 0.2), (0.0, y, top1 + 0.05)], [pr * 0.45, pr * 0.88, pr, pr], 14, "wood", SPAR_DARK)
+	g.tube([(0.0, y, top1 + 0.05), (0.0, y, top1 + 1.5), (0.0, y, top1 + 1.8)], [pr * 0.98, pr * 1.06, pr * 1.06], 14, "wood", (0.1, 0.08, 0.065), cap=False)
+	# The cap, binding the lower mast's head to the topmast's heel.
+	g.tube([(0.0, y, top1 + 2.6), (0.0, y, top1 + 3.3)], [r0 * 0.95, r0 * 0.95], 10, "wood", SPAR_DARK)
+	# The topmast, the crosstrees at its head.
+	g.tube([(0.0, y, top1 - 1.5), (0.0, y, top1 + 8.0), (0.0, y, top2 - 1.0), (0.0, y, top2 + 1.8)], [r1, r1 * 0.95, r1 * 0.7, r1 * 0.66], 10, "wood", MAST_WOOD)
+	for z in frange(top1 + 5.0, top2 - 3.0, 6.0):
+		g.tube([(0.0, y, z - 0.16), (0.0, y, z + 0.16)], [mast_r(index, z) + 0.04] * 2, 10, "iron", BAND, cap=False)
+	cx = r1 * 4.6
+	g.beam((-cx, y - r1 * 1.2, top2), (cx, y - r1 * 1.2, top2), 0.34, 0.3, "wood", SPAR_DARK)
+	g.beam((-cx, y + r1 * 1.2, top2), (cx, y + r1 * 1.2, top2), 0.34, 0.3, "wood", SPAR_DARK)
+	g.beam((-r1 * 1.1, y - r1 * 2.6, top2 + 0.3), (-r1 * 1.1, y + r1 * 2.6, top2 + 0.3), 0.3, 0.34, "wood", SPAR_DARK, up=(0.0, 0.0, 1.0))
+	g.beam((r1 * 1.1, y - r1 * 2.6, top2 + 0.3), (r1 * 1.1, y + r1 * 2.6, top2 + 0.3), 0.3, 0.34, "wood", SPAR_DARK, up=(0.0, 0.0, 1.0))
+	g.tube([(0.0, y, top2 + 1.8), (0.0, y, top2 + 2.4)], [r1 * 0.95, r1 * 0.95], 8, "wood", SPAR_DARK)
+	# The topgallant, a pole to the truck.
+	g.tube([(0.0, y, top2 - 1.0), (0.0, y, lerp(top2, truck, 0.5)), (0.0, y, truck)], [r2, r2 * 0.75, r2 * 0.45], 8, "wood", MAST_WOOD)
+	g.tube([(0.0, y, truck - 0.05), (0.0, y, truck + 0.4)], [r2 * 1.05, r2 * 0.9], 8, "wood", SPAR_DARK)
+	# The yards, slung forward of the mast.
 	yard_out = []
 	for name, zy, w, zb, wb, cell, tilt in sails:
 		t = math.radians(tilt)
-		ax = yard_axis(t)
-		c = Vector((0.0, y + r0 + 0.4, zy))
-		half = w * 0.5 + 1.5
+		ax = yard_axis(t, brace)
 		r = 0.62 * (w / 40.0) ** 0.5
+		c = Vector((0.0, y + mast_r(index, zy) + r + 0.15, zy))
+		half = w * 0.5 + 1.5
 		pts = [c - ax * half, c - ax * half * 0.5, c, c + ax * half * 0.5, c + ax * half]
-		g.tube(pts, [r * 0.42, r * 0.84, r, r * 0.84, r * 0.42], 8, "wood", (0.16, 0.115, 0.08), up=(0.0, 1.0, 0.0))
+		g.tube(pts, [r * 0.42, r * 0.84, r, r * 0.84, r * 0.42], 8, "wood", SPAR_DARK, up=(0.0, 1.0, 0.0))
+		# The truss's band at the slings.
+		g.tube([c - ax * 1.0, c + ax * 1.0], [r * 1.12, r * 1.12], 8, "iron", BAND, cap=False, up=(0.0, 1.0, 0.0))
 		yard_out.append((name, c.copy(), w, zb, wb, cell, tilt))
 	return g, yard_out
 
 
-def sail_geo(w, h, wb, cell):
+def sail_geo(w, h, wb, cell, skew=0.0):
 	"""A flat sheet hanging from the yard (the origin) down -Z; `ship_cloth.gdshader` bellies it.
 
 	Rows and columns crowd toward the foot and the leeches, where the cloth ripples.
-	The vertex colour is the sheet's size for the shader: h, head and foot width over SAIL_SIZE.
+	The vertex colour is the sheet's size for the shader: h, head and foot width over SAIL_SIZE;
+	its alpha 1 + skew, how far the foot's middle stands off the head's (a share of the
+	head's half width, negative toward -X): the jib's clew sits under its head, not mid-stay.
 	"""
 	g = Geo()
 	nx = max(SAIL_MIN[0], round(max(w, wb) / SAIL_CELL[0]))
 	ny = max(SAIL_MIN[1], round(h / SAIL_CELL[1]))
 	cu, cv = (cell % 2) * 0.5, (1 - (cell // 2)) * 0.5
-	size = (h / SAIL_SIZE, w / SAIL_SIZE, wb / SAIL_SIZE)
+	size = (h / SAIL_SIZE, w / SAIL_SIZE, wb / SAIL_SIZE, 1.0 + skew)
 	ids = []
 	for j in range(ny + 1):
 		t = 1.0 - (1.0 - j / ny) ** 1.3
@@ -1408,7 +1859,7 @@ def sail_geo(w, h, wb, cell):
 		for i in range(nx + 1):
 			a = i / nx * 2.0 - 1.0
 			s = math.copysign(1.0 - (1.0 - abs(a)) ** 1.35, a)
-			x = s * lerp(w, wb, t) * 0.5
+			x = s * lerp(w, wb, t) * 0.5 + skew * w * 0.5 * t
 			uv = (cu + (s * 0.5 + 0.5) * 0.5, cv + (1.0 - t) * 0.5)
 			row.append(g.vert((x, 0.35, -h * t), uv, size))
 		ids.append(row)
@@ -1421,85 +1872,155 @@ def sail_geo(w, h, wb, cell):
 def rope(g, a, b, r=0.17, sag=0.0, n=3):
 	a, b = Vector(a), Vector(b)
 	if sag <= 0.0:
-		g.tube([a, b], [r, r], n, "rope", (0.05, 0.042, 0.035), cap=False)
+		g.tube([a, b], [r, r], n, "rope", ROPE, cap=False)
 		return
 	pts = []
 	for t in frange(0.0, 1.0, 0.2):
 		p = a.lerp(b, t)
 		p.z -= sag * 4.0 * t * (1.0 - t)
 		pts.append(p)
-	g.tube(pts, [r] * len(pts), n, "rope", (0.05, 0.042, 0.035), cap=False)
+	g.tube(pts, [r] * len(pts), n, "rope", ROPE, cap=False)
 
 
 def build_rigging(g, stays, yards):
-	"""Shrouds, ratlines, stays. Fine lines are `g`; `stays` are thick and stay on at a distance."""
+	"""Shrouds, ratlines, backstays, lifts and braces in `g` (they hide at a distance);
+	the stays down her middle in `stays`, thick, and they stay on."""
 	rng = random.Random(5)
 	for idx, (y, top1, top2, truck) in enumerate(MASTS):
-		foot = DECK_Z + 1.9
+		r0, r1, r2 = mast_radii(idx)
+		foot = chain_z(y)
+		pr = r0 * 3.2
 		for side in (-1.0, 1.0):
-			hb = half_beam(y, foot) + 1.3
-			feet = [Vector((side * hb, y + d, foot)) for d in (-5.0, -3.0, -1.0, 1.0)]
-			head = Vector((side * 1.0, y - 0.2, top1 - 0.6))
+			# The lower shrouds, from the chains to the masthead, a little aft of the mast.
+			feet = [Vector((side * (half_at(y + d, foot) + 1.3), y + d, foot)) for d in (-5.5, -3.8, -2.1, -0.4)]
+			head = Vector((side * r0 * 0.8, y - 0.4, top1 - 0.6))
 			for f in feet:
 				rope(g, f, head, 0.19)
 			# Ratlines: one rod across the shrouds per rung.
 			rungs = int((head.z - foot) / 1.8)
-			for k in range(2, rungs):
+			for k in range(2, rungs - 1):
 				t = k / rungs
 				rope(g, feet[0].lerp(head, t), feet[-1].lerp(head, t), 0.08)
-			# Topmast shrouds to the top's rim.
-			rim = Vector((side * MAST_R * 3.0, y, top1 + 1.0))
-			t2 = Vector((side * 0.6, y, top2 - 1.0))
-			for d in (-1.8, 0.0, 1.8):
-				rope(g, rim + Vector((0.0, d, 0.0)), t2, 0.13)
-			# A backstay down to the rail.
-			rope(g, Vector((side * 0.8, y - 0.5, top2 + 0.5)), Vector((side * hb, y - 12.0, foot + 0.3)), 0.14)
-	# The stays: thick, down the ship's middle: the lines that survive distance.
+			# The topmast's shrouds from the top's rim, the topgallant's from the crosstrees.
+			t2 = Vector((side * r1 * 0.7, y - 0.2, top2 - 1.0))
+			for d in (-2.2, -0.6, 1.0):
+				rope(g, Vector((side * pr * 0.92, y + d, top1 + 1.0)), t2, 0.13)
+			t3 = Vector((side * r2 * 0.6, y, lerp(top2, truck, 0.62)))
+			for d in (-0.5, 0.5):
+				rope(g, Vector((side * r1 * 4.4, y + d * r1 * 2.4, top2 + 0.2)), t3, 0.09)
+			# Backstays, from the topmast's head and the topgallant's down aft to the rail.
+			for z0, back, r in ((top2 + 0.5, BACKSTAYS[idx][0], 0.14), (lerp(top2, truck, 0.62), BACKSTAYS[idx][1], 0.11)):
+				yy = y - back
+				zz = chain_z(yy) + 0.2
+				rope(g, Vector((side * 0.6, y - 0.5, z0)), Vector((side * (half_at(yy, zz) + 1.0), yy, zz)), r)
+	# The stays: thick, down her middle, the lines that survive distance. Each runs
+	# from a mast forward to the one before it at about its own height, so none
+	# cuts through the sails forward of the mast it leaves; the fore's to the bowsprit.
 	fy, f1, f2, ft = MASTS[0]
 	my, m1, m2, mt = MASTS[1]
 	zy, z1, z2, zt = MASTS[2]
 	sp_a, sp_b = Vector(BOWSPRIT[0]), Vector(BOWSPRIT[1])
-	sp_mid = sp_a.lerp(sp_b, 0.72)
-	rope(stays, (0.0, fy + 1.0, f1 + 0.5), sp_mid, 0.34, 1.5, 5)
-	rope(stays, (0.0, fy + 0.8, f2 + 0.5), sp_b, 0.26, 1.2, 5)
-	rope(stays, (0.0, my + 1.0, m1 + 0.5), (0.0, fy - 1.0, DECK_Z + 9.0), 0.3, 1.0, 5)
-	rope(stays, (0.0, my + 0.8, m2 + 0.5), (0.0, fy, f1 + 0.3), 0.26, 1.0, 5)
-	rope(stays, (0.0, my + 0.4, mt - 2.0), (0.0, fy, f2 + 0.3), 0.2, 0.8, 5)
-	rope(stays, (0.0, zy + 1.0, z1 + 0.5), (0.0, my - 1.0, DECK_Z + 9.0), 0.28, 1.0, 5)
-	rope(stays, (0.0, zy + 0.6, z2 - 2.0), (0.0, my, m1 + 0.3), 0.22, 0.9, 5)
+	rope(stays, (0.0, fy + 0.6, f1 + 0.5), sp_a.lerp(sp_b, 0.3), 0.34, 1.0, 5)   # under the jib's clew
+	j0, j1 = jib_stay()
+	rope(stays, j0, j1, 0.26)
+	rope(stays, (0.0, fy + 0.3, lerp(f2, ft, 0.62)), sp_b + Vector((0.0, -1.0, 0.4)), 0.2, 0.8, 5)
+	rope(stays, (0.0, my + 0.8, m1 + 0.5), (0.0, fy - 1.4, f1 - 0.5), 0.3, 0.8, 5)
+	rope(stays, (0.0, my + 0.6, m2 + 0.5), (0.0, fy - 0.9, f2 - 0.2), 0.24, 0.7, 5)
+	rope(stays, (0.0, my + 0.3, mt - 3.0), (0.0, fy - 0.4, ft - 3.0), 0.18, 0.6, 5)   # under the pennants' hoists
+	rope(stays, (0.0, zy + 0.8, z1 + 0.5), (0.0, my - 1.5, m1 - 0.5), 0.28, 0.8, 5)
+	rope(stays, (0.0, zy + 0.5, z2 + 0.5), (0.0, my - 0.9, m2 - 0.5), 0.22, 0.7, 5)
 	# No bobstay: it would cross the bow's way out.
-		# Lifts from the yards to the masts, braces trailing aft, a few cut ends.
+	# Lifts from the yards' arms to the mast over them; braces aft, the courses' to the
+	# rail, the upper yards' to the next mast's top; one or two shot away, hanging.
 	for idx, mast_yards in enumerate(yards):
-		y = MASTS[idx][0]
-		for name, c, w, zb, wb, cell, tilt in mast_yards:
+		y, top1, top2, truck = MASTS[idx]
+		brace = BRACES[idx]
+		for k, (name, c, w, zb, wb, cell, tilt) in enumerate(mast_yards):
 			t = math.radians(tilt)
 			for s in (-1.0, 1.0):
-				arm = c + yard_axis(t) * (s * w * 0.5)
-				rope(g, arm, (0.0, y + 0.5, c.z + 5.0), 0.12)
-				if rng.random() < 0.7:
-					yy = max(y - 18.0, -54.0)
-					to = Vector((s * half_beam(yy, 20.0), yy, lift(yy, base_rail(yy))))
+				arm = c + yard_axis(t, brace) * (s * w * 0.5)
+				rope(g, arm, (0.0, y + 0.5, min(c.z + 5.0, truck - 0.5)), 0.12)
+				if rng.random() < 0.12:
+					rope(g, arm, arm + Vector((rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), -rng.uniform(5.0, 12.0))), 0.11)
+					continue
+				if k == 0:
+					yy = max(y - COURSE_BRACE[idx], -52.0)
+					to = Vector((s * (half_at(yy, rail(yy)) + 0.4), yy, rail(yy) + 0.6))
 					rope(g, arm, to, 0.11, 1.4)
 				else:
-					# A brace shot away: it hangs.
-					rope(g, arm, arm + Vector((rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), -rng.uniform(5.0, 12.0))), 0.11)
+					aft = MASTS[idx + 1] if idx + 1 < len(MASTS) else MASTS[1]
+					ay = aft[0] + (1.2 if aft[0] < y else -1.2)
+					rope(g, arm, (s * 1.2, ay, aft[1] + 1.2), 0.1, 1.0)
 
 
 def build_bowsprit(g):
 	a, b = Vector(BOWSPRIT[0]), Vector(BOWSPRIT[1])
-	wood = (0.26, 0.19, 0.13)
 	mid = a.lerp(b, 0.62)
-	g.tube([a, a.lerp(b, 0.3), mid], [0.95, 0.85, 0.6], 10, "wood", wood)
-	g.tube([a.lerp(b, 0.52) + Vector((0.3, 0.0, 0.7)), mid, b], [0.58, 0.5, 0.18], 8, "wood", wood)
-	for t in (0.14, 0.3, 0.46):
+	g.tube([a, a.lerp(b, 0.3), mid], [1.05, 0.95, 0.68], 10, "wood", MAST_WOOD)
+	g.tube([a.lerp(b, 0.52) + Vector((0.0, 0.0, 0.85)), mid + Vector((0.0, 0.0, 0.6)), b], [0.6, 0.52, 0.2], 8, "wood", MAST_WOOD)
+	for t in (0.36, 0.46, 0.56):
 		p0 = a.lerp(b, t)
-		r = lerp(0.95, 0.65, t / 0.62) + 0.05
-		g.tube([p0 - (b - a).normalized() * 0.2, p0 + (b - a).normalized() * 0.2], [r, r], 10, "iron", (0.09, 0.09, 0.09), cap=False)
-	# The spritsail's yard, slung under it, at an angle she didn't choose.
-	c = a.lerp(b, 0.74) - Vector((0.0, 0.0, 1.8))
-	ax = Vector((math.cos(0.12), 0.0, math.sin(0.12)))
-	g.tube([c - ax * 11.0, c, c + ax * 11.0], [0.2, 0.42, 0.2], 8, "wood", (0.16, 0.115, 0.08), up=(0.0, 1.0, 0.0))
-	return c, 0.12
+		r = lerp(1.05, 0.68, t / 0.62) + 0.05
+		g.tube([p0 - (b - a).normalized() * 0.2, p0 + (b - a).normalized() * 0.2], [r, r], 10, "iron", BAND, cap=False)
+	g.tube([mid - (b - a).normalized() * 0.4, mid + (b - a).normalized() * 0.4], [0.78, 0.78], 8, "wood", SPAR_DARK)
+
+
+def jib_frame():
+	"""The jib's head (its middle on the stay), its length, and its rotation: x along the
+	stay, forward and down, and z up off it in her middle plane, so it bellies to port."""
+	j0, j1 = jib_stay()
+	p0 = j0.lerp(j1, (JIB_SPAN[0] - j0.y) / (j1.y - j0.y))
+	p1 = j0.lerp(j1, (JIB_SPAN[1] - j0.y) / (j1.y - j0.y))
+	d = (p1 - p0).normalized()
+	up = Vector((0.0, -d.z, d.y))
+	side = up.cross(d)
+	rot = Matrix((d, side, up)).transposed()
+	return (p0 + p1) * 0.5, (p1 - p0).length, rot.to_euler()
+
+
+def flag_geo(fly, hoist, taper, rows, seed, nx, ny):
+	"""A flag's flat sheet: x along its fly from the hoist (the origin), z down the hoist
+	from its head (a pennant tapers to its middle); `ship_flag.gdshader` streams it.
+	The vertex colour: its fly / FLAG_SIZE, a seed. `rows`: its band of the flag map."""
+	g = Geo()
+	v0 = 1.0 - (rows[0] + 1.0) / 512.0
+	v1 = 1.0 - (rows[1] - 1.0) / 512.0
+	col = (fly / FLAG_SIZE, seed, hoist / FLAG_SIZE, 1.0)
+	ids = []
+	for j in range(ny + 1):
+		v = j / ny
+		row = []
+		for i in range(nx + 1):
+			f = i / nx
+			hw = hoist * (1.0 - taper * f)
+			z = -hoist * 0.5 + (0.5 - v) * hw
+			row.append(g.vert((f * fly, 0.0, z), (f, lerp(v0, v1, v)), col))
+		ids.append(row)
+	for j in range(ny):
+		for i in range(nx):
+			g.face([ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i]], "flag", Vector((0.0, -1.0, 0.0)))
+	return g
+
+
+def ensign_frame():
+	"""The ensign's hoist head on its staff and its rotation: z up the staff, x aft off it."""
+	a, b = Vector(ENSIGN_STAFF[0]), Vector(ENSIGN_STAFF[1])
+	up = (b - a).normalized()
+	aft = Vector((0.0, -1.0, 0.0))
+	x = (aft - up * aft.dot(up)).normalized()
+	y = up.cross(x)
+	return b - up * 0.7, Matrix((x, y, up)).transposed().to_euler()
+
+
+def build_ensign_staff(g):
+	"""The ensign's staff, standing on the poop and raked aft over the taffrail."""
+	a, b = Vector(ENSIGN_STAFF[0]), Vector(ENSIGN_STAFF[1])
+	g.tube([a, a.lerp(b, 0.15), b], [0.34, 0.3, 0.17], 8, "wood", MAST_WOOD)
+	g.tube([b - (b - a).normalized() * 0.1, b + (b - a).normalized() * 0.35], [0.24, 0.2], 8, "wood", SPAR_DARK)
+	g.box(-0.7, 0.7, a.y - 0.7, a.y + 0.7, a.z, a.z + 0.5, "wood", SPAR_DARK)
+	for t in (0.1, 0.32):
+		p = a.lerp(b, t)
+		g.tube([p - Vector((0.0, 0.0, 0.15)), p + Vector((0.0, 0.0, 0.15))], [lerp(0.34, 0.17, t) + 0.05] * 2, 8, "iron", BAND, cap=False)
 
 
 # --- Textures -----------------------------------------------------------------
@@ -1563,11 +2084,15 @@ def paint_hull(W):
 	ys = np.linspace(Y_BACK, Y_FORE, W, dtype=np.float32)
 	zs = np.linspace(Z_TOP, Z_BOT, H, dtype=np.float32)
 	Y, Z = np.meshgrid(ys, zs)
-	t = Y / (LENGTH * 0.5)
-	sh = SHEER_STERN * np.clip(-t, 0, None) ** 2.4 + SHEER_BOW * np.clip(t, 0, None) ** 2.6
-	base = Z.copy()
-	for _ in range(3):
-		base = Z - sh * sst(SHEER_FROM, SHEER_TO, base)
+	# Back to base heights: the keel's rise at the ends, the strakes' wobble.
+	e = np.clip(np.maximum(np.minimum(1.0, (-Y - 30.0) / (STERN_U - 30.0)), np.minimum(1.0, (Y - 30.0) / 42.0)), 0.0, None) ** 2
+	base = np.where(Z < 0.0, Z / (1.0 - KEEL_RISE * e), Z)
+	rl = np.interp(Y, [q[0] for q in SHEER], [q[1] for q in SHEER]).astype(np.float32)
+	for _ in range(2):
+		k = sst(0.4, 1.4, base) * np.minimum(1.0, np.abs(base - TUNNEL_LO) / STRAKE) * np.minimum(1.0, np.abs(base - TUNNEL_HI) / STRAKE)
+		k *= np.minimum(1.0, np.clip(rl - base, 0.0, None) / STRAKE)
+		base = Z - WOBBLE * k * np.sin(Y * 0.23 + (base - KEEL_Z) / STRAKE * 1.3)
+	base = np.where(Z < 0.0, Z / (1.0 - KEEL_RISE * e), base)
 	rows_f = (base - KEEL_Z) / STRAKE
 	tint, seam, butt, frac, pf = planks(rows_f, Y, 3)
 	grain = spectral(H, W, 0.9, 1, sx=26.0)
@@ -1577,20 +2102,27 @@ def paint_hull(W):
 	drip = spectral(H, W, 1.1, 5, sy=30.0)
 	drip2 = spectral(H, W, 0.8, 6, sy=60.0)
 	fine = spectral(H, W, 0.45, 7)
-	# Bare weathered wood under everything.
-	wood = mix(C(0.27, 0.205, 0.145)[None, None], C(0.47, 0.40, 0.31)[None, None], np.clip(0.2 + 0.7 * tint * 0.7 + 0.5 * (grain - 0.5), 0, 1))
-	# Tar below the wale, oxblood on the gun strakes, tarred umber above.
-	tar = mix(C(0.15, 0.115, 0.09)[None, None], C(0.26, 0.2, 0.15)[None, None], tint * 0.8 + 0.2 * grain)
-	ox = mix(C(0.27, 0.085, 0.06)[None, None], C(0.42, 0.15, 0.09)[None, None], np.clip(tint * 0.5 + wash * 0.6 - 0.05, 0, 1))
-	upper = mix(C(0.24, 0.175, 0.13)[None, None], C(0.40, 0.30, 0.22)[None, None], tint * 0.75 + 0.25 * wash)
-	z0, z1 = row_z(PORT_ROW) - STRAKE, row_z(PORT_ROW + PORT_ROWS) + STRAKE
-	band = (base > z0) & (base < z1)
-	col = np.where(band[..., None], ox, tar)
-	high = base >= z1 + 2.0 * STRAKE
-	col = np.where(high[..., None], upper, col)
-	col = col * 1.25
-	grey = col.mean(axis=2, keepdims=True)
-	col = col * 0.72 + grey * C(0.98, 0.98, 1.02)[None, None] * 0.28
+	# Bare weathered wood under everything: dark, grey-brown.
+	wood = mix(C(0.19, 0.165, 0.14)[None, None], C(0.33, 0.29, 0.25)[None, None], np.clip(0.2 + 0.7 * tint * 0.7 + 0.5 * (grain - 0.5), 0, 1))
+	# Tar and slate: near-black tar on the gun strakes and below, a step lighter above
+	# the deck, a grey boot-top over the waterline. No colour.
+	tar = mix(C(0.095, 0.082, 0.074)[None, None], C(0.17, 0.148, 0.132)[None, None], tint * 0.8 + 0.2 * grain)
+	upper = mix(C(0.115, 0.1, 0.09)[None, None], C(0.2, 0.175, 0.157)[None, None], tint * 0.75 + 0.25 * wash)
+	boot = mix(C(0.27, 0.255, 0.235)[None, None], C(0.38, 0.36, 0.335)[None, None], tint * 0.6 + 0.4 * wash)
+	col = np.where((base >= DECK_Z)[..., None], upper, tar)
+	col = np.where(((base > 0.8) & (base < TUNNEL_LO))[..., None], boot, col)
+	# The frieze: a stepped fret painted along the strake under the waist's wale, by
+	# hand (its lines wander), a dull slate on a darker ground, worn with the rest.
+	fz0, fz1 = row_z(FRIEZE_ROW), row_z(FRIEZE_ROW + 1)
+	inband = (base >= fz0) & (base < fz1)
+	bv = (fz1 - base) / (fz1 - fz0) + 0.12 * (blot - 0.5) + 0.03 * (fine - 0.5)
+	av = np.mod(Y / FRIEZE_CELL + 0.1 * (wash - 0.5) + 0.012 * (fine - 0.5), 1.0)
+	key = fret(av, bv) & inband
+	edge_line = ((bv < 0.1) | (bv > 0.9)) & inband
+	col = np.where(inband[..., None], col * 0.7, col)
+	col = mix(col, FRIEZE_INK * (0.85 + 0.3 * tint)[..., None], key * 0.9)
+	col = mix(col, FRIEZE_INK * 0.75, edge_line * 0.85)
+	band = (base > row_z(PORT_ROW) - STRAKE) & (base < row_z(PORT_ROW + PORT_ROWS) + STRAKE)
 	# Paint worn through to wood: patches, plank edges, and more at the band.
 	edge = np.maximum(sst(0.22, 0.0, frac), sst(0.82, 1.0, frac))
 	wear = (blot * 0.75 + fine * 0.5 + edge * 0.2) + grain2 * 0.3
@@ -1615,9 +2147,9 @@ def paint_hull(W):
 		col = mix(col, C(0.03, 0.028, 0.026)[None, None], fan * (0.45 + 0.6 * fine) * 0.8)
 	col = mix(col, col * 0.35 + C(0.05, 0.03, 0.02)[None, None], np.clip(run * (0.35 + 1.0 * drip), 0, 1) * 0.85)
 	# Fouling at the waterline: weed black-green, a ragged edge, barnacle specks.
-	wl = 0.9 + 1.9 * (blot - 0.5) + 1.8 * (drip - 0.5)
+	wl = 0.3 + 1.0 * (blot - 0.5) + 0.9 * (drip - 0.5)
 	foul = sst(wl + 0.6, wl - 0.5, Z)
-	col = mix(col, mix(C(0.03, 0.05, 0.035)[None, None], C(0.09, 0.115, 0.06)[None, None], grain), foul * 0.92)
+	col = mix(col, mix(C(0.03, 0.04, 0.032)[None, None], C(0.08, 0.095, 0.06)[None, None], grain), foul * 0.92)
 	spots = spectral(H, W, 0.2, 8)
 	bar = sst(0.74, 0.8, spots) * sst(3.0, 0.8, Z) * sst(0.32, 0.6, blot)
 	col = mix(col, C(0.46, 0.45, 0.4)[None, None], bar * 0.7)
@@ -1626,7 +2158,32 @@ def paint_hull(W):
 	col = mix(col, C(0.015, 0.012, 0.01)[None, None], butt * 0.8)
 	# Height, for the normal map.
 	hgt = 0.5 + (grain - 0.5) * 0.9 + (grain2 - 0.5) * 0.45 + (fine - 0.5) * 0.3 - seam * 1.3 - butt * 1.0 + bar * 0.5
+	hgt -= (inband & ~key & ~edge_line) * 0.5    # the ground cut back round the fret
 	return np.clip(col, 0, 1), hgt
+
+
+FRIEZE_ROW = 17               # the strake 14.6 to 15.8, between the tunnel's roof wale and the waist's
+FRIEZE_CELL = 2.4             # m along her a fret
+FRIEZE_INK = np.array((0.25, 0.237, 0.222), dtype=np.float32)
+
+
+def fret(a, b):
+	"""A stepped fret's ink, a stair and a squared hook per cell (the concept's), from
+	a across the cell (0..1) and b down the band (0 at its top)."""
+	y0, y1 = 0.14, 0.86
+	h = y1 - y0
+	def r(x0, v0, x1, v1):
+		return (a >= x0) & (a < x1) & (b >= v0) & (b < v1)
+	m = np.zeros(a.shape, bool)
+	for s in range(4):
+		m |= r(s * 0.12, y0 + h * (0.75 - s * 0.17), s * 0.12 + 0.12, y1)
+	hx, t = 0.48, 0.09
+	m |= r(hx, y0 + h * 0.12, hx + 0.44, y0 + h * 0.26)
+	m |= r(hx + 0.44 - t, y0 + h * 0.12, hx + 0.44, y1 - h * 0.1)
+	m |= r(hx + 0.12, y1 - h * 0.24, hx + 0.44, y1 - h * 0.1)
+	m |= r(hx + 0.12, y0 + h * 0.42, hx + 0.12 + t, y1 - h * 0.1)
+	m |= r(hx + 0.12, y0 + h * 0.42, hx + 0.3, y0 + h * 0.54)
+	return m
 
 
 def paint_stern(W):
@@ -1643,8 +2200,8 @@ def paint_stern(W):
 	blot = spectral(H, W, 1.4, 14)
 	drip = spectral(H, W, 1.1, 15, sy=26.0)
 	fine = spectral(H, W, 0.45, 16)
-	wood = mix(C(0.24, 0.18, 0.125)[None, None], C(0.42, 0.35, 0.27)[None, None], np.clip(0.2 + 0.5 * tint + 0.5 * (grain - 0.5), 0, 1))
-	tar = mix(C(0.17, 0.13, 0.10)[None, None], C(0.34, 0.27, 0.205)[None, None], tint * 0.8 + 0.2 * grain)
+	wood = mix(C(0.19, 0.165, 0.14)[None, None], C(0.33, 0.29, 0.25)[None, None], np.clip(0.2 + 0.5 * tint + 0.5 * (grain - 0.5), 0, 1))
+	tar = mix(C(0.11, 0.095, 0.085)[None, None], C(0.2, 0.175, 0.157)[None, None], tint * 0.8 + 0.2 * grain)
 	wear = blot * 0.75 + fine * 0.5 + grain2 * 0.3
 	col = mix(tar, wood, sst(0.8, 1.0, wear))
 	col *= (0.8 + 0.4 * grain)[..., None]
@@ -1681,8 +2238,153 @@ def paint_wood(W):
 	return np.clip(col, 0, 1), hgt
 
 
+SAIL_GREY = (C(0.31, 0.345, 0.385), C(0.43, 0.46, 0.5))   # the canvas, weathered to bleached (sRGB-ish map)
+SAIL_INK = C(0.1, 0.1, 0.105)
+SAIL_BORDER = (0.03, 0.04)    # the border's width: share of the half-width, of the depth
+
+# The two glyphs, by the atlas cell they're painted on: the wind spiral on the fore
+# course, the sun with curved rays on the main course. Each is painted round on the
+# cloth (in metres, not in the cell's stretched texels), GLYPH_SPAN of its depth
+# across, centred: near-black ink, a mid grey for the second strokes, a little
+# bleached cloth for the centres.
+GLYPHS = {0: "spiral", 1: "sun"}
+GLYPH_SPAN = 0.8
+GLYPH_RASTER = 1024
+GLYPH_INK = C(0.07, 0.068, 0.066)
+GLYPH_MID = C(0.19, 0.185, 0.18)
+GLYPH_LIGHT = C(0.5, 0.505, 0.5)
+
+
+class Glyph:
+	"""A square brush-painted glyph: colour and coverage, painted in strokes
+	(ship_concept_build.py's, unworn: the wear is the cloth's)."""
+
+	def __init__(self, n=GLYPH_RASTER, seed=11):
+		self.n = n
+		self.a = np.zeros((n, n, 3), np.float32)
+		self.m = np.zeros((n, n), np.float32)
+		ys, xs = np.mgrid[0:n, 0:n].astype(np.float32)
+		self.X, self.Y = (xs + 0.5) / n, (ys + 0.5) / n
+		self.rng = np.random.default_rng(seed)
+
+	def put(self, mask, col):
+		self.a[mask] = col
+		self.m[mask] = 1.0
+
+	def stroke(self, pts, ws, col):
+		"""A brush stroke along pts, its width ws at each point, a little uneven."""
+		pts = np.array(pts, np.float32)
+		ws = np.array(ws, np.float32) * (1.0 + 0.18 * (self.rng.random(len(pts)) - 0.5))
+		mask = np.zeros(self.X.shape, bool)
+		for i in range(len(pts) - 1):
+			(x0, y0), (x1, y1) = pts[i], pts[i + 1]
+			r = max(ws[i], ws[i + 1])
+			lo_x, hi_x = int(max(0, (min(x0, x1) - r) * self.n)), int(min(self.n, (max(x0, x1) + r) * self.n + 1))
+			lo_y, hi_y = int(max(0, (min(y0, y1) - r) * self.n)), int(min(self.n, (max(y0, y1) + r) * self.n + 1))
+			if lo_x >= hi_x or lo_y >= hi_y:
+				continue
+			X, Y = self.X[lo_y:hi_y, lo_x:hi_x], self.Y[lo_y:hi_y, lo_x:hi_x]
+			dx, dy = x1 - x0, y1 - y0
+			t = np.clip(((X - x0) * dx + (Y - y0) * dy) / (dx * dx + dy * dy + 1e-9), 0, 1)
+			d = np.hypot(X - (x0 + t * dx), Y - (y0 + t * dy))
+			mask[lo_y:hi_y, lo_x:hi_x] |= d < ws[i] + (ws[i + 1] - ws[i]) * t
+		self.put(mask, col)
+
+	def disc(self, cx, cy, r, col, wob=0.0):
+		ang = np.arctan2(self.Y - cy, self.X - cx)
+		rr = r * (1.0 + wob * np.sin(ang * 3.0 + 1.3) + wob * 0.6 * np.sin(ang * 7.0 - 0.4))
+		self.put((self.X - cx) ** 2 + (self.Y - cy) ** 2 < rr * rr, col)
+
+	def arc(self, cx, cy, r, a0, a1, w0, w1, col, n=40, wob=0.0):
+		ts = np.linspace(0, 1, n)
+		ang = a0 + (a1 - a0) * ts
+		rr = r + wob * np.sin(ts * 9.0)
+		self.stroke(list(zip(cx + np.cos(ang) * rr, cy + np.sin(ang) * rr)), list(w0 + (w1 - w0) * ts), col)
+
+
+def glyph_art(kind):
+	"""The concept's two glyphs (ship_concept_build.py `glyph_art`), in the build's inks."""
+	ink, mid, light = GLYPH_INK, GLYPH_MID, GLYPH_LIGHT
+	g = Glyph(seed=11 if kind == "spiral" else 13)
+	if kind == "spiral":   # wind: a breath spiral in an uneven ring, curls on the four quarters
+		g.arc(0.5, 0.5, 0.42, 0, 2 * math.pi, 0.03, 0.03, ink, 90, 0.008)
+		ts = np.linspace(0, 1, 120)
+		ang = 0.4 + ts * 3.3 * math.pi
+		rr = 0.04 + 0.27 * ts
+		g.stroke(list(zip(0.5 + np.cos(ang) * rr, 0.5 + np.sin(ang) * rr)), list(0.018 + 0.045 * ts), ink)
+		g.disc(0.5, 0.5, 0.05, light, 0.08)
+		for k in range(4):
+			c = k * math.pi / 2 + math.pi / 4
+			cx, cy = 0.5 + math.cos(c) * 0.42, 0.5 + math.sin(c) * 0.42
+			g.arc(cx + math.cos(c) * 0.04, cy + math.sin(c) * 0.04, 0.05, c + math.pi, c + 2.6 * math.pi, 0.022, 0.006, mid, 30)
+	else:   # the sun with curved rays
+		for k in range(12):
+			c = k * math.pi / 6
+			ts = np.linspace(0, 1, 24)
+			ang = c + 0.45 * ts
+			rr = 0.25 + 0.2 * ts
+			g.stroke(list(zip(0.5 + np.cos(ang) * rr, 0.5 + np.sin(ang) * rr)), list(0.04 - 0.034 * ts), ink if k % 2 == 0 else mid)
+		g.disc(0.5, 0.5, 0.2, ink, 0.025)
+		g.arc(0.5, 0.5, 0.15, 0, 2 * math.pi, 0.012, 0.012, light, 60, 0.004)
+		g.disc(0.5, 0.5, 0.07, mid, 0.06)
+	return g
+
+
+def course_size(cell):
+	"""The head width, foot width and depth (m) of the one sail painted on `cell`."""
+	for mast in SAILS:
+		for name, zy, w, zb, wb, c, tilt in mast:
+			if c == cell:
+				return w, wb, zy - zb
+	raise ValueError(cell)
+
+
+def sample(img, gx, gy):
+	"""`img` (n x n, or n x n x 3) at gx, gy in 0..1, bilinear; 0 outside."""
+	n = img.shape[0]
+	fx = np.clip(gx * n - 0.5, 0.0, n - 1.001)
+	fy = np.clip(gy * n - 0.5, 0.0, n - 1.001)
+	x0, y0 = fx.astype(np.int32), fy.astype(np.int32)
+	ax, ay = fx - x0, fy - y0
+	if img.ndim == 3:
+		ax, ay = ax[..., None], ay[..., None]
+	out = (img[y0, x0] * (1 - ax) + img[y0, x0 + 1] * ax) * (1 - ay) + (img[y0 + 1, x0] * (1 - ax) + img[y0 + 1, x0 + 1] * ax) * ay
+	inside = (gx >= 0.0) & (gx < 1.0) & (gy >= 0.0) & (gy < 1.0)
+	return out * (inside[..., None] if img.ndim == 3 else inside)
+
+
+def paint_glyph(base, s, t, cell, weave, blot, grain):
+	"""The cell's glyph over its canvas, at its own aspect on the cloth: each texel's
+	place in metres (s across, t down the sheet, as `sail_geo` lays them) into the
+	glyph's square. Brushed: a ragged edge, the weave through the ink, worn patchy."""
+	w, wb, h = course_size(cell)
+	span = GLYPH_SPAN * h
+	gx = s * lerp(w, wb, t) * 0.5 / span + 0.5
+	gy = (t - 0.5) * h / span + 0.5
+	g = glyph_art(GLYPHS[cell])
+	# A little soft, so the brush's edge can wander in it.
+	cov = np.clip(blur(g.m, 0.1 / span * g.n), 0.0, 1.0)
+	m = sample(g.m, gx, gy)
+	col = sample(g.a * g.m[..., None], gx, gy) / np.maximum(m, 1e-3)[..., None]
+	c = sample(cov, gx, gy)
+	cw = s.shape[0]
+	rough = spectral(cw, cw, 0.55, 300 + cell, sy=0.6)
+	m = sst(0.34, 0.66, c + (rough - 0.5) * 0.8)
+	# Worn: thin where the sun and the sheets have had it, a few flakes gone.
+	flake = spectral(cw, cw, 0.9, 310 + cell)
+	patch = 0.62 + 0.38 * sst(0.3, 0.7, blot * 0.5 + grain * 0.5)
+	m *= patch * (1.0 - 0.65 * sst(0.66, 0.74, flake))
+	ink = col * (0.78 + 0.44 * weave)[..., None]
+	# The canvas's own light and dark through the paint.
+	ink *= np.clip(base.mean(axis=-1) / 0.4, 0.75, 1.2)[..., None]
+	return mix(base, ink, np.clip(m, 0.0, 1.0))
+
+
 def paint_sails(W):
-	"""Four whole, weathered cloths in a 2 x 2 atlas: RGB and a hard alpha for shot holes and a frayed hem."""
+	"""Four whole, weathered cloths in a 2 x 2 atlas: RGB and a hard alpha for shot holes and a frayed hem.
+
+	Cool grey canvas with a dark border: the game's sun warms grey toward beige, so it
+	is painted a little blue. Cells 0 and 1 are the fore and main courses'."""
 	cw = W // 2
 	col = np.zeros((W, W, 3), dtype=np.float32)
 	alpha = np.zeros((W, W), dtype=np.float32)
@@ -1697,38 +2399,45 @@ def paint_sails(W):
 		wash2 = spectral(cw, cw, 1.3, 220 + cell, sy=2.4)
 		fray = spectral(cw, cw, 1.15, 230 + cell)
 		blot = spectral(cw, cw, 1.6, 240 + cell)
-		# Cloth: tanned canvas, bleached in great soft patches where the sun has it.
-		base = mix(C(0.47, 0.41, 0.34)[None, None], C(0.66, 0.59, 0.49)[None, None], np.clip(wash * 1.4 - 0.2, 0, 1))
-		base *= (0.84 + 0.32 * grain)[..., None] * (0.92 + 0.16 * weave)[..., None]
+		# Cloth: grey canvas, bleached in great soft patches where the sun has it.
+		base = mix(SAIL_GREY[0][None, None], SAIL_GREY[1][None, None], np.clip(wash * 1.4 - 0.2, 0, 1))
+		base *= (0.9 + 0.2 * grain)[..., None] * (0.93 + 0.14 * weave)[..., None]
 		# The cloths, seam by seam, each a touch different.
 		n = 15
 		idx = np.floor((s * 0.5 + 0.5) * n).astype(np.int32)
-		tone = rng.uniform(0.84, 1.12, n + 1)[np.clip(idx, 0, n)].astype(np.float32)
+		tone = rng.uniform(0.94, 1.05, n + 1)[np.clip(idx, 0, n)].astype(np.float32)
 		base *= tone[..., None]
 		sf = (s * 0.5 + 0.5) * n - idx
 		seamx = np.maximum(sst(0.05, 0.0, sf), sst(0.95, 1.0, sf))
-		base = mix(base, base * 0.55, seamx * 0.65)
+		base = mix(base, base * 0.8, seamx * 0.5)
 		# Reef bands, stitched across, a row of reef points under each.
 		for bz in (0.27, 0.5, 0.74):
-			base = mix(base, base * 0.68, sst(0.014, 0.0, np.abs(t - bz)) * 0.55)
+			base = mix(base, base * 0.84, sst(0.012, 0.0, np.abs(t - bz)) * 0.5)
 			base = mix(base, base * 0.42, sst(0.003, 0.0, np.abs(t - bz - 0.016)) * sst(0.32, 0.5, np.abs(np.sin(s * 72.0))) * 0.8)
 		# Patches sewn on, in another cloth, their stitching dark.
-		for _ in range(11):
+		for _ in range(5):
 			px, pz = rng.uniform(-0.82, 0.82), rng.uniform(0.08, 0.9)
 			w, h = rng.uniform(0.04, 0.13), rng.uniform(0.025, 0.08)
 			d = np.maximum(np.abs(s - px) - w, np.abs(t - pz) - h)
-			tint = rng.choice([0.72, 0.84, 1.08, 1.2]) * np.array((1.0, 0.93, 0.82), dtype=np.float32)
+			tint = rng.choice([0.86, 0.92, 1.06, 1.1]) * np.array((0.98, 0.99, 1.02), dtype=np.float32)
 			base = np.where((d < 0.0)[..., None], np.clip(base * tint, 0, 1), base)
-			base = mix(base, base * 0.62, sst(0.004, 0.0, np.abs(d)) * 0.7)
-		# Rain and salt run down the cloth, tar and rust from the yard, mildew at the foot.
+			base = mix(base, base * 0.72, sst(0.004, 0.0, np.abs(d)) * 0.6)
+		# The courses' glyphs, under the weather.
+		if cell in GLYPHS:
+			base = paint_glyph(base, s, t, cell, weave, blot, grain)
+		# Rain and salt run down the cloth, tar from the yard, mildew at the foot.
 		streak = spectral(cw, cw, 1.1, 250 + cell, sx=0.1, sy=1.0)
-		base = mix(base, base * 0.6, sst(0.52, 0.8, wash2) * (0.3 + 0.5 * t))
-		base = mix(base, base * C(0.62, 0.48, 0.36)[None, None], sst(0.55, 0.78, streak) * (1.0 - t) ** 1.5 * 0.85)
-		base = mix(base, base * C(0.5, 0.54, 0.44)[None, None], sst(0.5, 0.74, blot) * sst(0.5, 1.0, t) * 0.8)
+		base = mix(base, base * 0.74, sst(0.52, 0.8, wash2) * (0.3 + 0.5 * t))
+		base = mix(base, base * C(0.7, 0.69, 0.68)[None, None], sst(0.55, 0.78, streak) * (1.0 - t) ** 1.5 * 0.6)
+		base = mix(base, base * C(0.6, 0.63, 0.63)[None, None], sst(0.5, 0.74, blot) * sst(0.5, 1.0, t) * 0.8)
 		base = mix(base, base * 0.72, sst(0.82, 1.0, t) * 0.55)
 		# The hem and bolt rope, dark and doubled round the edge.
 		hem = np.minimum(np.minimum(1.0 - np.abs(s), t * 1.4), 1.0 - t)
 		base = mix(base, base * 0.5, sst(0.022, 0.012, hem) * 0.7)
+		# The border: a dark band round the cloth, worn through in places.
+		edge = np.minimum(np.minimum((1.0 - np.abs(s)) / SAIL_BORDER[0], t / SAIL_BORDER[1]), (1.0 - t) / SAIL_BORDER[1])
+		wear = 0.62 + 0.38 * sst(0.35, 0.65, blot * 0.6 + grain * 0.4)
+		base = mix(base, SAIL_INK[None, None] * (0.85 + 0.3 * weave)[..., None], sst(1.1, 0.9, edge) * wear)
 		# What's gone: a frayed foot and leech, a very little, and a few small shot holes.
 		keep = hem - (fray - 0.5) * 0.022 - 0.004
 		soot = np.zeros((cw, cw), dtype=np.float32)
@@ -1744,6 +2453,50 @@ def paint_sails(W):
 		x0 = (cell % 2) * cw
 		col[y0:y0 + cw, x0:x0 + cw] = np.clip(base, 0, 1)
 		alpha[y0:y0 + cw, x0:x0 + cw] = a
+	return col, alpha
+
+
+FLAG_DARK = C(0.135, 0.132, 0.135)   # sRGB-ish map, as the sails': near-black bunting
+FLAG_GREY = C(0.33, 0.345, 0.37)     # the sails' weathered grey
+
+
+def paint_flags(W):
+	"""The ensign and the pennant in one map (FLAG_ROWS), RGB and a hard alpha for the
+	frayed fly and the pennant's swallowtail: dark bunting, the sails' grey in a band
+	at the hoist and, on the ensign, a stepped fret across its foot."""
+	col = np.zeros((W, W, 3), np.float32)
+	alpha = np.zeros((W, W), np.float32)
+	v, u = np.mgrid[0:W, 0:W].astype(np.float32)
+	x = (u + 0.5) / W
+	grain = spectral(W, W, 0.8, 400, sx=6.0)
+	weave = spectral(W, W, 0.35, 401)
+	wash = spectral(W, W, 1.6, 402)
+	fray = spectral(W, W, 1.1, 403)
+	for k, (r0, r1) in enumerate(FLAG_ROWS):
+		r0, r1 = r0 * W // 512, r1 * W // 512
+		e = slice(r0, r1)
+		y = (v[e] - r0 + 0.5) / (r1 - r0)
+		xe = x[e]
+		base = np.broadcast_to(FLAG_DARK, xe.shape + (3,)).copy()
+		grey = xe < (0.16 if k == 0 else 0.12)
+		if k == 0:
+			# The fret: three cells across the fly, a band over the foot.
+			fa = np.mod((xe - 0.2) / 0.8 * 3.0, 1.0)
+			fb = (y - 0.6) / 0.26
+			grey |= fret(fa, fb) & (xe > 0.2) & (fb >= 0.0) & (fb < 1.0)
+		else:
+			grey |= (xe > 0.17) & (xe < 0.2)
+		base = np.where(grey[..., None], FLAG_GREY, base)
+		# Worn: the weave, the sun's bleaching, the fly's end darkened by the wind's fraying.
+		base *= (0.88 + 0.24 * grain[e])[..., None] * (0.92 + 0.16 * weave[e])[..., None]
+		base = mix(base, base * 1.25 + 0.02, sst(0.5, 0.8, wash[e]) * 0.5)
+		base = mix(base, base * 0.7, sst(0.75, 1.0, xe) * 0.6)
+		# The cut: the fly frayed; the pennant's end forked.
+		keep = (1.0 - xe) - (fray[e] - 0.5) * 0.05 - 0.012
+		if k == 1:
+			keep = np.minimum(keep, (1.0 - 0.16 * (1.0 - np.abs(y * 2.0 - 1.0))) - xe)
+		col[e] = np.clip(base, 0, 1)
+		alpha[e] = sst(-0.002, 0.002, keep)
 	return col, alpha
 
 
@@ -1798,8 +2551,9 @@ MATERIALS = {
 	"wood_in": ("deck", "ship_wood", "ship_wood_n", {"normal_depth": 0.6, "roughness_value": 0.9, "fill": 7.0, "rim": 0.0, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP, "slat_power": DECK_SLAT, "calm": 0.35, "seam": 0.75, "liner": 0.55}),
 	"iron_in": ("deck", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7, "rim": 0.3, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP * 1.6, "slat_power": DECK_SLAT * 0.3, "glint": 0.2, "inside_x": SKIN_X - 0.46}),
 	"lamp": ("lamp", None, None, {}),
-	"iron": ("surface", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7}),
+	"iron": ("surface", None, None, {"roughness_value": 0.68, "metallic_value": 0.3, "fill": 1.7}),
 	"sail": ("cloth", "ship_sail", None, {"fill": 3.6}),
+	"flag": ("flag", "ship_flag", None, {"fill": 3.6}),
 	"rope": ("surface", None, None, {"roughness_value": 0.95, "fill": 1.7, "rim": 0.0}),
 	"glass": ("surface", None, None, {"roughness_value": 0.14, "metallic_value": 0.3, "fill": 1.0}),
 	"dark": ("surface", None, None, {"roughness_value": 0.95, "fill": 0.0, "rim": 0.0}),
@@ -1857,6 +2611,7 @@ const float PORT_HI = %(port_hi)s;
 const float PORT_X = %(port_x)s;
 const float PORT_FIRST = %(port_first)s;
 const float PORT_LAST = %(port_last)s;
+const float PORT_PITCH = %(port_pitch)s;
 const vec3 FLAME = vec3(1.0, 0.58, 0.28);
 varying vec3 at;
 varying vec3 way;
@@ -1913,7 +2668,7 @@ void fragment() {
 		if (sun.y > 0.03 && abs(sun.x) > 0.05) {
 			float t = (sign(sun.x) * PORT_X - at.x) / sun.x;
 			vec3 h = at + sun * t;
-			float pz = clamp(round((h.z + PITCH * 0.5) / PITCH) * PITCH - PITCH * 0.5, PORT_FIRST, PORT_LAST);
+			float pz = clamp(PORT_FIRST + round((h.z - PORT_FIRST) / PORT_PITCH) * PORT_PITCH, min(PORT_FIRST, PORT_LAST), max(PORT_FIRST, PORT_LAST));
 			vec2 q = vec2(abs(h.z - pz) - PORT_W * 0.5, max(PORT_LO - h.y, h.y - PORT_HI));
 			float through = smoothstep(0.1, -0.1, q.x) * smoothstep(0.1, -0.1, q.y);
 			float barrel = smoothstep(0.5, 0.75, length(vec2(h.z - pz, h.y - %(gun)s)));
@@ -1931,7 +2686,7 @@ void fragment() {
 }
 """ % {"gloom": DECK_GLOOM, "lamp_x": LAMP_X, "lamp_y": LAMP_Z, "pitch": LAMP_PITCH, "last": max(LAMP_BAYS) + 0.5,
 	"port_w": PORT_W, "port_lo": row_z(PORT_ROW), "port_hi": row_z(PORT_ROW + PORT_ROWS), "port_x": SKIN_X - 0.56, "deck_x": COR_W * 0.5, "lamp_reach": 140.0 * WIDEN ** 2,
-	"port_first": PORTS[0], "port_last": PORTS[-1], "gun": GUN_Z, "keel": KEEL_Z, "strake": STRAKE}
+	"port_first": PORTS[0], "port_last": PORTS[-1], "port_pitch": PORTS[1] - PORTS[0], "gun": GUN_Z, "keel": KEEL_Z, "strake": STRAKE}
 LAMP_CODE = """shader_type spatial;
 // Written by art/blender/ship/ship_build.py: a lantern's horn pane, and its beat.
 render_mode unshaded, shadows_disabled, fog_disabled;
@@ -1946,10 +2701,34 @@ void fragment() {
 }
 """
 
+GUST_CODE = r"""float sail_hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float sail_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(sail_hash(i), sail_hash(i + vec2(1.0, 0.0)), f.x),
+		mix(sail_hash(i + vec2(0.0, 1.0)), sail_hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+// The land's gust field (zs_gust_field_at) at a sail's size: the same air, the
+// same run downwind, in parcels a sail can feel. -1 a lull, 1 a gust.
+float sail_gust(vec2 p) {
+	vec2 dir = zs_wind_direction;
+	vec2 q = p - dir * zs_gust_distance;
+	vec2 e = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(0.016, 0.028);
+	float field = sail_noise(e) * 0.62 + sail_noise(e * 2.3 + vec2(3.7, 9.1)) * 0.38;
+	return smoothstep(0.28, 0.72, field) * 2.0 - 1.0;
+}
+"""
+
 SAIL_CODE = """// A sail: a flat sheet (ship_build.py `sail_geo`) shaped here and nowhere else,
 // from the wind every ship sees and her own heading and speed. Pinned at the
 // yard, it fills forward; it never bulges aft, it goes slack or flogs instead.
 //   COLOR.rgb    the sheet's height, head width and foot width / SAIL_SIZE
+//   COLOR.a      1 + skew: the foot's middle off the head's, a share of its half width (the jib)
 //   ship_way     her bow (x, z), her speed (m/s), her turn (rad/s): per ship, scripts/endless/ship_sails.gd
 //   ship_slack   1 in a sink: no wind in her, the cloth hangs where gravity has it
 global uniform float zs_wind_strength;
@@ -1988,31 +2767,11 @@ struct Cloth {
 	float air;
 	float clock;
 	float slack;
+	float skew;
 	vec3 hang;
 };
 
-float sail_hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-float sail_noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(sail_hash(i), sail_hash(i + vec2(1.0, 0.0)), f.x),
-		mix(sail_hash(i + vec2(0.0, 1.0)), sail_hash(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-
-// The land's gust field (zs_gust_field_at) at a sail's size: the same air, the
-// same run downwind, in parcels a sail can feel. -1 a lull, 1 a gust.
-float sail_gust(vec2 p) {
-	vec2 dir = zs_wind_direction;
-	vec2 q = p - dir * zs_gust_distance;
-	vec2 e = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(0.016, 0.028);
-	float field = sail_noise(e) * 0.62 + sail_noise(e * 2.3 + vec2(3.7, 9.1)) * 0.38;
-	return smoothstep(0.28, 0.72, field) * 2.0 - 1.0;
-}
-
+""" + GUST_CODE + r"""
 // The cloth at s (-1..1 across), t (0 yard .. 1 foot).
 vec3 sail_at(float s, float t, Cloth c) {
 	float s2 = s * s;
@@ -2025,7 +2784,7 @@ vec3 sail_at(float s, float t, Cloth c) {
 	float belly = c.depth * breathe * (spine * (1.0 - sh * sh) + leech * sh * sh);
 	// The cloth the belly takes comes off its width and height; the sheets draw
 	// the foot in and the foot arches between them.
-	float x = s * hw * (1.0 - c.fill * (0.2 * t * t + 0.03 * sin(3.14159 * t)));
+	float x = s * hw * (1.0 - c.fill * (0.2 * t * t + 0.03 * sin(3.14159 * t))) + c.skew * c.w * 0.5 * t;
 	x += c.lean * c.fill * 0.05 * hw * sin(3.14159 * t);
 	float take = c.depth / c.h;
 	float y = -c.h * t * (1.0 - 0.9 * take * take) + c.h * 0.1 * c.fill * (1.0 - s2) * t * t * t;
@@ -2055,8 +2814,9 @@ void vertex() {
 	c.w = COLOR.g * SIZE;
 	c.wb = COLOR.b * SIZE;
 	c.seed = fract((c.h * 3.1 + c.w * 0.77 + c.wb * 0.31) * 0.61803);
+	c.skew = COLOR.a - 1.0;
 	float t = clamp(-VERTEX.y / c.h, 0.0, 1.0);
-	float s = clamp(VERTEX.x / max(mix(c.w, c.wb, t) * 0.5, 0.01), -1.0, 1.0);
+	float s = clamp((VERTEX.x - c.skew * c.w * 0.5 * t) / max(mix(c.w, c.wb, t) * 0.5, 0.01), -1.0, 1.0);
 	mat3 m = mat3(MODEL_MATRIX);
 	vec3 side = normalize(m[0]);
 	float gust = sail_gust(MODEL_MATRIX[3].xz);
@@ -2084,6 +2844,63 @@ void vertex() {
 	NORMAL = normalize(cross(pu, pv));
 	// How far the cloth has turned from its flat: the belly's form, whatever the light.
 	v_form = 1.0 - abs(NORMAL.z);
+}
+"""
+
+FLAG_CODE = """// A flag: a flat sheet off its hoist (ship_build.py `flag_geo`), streamed here down
+// the air on it, the air the sails take (ship_cloth.gdshader): the true wind less her
+// way. The hoist stays on its mast or staff (local y); the fly turns about it, hangs
+// as the air drops, and ripples out along it.
+//   VERTEX       x along the fly from the hoist, y up the hoist, as built
+//   COLOR.r      the fly's length / FLAG_SIZE; COLOR.g a seed
+//   ship_way, ship_slack: as the sails' (scripts/endless/ship_sails.gd)
+global uniform float zs_wind_strength;
+global uniform vec2 zs_wind_direction;
+global uniform float zs_gust_distance;
+instance uniform vec4 ship_way;
+instance uniform float ship_slack;
+uniform float wind_ms = 20.0;
+uniform float gust_swing = 0.42;
+// The air (m/s) that has a flag two thirds out, and how far (rad) below level it hangs in none.
+uniform float flies_at = 4.5;
+uniform float droop = 1.0;
+// The ripple: its reach at the fly's end (a share of the fly), waves along the fly, their pace.
+uniform float wave = 0.085;
+uniform float waves = 1.5;
+uniform float pace = 0.8;
+const float SIZE = """ + str(FLAG_SIZE) + r""";
+
+""" + GUST_CODE + r"""
+vec3 flag_at(float x, float y, float len, vec3 fly, vec3 side, float out_of, float clock, float seed) {
+	float f = clamp(x / len, 0.0, 1.0);
+	float q = (f * waves - y / len * 0.4) * 6.28318 - clock + seed * 6.28318;
+	float amp = wave * len * pow(f, 1.2) * mix(1.7, 1.0, out_of);
+	float ripple = sin(q) + 0.3 * sin(2.3 * q + 1.7);
+	float lift = 0.3 * sin(0.7 * q + 2.0) * amp;
+	return vec3(0.0, y + lift, 0.0) + fly * x + side * ripple * amp;
+}
+
+void vertex() {
+	float len = max(COLOR.r * SIZE, 0.1);
+	float seed = COLOR.g;
+	vec2 air = zs_wind_direction * zs_wind_strength * wind_ms * (1.0 + gust_swing * sail_gust(MODEL_MATRIX[3].xz)) - ship_way.xy * ship_way.z;
+	float speed = length(air);
+	// The air in the flag's own frame, across its hoist; none, and it keeps its built line.
+	vec3 w = transpose(mat3(MODEL_MATRIX)) * vec3(air.x, 0.0, air.y);
+	vec2 d = w.xz;
+	float dl = length(d);
+	d = dl > 0.05 ? d / dl : vec2(1.0, 0.0);
+	float out_of = (1.0 - exp(-pow(speed / flies_at, 1.5))) * (1.0 - clamp(ship_slack, 0.0, 1.0));
+	float a = droop * (1.0 - out_of);
+	vec3 fly = vec3(d.x, 0.0, d.y) * cos(a) - vec3(0.0, sin(a), 0.0);
+	vec3 side = vec3(-d.y, 0.0, d.x);
+	float clock = zs_gust_distance * 2.0 * pace;
+	vec3 p = flag_at(VERTEX.x, VERTEX.y, len, fly, side, out_of, clock, seed);
+	float dx = len * 0.02;
+	vec3 px = flag_at(VERTEX.x + dx, VERTEX.y, len, fly, side, out_of, clock, seed) - p;
+	vec3 py = flag_at(VERTEX.x, VERTEX.y + 0.2, len, fly, side, out_of, clock, seed) - p;
+	VERTEX = p;
+	NORMAL = normalize(cross(px, py));
 }
 """
 
@@ -2117,6 +2934,17 @@ void fragment() {
 	BACKLIGHT = base * through;
 	ALBEDO *= 1.0 - v_form * form;
 """ + SHADER_FILL.replace("vec3 n =", "base *= 1.0 - v_form * form;\n\tvec3 n =") + "}\n",
+	"flag": SHADER_HEAD % "diffuse_lambert, cull_disabled" + FLAG_CODE + """uniform float through = 0.4;
+void fragment() {
+	vec4 t = texture(albedo_tex, UV);
+	vec3 base = t.rgb;
+	ALBEDO = base;
+	ALPHA = t.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
+	ROUGHNESS = 1.0;
+	SPECULAR = 0.1;
+	BACKLIGHT = base * through;
+""" + SHADER_FILL + "}\n",
 }
 
 
@@ -2129,7 +2957,7 @@ def write_materials():
 		lines = ['shader = ExtResource("1")']
 		for key, tex, i in (("albedo_tex", alb, 2), ("normal_tex", nrm, 3)):
 			if tex:
-				suffix = ".png" if tex == "ship_sail" else ".jpg"
+				suffix = ".png" if tex in ("ship_sail", "ship_flag") else ".jpg"
 				ext.append(f'[ext_resource type="Texture2D" path="{RES}/{tex}{suffix}" id="{i}"]')
 				lines.append(f'shader_parameter/{key} = ExtResource("{i}")')
 		for k, v in params.items():
@@ -2151,6 +2979,8 @@ def make_mats(scale):
 	save_tex("ship_wood_n", normal_from(h, 3.0), data=True)
 	c, a = paint_sails(int(SAIL_TEX * scale))
 	save_tex("ship_sail", c, a)
+	c, a = paint_flags(int(FLAG_TEX * scale))
+	save_tex("ship_flag", c, a)
 	write_materials()
 	mats = {}
 	for name in MAT_NAMES:
@@ -2198,7 +3028,7 @@ def emit(name, geo, mats, group=None, parent=None, origin=None, extra=(), local=
 	layer.uv.foreach_set("vector", uvarr)
 	ca = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
 	carr = np.ones((len(vs), 4), dtype=np.float32)
-	carr[:, :3] = np.array(cols, dtype=np.float32)
+	carr[:] = np.array([tuple(c) + (1.0,) * (4 - len(c)) for c in cols], dtype=np.float32)
 	ca.data.foreach_set("color", carr.ravel())
 	me.color_attributes.active_color = ca
 	me.update()
@@ -2244,15 +3074,19 @@ def build(fast):
 	build_stern(upper)
 	build_backing(inside)
 	build_beak(upper)
+	build_ensign_staff(upper)
+	build_tunnel(hull)
 	emit("Hull", hull, mats, extra=(teeth,))
 	emit("Upperworks", upper, mats)
 	emit("Interior", inside, mats)
 	guns, gun_empties = build_guns()
-	emit("Cannons", guns, mats)
+	for name, g, at in guns:
+		emit(name, g, mats, group="Cannons", origin=at)
+	build_deck_guns(mats)
 	for name, g, hinge in build_lids():
 		emit(name, g, mats, group="PortLids", origin=hinge, local=True)
 	# The plugs: a parent each at the end, shards round their own centres.
-	for label, y, gs, tag in (("CrackPlug_Stern", stern_y(COR_Z), shard_s, "S"), ("CrackPlug_Bow", stem_y(COR_Z), shard_b, "B")):
+	for label, y, gs, tag in (("CrackPlug_Stern", stern_y(COR_Z), shard_s, "S"), ("CrackPlug_Bow", Y_BOW, shard_b, "B")):
 		par = empty(label, Vector((0.0, y, COR_Z)))
 		bpy.context.view_layer.update()
 		for i, g in enumerate(gs):
@@ -2264,26 +3098,36 @@ def build(fast):
 	# Masts.
 	yards = []
 	for i, spec in enumerate(MASTS):
-		g, out = mast_geo(i, spec, SAILS[i])
+		g, out = mast_geo(i, spec, SAILS[i], BRACES[i])
 		mast = emit(f"Mast_{i + 1}", g, mats, group="Masts", origin=(0.0, spec[0], base_deck(spec[0])))
 		bpy.context.view_layer.update()
 		yards.append(out)
 		for k, (name, c, w, zb, wb, cell, tilt) in enumerate(out):
 			sg = sail_geo(w, c.z - zb, wb, cell)
 			sob = emit(f"Sail_{name}", sg, mats, group="Sails", parent=mast, origin=c, local=True)
-			sob.rotation_euler = (0.0, -math.radians(tilt), math.radians(BRACE))
-	# Bowsprit and its sail.
+			sob.rotation_euler = (0.0, -math.radians(tilt), math.radians(BRACES[i]))
+	# Bowsprit and the jib, hung from the fore topmast stay.
 	g = Geo()
-	c, tilt = build_bowsprit(g)
+	build_bowsprit(g)
 	sprit = emit("Bowsprit", g, mats, origin=BOWSPRIT[0])
 	bpy.context.view_layer.update()
-	sob = emit("Sail_0a", sail_geo(20.0, 7.0, 21.0, 3), mats, group="Sails", parent=sprit, origin=c, local=True)
-	sob.rotation_euler = (0.0, -tilt, 0.0)
+	c, length, rot = jib_frame()
+	sob = emit("Sail_0a", sail_geo(length, JIB_DROP, JIB_FOOT, 3, JIB_SKEW), mats, group="Sails", parent=sprit, origin=c, local=True)
+	sob.rotation_euler = rot
 	# Rigging: the fine lines hide at a distance, the stays do not.
 	fine, stays = Geo(), Geo()
 	build_rigging(fine, stays, yards)
 	emit("Rigging", fine, mats)
 	emit("Stays", stays, mats)
+	# Flags: a pennant at each truck, built streaming aft; the ensign on its staff.
+	for i, (fly, hoist) in enumerate(PENNANTS):
+		y, top1, top2, truck = MASTS[i]
+		fg = flag_geo(fly, hoist, PENNANT_TAPER, FLAG_ROWS[1], 0.23 + 0.31 * i, 22, 2)
+		fob = emit(f"Flag_{i + 1}", fg, mats, group="Flags", origin=Vector((0.0, y, truck - 0.15)), local=True)
+		fob.rotation_euler = (0.0, 0.0, -math.pi * 0.5)
+	at, rot = ensign_frame()
+	fob = emit("Flag_E", flag_geo(ENSIGN[0], ENSIGN[1], 0.0, FLAG_ROWS[0], 0.71, 12, 8), mats, group="Flags", origin=at, local=True)
+	fob.rotation_euler = rot
 	# The anchors for code.
 	for name, at, side in gun_empties:
 		empty(name, at, rot=(0.0, 0.0, -side * math.pi * 0.5))
@@ -2387,6 +3231,188 @@ def tri_hits_box(tris, lo, hi):
 	return ids[ok]
 
 
+# --- The solid ----------------------------------------------------------------
+# What the plane meets (pirate_ship.gd `solids`, BoxSolid and a StaticBody): boxes
+# fitted to the shape above in horizontal bands, each band's half breadth stepped
+# along her to within SOLID_TOL of the skin, open where the gun deck, the prow's
+# tunnel and the open decks are; the masts, the staff and the stern's dress on top.
+# Written to ship_solids.gd in Godot's frame (x, y up, z = -Blender y); the plates
+# are pirate_ship.gd's own.
+
+SOLID_TOL = 0.45          # m either way of the skin's half breadth, where the plane flies
+SOLID_WET = 1.25          # under the waterline, where it can't
+SOLID_STEP = 1.0          # the stations it's read at along her (m), at most
+SOLID_FROM, SOLID_TO = -63.0, 79.0
+SOLID_PROUD = 0.15        # the strakes' lips and wales stand this proud of the shape's line
+BULWARK = 0.8             # the bulwarks' thickness over the open decks
+RAIL_TOL = 0.5            # their tops stepped to within this of the cap rail's
+CAP_TOP = 0.45            # the cap rail's top over the sheer
+# The bands: under the decks; the castles' and the forecastle's insides in a few more;
+# the bulwarks' over the decks.
+SOLID_BANDS = (KEEL_Z, -2.5, 0.0, 1.3, TUNNEL_LO, COR_FLOOR, 5.5, 10.5, COR_TOP, TUNNEL_HI, DECK_Z, 18.0, DECK_FORE, DECK_POOP, 25.0, DECK_HIGH)
+WALL_BANDS = tuple(float(z) for z in range(15, 35, 2))
+
+
+def skin_half(y, z):
+	"""The hull's half breadth at a real station y and height z, her planks' faces;
+	0 past her ends."""
+	if y < stern_y(z) or y > stem_y(z):
+		return 0.0
+	return half_beam(u_at(y, z), z) + SOLID_PROUD
+
+
+def solid_cut(y, z):
+	"""What's open at station y, height z: 0 none, an inner half width (the gun deck,
+	the tunnel), or None (over the deck: the bulwarks are their own)."""
+	if z >= base_deck(y):
+		return None
+	if COR_FLOOR <= z < COR_TOP and abs(y) < Y_BOW:
+		return COR_W * 0.5
+	# The tunnel, its funnel stepped from the gun deck's own lines at the plate: each
+	# step (y its middle) as wide as its forward end, so none stands proud of the line.
+	if y >= Y_BOW and tunnel_lo(y) <= z < tunnel_hi(y):
+		return tunnel_x(y + FUNNEL_STEP * 0.5, COR_W * 0.5)
+	return 0.0
+
+
+def solid_stations():
+	"""Along her, SOLID_STEP at most (FUNNEL_STEP along the funnel), on every place the
+	solid's makeup changes."""
+	cuts = sorted({SOLID_FROM, SOLID_TO, -Y_BOW, Y_BOW, Y_BOW + FUNNEL_LEN, BREAK_HIGH, BREAK_POOP, BREAK_FORE})
+	out = [SOLID_FROM]
+	for a, b in zip(cuts, cuts[1:]):
+		n = max(1, int(math.ceil((b - a) / (FUNNEL_STEP if a == Y_BOW else SOLID_STEP) - 1e-6)))
+		out += [a + (b - a) * (i + 1) / n for i in range(n)]
+	return out
+
+
+def fit_solids():
+	"""The solid's boxes, Godot frame: [(x0, y0, z0, x1, y1, z1)]."""
+	out = []
+
+	def box(x0, x1, z0, z1, y0, y1):
+		if x1 - x0 > 0.05 and z1 - z0 > 0.05 and y1 - y0 > 0.05:
+			out.append((x0, z0, -y1, x1, z1, -y0))
+
+	def emit(run, z0, z1):
+		a, b, cut, lo, hi = run
+		w = (lo + hi) * 0.5
+		if cut == 0.0:
+			box(-w, w, z0, z1, a, b)
+			return
+		if w > cut + 0.1:
+			box(-w, -cut, z0, z1, a, b)
+			box(cut, w, z0, z1, a, b)
+
+	ys = solid_stations()
+	for z0, z1 in zip(SOLID_BANDS, SOLID_BANDS[1:]):
+		tol = SOLID_WET if z1 <= -2.5 else SOLID_TOL
+		zs = (z0 + 0.01, (z0 + z1) * 0.5, z1 - 0.01)
+		run = None
+		for a, b in zip(ys, ys[1:]):
+			cut = solid_cut((a + b) * 0.5, (z0 + z1) * 0.5)
+			ws = [sum(skin_half(y, z) for z in zs) / 3.0 for y in (a, (a + b) * 0.5, b)]
+			# A station half past her end is hers only if its middle is: no half widths.
+			lo, hi = min(w for w in ws if w > 0.0) if max(ws) > 0.0 else 0.0, max(ws)
+			if cut is None or ws[1] < 0.3:
+				if run:
+					emit(run, z0, z1)
+				run = None
+				continue
+			if run and run[2] == cut and max(run[4], hi) - min(run[3], lo) <= 2.0 * tol:
+				run = (run[0], b, cut, min(run[3], lo), max(run[4], hi))
+			else:
+				if run:
+					emit(run, z0, z1)
+				run = (a, b, cut, lo, hi)
+		if run:
+			emit(run, z0, z1)
+	# The bulwarks round the open decks, up to the cap rail, in bands of their own:
+	# a run goes on while its foot and head and its skin stay within tolerance.
+	def wall(run, z0, z1):
+		a, b, f0, f1, h0, h1, w0, w1 = run
+		w = (w0 + w1) * 0.5
+		foot, head = max(z0, (f0 + f1) * 0.5), min(z1, (h0 + h1) * 0.5)
+		box(-w, -w + BULWARK, foot, head, a, b)
+		box(w - BULWARK, w, foot, head, a, b)
+
+	for z0, z1 in zip(WALL_BANDS, WALL_BANDS[1:]):
+		run = None
+		for a, b in zip(ys, ys[1:]):
+			m = (a + b) * 0.5
+			d = base_deck(m)
+			heads = [min(z1, rail(y) + CAP_TOP) for y in (a, m, b)]
+			foot = max(z0, d)
+			ws = [skin_half(y, (foot + min(heads)) * 0.5) for y in (a, m, b)]
+			if min(heads) <= foot + 0.2 or ws[1] < 0.3:
+				if run:
+					wall(run, z0, z1)
+				run = None
+				continue
+			ws = [w for w in ws if w > 0.0]
+			if run and run[2] == foot and max(run[5], max(heads)) - min(run[4], min(heads)) <= 2.0 * RAIL_TOL and max(run[7], max(ws)) - min(run[6], min(ws)) <= 2.0 * SOLID_TOL:
+				run = (run[0], b, foot, foot, min(run[4], min(heads)), max(run[5], max(heads)), min(run[6], min(ws)), max(run[7], max(ws)))
+			else:
+				if run:
+					wall(run, z0, z1)
+				run = (a, b, foot, foot, min(heads), max(heads), min(ws), max(ws))
+		if run:
+			wall(run, z0, z1)
+	# The channels outboard of the masts, and the rails across the castles' edges.
+	for my, _, _, _ in MASTS:
+		z = chain_z(my)
+		w = half_at(my, z)
+		box(w - 0.2, w + 1.85, z - 0.2, z + 0.2, my - 5.5, my + 5.5)
+		box(-w - 1.85, -w + 0.2, z - 0.2, z + 0.2, my - 5.5, my + 5.5)
+	for y, z, face in ((BREAK_POOP, DECK_POOP, 1.0), (BREAK_HIGH, DECK_HIGH, 1.0), (BREAK_FORE, DECK_FORE, -1.0)):
+		w = half_at(y, z + 1.0) - 0.5
+		box(-w, w, z, z + 1.6, y + face * 0.05 - 0.25, y + face * 0.05 + 0.25)
+	# The rudder on the tucked sternpost.
+	for z0, z1, w in ((lift(-STERN_U, KEEL_Z), -0.5, 4.0), (-0.5, COR_FLOOR - 0.6, 2.6)):
+		ry = stern_y((z0 + z1) * 0.5) - 0.15
+		box(-0.35, 0.35, z0, z1, ry - w, ry)
+	# The bowsprit, stepped along its rise.
+	a, b = Vector(BOWSPRIT[0]), Vector(BOWSPRIT[1])
+	n = 16
+	for i in range(n):
+		p, q = a.lerp(b, i / n), a.lerp(b, (i + 1) / n)
+		r = lerp(1.05, 0.45, (i + 0.5) / n)
+		box(-r, r, min(p[2], q[2]) - r, max(p[2], q[2]) + r, p[1], q[1])
+	# The masts, lower mast, topmast and topgallant, each its own girth.
+	for i, (y, top1, top2, truck) in enumerate(MASTS):
+		for (za, zb), r in zip(((base_deck(y), top1), (top1, top2), (top2, truck)), mast_radii(i)):
+			box(-r, r, za, zb, y - r, y + r)
+	(x, y0, z0), (_, y1, z1) = ENSIGN_STAFF
+	box(-0.34, 0.34, z0, z1, min(y0, y1) - 0.34, max(y0, y1) + 0.34)
+	# The stern's dress: the crown's arc over the transom, the balconies, the quarter
+	# galleries bulging out of the sides.
+	top = rail(-STERN_U)
+	wc = half_beam(stern_y(top) * 0.999, top)
+	box(-wc * 0.85, wc * 0.85, top, top + CROWN * 0.8, stern_y(top) - 0.45, stern_y(top) + 0.25)
+	# The transom over the poop, its bulwark across her stern, leaning with the counter.
+	box(-wc, wc, DECK_HIGH, top + CAP_TOP, stern_y(top), stern_y(DECK_HIGH) + 0.3)
+	for rz in GALLERIES:
+		w = half_beam(stern_y(rz) * 0.999, rz)
+		box(-w, w, rz - 0.8, rz + 1.25, stern_y(rz) - 2.0, stern_y(rz))
+	zq = (GALLERIES[0] - 0.4 + GALLERIES[1] + 4.0) * 0.5
+	wq = half_at(-STERN_U + 6.0, zq)
+	aft = -STERN_U + 1.5 - rake(-STERN_U + 1.5, zq)
+	for s in (-1.0, 1.0):
+		box(*sorted((s * (wq - 0.6), s * (wq + 1.7))), GALLERIES[0] - 0.7, GALLERIES[1] + 3.7, aft, -STERN_U + 11.0)
+	return out
+
+
+def write_solids():
+	boxes = fit_solids()
+	rows = ",\n".join("\t[%s]" % ", ".join("%.2f" % v for v in b) for b in boxes)
+	(TEX / "ship_solids.gd").write_text(
+		"## Written by art/blender/ship/ship_build.py (fit_solids): the ship's solid, her\n"
+		"## hull's boxes fitted to its shape (x0, y0, z0, x1, y1, z1 in her frame, -z the\n"
+		"## bow), the plates left out (pirate_ship.gd `solids`). Don't edit: rebuild.\n\n"
+		"const BOXES := [\n" + rows + ",\n]\n")
+	print(f"solid: {len(boxes)} boxes")
+
+
 def prove():
 	"""Off the glb: the corridor is empty, the mouths clear, the nodes all there."""
 	doc, bin_ = read_glb(OUT)
@@ -2414,11 +3440,61 @@ def prove():
 	check("stern mouth", *box(CRACK_W * 0.5 - e, -cl - EXIT_CLEAR, -cl, COR_Z - CRACK_H * 0.5 + e, COR_Z + CRACK_H * 0.5 - e), plugs)
 	check("bow mouth", *box(CRACK_W * 0.5 - e, cl, cl + EXIT_CLEAR, COR_Z - CRACK_H * 0.5 + e, COR_Z + CRACK_H * 0.5 - e), plugs)
 	names = [n.get("name", "") for n in doc["nodes"]]
-	want = ["Hull", "CrackPlug_Stern", "CrackPlug_Bow", "Mast_1", "Mast_2", "Mast_3", "Relic", "CorridorStart", "CorridorEnd", "Gun_L_01", "Gun_R_01"]
+	want = ["Hull", "CrackPlug_Stern", "CrackPlug_Bow", "Mast_1", "Mast_2", "Mast_3", "Relic", "CorridorStart", "CorridorEnd"]
+	for side in "LR":
+		want += [f"{k}_{side}_{i + 1:02d}" for k in ("Gun", "Cannon") for i in range(len(PORTS))]
+		want += [f"DeckGun_{side}_{i + 1:02d}{part}" for i in range(len(DECK_GUN_Y)) for part in ("", "_Mount", "_Barrel", "_Muzzle")]
 	for w in want:
 		if w not in names:
 			print("FAIL missing node", w)
 			bad += 1
+	for w in ("Cannons", f"Gun_L_{len(PORTS) + 1:02d}"):
+		if w in names:
+			print("FAIL a node the guns' contract has no room for:", w)
+			bad += 1
+	# Each deck gun's chain: mount under the pivot, barrel under the mount, muzzle under it.
+	kids = {n.get("name", ""): [doc["nodes"][c].get("name", "") for c in n.get("children", ())] for n in doc["nodes"]}
+	for w in [x for x in want if x.startswith("DeckGun_") and x.count("_") == 2]:
+		for up, down in ((w, w + "_Mount"), (w + "_Mount", w + "_Barrel"), (w + "_Barrel", w + "_Muzzle")):
+			if down not in kids.get(up, ()):
+				print("FAIL deck gun chain:", down, "not under", up)
+				bad += 1
+	# A deck gun's barrel over its whole swing and lay, and kicked back at rest, is
+	# clear of the rails, rigging, masts, sails and hull (boxes down the bore, each
+	# as big as the barrel there).
+	clear_of = [k for k in tris if k in ("Hull", "Upperworks", "Rigging", "Stays", "Bowsprit") or k.startswith("Mast_")]
+	bore_s = np.arange(DG_BORE[0][0], DECK_MUZZLE + 0.01, 0.35)
+	bore_r = np.interp(bore_s, [d for d, _ in DG_BORE], [r for _, r in DG_BORE])
+	clips = {}
+	for side in (-1.0, 1.0):
+		for y in DECK_GUN_Y:
+			trun = np.array((side * DECK_GUN_X, y, base_deck(y) + DG_DAIS + DECK_LIFT))
+			poses = [(a, f, 0.0) for a in np.linspace(-DECK_SWING, DECK_SWING, 13) for f in np.linspace(DECK_RAISE[0], DECK_RAISE[1], 5)]
+			poses.append((0.0, 0.22, -1.1))
+			for a, f, kick in poses:
+				d = np.array((side * math.cos(a) * math.cos(f), math.sin(a) * math.cos(f), math.sin(f)))
+				for s_, r in zip(bore_s + kick, bore_r):
+					c = trun + d * s_
+					lo = np.array((c[0] - r, c[2] - r, -c[1] - r))   # glTF: x, z, -y
+					hi = np.array((c[0] + r, c[2] + r, -c[1] + r))
+					for k in clear_of:
+						hit = tri_hits_box(tris[k], lo, hi)
+						if len(hit):
+							q = tris[k][hit[0]].mean(axis=0)
+							clips.setdefault((side, y, k), f"turned {a:+.2f}, laid {f:+.2f}, {s_:.1f} m down the bore, at ({q[0]:.1f}, {-q[2]:.1f}, {q[1]:.1f})")
+			# Nothing else stands on the deck where the dais and the mount turn.
+			c = (side * DECK_GUN_X, y, base_deck(y))
+			r = 2.8
+			lo = np.array((c[0] - r, c[2] + 0.06, -c[1] - r))
+			hi = np.array((c[0] + r, c[2] + DG_DAIS + 3.2, -c[1] + r))
+			for k in clear_of:
+				hit = tri_hits_box(tris[k], lo, hi)
+				if len(hit):
+					q = tris[k][hit[0]].mean(axis=0)
+					clips.setdefault((side, y, k), f"on the dais's ground, at ({q[0]:.1f}, {-q[2]:.1f}, {q[1]:.1f})")
+	for (side, y, k), what in sorted(clips.items()):
+		print(f"FAIL deck gun at x {side * DECK_GUN_X:+.1f} y {y:+.1f} meets {k}: {what}")
+		bad += 1
 	# The guns' muzzles against the contract: x +-GUN_X, at y GUN_Z.
 	for n in doc["nodes"]:
 		if n.get("name", "").startswith("Gun_"):
@@ -2428,7 +3504,7 @@ def prove():
 				bad += 1
 	total = sum(len(t) for t in tris.values())
 	print(f"triangles (glb): {total}")
-	print(f"guns a side: {len(PORTS)}")
+	print(f"guns a side: {len(PORTS)} hull, {len(DECK_GUN_Y)} deck")
 	for k, v in sorted(STATS.items(), key=lambda kv: -kv[1]):
 		print(f"  {k}: {v}")
 	print("corridor clear: " + ("no" if bad else "yes"))
@@ -2439,6 +3515,7 @@ def main():
 	args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 	build("--fast" in args)
 	export()
+	write_solids()
 	sys.exit(1 if prove() else 0)
 
 
