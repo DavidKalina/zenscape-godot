@@ -1234,11 +1234,18 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	if GroundTally.on: GroundTally.tick(&"_sight")
 	const STEPS := 10
 	if doors != null and doors.holds(from): return 1.0
+	var t0 := Time.get_ticks_usec() if FrameLog.on else 0
+	if FrameLog.on: FrameLog.add(&"n_sight",1.0)
 	var bore: float = tunnels.sight(from,to)
+	if FrameLog.on: FrameLog.add(&"s_tube",(Time.get_ticks_usec()-t0)/1000.0)
 	if tunnels.sight_whole: return bore
+	var t1 := Time.get_ticks_usec() if FrameLog.on else 0
 	var ice_bore: float = ice.sight(from,to)
+	if FrameLog.on: FrameLog.add(&"s_ice",(Time.get_ticks_usec()-t1)/1000.0)
 	if ice.sight_whole: return minf(bore,ice_bore)
 	bore = minf(bore,ice_bore)
+	if FrameLog.on: t1 = Time.get_ticks_usec()
+	var got := bore
 	for i in range(1,STEPS+1):
 		var t := float(i)/STEPS
 		if t > bore: break
@@ -1246,8 +1253,11 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		# In a bore's tube the fine march has answered.
 		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0: continue
 		var m := _stone_near(p)
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p): return float(i-1)/STEPS
-	return bore
+		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p):
+			got = float(i-1)/STEPS
+			break
+	if FrameLog.on: FrameLog.add(&"s_march",(Time.get_ticks_usec()-t1)/1000.0)
+	return got
 
 func _process(delta: float) -> void:
 	if not walk_ready: return
@@ -1668,7 +1678,9 @@ func _frame(delta: float) -> void:
 	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	if coast != null: coast.watch(chase)
+	FrameLog.mark(&"c_look")
 	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (doors != null and doors.holds(plane.position))
+	FrameLog.mark(&"c_tight")
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye
 	var way: Vector3 = chase.look-chase.eye

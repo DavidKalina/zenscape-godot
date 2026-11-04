@@ -829,14 +829,20 @@ func tick(delta: float) -> void:
 	time += delta
 	_ridge_mat.set_shader_parameter("now",time)
 	if active: _move(delta)
+	FrameLog.mark(&"bt_move")
 	_step_clods(delta)
+	FrameLog.mark(&"bt_clods")
 	_step_dust(delta)
 	_step_spray(delta)
+	FrameLog.mark(&"bt_dust")
 	shudder.tick(delta,pos,strength if active and not wet else 0.0,heading,_turn/maxf(speed,1.0))
+	FrameLog.mark(&"bt_shudder")
 	wet_k = move_toward(wet_k,1.0 if active and wet else 0.0,delta/0.25)
 	_feed_pond()
 	_drop_old_chunks()
+	FrameLog.mark(&"bt_chunks")
 	if active or not _samples.is_empty(): _rebuild_live()
+	FrameLog.mark(&"bt_live")
 
 ## Asleep with nothing left of it to move or fade (a host may skip `tick`).
 func settled() -> bool:

@@ -337,10 +337,14 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	look = at.lerp(at+on+Vector3.UP*LOOK_UP*size,1.0-smoothstep(0.3,1.0,absf(swing.x)/PI))
 	roll = lerpf(roll,_lean(float(glide.bank)),_ease(EASE_ROLL*way_lag,delta))
 	clipped = false
+	FrameLog.mark(&"c_spring")
 	if framed:
 		if solid.is_valid() or sight.is_valid(): _keep_clear(delta,at,solid)
+		FrameLog.mark(&"c_clear")
 		_keep_off_floor(delta)
+		FrameLog.mark(&"c_floor")
 		_keep_in_frame(at)
+		FrameLog.mark(&"c_frame")
 	elif solid.is_valid(): _stop_short(at,solid)
 
 ## The glide's speed as a share of the plane's cruise (1 at cruise; of the
