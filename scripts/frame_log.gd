@@ -20,8 +20,11 @@ static var _cols := -1
 static var _drawn := 0
 static var _rows := 0
 
-## Starts the log when the launch flags ask for it.
+## Starts the log when the launch flags ask for it. Once only: the scene
+## stood again (a door, a restart) keeps writing the same log rather than
+## opening it again over itself.
 static func begin(args: PackedStringArray) -> void:
+	if on: return
 	for a in args:
 		if a.begins_with("--frame-log="): _open(a.get_slice("=",1))
 

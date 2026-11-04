@@ -12,11 +12,12 @@ extends Node3D
 ## from how far he's past it, so a frame only sets `head_s`. Nothing touches the bore's
 ## own mesh or collision.
 ##
-## His pace (`_pace`): PACE, what a plane on Boost holds through the spurs, under its level
-## best, so a clean line closes on him and a scrappy one falls back. Crowded inside LEAD.x
-## he pulls away by CROWD_GAIN, so he settles at LEAD.x and anything faster closes on him
-## (a surge). Past LEAD.y he eases off and lets the plane come. A scrape costs the plane
-## speed and he stretches away by that alone.
+## His pace (`_pace`): he holds his lead as a time, LEAD_S of the plane's flight along the
+## bore at its speed now, so a spur or a plug he lays meets the plane about LEAD_S later
+## however fast it flies. He matches the plane's along-bore speed (eased over ALONG_EASE)
+## and its change, and closes what's left of the gap by LEAD_GAIN, within ACCEL. The lead
+## is never under LEAD_LEAST m, so a slow plane doesn't have him on its nose, and he never
+## runs under PACE_LEAST, so a plane that crawls or stops falls back and loses him.
 
 ## Ended: `why` is "out" (the far mouth), "left" (the plane didn't follow him in),
 ## "lost" (the plane fell back or left the bore) or "down" (a landing or a crash, which
@@ -32,18 +33,21 @@ const BorePlume = preload("res://scripts/endless/bore_plume.gd")
 const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 const RIDGE_SHADER = preload("res://shaders/burrower_bore_ridge.gdshader")
 
-## How far ahead of the plane he runs (m along the bore): about 2 s at speed.
-const LEAD := Vector2(90.0,150.0)
-## The plane on Boost through the spurs (m/s; 57.7 level and straight, 52-55 weaving), and
-## how fast he can go (m/s).
+## How far ahead of the plane he runs: LEAD_S of its flight along the bore (s), at least
+## LEAD_LEAST m.
+const LEAD_S := 2.2
+const LEAD_LEAST := 60.0
+## m/s more for each m short of that lead (less for each m past it), his acceleration
+## (m/s/s), and how long the plane's along-bore speed is eased over before he follows it (s).
+const LEAD_GAIN := 2.5
+const ACCEL := 150.0
+const ALONG_EASE := 0.15
+## His pace at the start (the plane on Boost through the spurs, m/s; 57.7 level and
+## straight, 52-55 weaving), and the least and most he goes (m/s). The most is above a
+## diving or surging plane's best (about 72-75).
 const PACE := 54.0
-const PACE_MOST := 95.0
-const PACE_LEAST := 20.0
-## Crowded: m/s more for each m inside LEAD.x. Left behind: m/s less for each m past
-## LEAD.y. His acceleration (m/s/s).
-const CROWD_GAIN := 0.6
-const WAIT_GAIN := 0.5
-const ACCEL := 35.0
+const PACE_MOST := 140.0
+const PACE_LEAST := 15.0
 ## Gone: the plane this far behind him (m), or this long out of the bore after following
 ## him in. It has this long (s) from `begin` to follow him in at all.
 const LOST_M := 300.0
@@ -72,11 +76,13 @@ const GLOW_TINT := Color(1.0,0.62,0.36)
 
 ## The rumble: it plays from his angle round the bore but RUMBLE_AHEAD m ahead of the plane,
 ## since from his real 90-150 m a tube's width is a few degrees and the pan wouldn't move.
-## Its gain with him at LEAD.x and at LOST_M, for a plane that hasn't followed him in, and
-## its pitch at PACE_LEAST and PACE_MOST.
+## Its gain with him RUMBLE_NEAR m ahead and at LOST_M, for a plane that hasn't followed him
+## in, and its pitch with his pace at RUMBLE_PACE's ends (m/s).
 const RUMBLE_CLIP := "res://assets/audio/kit/stone-grind-loop.wav"
 const RUMBLE_AHEAD := 14.0
+const RUMBLE_NEAR := 90.0
 const RUMBLE_GAIN := Vector2(0.6,0.2)
+const RUMBLE_PACE := Vector2(20.0,95.0)
 const RUMBLE_OUTSIDE := 0.5
 const RUMBLE_PITCH := Vector2(0.45,0.75)
 ## The sounds of the plume: the blast and what comes down after it. Heard anywhere.
@@ -90,6 +96,9 @@ var way := 1.0
 var s := 0.0
 var pace := 0.0
 var lead := 0.0
+## The plane's along-bore speed, eased (NAN: not read yet this chase), and the lead he aims at.
+var along := NAN
+var want_lead := 0.0
 var _plane: RefCounted
 var _followed := false
 var _wait := 0.0
@@ -170,6 +179,8 @@ func begin(t: Tunnels.Site, end: int, plane: RefCounted) -> void:
 	s = 0.0 if end == 0 else t.length
 	pace = PACE
 	lead = 0.0
+	along = NAN
+	want_lead = 0.0
 	_followed = false
 	_wait = FOLLOW_S
 	_out = 0.0
@@ -248,17 +259,21 @@ func _feel(game: Node3D, plane_s: float) -> void:
 	if _rumble == null: _rumble = game.sound.bed_in_world(RUMBLE_CLIP)
 	rumble_at = BoreLine.about(site,clampf(plane_s+way*RUMBLE_AHEAD,0.0,site.length),BoreLine.angle_at(site,s))
 	if _rumble.player != null: _rumble.player.global_position = rumble_at
-	var gain := remap(clampf(lead,LEAD.x,LOST_M),LEAD.x,LOST_M,RUMBLE_GAIN.x,RUMBLE_GAIN.y)
+	var gain := remap(clampf(lead,RUMBLE_NEAR,LOST_M),RUMBLE_NEAR,LOST_M,RUMBLE_GAIN.x,RUMBLE_GAIN.y)
 	_rumble.goal = gain*(1.0 if _followed else RUMBLE_OUTSIDE)
-	_rumble.pitch_goal = remap(pace,PACE_LEAST,PACE_MOST,RUMBLE_PITCH.x,RUMBLE_PITCH.y)
+	_rumble.pitch_goal = remap(clampf(pace,RUMBLE_PACE.x,RUMBLE_PACE.y),RUMBLE_PACE.x,RUMBLE_PACE.y,RUMBLE_PITCH.x,RUMBLE_PITCH.y)
 
 ## His pace for now (the header).
 func _pace(delta: float, game: Node3D, plane_s: float) -> void:
 	var v: Vector3 = game.plane.velocity
-	var along := Vector2(v.x,v.z).dot(Tunnels.at_s(site,plane_s)[1] as Vector2)*way
-	var want := PACE
-	if lead < LEAD.x: want = PACE+(LEAD.x-lead)*CROWD_GAIN
-	elif lead > LEAD.y: want = along-(lead-LEAD.y)*WAIT_GAIN
+	var now := Vector2(v.x,v.z).dot(Tunnels.at_s(site,clampf(plane_s,0.0,site.length))[1] as Vector2)*way
+	var was := now if is_nan(along) else along
+	along = lerpf(was,now,1.0-exp(-delta/ALONG_EASE))
+	var flying := maxf(along,0.0)
+	want_lead = maxf(LEAD_S*flying,LEAD_LEAST)
+	var want := flying+(want_lead-lead)*LEAD_GAIN
+	# The lead grows with the plane's speed: keep up with that too, above the floor.
+	if LEAD_S*flying > LEAD_LEAST and delta > 0.0: want += LEAD_S*(along-was)/delta
 	pace = move_toward(pace,clampf(want,PACE_LEAST,PACE_MOST),ACCEL*delta)
 
 ## The chase is over: the ridge stops where he left it and sinks back.
