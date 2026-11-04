@@ -9,9 +9,8 @@ extends Node3D
 ## A roll that parries nothing while a shot was closing locks the roll out
 ## WHIFF_LOCK s after it ends. Nothing else: no damage anywhere.
 ##
-## The tell: the shot that will come nearest soonest carries a ring that closes
-## on it, ringing onto the ball as the window would open, and bright while a
-## roll now would parry it; a whistle rises with it.
+## The tell: a whistle rises as the shot that will come nearest soonest closes.
+## (Its on-screen rings and the PARRY / MISS words are off; the user cut them.)
 ##
 ## Anything that throws shots opts in by joining the group `parry_source` with
 ## these (pirate_ship.gd is the first):
@@ -215,7 +214,6 @@ func _close() -> void:
 		whiffs += 1
 		locked = WHIFF_LOCK
 		_play("clunk",0.8,0.9)
-		_words = {"text":"MISS","t":0.0,"color":Color(0.75,0.78,0.82)}
 	_open = -1.0
 	_threat = false
 
@@ -271,9 +269,6 @@ func _parry(s: Dictionary, perfect: bool) -> void:
 	_flash(at,Color(1.0,0.97,0.88,1.0),1.0,16.0 if perfect else 12.0,0.3)
 	_white = 0.45 if perfect else 0.32
 	_flash(at,Color(1.0,0.85,0.5,1.0),0.0,14.0 if perfect else 11.0,0.22)
-	var words := "PERFECT PARRY" if perfect else "PARRY"
-	if chain > 0: words += "  x%d" % (chain+1)
-	_words = {"text":words,"t":0.0,"color":Color(1.0,0.9,0.55) if perfect else Color(1.0,0.97,0.9)}
 	# The light flies to the meter; the meter takes it when it lands.
 	var from := _screen(at)
 	var to := _meter_point()
@@ -356,7 +351,7 @@ func _tell_step(shots: Array, delta: float) -> void:
 	_tell_mat.set_shader_parameter("width",0.22 if now else 0.1)
 	_tell.global_position = at
 	_tell.scale = Vector3.ONE*size
-	_tell.visible = true
+	_tell.visible = false  # the ring is off; the whistle is the tell
 	_tell_on = {"shot":best,"k":k,"now":now,"col":col}
 	if not bool(game.sound.audible): return
 	if _whistle == null:
@@ -452,7 +447,6 @@ func _exit_tree() -> void:
 
 func _draw_overlay() -> void:
 	if _white > 0.0: _overlay.draw_rect(Rect2(Vector2.ZERO,_overlay.size),Color(1.0,0.97,0.9,_white*_white*2.0))
-	_draw_tell()
 	for m: Dictionary in _motes:
 		var u := clampf(float(m.t)/float(m.life),0.0,1.0)
 		if float(m.t) < 0.0: continue
