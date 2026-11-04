@@ -35,7 +35,14 @@ extends RefCounted
 ## KICK. The meter fills by NearMiss's own scoring, and a hot surge roll that
 ## reaches it kills it (raider.gd `try_kill`, as in the dogfight).
 ##
-## Lost (more than LOST_M m off, or behind the view, for LOST_S s), it comes
+## The buzz (`buzz`, how each one arrives; spec-raider-embers.md item 1): it
+## shows up BUZZ_BACK m behind the plane, BUZZ_UP m over it (or BUZZ_SIDE m
+## off one side and a little up) and overtakes at BUZZ_OVER m/s over the
+## plane's speed along the plane's line (eased round with it), a whoosh as it
+## passes, then BUZZ_DONE m ahead it runs (`run`), diving low.
+##
+## Lost while chased (raider.gd `chased`: locked on, or the lock lost to
+## distance or sight; more than LOST_M m off, or behind the view, for LOST_S s), it comes
 ## back round (`round`): to a point BACK_M m ahead of the plane and off to
 ## the side, at the plane's speed + ROUND_OVER, then runs again.
 ##
@@ -140,6 +147,15 @@ const LEAD := 35.0
 const RAILS := 50.0
 ## The opening's flying height, its share of the gap (the rival's GAP_SHARE).
 const GAP_SHARE := 0.42
+## The buzz: m behind it shows up, m over the plane (overhead) or off its side
+## and over (beside), m/s over the plane's speed, how fast its line follows the
+## plane's turns (1/s), m ahead where it starts to run.
+const BUZZ_BACK := 110.0
+const BUZZ_UP := 9.0
+const BUZZ_SIDE := Vector2(14.0,3.0)
+const BUZZ_OVER := 48.0
+const BUZZ_FOLLOW := 1.5
+const BUZZ_DONE := 70.0
 ## Lost: m off, s; back round to BACK_M m ahead of the plane, BACK_SIDE m
 ## off its line, at its speed + ROUND_OVER.
 const LOST_M := 750.0
@@ -156,7 +172,7 @@ const KICK := 0.4
 const SKIM_GAIN := 40.0
 
 var raider: Node3D
-## run (fleeing), round (coming back)
+## buzz (arriving), run (fleeing), round (coming back)
 var phase := &"run"
 ## The plane's skim heat (0 to 1) and the speed it adds (m/s).
 var heat := 0.0
@@ -179,6 +195,12 @@ var _seen := 0
 var _openings := {}
 var _want_y := NAN
 var _slope := 0.0
+## The buzz: m along the plane's line from it, the line (flat, unit), the
+## offset across and up, whether its whoosh has played.
+var _buzz_s := 0.0
+var _buzz_line := Vector3.FORWARD
+var _buzz_off := Vector2.ZERO
+var _buzz_heard := false
 
 func _init(r: Node3D) -> void:
 	raider = r
@@ -215,6 +237,78 @@ func spawn() -> void:
 	_drop_route()
 	_seen = (game.near.moments as Array).size()
 
+## Shown by a buzz: behind the plane, overhead or beside it, overtaking.
+func buzz() -> void:
+	var game: Node3D = raider.game
+	var plane = game.plane
+	var p: Vector3 = plane.position
+	var fwd: Vector3 = plane.forward()
+	var flat := Vector3(fwd.x,0.0,fwd.z)
+	flat = flat.normalized() if flat.length() > 0.1 else Vector3.FORWARD
+	_buzz_line = flat
+	_buzz_s = -BUZZ_BACK
+	var side := 1.0 if raider._rng.randf() < 0.5 else -1.0
+	_buzz_off = Vector2(0.0,BUZZ_UP) if raider._rng.randf() < 0.5 else Vector2(BUZZ_SIDE.x*side,BUZZ_SIDE.y)
+	_buzz_heard = false
+	var f: SkyTraffic.Flight = raider.flight
+	f.position = _buzz_at(p)
+	f.heading = atan2(-flat.x,-flat.z)
+	f.pitch = 0.0
+	f.bank = 0.0
+	raider.speed = maxf(float(plane.speed),float(plane.cruise()))+BUZZ_OVER
+	f.speed = raider.speed
+	f.velocity = f.forward()*raider.speed
+	_want = f.heading
+	_plan_t = 0.0
+	_lost = 0.0
+	phase = &"buzz"
+	_drop_route()
+	_seen = (game.near.moments as Array).size()
+	stats.buzzes = int(stats.get("buzzes",0))+1
+
+## Where the buzz puts it now: `_buzz_s` m along the line from the plane, the
+## offset across and up, never under what stands there.
+func _buzz_at(p: Vector3) -> Vector3:
+	var across := _buzz_line.cross(Vector3.UP)
+	var at := p+_buzz_line*_buzz_s+across*_buzz_off.x
+	at.y = maxf(p.y+_buzz_off.y,_floor_y(at,_buzz_line,true)+float(tuning.low))
+	return at
+
+## A frame of the buzz: on along the plane's line (eased round with its
+## turns) at BUZZ_OVER over its speed; heading, pitch and bank from the move.
+func _buzz(delta: float, p: Vector3, ps: float) -> void:
+	var game: Node3D = raider.game
+	var fwd: Vector3 = game.plane.forward()
+	var flat := Vector3(fwd.x,0.0,fwd.z)
+	if flat.length() > 0.1:
+		_buzz_line = _buzz_line.slerp(flat.normalized(),minf(BUZZ_FOLLOW*delta,1.0)).normalized()
+	var f: SkyTraffic.Flight = raider.flight
+	var was: Vector3 = f.position
+	var along_was := _buzz_s
+	# Its speed over the plane's along the line: the plane's own forward pace.
+	_buzz_s += BUZZ_OVER*delta
+	var at := _buzz_at(p)
+	var v := (at-was)/maxf(delta,0.0001)
+	f.position = at
+	f.velocity = v
+	raider.speed = v.length()
+	f.speed = raider.speed
+	var h := atan2(-v.x,-v.z) if Vector2(v.x,v.z).length() > 1.0 else f.heading
+	var rate := angle_difference(f.heading,h)/maxf(delta,0.0001)
+	raider.turn = lerpf(raider.turn,clampf(rate,-TURN,TURN),raider._ease(0.3,delta))
+	f.heading = h
+	f.pitch = clampf(atan2(v.y,maxf(Vector2(v.x,v.z).length(),1.0)),-PITCH_MAX,PITCH_MAX)
+	f.bank = clampf(-raider.turn*raider.BANK,-raider.BANK_MAX,raider.BANK_MAX)
+	if along_was < 0.0 and _buzz_s >= 0.0 and not _buzz_heard:
+		_buzz_heard = true
+		game.sound.shot("whoosh",1.0,0.8,f.position)
+		stats.buzz_pass = Vector3(f.position-p).length()
+	if _buzz_s >= BUZZ_DONE:
+		phase = &"run"
+		_want = f.heading
+		_want_y = NAN
+		_plan_t = 0.0
+
 ## Breaking off (the mix): it runs from where it flies, as it flies.
 func begin() -> void:
 	var f: SkyTraffic.Flight = raider.flight
@@ -242,10 +336,14 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 	var ahead := rel.dot(pf) >= 0.0
 	gap = dist if ahead else -dist
 	# Lost: far, or out of the view, for a while: back round.
+	if phase == &"buzz":
+		_buzz(delta,p,ps)
+		return
 	var cam: Camera3D = game.camera
 	var unseen: bool = cam.is_position_behind(f.position)
 	_lost = _lost+delta if (dist > LOST_M or unseen) else 0.0
-	if phase == &"run" and _lost > LOST_S:
+	# Only a chased raider comes round (raider.gd `chased`); one let go leaves.
+	if phase == &"run" and _lost > LOST_S and bool(raider.chased):
 		phase = &"round"
 		_drop_route()
 		stats.rounds = int(stats.rounds)+1

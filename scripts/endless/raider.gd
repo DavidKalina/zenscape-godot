@@ -48,6 +48,15 @@ extends Node3D
 ##   dogfight again, with a fresh count of passes. Lost sooner (it ran before
 ##   you could turn after it), it comes round ahead and runs again.
 ## - A kill ends either; the next one shows up for the dogfight.
+##
+## `chase` is the default (spec-raider-embers.md): each one arrives by a buzz
+## (raider_chase.gd `buzz`: from behind, close overhead or beside, a whoosh)
+## and runs. Locked on (lock_on.gd), it's `chased`: lost, it comes round
+## ahead, as before. Not chased and more than LET_GO_M m off
+## (`--raider-let-go=M`) or out of view LET_GO_S s (`--raider-let-go-s=S`),
+## it's gone for good (`_leave`), and the next buzzes in GAP s later
+## (`--raider-gap=S`; a kill waits the same). In the chase it has no marker
+## off screen: no arrow at the view's edge.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -140,6 +149,10 @@ const FLEE_UP := 0.6
 
 ## The mix: rams before it breaks off and runs (picked between the two each
 ## time), how near ahead it breaks off (m), and the longest run (s).
+## The chase let go: m off, s out of view (not locked on), before it's gone.
+const LET_GO_M := 550.0
+const LET_GO_S := 4.0
+
 const MIX_PASSES := Vector2i(2,3)
 const MIX_BREAK_M := Vector2(40.0,450.0)
 const MIX_TAIL_M := 220.0
@@ -183,7 +196,7 @@ var least_at := Vector3.ZERO
 var sweep := INF
 var tuning := {}
 ## The fight: &"dogfight", &"chase" or &"mix" (`--raider-mode=`).
-var mode := &"mix"
+var mode := &"chase"
 ## The chase (null in the dogfight alone).
 var chase: RefCounted
 ## The mix: rams flown since the dogfight began, and how many before it runs.
@@ -194,6 +207,10 @@ var tailed := 0.0
 ## The mix: seconds run with the plane not near.
 var run_t := 0.0
 var _rounds_seen := 0
+## The chase: locked on, or the lock lost to distance or sight (not let go by
+## a press). Chased, a lost raider comes round; else it leaves.
+var chased := false
+var _unseen_t := 0.0
 
 var _wait := FIRST_S
 var _lost := 0.0
@@ -218,7 +235,7 @@ static func mode_of(args: PackedStringArray) -> StringName:
 		if a.begins_with("--raider-mode="):
 			var m := StringName(a.trim_prefix("--raider-mode="))
 			if m in [&"dogfight",&"chase",&"mix"]: return m
-	return &"mix"
+	return &"chase"
 
 static func _flag(flag: String, default: float) -> float:
 	for a: String in LaunchArgs.user_args():
@@ -231,7 +248,8 @@ func _init() -> void:
 func setup(g: Node3D) -> void:
 	game = g
 	_rng.seed = 4401
-	tuning = {"every":_flag("--raider-every",REST),"ram":_flag("--raider-ram",RAM_OVER),
+	tuning = {"every":_flag("--raider-gap",_flag("--raider-every",REST)),
+		"let_go":_flag("--raider-let-go",LET_GO_M),"let_go_s":_flag("--raider-let-go-s",LET_GO_S),"ram":_flag("--raider-ram",RAM_OVER),
 		"tell":maxf(_flag("--raider-tell",TELL_S),0.1),"hit":_flag("--raider-hit",HIT_R),
 		"near":_flag("--raider-near",NEAR_R),"shove":_flag("--raider-shove",SHOVE),
 		"fill":_flag("--raider-fill",DODGE_FILL.y),"turn":_flag("--raider-turn",TURN_MAX)}
@@ -314,6 +332,7 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 		&"stalk": _stalk(delta,p,rel,dist,ps,flying)
 		&"flee":
 			chase.step(delta,p,rel,dist,ps)
+			if mode == &"chase": _watch(delta,dist)
 			if dist > MIX_NEAR_M: run_t += delta
 			if mode == &"mix":
 				# Lost early (it ran before you could turn after it), it comes round
@@ -334,6 +353,9 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 			var away := Vector3(rel.x,0.0,rel.z).normalized() if dist > 1.0 else Vector3.FORWARD
 			_fly_to(flight.position+away*120.0+Vector3.UP*40.0,delta,tuning.turn,ps+STALK_FAR)
 			if t >= PEEL_S: _go(&"stalk")
+	if not alive():
+		_hud(false)
+		return
 	# The closest pass over the frame, both moving.
 	sweep = rel.length()
 	if _prev != Vector3.INF and _plane_prev != Vector3.INF:
@@ -381,13 +403,44 @@ func _spawn() -> void:
 	figure.reset(flight)
 	stats.spawns = int(stats.spawns)+1
 	_count_from()
+	chased = false
+	_unseen_t = 0.0
 	if mode == &"chase":
-		chase.spawn()
+		chase.buzz()
 		figure.reset(flight)
 		_prev = Vector3.INF
 		_go(&"flee")
 		return
 	_go(&"stalk")
+
+# --- The chase: let go ---------------------------------------------------------
+
+## Chased or not, and gone for good when not: far off, or long out of view.
+func _watch(delta: float, dist: float) -> void:
+	var lock: Node = game.get("lock_on")
+	var locked: bool = lock != null and lock.target == figure
+	if locked: chased = true
+	elif chased and lock != null and String(lock.why) == "pressed": chased = false
+	if locked or chased or chase.phase != &"run":
+		_unseen_t = 0.0
+		return
+	_unseen_t = 0.0 if _in_view() else _unseen_t+delta
+	if dist > float(tuning.let_go) or _unseen_t > float(tuning.let_go_s): _leave()
+
+func _in_view() -> bool:
+	var cam: Camera3D = game.camera
+	if cam.is_position_behind(flight.position): return false
+	return cam.get_viewport().get_visible_rect().has_point(cam.unproject_position(flight.position))
+
+## Let go: it's gone, the next one buzzes in after the gap.
+func _leave() -> void:
+	stats.gone = int(stats.get("gone",0))+1
+	figure.visible = false
+	_glow.visible = false
+	chase.idle()
+	chased = false
+	_wait = float(tuning.every)
+	_go(&"away")
 
 # --- The mix ------------------------------------------------------------------
 
@@ -401,6 +454,7 @@ func _count_from() -> void:
 func _run() -> void:
 	stats.breaks = int(stats.breaks)+1
 	run_t = 0.0
+	chased = true  # the mix: lost, it comes round (or fights) as before
 	chase.begin()
 	_rounds_seen = int(chase.stats.rounds)
 	game.sound.shot("whoosh",0.8,0.7,flight.position)
@@ -594,6 +648,7 @@ func _break(at: Vector3) -> void:
 	game.debris.burst("wood",at,-v.normalized() if v.length() > 1.0 else Vector3.UP,true)
 	game.debris.burst("dust",at,Vector3.UP,true)
 	killed.emit(at)
+	chased = false
 	_wait = float(tuning.every)
 	_go(&"dead")
 
@@ -687,7 +742,7 @@ func _draw_figure(delta: float) -> void:
 	var glow := 0.0
 	if state == &"tell": glow = clampf(t/float(tuning.tell),0.0,1.0)*(0.75+0.25*sin(t*TAU*8.0))
 	elif state == &"ram": glow = 0.45
-	elif state == &"flee": glow = FLEE_GLOW
+	elif state == &"flee" and chase.phase != &"buzz": glow = FLEE_GLOW
 	_glow.visible = glow > 0.01
 	if _glow.visible:
 		# Running, at its tail (an engine's glow, to follow); else at its nose.
@@ -737,6 +792,11 @@ func _hud(on: bool) -> void:
 	var inset := Rect2(Vector2.ONE*Marker.EDGE,size-Vector2.ONE*Marker.EDGE*2.0)
 	m.on = true
 	m.on_screen = not behind and inset.has_point(sp)
+	# The chase: no arrow at the view's edge, only the mark on it.
+	if mode == &"chase" and not m.on_screen:
+		m.on = false
+		m.queue_redraw()
+		return
 	m.dir = (sp-mid).normalized() if (sp-mid).length() > 0.5 else Vector2.UP
 	if m.on_screen: m.at = sp
 	else:
