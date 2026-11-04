@@ -32,7 +32,7 @@ float zs_body_noise(vec2 p) {
 // ahead of the crest, a long back behind it). `surge_break`: how tall a wave
 // (m, trough to rest) starts to break, and is sure to.
 uniform vec4 surge_edge = vec4(0.0);
-uniform vec4 surge_belt = vec4(-200.0, 700.0, 2200.0, 3200.0);
+uniform vec4 surge_belt = vec4(-2400.0, -300.0, 2200.0, 3200.0);
 uniform float surge_size = 1.0;
 uniform float surge_peak = 0.85;
 uniform vec2 surge_break = vec2(8.0, 13.0);
@@ -41,12 +41,26 @@ const float SURGE_SIZE[3] = float[3](9.0, 5.0, 2.2);
 const vec2 SURGE_SET = vec2(0.007, 0.059);
 const float SURGE_LEAN = 0.35;
 const float SURGE_CREST_LENGTH = 150.0;
-const float SURGE_REACH = 700.0;
+const float SURGE_REACH = 450.0;
 const float SURGE_WANDER = 2300.0;
 const vec2 SURGE_BEND = vec2(14.0, -9.0);
 const float SURGE_BEND_LENGTH = 1700.0;
 const float SURGE_LIFT_FLOOR = 7.0;
 const float SURGE_SEAM = 160.0;
+// The shore map (EndlessSea `shore_image`): how whole the surge may be, 0 on
+// and near land and in water sheltered from the open sea, 1 off open coasts;
+// `surge_shore_at` its corner x, z, side (m), 1 baked (2: no fade; 0: not yet,
+// the surge off). Past the map it is whole. EndlessSea `shore_fade` mirrors it.
+uniform sampler2D surge_shore : filter_linear, repeat_disable;
+uniform vec4 surge_shore_at = vec4(0.0);
+
+float zs_surge_shore(vec2 p) {
+	if (surge_shore_at.w < 0.5) return 0.0;
+	if (surge_shore_at.w > 1.5) return 1.0;
+	vec2 uv = (p - surge_shore_at.xy) / surge_shore_at.z;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+	return textureLod(surge_shore, uv, 0.0).r;
+}
 
 // How far `p` lies past the edge line, and the way out from it there.
 float zs_surge_off(vec2 p, out vec2 way_out) {
@@ -77,6 +91,9 @@ vec2 zs_surge(vec2 p, float t, float footprint, out vec3 shift, out float jac, o
 	// it starts on no one line round the land.
 	float wander = smoothstep(0.2, 0.8, zs_body_noise(p / SURGE_WANDER + vec2(5.3, 2.6)));
 	share = smoothstep(surge_belt.x, surge_belt.y, off - wander * SURGE_REACH);
+	if (share <= 0.0) return vec2(0.0);
+	// It dies off before the land and in sheltered water (the shore map).
+	share *= zs_surge_shore(p);
 	if (share <= 0.0) return vec2(0.0);
 	float warp_a = zs_body_noise(p / 900.0 + vec2(3.7, 1.9));
 	float warp_b = zs_body_noise(p / 560.0 + vec2(6.1, 8.3));
