@@ -82,6 +82,10 @@ const RIGGING_FAR := 450.0
 ## guns, a plate's shards. 111 draw calls at 2 km on a ship 40 px long, most of them
 ## these (handoff, What it costs).
 const INNER_FAR := 700.0
+## The gun deck's inside casts shadows only while the eye is within this of her middle
+## (m): from farther out they fall where the hull's own already do, at 24k triangles a
+## shadow pass.
+const INNER_SHADE := 120.0
 ## The model's sway, for the eye only: roll, pitch (rad), each one's period (s).
 const SWAY := Vector2(0.014,0.005)
 const SWAY_S := Vector2(9.0,13.0)
@@ -418,6 +422,8 @@ var _mist_mesh: Mesh
 var _plank_mat: Material
 ## Hands the sails her way (null with --ship-blocks).
 var _sails: RefCounted
+## The model's `Interior` (null with --ship-blocks), its shadows on near (INNER_SHADE).
+var _inner: GeometryInstance3D
 var _mists: Array[Dictionary] = []
 var _planks: Array[Dictionary] = []
 ## Her ride (ROCK_*): how much (0 off); Vector3(heave m, pitch, roll rad) now, its
@@ -687,6 +693,9 @@ func before(delta: float) -> void:
 	_ride_step(delta)
 	_pose()
 	if _sails != null: _sails.step(delta,position,way,state == SINKING)
+	if _inner != null:
+		var shade := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if game.camera.global_position.distance_to(position) < INNER_SHADE else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if _inner.cast_shadow != shade: _inner.cast_shadow = shade
 	_keep_off_walls()
 	var p: Vector3 = game.plane.position
 	var d := p.distance_to(position)
@@ -1087,9 +1096,10 @@ func _reseal() -> void:
 			(plate.look as Node3D).visible = true
 			continue
 		(plate.cover as Node3D).visible = true
+		(plate.whole as Node3D).visible = true
 		for shard: Dictionary in plate.shards:
 			(shard.node as Node3D).transform = shard.home
-			(shard.node as Node3D).visible = true
+			(shard.node as Node3D).visible = false
 	_shards.clear()
 	if was and refill: game.near.meter = 1.0
 
@@ -1466,8 +1476,10 @@ func _throw(plate: Dictionary, q: Vector3) -> void:
 	var d := v.normalized()
 	var plug: Node3D = plate.plug
 	(plate.cover as Node3D).visible = false
+	(plate.whole as Node3D).visible = false
 	for shard: Dictionary in plate.shards:
 		var n: Node3D = shard.node
+		n.visible = true
 		var out := (transform*(plug.position+n.position)-q).slide(d)
 		out = out.normalized() if out.length() > 0.05 else Vector3.UP
 		var lin := v*randf_range(SmashBreaks.KEEP.x,SmashBreaks.KEEP.y)+out*randf_range(SmashBreaks.OUT.x,SmashBreaks.OUT.y)+Vector3.UP*randf_range(SmashBreaks.UP_V.x,SmashBreaks.UP_V.y)
@@ -1615,10 +1627,13 @@ func _dress() -> void:
 		ball.free()
 		_flash_mesh = _cluster_mesh(FLASH_R,[Color(1.0,0.95,0.7),Color(1.0,0.72,0.28),Color(1.0,0.5,0.1)],1.0,5,0.5,0.0)
 	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
-	(_model.find_child("Interior",true,false) as GeometryInstance3D).visibility_range_end = INNER_FAR
+	_inner = _model.find_child("Interior",true,false) as GeometryInstance3D
+	_inner.visibility_range_end = INNER_FAR
 	_hull_guns()
 
-## Plate `part`'s plug in the model, each shard's place kept for the reseal.
+## Plate `part`'s plug in the model, each shard's place kept for the reseal. While
+## the plate is shut its shards are hidden and drawn as one mesh (`whole`), a draw
+## call a pass instead of one a shard; the burst swaps them back.
 func _plug(plate: Dictionary, part: String) -> void:
 	var plug: Node3D = _model.find_child("CrackPlug_"+part.capitalize(),true,false)
 	var shards: Array[Dictionary] = []
@@ -1629,8 +1644,39 @@ func _plug(plate: Dictionary, part: String) -> void:
 			continue
 		shards.append({"node":shard,"home":(shard as Node3D).transform})
 		(shard as GeometryInstance3D).visibility_range_end = INNER_FAR
+		(shard as Node3D).visible = false
 	plate["plug"] = plug
 	plate["shards"] = shards
+	var whole := MeshInstance3D.new()
+	whole.name = "Whole_"+part.capitalize()
+	if not _wholes.has(part): _wholes[part] = _merge(shards)
+	whole.mesh = _wholes[part]
+	whole.visibility_range_end = INNER_FAR
+	plug.add_child(whole)
+	plate["whole"] = whole
+
+## Each plate's shards as one mesh, in the plug's frame (part -> Mesh), built once
+## for both ships.
+static var _wholes := {}
+
+## `shards` ({node, home}) merged, a surface a material, with LODs as the import
+## makes them.
+func _merge(shards: Array[Dictionary]) -> Mesh:
+	var by := {}
+	for s: Dictionary in shards:
+		var mesh: Mesh = (s.node as MeshInstance3D).mesh
+		for k in mesh.get_surface_count():
+			var mat := mesh.surface_get_material(k)
+			if not by.has(mat):
+				var st := SurfaceTool.new()
+				st.begin(Mesh.PRIMITIVE_TRIANGLES)
+				by[mat] = st
+			(by[mat] as SurfaceTool).append_from(mesh,k,s.home)
+	var im := ImporterMesh.new()
+	for mat: Material in by:
+		im.add_surface(Mesh.PRIMITIVE_TRIANGLES,(by[mat] as SurfaceTool).commit_to_arrays(),[],{},mat)
+	im.generate_lods(25.0,60.0,[])
+	return im.get_mesh()
 
 func _blocks(all: Dictionary) -> void:
 	var half := wide*0.5
