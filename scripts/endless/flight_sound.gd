@@ -199,10 +199,10 @@ const BORE_SIDES := 0.3
 ## how far its 3D voice carries: full within BORE_UNIT m, falling off to
 ## nothing at BORE_REACH m (the plane hears it ahead and to the side; he runs
 ## some 40-150 m ahead of it). The tell's grind (`bore_tell`) and its reach.
-const BURST_THUMP := 1.0
-const BURST_CRACK := 0.75
-const BURST_DEBRIS := 0.55
-const BORE_UNIT := 22.0
+const BURST_THUMP := 1.4
+const BURST_CRACK := 1.0
+const BURST_DEBRIS := 0.7
+const BORE_UNIT := 45.0
 const BORE_REACH := 260.0
 const TELL := 0.45
 const TELL_REACH := 180.0

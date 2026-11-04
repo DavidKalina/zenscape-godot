@@ -26,7 +26,7 @@ quickest. Any tunnel mouth, or a long hall, gives the reverb without him.
   a dirt thud), `bore-crack` (a hard snap, sub-cracks, a short tuned stone ring),
   `bore-debris` (grit thinning out over about 2 s, pebble knocks, a low settle). The
   spur's girth sets the pitch: thin 1.15, thickest 0.85. 3D at the root: full
-  within 22 m, falling off to nothing at 260 m (the old crack fell off by 70 m,
+  within 45 m, falling off to nothing at 260 m (the old crack fell off by 70 m,
   while he runs some 40-150 m ahead of the plane).
 - **A plug** as he passes: the grind pitched down (0.7). When it lands: the spur's
   burst, quieter (0.7) and lower (0.8). It replaces the old debris, crash and thump.
@@ -67,8 +67,8 @@ family. After a re-bake, import:
 | `BORE_EQ` | 0, 2.5, 4, 0.5, -3, -6 dB | 32 / 100 / 320 / 1k / 3.2k / 10k Hz in full: the boom and the hiss |
 | `BORE_AIR_CUT` | 0.6 | what's left of the air's low-pass cutoff in full |
 | `BORE_SIDES` | 0.3 | how closed in rock overhead must be to count |
-| `BURST_THUMP`, `BURST_CRACK`, `BURST_DEBRIS` | 1.0, 0.75, 0.55 | a burst's layers |
-| `BORE_UNIT`, `BORE_REACH` | 22, 260 m | full within, silent past |
+| `BURST_THUMP`, `BURST_CRACK`, `BURST_DEBRIS` | 1.4, 1.0, 0.7 | a burst's layers |
+| `BORE_UNIT`, `BORE_REACH` | 45, 260 m | full within, silent past |
 | `TELL`, `TELL_REACH` | 0.45, 180 m | the tell's grind |
 
 `scripts/endless/bore_spurs.gd`: `SNAP_GAIN` 1.0, `SNAP_PITCH` (1.15, 0.85) thin to
@@ -105,6 +105,20 @@ log; git-ignored).
   that, 27 bursts at 37-168 m (median 72) and 27 tells at 79-150 m.
 - **Mouth `-1_1/a`:** the pilot crashed 348 m in. 8 bursts at 14-64 m, 8 tells
   at 85-100 m.
+- **Audio capture** (rendered, Movie Maker, `.avi`, audio taken out with ffmpeg):
+  `/tmp/bore_movie2/chase.wav`, 14.4 s from the mouth of `1_1` into the chase, at
+  this round's gains. Matched to the driver's burst frames (the movie runs about 22
+  frames ahead of the driver):
+  - 11 bursts at 60-91 m rose median +7.1 dB over the 0.3 s before them
+    (+8.2 dB below 150 Hz), from +5.6 to +10.3 dB when fired alone.
+  - A run of four 0.45 s apart rose only +2 to +3 dB, since each tail fills
+    the next gap.
+  - Peak 0.92, under the Master limiter.
+  - The first gains (unit 22 m, thump 1.0) rose median +1.3 dB at 80-120 m over
+    38.8 s, so they were raised. That capture is `/tmp/bore_movie/chase.wav`.
+  To capture again:
+  `python3 tools/godot.py --rendered --timeout 400 --write-movie /tmp/x/chase.avi -s res://scratch/bore_sound.gd -- --straight=1_1 --end=0 --lane=12 --most=14 --win=320x200 --scene-args --at=3400,4384 --heading=90 --alt=60 --pilot-file=/tmp/x.json`
+  (`.avi` encodes at about 5 ms a frame; `.png` at 270 ms, too slow).
 - **Smoke:** `studies/endless_flight.tscn`, PASS, 0 errors, both headless and with
   `--sound=on` (which builds the buses and effects).
 - **Tests:** none in `tests/` names FlightSound, the bore's spurs or plugs, or the
@@ -117,8 +131,8 @@ log; git-ignored).
   1 kHz and gone in 0.3 s, debris 320-560 Hz over 2 s, the grind peaking at
   0.7-0.78 s). The levels against the engine and air, the reverb's colour and
   whether the thump reads on laptop speakers are the user's call.
-- **The audio capture:** see the round's report for whether `--write-movie` gave
-  a .wav.
-- **Halls and arches outside the chase:** the overhead + enclosed test wasn't
-  flown through a slot hall or an arch run, only the chase bore's mouths.
+- **Halls:** bore `1_1` has no hall stretch. Counted over a whole run, 2323
+  frames were in the open tube with both tests on, and none in a hall, so the
+  hall case (tube test 1, kept by overhead + enclosed) is unproven. Neither was
+  any slot hall or arch run outside the chase flown.
 - **CPU:** the reverb and EQ are on only while `bore_wet` > 0. Not measured.
