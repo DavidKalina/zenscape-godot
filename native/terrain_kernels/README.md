@@ -107,6 +107,23 @@ Windows it matches the GDScript bit for bit; `--native-peak=0` (or
 `--gdscript-kernels`) runs the GDScript, and a library without it falls back by
 itself (docs/design/endless-flight/crown-native-handoff.md).
 
+## The camera's sight in the tunnels and the burrower's steering
+
+`bore_sight_bind.h` holds three classes, each a mirror of its GDScript,
+which stays the reference (scripts/endless/bore_native.gd makes them):
+`ZenScapeHallSolid` is LandHalls `inside` over its records' BoxSolid grids
+(each record published as it commits, takes its near solid and goes);
+`ZenScapeBoreSight` is LandTunnels `near`, `tube`, `inside`, `land_y` and
+`sight` over the stood sites' tables, the stretches' HallSolid and the
+bore's near spurs and plugs (packed by BoreSpurs and BorePlugs as their
+near lists change). The land's height stays GDScript (LandField `height`),
+asked through a Callable once a point where an answer needs it.
+`ZenScapeBurrowerSteer` is burrower.gd's trunk gather and its steering
+round them. On Windows each matches the GDScript answer for answer (the
+handoff's `scratch/native_sight_check.gd`); `--sight-native=0` (or
+`--gdscript-kernels`) runs the GDScript, and a library without them falls
+back by itself (docs/design/endless-flight/handoff-native-sight-steer.md).
+
 ## Build and run
 
 Prerequisites: Godot 4.7 editor, a C++17 compiler, Python 3, SCons 4.x, and the
