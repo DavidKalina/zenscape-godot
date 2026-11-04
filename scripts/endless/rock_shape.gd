@@ -22,7 +22,13 @@ const GRID_STEPS := [2,3,3]
 ## `grid`: a chunk with no ground steeper than this (its normals' up) is no
 ## rock, and gets no shape.
 const STEEP_UP := 0.9
+## `grid`: a chunk with ground over this (world y, m; 70 over the sea) gets a
+## shape too, for the summits' snow (--summits=old: not).
+const HIGH_Y := 30.0
+## Its alpha (of 255): under 0.9 in the shader, so the rock paint skips it.
+const HIGH_ALPHA := 200
 
+static var SUMMITS := "--summits=old" not in preload("res://scripts/launch_args.gd").user_args()
 static var wanted := "--rock-shape=0" not in preload("res://scripts/launch_args.gd").user_args()
 
 ## The format flag to add for `arrays`' shape (0 if it has none).
@@ -126,10 +132,22 @@ static func grid(f: RefCounted, made: Dictionary, x0: float, z0: float, step: fl
 		if normals[v].y < STEEP_UP:
 			steep = true
 			break
+	# (A chunk baked only for its height has alpha HIGH_ALPHA: the rock paint
+	# ignores its shape, as it did before the summits; the snow reads it.)
+	var alpha := 255
+	# A chunk with high ground gets it too (the summits' snow reads the 40 m
+	# radius), unless --summits=old.
+	if not steep and SUMMITS:
+		var hs: PackedFloat32Array = made.heights
+		for v in n*n:
+			if hs[v] > HIGH_Y:
+				steep = true
+				alpha = HIGH_ALPHA
+				break
 	if not steep: return PackedByteArray()
 	var shape := PackedByteArray()
 	shape.resize((n*n+4*n)*4)
-	for v in n*n: shape[v*4+3] = 255
+	for v in n*n: shape[v*4+3] = alpha
 	for c in 3:
 		var r: float = RADII[c]
 		var k: int = GRID_STEPS[c]

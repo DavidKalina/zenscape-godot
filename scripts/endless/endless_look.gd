@@ -373,6 +373,8 @@ func setup(land_seed: int) -> void:
 	ground.shader = preload("res://shaders/endless_ground.gdshader")
 	ground.set_shader_parameter("old_rock","--old-rock" in LaunchArgs.user_args())
 	ground.set_shader_parameter("rock_pass1","--rock-pass1" in LaunchArgs.user_args())
+	# --summits=old: the high ground and summit snow before the summits round.
+	if "--summits=old" in LaunchArgs.user_args(): ground.set_shader_parameter("summit_mode",0.0)
 	ground.set_shader_parameter("rock_flat","--rock-flat" in LaunchArgs.user_args())
 	# The grass's paint skipped where it can't show (--land-skip=0 off, =show
 	# tints what it skips).
