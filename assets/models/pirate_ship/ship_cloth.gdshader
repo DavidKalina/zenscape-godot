@@ -13,6 +13,7 @@ uniform float rim = 0.3;
 // from the wind every ship sees and her own heading and speed. Pinned at the
 // yard, it fills forward; it never bulges aft, it goes slack or flogs instead.
 //   COLOR.rgb    the sheet's height, head width and foot width / SAIL_SIZE
+//   COLOR.a      1 + skew: the foot's middle off the head's, a share of its half width (the jib)
 //   ship_way     her bow (x, z), her speed (m/s), her turn (rad/s): per ship, scripts/endless/ship_sails.gd
 //   ship_slack   1 in a sink: no wind in her, the cloth hangs where gravity has it
 global uniform float zs_wind_strength;
@@ -51,6 +52,7 @@ struct Cloth {
 	float air;
 	float clock;
 	float slack;
+	float skew;
 	vec3 hang;
 };
 
@@ -88,7 +90,7 @@ vec3 sail_at(float s, float t, Cloth c) {
 	float belly = c.depth * breathe * (spine * (1.0 - sh * sh) + leech * sh * sh);
 	// The cloth the belly takes comes off its width and height; the sheets draw
 	// the foot in and the foot arches between them.
-	float x = s * hw * (1.0 - c.fill * (0.2 * t * t + 0.03 * sin(3.14159 * t)));
+	float x = s * hw * (1.0 - c.fill * (0.2 * t * t + 0.03 * sin(3.14159 * t))) + c.skew * c.w * 0.5 * t;
 	x += c.lean * c.fill * 0.05 * hw * sin(3.14159 * t);
 	float take = c.depth / c.h;
 	float y = -c.h * t * (1.0 - 0.9 * take * take) + c.h * 0.1 * c.fill * (1.0 - s2) * t * t * t;
@@ -118,8 +120,9 @@ void vertex() {
 	c.w = COLOR.g * SIZE;
 	c.wb = COLOR.b * SIZE;
 	c.seed = fract((c.h * 3.1 + c.w * 0.77 + c.wb * 0.31) * 0.61803);
+	c.skew = COLOR.a - 1.0;
 	float t = clamp(-VERTEX.y / c.h, 0.0, 1.0);
-	float s = clamp(VERTEX.x / max(mix(c.w, c.wb, t) * 0.5, 0.01), -1.0, 1.0);
+	float s = clamp((VERTEX.x - c.skew * c.w * 0.5 * t) / max(mix(c.w, c.wb, t) * 0.5, 0.01), -1.0, 1.0);
 	mat3 m = mat3(MODEL_MATRIX);
 	vec3 side = normalize(m[0]);
 	float gust = sail_gust(MODEL_MATRIX[3].xz);
