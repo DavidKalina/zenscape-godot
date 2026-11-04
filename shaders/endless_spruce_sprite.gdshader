@@ -17,7 +17,7 @@ shader_type spatial;
 // `lod_fade`), so it takes over from them with no pop.
 // Soft (scripts/endless/spruce_sprites.gd `soft`, the default): the nearest
 // views blended by the eye's turn and height, not dithered between (the
-// grain), and the crown's outline smoothed by alpha to coverage over the
+// grain), and the crown's outline softened over the
 // screen's MSAA (the hard cut-out stepped and crawled); off, the first look.
 render_mode world_vertex_coords, cull_disabled, diffuse_lambert, specular_disabled, alpha_to_coverage_and_one;
 
@@ -243,10 +243,14 @@ void fragment() {
 	float lod = log2(max(max(length(dFdx(UV)), length(dFdy(UV))) * cell_px, 1.0));
 	float cover = a.a * (1.0 + 0.32 * lod);
 	if (soft) {
+		// No ALPHA_ANTIALIASING_EDGE: writing it sends the material to
+		// Godot's see-through pass, drawn after the clouds' sheet and kept
+		// out of the depth the cloud march reads, so the woods showed crisp
+		// through cloud (docs/design/endless-flight/cloud-wake-handoff.md).
+		// The scissor keeps them opaque; the MSAA and the mips still soften
+		// the cut.
 		ALPHA = clamp(cover, 0.0, 1.0);
 		ALPHA_SCISSOR_THRESHOLD = 0.5;
-		ALPHA_ANTIALIASING_EDGE = 0.3;
-		ALPHA_TEXTURE_COORDINATE = UV * cell_px;
 	} else {
 		if (cover < 0.5) discard;
 		ALPHA = 1.0;
