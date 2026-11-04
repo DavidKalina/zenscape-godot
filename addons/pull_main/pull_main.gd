@@ -35,6 +35,7 @@ func _pull(root := "") -> int:
 	var before := _git(root,["rev-parse","HEAD"])
 	# Files git only thinks changed (Windows line endings) never block the pull.
 	_git(root,["update-index","-q","--refresh"])
+	_restat_unchanged(root)
 	var out: Array = []
 	var code := OS.execute("git",["-C",root,"pull","--ff-only","--quiet","origin","main"],out,true)
 	if code != 0:
@@ -63,6 +64,20 @@ func _play_when_imported() -> void:
 		await get_tree().create_timer(WAIT).timeout
 	_replay = true
 	EditorInterface.play_main_scene()
+
+## Re-records the files whose content still matches the commit but whose size
+## doesn't: git checks them out with CRLF, Godot rewrites them with LF, and
+## git then calls them modified without looking (a refresh can't clear it).
+## `git add` on such a file stages nothing (tools/play.py does the same).
+static func _restat_unchanged(root: String) -> void:
+	var stat_dirty := _git(root,["ls-files","-m"]).split("\n",false)
+	if stat_dirty.is_empty(): return
+	var changed := _git(root,["diff","--name-only"]).split("\n",false)
+	var same: Array = []
+	for path in stat_dirty:
+		if not changed.has(path): same.append(path)
+	if not same.is_empty():
+		_git(root,["-c","core.safecrlf=false","add","--"]+same)
 
 static func _git(root: String, args: Array) -> String:
 	var out: Array = []
