@@ -115,3 +115,66 @@ noise evaluations inside the cap branch.
 Uniforms: `summit_fray` (0.45; 0 hard edges), `summit_lee` (0.30; lee and
 windward weight), `summit_dim` (0.24; thin-cover darkening), plus round 1's
 `summit_snow`, `summit_proud`, `summit_amount`. `--summits=old` unchanged.
+
+## Round 4 (look only): the snow path rebuilt
+
+Sheets: `scratch/summits/r4/sheet_top{0..3}.png` in the main checkout, three
+columns (old `--summits=old`, round 3, round 4), rows low / near / far; 2x
+crops `crop2x_top{0,2}_low_r3_vs_r4.png` (left round 3, right round 4).
+
+Why round 3 went wrong (root causes, not tuning):
+
+- **The noise was off-centre.** `zs_fade` returns noise centred on 0, but
+  round 3 used it as if it were 0..1 (`fray - 0.5`, `fine_n - 0.2`). So the
+  "fray" was a constant -0.5 bias, the per-spot threshold sat on its 0.05 floor
+  almost everywhere, and the cap was one soft 0.5-wide smoothstep of the cover:
+  the smeared blobs on dark faces.
+- **The brown stain was a double fade.** The alpine paint was faded by
+  `(1 - snowy)` and the snow then mixed over it by `snowy` again, so under thin
+  snow the old tundra grass showed through (a quarter of it at half cover),
+  darkened further by `summit_dim`.
+- **The Peak lost its edge.** Round 3 passed a copy of `snowy` to
+  `psnow_surface` and only wrote it back on caps, so the Peak's snow (and the
+  land's own snow line, which takes the Peak's surface off the Peak too) lost
+  the surface's bitten edge. Restored: the Peak path is as before the summits.
+- **Partial snow took the snow's whole fill.** `psnow_emission` scales all of
+  EMISSION by up to 5.2x by the snow's share, which is right for the Peak's
+  crisp edge but brightened the ground under a thin cap.
+- **Snow sat on the dark faces** because the slope gate was eased by the lee
+  and hollows up to about +0.3 on n.y, and nothing kept it off rock.
+
+What it does now (`shaders/endless_ground.gdshader`, the cap block):
+
+- `cov` (0..1): proud x high x lies (n.y 0.80..0.93, lightly eased by lee and
+  hollow) x off the rock's own faces (`rock_face`, the rock before the high
+  ground's broken rock; not past 700 m, where the faces are a few pixels).
+- The cap is `cov` against centred noise at 38 / 12 / 3.5 / 1.1 / 0.45 m,
+  scaled by the cover so ground that sheds snow gets none, with a soft edge
+  (w 0.09); a thin dust of grit specks just short of the edge; stones (sparse
+  tops of a 2.4 m noise and the grit) punched through.
+- Far (250..900 m): the cap eases to the cover itself, a soft light crown,
+  with the crown's own rough mean on proud high ground.
+- Colour: the Peak's surface and light, a shade cooler, the value drifting
+  +-30% x `summit_tone` over 12 / 3.5 / 1 m; the snow's extra sky fill only on
+  the snow's share, at 0.62 of the Peak's near (shaded caps aren't white
+  sheets), the full fill far.
+- The alpine ground no longer fades under a cap; it is skipped only where the
+  cap is whole.
+- Removed: `summit_dim`, `sm_cov`, `sm_dust`, round 3's fray / threshold code.
+
+Uniforms: `summit_fray` (0.5; edge specks and grit, 0 a clean edge),
+`summit_lee` (0.30), `summit_stones` (0.5; 0 none), `summit_far` (0.85; 0
+only the patches far off), `summit_tone` (0.5; 0 flat), plus `summit_snow`,
+`summit_proud`, `summit_amount`. `--summits=old` unchanged (the cap block is
+skipped and every new term falls back to the old path).
+
+Still not right: top 1 has no cap in any round (a steep rocky horn; it reads
+as bare stone, which is the rule, but it means no crown far off either). Top
+0's crown snow is the land's own snow line (about 120 m) through the Peak's
+surface, not the cap: crisp-edged, with the ring round the crown's pit, as in
+round 2. Stones in top 2's sheet read as pale melt holes more than stones. A
+few frayed patches stay on top 0's shaded lower flank. Not measured on a GPU;
+about the same noise count as round 3 (eight zs_fade in the cap), no new fetch.
+Driver: `scratch/top_shots4.gd` (git-ignored; `--set=uniform=value`,
+`--first=N` for the file index). Existing tests: none run; none known to read
+these uniforms.
