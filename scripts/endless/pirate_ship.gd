@@ -56,6 +56,7 @@ const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const SmashBreaks = preload("res://scripts/breaks/smash_breaks.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
+const Parry = preload("res://scripts/endless/parry.gd")
 
 ## A plate broken (`stern` or `bow`).
 signal broke(part: String)
@@ -356,6 +357,8 @@ var fired := 0
 var lobs := 0
 var hits := 0
 var passes := 0
+## Parried balls that came home onto her (scripts/endless/parry.gd).
+var shot_back := 0
 var bursts := 0
 var sinks := 0
 var returns := 0
@@ -503,6 +506,7 @@ func setup(g: Node3D, at := ROUTE_AT, label := "coast/ship", first: Node3D = nul
 	for a: String in args:
 		if a.begins_with("--ship-return="): return_wait = a.trim_prefix("--ship-return=").to_float()
 	_ride_n = 0 if first == null else 1
+	add_to_group(Parry.GROUP)
 
 ## The middle of the gun deck (her frame's y): the relic hangs here.
 static func deck_mid(h: float) -> float:
@@ -895,7 +899,7 @@ func _fire(g: Dictionary) -> void:
 	var ball := _ball()
 	ball.position = from
 	ball.visible = true
-	balls.append({"node":ball,"at":from,"v":shot,"drop":LOB_DROP if deck else BALL_DROP,"lob":deck,"age":0.0,"least":INF,"near":from,"done":false,"trail":0.0})
+	balls.append({"node":ball,"at":from,"v":shot,"drop":LOB_DROP if deck else BALL_DROP,"lob":deck,"age":0.0,"least":INF,"near":from,"done":false,"trail":0.0,"parry":true,"r":BALL_R})
 	fired += 1
 	if deck: lobs += 1
 
@@ -1060,6 +1064,59 @@ func _struck(b: Dictionary, events: Dictionary) -> void:
 	game.feel_hit(HIT_FEEL.x,HIT_FEEL.y)
 	game.sound.shot("crash",1.0,0.8)
 	(b.node as Node3D).visible = false
+
+# --- Parried (scripts/endless/parry.gd) ----------------------------------------
+
+## Her balls in the air, every one parryable (`parry` true).
+func parry_shots() -> Array[Dictionary]:
+	return balls
+
+## Ball `b` is the parry's: out of her flight, whistle and hit tests.
+func parry_take(b: Dictionary) -> void:
+	balls.erase(b)
+
+## Where a parried ball comes home: amidships, up her side by the guns.
+func parry_aim(_b: Dictionary) -> Vector3:
+	return transform*Vector3(0.0,GUN_Y*0.6,0.0)
+
+## In her hull: inside her beam, between the keel's draught and the top deck,
+## along her length.
+func parry_inside(p: Vector3) -> bool:
+	if state == GONE: return false
+	var l := local(p)
+	return absf(l.x) < BEAM+1.0 and l.y > -DRAUGHT and l.y < FLOOR_Y+high+DECK+2.0 and absf(l.z) < LONG*0.5+PLATE
+
+func parry_moved(b: Dictionary, a: Vector3, n: Vector3) -> void:
+	if _fx != null: _fx.trail(b,a,n)
+
+## A parried ball's end: on her (a burst of splinters, fire and smoke, timber on
+## the water), else gone into the sea.
+func parry_landed(b: Dictionary, at: Vector3, hit: bool) -> void:
+	var node: Node3D = b.node
+	node.visible = false
+	_pool.append(node)
+	if not hit:
+		_splash(Vector3(at.x,SEA_Y,at.z),b.v,true)
+		return
+	shot_back += 1
+	var l := local(at)
+	var out := transform.basis*Vector3(signf(l.x) if absf(l.x) > 0.5 else 1.0,0.25,0.0)
+	out = out.normalized()
+	if _fx != null: _fx.blast(at,out)
+	game.debris.hit("wood",at,out,true)
+	game.debris.burst("dust",at,out,true)
+	for i in 12:
+		var c: MeshInstance3D = _chunk_pool.pop_back() if not _chunk_pool.is_empty() else _new_chunk()
+		var spread := Vector3(randf_range(-1.0,1.0),randf_range(-0.3,1.0),randf_range(-1.0,1.0))
+		c.position = at+spread*1.5
+		c.scale = Vector3.ONE*randf_range(0.35,1.0)
+		c.visible = true
+		_chunks.append({"node":c,"v":out*randf_range(12.0,30.0)+spread*9.0+Vector3.UP*8.0,"t":2.0})
+	_plank(Vector3(at.x,SEA_Y,at.z)+out*4.0)
+	_plank(Vector3(at.x,SEA_Y,at.z)+out*7.0)
+	var d := at.distance_to(game.plane.position)
+	game.sound.shot("crash",1.4/(1.0+d/BOOM_HEARD),0.7,at,&"SFX",true)
+	game.sound.shot("thump",1.3/(1.0+d/BOOM_HEARD),0.55,at,&"SFX",true)
 
 # --- The plates --------------------------------------------------------------
 
