@@ -559,6 +559,7 @@ func _ready() -> void:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
 	FrameLog.begin(preload("res://scripts/launch_args.gd").user_args())
+	if FrameLog.on and not GroundTally.on and "--ground-tally" in preload("res://scripts/launch_args.gd").user_args(): GroundTally.start()
 	LineLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	# The layout file first: the slot halls' sites read its moves when
 	# the land is first looked at (scripts/endless/hall_sites.gd).
@@ -1370,6 +1371,7 @@ func tick(delta: float) -> void:
 	_frame(delta)
 	_bury(camera.global_position)
 	FrameLog.mark(&"camera")
+	if FrameLog.on: _canary()
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
@@ -1432,6 +1434,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"react")
 	_show_hud()
 	FrameLog.mark(&"hud")
+	if FrameLog.on and GroundTally.on: _tally_row()
 	if FrameLog.on: FrameLog.end((Time.get_ticks_usec()-tick_from)/1000.0,plane.position,float(plane.speed))
 
 ## How hard the vapour pulls off the wingtips (0 to 1): the flight path's
@@ -1715,6 +1718,45 @@ func _frame(delta: float) -> void:
 	_punch_want *= exp(-delta/PUNCH_FADE)
 	_punch = lerpf(_punch,_punch_want,1.0-exp(-delta/PUNCH_IN)) if delta > 0.0 else _punch_want
 	camera.fov = chase.fov+_punch+_speed_wide(delta)
+
+## Stutter hunt (drop when done): a fixed loop timed each frame (slow while
+## the rest is slow: the main thread is crowded, not our code), whether the
+## land is buried, and the bore's moving spurs.
+func _canary() -> void:
+	var t0 := Time.get_ticks_usec()
+	var s := 0.0
+	for i in 3000: s += sin(float(i))
+	FrameLog.add(&"canary",(Time.get_ticks_usec()-t0)/1000.0+s*0.0)
+	FrameLog.add(&"buried",1.0 if _buried else 0.0)
+	var bf = burrower.get("bore") if burrower != null else null
+	var sp = bf.get("spurs") if bf != null else null
+	FrameLog.add(&"spurs_moving",float((sp.get("_moving") as Array).size()) if sp != null else 0.0)
+	FrameLog.mark(&"canary_self")
+
+## Stutter hunt (drop when done): with --ground-tally, the frame's ground
+## queries per part (GroundTally, filed at each FrameLog mark) as q_<part>
+## columns, and the land's height reads as q_height.
+const TALLY_PARTS := [&"grass",&"near",&"react",&"figure",&"traffic",&"landing",&"land",&"bt_move",&"c_clear",&"b_bore",&"trees",&"look"]
+func _tally_row() -> void:
+	var heights := 0
+	for part: StringName in GroundTally.parts:
+		var d: Dictionary = GroundTally.parts[part]
+		heights += int(d.get(&"field.height",0))+int(d.get(&"field.sample",0))
+	for part: StringName in TALLY_PARTS:
+		var n := 0
+		for k in (GroundTally.parts.get(part,{}) as Dictionary).values(): n += int(k)
+		FrameLog.add(StringName("q_"+part),float(n))
+	FrameLog.add(&"q_height",float(heights))
+	GroundTally.parts.clear()
+	# The workers in flight this frame, per streamer.
+	var g := 0
+	if grass != null: g = (grass.near_layer.pending as Dictionary).size()+(grass.far_layer.pending as Dictionary).size()
+	FrameLog.add(&"w_grass",float(g))
+	FrameLog.add(&"w_land",float((land.get("_pending") as Dictionary).size()) if land != null else 0.0)
+	for pair: Array in [[&"w_trees",trees],[&"w_halls",halls],[&"w_arches",arches],[&"w_rocks",rocks],[&"w_thalls",tunnels.halls if tunnels != null else null]]:
+		var n = pair[1]
+		FrameLog.add(pair[0],float((n.get("_pending") as Dictionary).size()) if n != null and n.get("_pending") is Dictionary else 0.0)
+	FrameLog.add(&"w_tunnels",1.0 if tunnels != null and int(tunnels.get("_task")) >= 0 else 0.0)
 
 func _bury(eye: Vector3) -> void:
 	var down: bool = _bury_on and tunnels.deep(eye)
