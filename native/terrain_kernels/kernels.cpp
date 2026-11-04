@@ -25,6 +25,7 @@
 #include "peak_massif_bind.h"
 #include "serac_mesh.h"
 #include "bore_sight_bind.h"
+#include "chunk_pass_bind.h"
 
 using namespace godot;
 
@@ -343,6 +344,8 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeHallSolid>();
     ClassDB::register_class<ZenScapeBoreSight>();
     ClassDB::register_class<ZenScapeBurrowerSteer>();
+    ClassDB::register_class<ZenScapeTunnelCarve>();
+    ClassDB::register_class<ZenScapeChunkPass>();
 }
 extern "C" GDExtensionBool GDE_EXPORT zenscape_kernels_init(GDExtensionInterfaceGetProcAddress get_proc,
         GDExtensionClassLibraryPtr library, GDExtensionInitialization *initialization) {
