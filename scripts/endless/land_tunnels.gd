@@ -150,7 +150,7 @@ const DAY_REACH := 600.0
 ## The collider's pieces (triangles each), and the main thread's time for
 ## standing them each frame (ms; at least one stands a frame).
 const BODY_TRIS := 4000
-const BODY_BUDGET := 3.0
+const BODY_BUDGET := 1.5
 ## How far past the tube's walls `inside` counts the rock (m).
 const WALL_NEAR := 12.0
 ## The guard (`guide`): how near the clear room's edge it starts (m), its
@@ -439,6 +439,9 @@ func setup(land_field: RefCounted, ground: Material = null, to_sun := Vector3.ZE
 	stats["dropped"] = 0
 	var fixed: Array = field.tunnel_sites() if field.has_method("tunnel_sites") else []
 	for t: Tunnels.Site in fixed: _commit(_make(t,field))
+	# The flame and light pools at the start (about 57 ms), not in flight as the
+	# first tunnel with torches stands.
+	if float(field.get("tunnels") if field.get("tunnels") != null else 0.0) > 0.0: _ensure_pools(true)
 
 func _exit_tree() -> void:
 	_quit = true
@@ -578,8 +581,8 @@ func _stand_one(at: Vector3) -> void:
 	_commit(b)
 
 ## The flame and light pools, made once there are torches.
-func _ensure_pools() -> void:
-	if not _flames.is_empty() or int(stats.torches) <= 0: return
+func _ensure_pools(now := false) -> void:
+	if not _flames.is_empty() or (int(stats.torches) <= 0 and not now): return
 	for i in FLAME_POOL:
 		var fl: Node3D = Flame.new()
 		fl.name = "TorchFlame%d" % i
