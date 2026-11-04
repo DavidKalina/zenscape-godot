@@ -420,6 +420,12 @@ var _streaks: ColorRect
 var _streak_scale := 1.0
 var _wide := 0.0
 var _low_k := 0.0
+## Deep in a bore (LandTunnels `deep`) the grass, the land and the trees over
+## the rock are out of sight but drawn all the same (the engine culls by the
+## view only), about half the GPU's frame there: hidden while the eye is
+## deep. `--bury=0` draws them still.
+var _buried := false
+var _bury_on := not ("--bury=0" in preload("res://scripts/launch_args.gd").user_args())
 ## Sinking through a pull-out, for the rumble's thrum: the nose this far
 ## over the path (radians) while it sinks faster than SINK_DOWN m/s knocks
 ## once, and it is felt again once the nose is back within SINK_REARM.
@@ -1362,6 +1368,7 @@ func tick(delta: float) -> void:
 	if doors != null: doors.step(delta)
 	FrameLog.mark(&"doors")
 	_frame(delta)
+	_bury(camera.global_position)
 	FrameLog.mark(&"camera")
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
@@ -1708,6 +1715,13 @@ func _frame(delta: float) -> void:
 	_punch_want *= exp(-delta/PUNCH_FADE)
 	_punch = lerpf(_punch,_punch_want,1.0-exp(-delta/PUNCH_IN)) if delta > 0.0 else _punch_want
 	camera.fov = chase.fov+_punch+_speed_wide(delta)
+
+func _bury(eye: Vector3) -> void:
+	var down: bool = _bury_on and tunnels.deep(eye)
+	if down == _buried: return
+	_buried = down
+	for n: Node3D in [land,grass,trees]:
+		if n != null: n.visible = not down
 
 ## How low and fast it is over the land (0 to 1): within LOW_SPANS
 ## wingspans of what is under it (the near misses' ground clearance when

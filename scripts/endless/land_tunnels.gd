@@ -712,6 +712,23 @@ func under(p: Vector3) -> float:
 		return smoothstep(0.0,HUSH_IN,minf(q.x,t.length-q.x))
 	return 0.0
 
+## Whether `p` is so deep in a bore that nothing over the rock can show:
+## in its tube, past DEEP_IN of either mouth along the way and of every
+## shaft. The game hides the land over it then (studies/endless_flight.gd
+## `_bury`).
+const DEEP_IN := 120.0
+func deep(p: Vector3) -> bool:
+	if tube(p) != 0: return false
+	for t: Tunnels.Site in _sites:
+		var b := Tunnels.bore_at(t,p.x,p.z)
+		if is_nan(b.x) or p.y < b.x or p.y > b.y: continue
+		var q := Tunnels.local(t,p.x,p.z)
+		if minf(q.x,t.length-q.x) < DEEP_IN: return false
+		for sh: Dictionary in t.shafts:
+			if Vector2(p.x,p.z).distance_to(sh.at) < DEEP_IN: return false
+		return true
+	return false
+
 ## Each mouth's and shaft's daylight in the sun's colour and strength (none
 ## at night, nor past DAY_REACH of its tunnel).
 func _spill(at: Vector3) -> void:
