@@ -108,6 +108,19 @@ cd /Users/davidkalina/Documents/Projects/zenscape-ship-build && python3 tools/pl
    at, and fix if cheap: the white fog haze filling the gun deck when flying toward the
    sun; the bow burst's dust over the camera for a few frames; the spritsail reading as a
    flat grey square above the tunnel, bow on. Say in the handoff which were left.
+8. **The far form (spec change, user, after 90f365dd).** The user: "build the far
+   version too. But only if it's gonna significantly help with performance". Measure
+   first: rendered, in the real play scene, the frame's GPU time
+   (`viewport_set_measure_render_time`) and draw calls with both ships shown against
+   both hidden, seen from 450 m, 600 m and 1 km. That is the most a far form could
+   save. Alternate the A/B and repeat it. Frame times are allowed for this task; the
+   loop's iteration is the only agent on the GPU. Build it only if hiding both ships
+   saves at least 0.5 ms of GPU time a frame or 10% of the frame's draw calls. If it
+   doesn't, build nothing and put the numbers and the call in the handoff. If it does:
+   a low form of the hull, upperworks and sails, made in `ship_build.py`, with few
+   materials and swapped in from about 450 m. It keeps her silhouette, colours and
+   both glyphs, doesn't pop visibly at the swap (stills either side of it), and rocks
+   and sinks as she does now. Measure again; before and after go in the handoff.
 
 ## Picks
 
