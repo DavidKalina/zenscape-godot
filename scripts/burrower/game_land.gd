@@ -86,10 +86,14 @@ func colour(x: float, z: float, y: float, nm: Vector3) -> Color:
 ## dry land, which is far over it). Land well over the sea skips the swell:
 ## `water_at` marches the sea's waves, and a run asks several times a frame.
 func water_y(x: float, z: float) -> float:
-	if float(game.field.height(x,z)) > Field.SEA_Y+SWELL_ROOM:
+	return _water_over(x,z,game.field.height(x,z))
+
+## `water_y` over the land's height `h` at (x, z), just read.
+func _water_over(x: float, z: float, h: float) -> float:
+	if h > Field.SEA_Y+SWELL_ROOM:
 		var river: float = game.field.river_y(x,z)
 		return Field.SEA_Y if is_nan(river) else maxf(Field.SEA_Y,river)
-	return game.water_at(Vector3(x,Field.SEA_Y,z))
+	return game.water_at(Vector3(x,Field.SEA_Y,z),h)
 
 ## Not steep (or water) and clear of what stands on the land.
 func open(at: Vector2) -> bool:
@@ -114,9 +118,9 @@ func _keep(key: Vector3i, got: bool) -> void:
 
 func _open(at: Vector2) -> bool:
 	var h := height(at.x,at.y)
-	var w := water_y(at.x,at.y)
+	var w := _water_over(at.x,at.y,h)
 	if h >= w and normal(at.x,at.y).y < RUN_UP: return false
-	return not blocked(at,maxf(h,w))
+	return not blocked(at,maxf(h,w),h)
 
 ## Too steep to run on through, or something standing (not over water).
 func wall(at: Vector2) -> bool:
@@ -128,20 +132,24 @@ func wall(at: Vector2) -> bool:
 
 func _wall(at: Vector2) -> bool:
 	var h := height(at.x,at.y)
-	var w := water_y(at.x,at.y)
+	var w := _water_over(at.x,at.y,h)
 	if h >= w and normal(at.x,at.y).y < WALL_UP: return true
-	return blocked(at,maxf(h,w))
+	return blocked(at,maxf(h,w),h)
 
 ## Something standing there, at any slope (a wall, less the steep ground).
 func stands(at: Vector2) -> bool:
-	return blocked(at,maxf(height(at.x,at.y),water_y(at.x,at.y)))
+	var h := height(at.x,at.y)
+	return blocked(at,maxf(h,_water_over(at.x,at.y,h)),h)
 
 ## Something standing at (x, z) a little over `y` (the ground or water
 ## there): a rock or sea stack, an arch's leg, a hall, a tunnel's mouth (as
-## the game's `_blocked`, less trees: a run goes through a forest).
-func blocked(at: Vector2, y: float) -> bool:
+## the game's `_blocked`, less trees: a run goes through a forest). `land`
+## the land's height at `at` where the caller has it. Only the arches and
+## rocks standing near are asked (GroundNative, as the game's `_solid`).
+func blocked(at: Vector2, y: float, land := NAN) -> bool:
 	var p := Vector3(at.x,y+PROBE_UP,at.y)
-	return game.arches.inside(p) or game.rocks.inside(p) or game.halls.inside(p) or game.tunnels.inside(p)
+	var m: int = game._stone_near(p)
+	return (m & GroundNative.ARCHES and game.arches.inside(p)) or (m & GroundNative.ROCKS and game.rocks.inside(p)) or game.halls.inside(p) or game.tunnels.inside(p,land)
 
 ## Under a tree's crown at (x, z).
 func wooded(at: Vector2, y: float) -> bool:
@@ -176,6 +184,12 @@ func _cells_round(at: Vector2, r: float) -> Array:
 			var t: PackedFloat32Array = game.trees.cell_trees(Vector2i(cx,cz))
 			if not t.is_empty(): out.append(t)
 	return out
+
+## The stood cells' arrays over the square `r` m round `at` (the burrower's
+## native trunk gather, ZenScapeBurrowerSteer `trunks`, reads them as
+## `trees_near` does).
+func cells_near(at: Vector2, r: float) -> Array:
+	return _cells_round(at,r)
 
 func trees_near(at: Vector2, r: float) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
