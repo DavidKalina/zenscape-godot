@@ -136,12 +136,12 @@ var _players: Array[AudioStreamPlayer] = []
 var _overlay: Control
 var _motes: Array[Dictionary] = []
 var _words := {}
+var _drawn := false
 ## The shot the tell is on now: {shot, k (1 far to 0 on the window), now, col}.
 var _tell_on := {}
 ## The screen's white flash at the hit (0 to 1, real time).
 var _white := 0.0
 var _clock := 0.0
-static var _sounds := {}
 
 func _init() -> void:
 	name = "Parry"
@@ -440,7 +440,10 @@ func _process(delta: float) -> void:
 		if float(_words.t) > 1.1: _words = {}
 	# The tell sits where the ball is drawn: the shots move after the parry's step.
 	if not _tell_on.is_empty(): _tell.global_position = (_tell_on.shot as Dictionary).at
-	if _overlay != null: _overlay.queue_redraw()
+	# Only while it has something on it (the flash or the light to the meter), and once after to clear.
+	var busy := _white > 0.0 or not _motes.is_empty()
+	if _overlay != null and (busy or _drawn): _overlay.queue_redraw()
+	_drawn = busy
 
 func _exit_tree() -> void:
 	if _stop > 0 or _slow_until > 0: Engine.time_scale = 1.0
@@ -512,43 +515,13 @@ func _play(kind: String, gain: float, pitch: float) -> void:
 	p.pitch_scale = pitch
 	p.play()
 
-## Placeholder sounds, made here: a metal ring (bell partials off a click), a
-## big low hit (a falling sine over a thud of noise), a dull clunk.
-static func _sound(kind: String) -> AudioStreamWAV:
-	if _sounds.has(kind): return _sounds[kind]
-	var rate := 44100
-	var long: float = {"ring":1.4,"boom":0.9,"clunk":0.2}[kind]
-	var n := int(rate*long)
-	var data := PackedByteArray()
-	data.resize(n*2)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 17
-	var low := 0.0
-	var phase := 0.0
-	for i in n:
-		var t := float(i)/rate
-		var v := 0.0
-		match kind:
-			"ring":
-				var f0 := 1180.0
-				for p: Vector3 in [Vector3(1.0,0.55,4.0),Vector3(2.76,0.35,6.0),Vector3(5.40,0.25,9.0),Vector3(8.93,0.15,13.0),Vector3(1.5,0.2,5.0)]:
-					v += sin(TAU*f0*p.x*t)*p.y*exp(-t*p.z)
-				v += rng.randf_range(-1.0,1.0)*0.6*exp(-t*300.0)
-			"boom":
-				var f := 34.0+90.0*exp(-t*9.0)
-				phase += TAU*f/rate
-				low += (rng.randf_range(-1.0,1.0)-low)*0.08
-				v = sin(phase)*1.1*exp(-t*3.2)+low*2.5*exp(-t*14.0)
-				v = tanh(v*1.6)
-			"clunk":
-				var f := 90.0+110.0*exp(-t*30.0)
-				phase += TAU*f/rate
-				low += (rng.randf_range(-1.0,1.0)-low)*0.2
-				v = sin(phase)*0.8*exp(-t*22.0)+low*0.6*exp(-t*40.0)
-		data.encode_s16(i*2,int(clampf(v*0.8,-1.0,1.0)*30000.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = rate
-	wav.data = data
-	_sounds[kind] = wav
-	return wav
+## Placeholder sounds, baked once from the old in-code makers to
+## assets/audio/parry/ (making them on the first parry hitched ~40 ms).
+const SOUNDS := {
+	"ring": preload("res://assets/audio/parry/ring.wav"),
+	"boom": preload("res://assets/audio/parry/boom.wav"),
+	"clunk": preload("res://assets/audio/parry/clunk.wav"),
+}
+
+static func _sound(kind: String) -> AudioStream:
+	return SOUNDS[kind]
