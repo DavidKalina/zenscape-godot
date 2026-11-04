@@ -124,6 +124,25 @@ handoff's `scratch/native_sight_check.gd`); `--sight-native=0` (or
 `--gdscript-kernels`) runs the GDScript, and a library without them falls
 back by itself (docs/design/endless-flight/handoff-native-sight-steer.md).
 
+## A chunk build past the field
+
+`chunk_pass_bind.h` holds two classes (scripts/endless/chunk_native.gd
+makes them), each a mirror of its GDScript, which stays the reference:
+`ZenScapeTunnelCarve` is one tunnel site's carve (tunnel_sites.gd
+`carve_m`, `sunk_cut`, `trench_under`), packed once when the site is made
+(`go_native`) and read only after, so every worker and LandField's
+`sample` ask it; `ZenScapeChunkPass` is the tunnels' pass over a chunk
+(Tunnels.apply_chunk), land_stream's river frame and its ring of samples,
+RockShape.grid's layers and ring heights, and `_portal_holes`' triangles.
+The rings are read off the native field where only it, the ponds and the
+tunnels shape the land there (`ChunkNative.plain_in`), else through
+LandField. Saved-world state like the field: pow, atan2 and sin are
+land_math.h's. On Windows a chunk matches the GDScript's byte for byte
+(the handoff's `scratch/chunk_check.gd`); `--chunk-native=0`,
+`--land-native=0` or `--gdscript-kernels` run the GDScript, and a library
+without them falls back by itself
+(docs/design/endless-flight/handoff-native-chunk-build.md).
+
 ## Build and run
 
 Prerequisites: Godot 4.7 editor, a C++17 compiler, Python 3, SCons 4.x, and the
