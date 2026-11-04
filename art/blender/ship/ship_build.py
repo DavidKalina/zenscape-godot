@@ -126,6 +126,9 @@ BROKE = (0.86, 0.74, 0.62)   # a broken face, over the stern's own weathered map
 # The hull's shell and frame.
 STRAKE = 1.2              # a plank's height; the ports, the tunnel's lips and decks fall on these lines
 LINER_T = 0.7             # the shell's thickness, outer plank to inner
+LINER_BACK = 0.1          # the gun deck liner's dark backing, this far outboard of it
+LINER_LAP = 0.12          # and how far each run of it laps the strakes over and under
+LINER_DARK = (0.012, 0.011, 0.01)
 RIB_PITCH = 4.0
 RIB_FIRST = 2.0           # ribs fall at +-2, +-6...: between the ports
 PLANK_LIP = 0.11          # each strake stands this proud of the one above
@@ -1025,12 +1028,14 @@ def build_tunnel(g):
 			wa, wb = half_beam(a, z), half_beam(b, z)
 			za, zb = at(a), at(b)
 			g.quad(Vector((-wa, a, za)), Vector((wa, a, za)), Vector((wb, b, zb)), Vector((-wb, b, zb)), "wood", col, hint=Vector((0, 0, up)))
-	# A stone boss at the stem's head, over the cut.
-	y = stem_y(14.0)
-	g.box(-1.6, 1.6, y - 2.4, y + 0.6, 13.6, 16.6, "paint", STONE)
+	# A stone boss at the stem's head, over the cut: a round knob, stepped and domed,
+	# so bow on it reads as carved stone, not a box's face. Slate, a step over the tar.
+	y, zc = stem_y(15.1), 15.1
+	prof = ((y - 2.6, 1.2), (y - 1.4, 1.45), (y - 0.75, 1.5), (y - 0.5, 1.28), (y - 0.15, 1.3), (y + 0.3, 1.1), (y + 0.65, 0.72), (y + 0.85, 0.28))
+	g.tube([(0.0, py, zc) for py, _ in prof], [r for _, r in prof], 14, "paint", STONE)
 
 
-STONE = (0.14, 0.138, 0.134)
+STONE = (0.045, 0.044, 0.042)
 
 
 def build_timbers(g):
@@ -1153,9 +1158,20 @@ def liner(g, upper):
 				cuts = []
 				if PORT_ROW <= j < PORT_ROW + PORT_ROWS:
 					cuts = [(py - PORT_W * 0.5, py + PORT_W * 0.5) for py in PORTS]
+				# On the gun deck a dark backing LINER_BACK outboard of the liner, each
+				# run reaching LINER_LAP into the strakes over and under it (not into a
+				# port's, nor under the floor), so a seam shows dark, not the sky
+				# through her one-sided skin.
+				lap0 = 0.0 if j == PORT_ROW + PORT_ROWS or z0 < COR_FLOOR else LINER_LAP
+				lap1 = 0.0 if j == PORT_ROW - 1 else LINER_LAP
 				for a, b, _, _ in spans_of(cuts, y0, y1):
 					col = inner((0.75, 0.62, 0.5)) if gun_deck else (0.42, 0.34, 0.27)
 					plank(g if gun_deck else upper, S, a, b, z0, z1, "wood_in" if gun_deck else "wood", col=col, lip=0.0, offset=-LINER_T, inward=True, stations=frange(a, b, 2.0 if gun_deck else 5.0))
+					if gun_deck:
+						# Short of the liner's aft end: the shell turns aft there, and the
+						# backing, less far in, would stand in the stern's mouth.
+						ba = a + 0.3 if a <= y0 + 1e-6 else a
+						plank(g, S, ba, b, z0 - lap0, z1 + lap1, "dark", col=LINER_DARK, lip=0.0, offset=-LINER_T + LINER_BACK, inward=True, stations=[ba] + [u for u in frange(a, b, 2.0) if u > ba + 0.05])
 
 
 def deck_strip(g, z_fn, y0, y1, width_fn, col, step=4.0, plank_w=1.1, mat="wood"):

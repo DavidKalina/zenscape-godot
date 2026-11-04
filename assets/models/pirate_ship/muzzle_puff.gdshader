@@ -7,14 +7,19 @@ shader_type spatial;
 // (per instance) thins the whole puff. Unshaded.
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled, skip_vertex_transform;
 instance uniform float fade = 1.0;
+// Thinned as the eye comes into a disc: gone with its centre `near.x` of its radii
+// off, whole from `near.y` (0, 0 never), so a puff flown through doesn't fill the view.
+uniform vec2 near = vec2(0.0);
 varying float strength;
 varying float seed;
 
 void vertex() {
 	float sc = length(MODEL_MATRIX[0].xyz);
 	VERTEX = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	VERTEX.xy += (UV * 2.0 - 1.0) * UV2.x * sc;
-	strength = UV2.y * fade;
+	float radius = max(UV2.x * sc, 0.01);
+	float off = near.y > 0.0 ? smoothstep(near.x, near.y, -VERTEX.z / radius) : 1.0;
+	VERTEX.xy += (UV * 2.0 - 1.0) * radius;
+	strength = UV2.y * fade * off;
 	seed = UV2.x * 7.0;
 }
 

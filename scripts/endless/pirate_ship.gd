@@ -275,6 +275,9 @@ const MISTS := 16
 const MIST_R := Vector2(0.9,2.4)
 const MIST_RISE := 5.0
 const MIST_LIFE := 4.5
+## A mist's discs thin as the eye comes in (muzzle_puff `near`, in disc radii): the
+## sink's first mist stands on the plane's way out of the bow.
+const MIST_NEAR := Vector2(0.7,2.2)
 ## Planks left afloat: how many, how long they stay (s), how fast they go down (m/s).
 const PLANKS := 22
 const PLANK_LIFE := 40.0
@@ -1322,6 +1325,8 @@ static func unseen(at: Vector3, eye: Vector3, look: Vector3) -> bool:
 
 ## A fresh ship at `s` along the route: plates whole, guns live.
 func _come_back(s: float) -> void:
+	# She comes back to clear air: a mist left from her going would hang in her.
+	for m: Dictionary in _mists: (m.node as Node3D).visible = false
 	state = AFLOAT
 	along = s
 	visible = true
@@ -1578,7 +1583,10 @@ func _build() -> void:
 	_wake = Node3D.new()
 	_wake.name = "ShipWake"
 	get_parent().add_child(_wake)
-	_mist_mesh = twin._mist_mesh if twin != null else _cluster_mesh(4.0,[Color(0.96,0.97,0.98),Color(0.88,0.9,0.92),Color(0.8,0.83,0.86)],0.75,9,1.0,1.0)
+	if twin != null: _mist_mesh = twin._mist_mesh
+	else:
+		_mist_mesh = _cluster_mesh(4.0,[Color(0.96,0.97,0.98),Color(0.88,0.9,0.92),Color(0.8,0.83,0.86)],0.75,9,1.0,1.0)
+		(_mist_mesh.surface_get_material(0) as ShaderMaterial).set_shader_parameter("near",MIST_NEAR)
 	_plank_mat = twin._plank_mat if twin != null else _mat(PLANK_C)
 	for part: String in ["stern","bow"]:
 		var box: AABB = (all[part] as Array)[0]
