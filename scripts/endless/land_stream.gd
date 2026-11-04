@@ -56,6 +56,15 @@ const REPLAN := 6.0
 ## Tasks in flight at once (0: the cores less two, at least one, so the
 ## main and render threads keep a core).
 const MAX_TASKS := 0
+## `--land-tasks=N` for a run (stutter hunt: many chunk builds at once crowd
+## the main thread's GDScript).
+static var _max_tasks := -1
+static func max_tasks() -> int:
+	if _max_tasks < 0:
+		_max_tasks = MAX_TASKS
+		for a: String in preload("res://scripts/launch_args.gd").user_args():
+			if a.begins_with("--land-tasks="): _max_tasks = maxi(int(a.get_slice("=",1)),0)
+	return _max_tasks
 ## Milliseconds a frame for meshes and colliders; at least one a frame.
 const COMMIT_BUDGET := 2.5
 ## The tree is planned round a point led ahead of the eye along the
@@ -322,7 +331,7 @@ static func _tops_of(key: Vector3i, heights: PackedFloat32Array) -> Dictionary:
 	return out
 
 func _ask() -> void:
-	var most := MAX_TASKS if MAX_TASKS > 0 else maxi(OS.get_processor_count()-2,1)
+	var most := max_tasks() if max_tasks() > 0 else maxi(OS.get_processor_count()-2,1)
 	# The colliders' chunks (level 0) go as high priority tasks, at most
 	# NEAR_TASKS at once, and wait in the queue for a slot: low priority
 	# tasks share a few of the pool's threads (threading/worker_pool/
