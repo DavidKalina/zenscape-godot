@@ -2,7 +2,7 @@ extends RefCounted
 ## The partial walls the burrower brings down behind him in a sunk tunnel (spec-burrower-rocks.md,
 ## spec change 2): beside the full plugs (scripts/endless/bore_plug.gd), walls of the same rubble
 ## that close one part of the bore's section and leave the rest open. Kinds: a half (top, bottom,
-## left, right), one third closed, or two thirds closed so a third is open. The player reads which
+## left, right) or two thirds closed so a third is open; never less than half. The player reads which
 ## part is open and flies into it.
 ##
 ## A gate is a BorePlugs Plug with a `kind`: it's planned in the plugs' plan (by the tunnel's seed,
@@ -24,8 +24,6 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const KINDS := [
 	["top half",Vector2(0,1),0.5],["bottom half",Vector2(0,-1),0.5],
 	["left half",Vector2(-1,0),0.5],["right half",Vector2(1,0),0.5],
-	["top third",Vector2(0,1),1.0/3.0],["bottom third",Vector2(0,-1),1.0/3.0],
-	["left third",Vector2(-1,0),1.0/3.0],["right third",Vector2(1,0),1.0/3.0],
 	["top two thirds",Vector2(0,1),2.0/3.0],["bottom two thirds",Vector2(0,-1),2.0/3.0],
 	["left two thirds",Vector2(-1,0),2.0/3.0],["right two thirds",Vector2(1,0),2.0/3.0],
 ]
