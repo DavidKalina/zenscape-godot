@@ -24,7 +24,8 @@ extends Node3D
 ##
 ## It flies by the traffic planes' rules (scripts/sky_traffic.gd): the heading
 ## turns at a limited rate, the wings bank with the turn, it keeps CLEAR m
-## over the ground ahead. The figure is a dark PlaneFigure.
+## over the ground ahead. The figure is a PlaneFigure in wasp colours (LIVERY),
+## a red ribbon trailing its tail (RIBBON_*).
 ##
 ## Tuning flags (each a number): --raider-every, --raider-ram (RAM_OVER),
 ## --raider-tell (TELL_S), --raider-hit (HIT_R), --raider-near (NEAR_R),
@@ -68,6 +69,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const RaiderChase = preload("res://scripts/endless/raider_chase.gd")
 const RaiderEmbers = preload("res://scripts/endless/raider_embers.gd")
 const BodyDust = preload("res://scripts/breaks/body_dust.gd")
+const FacetMesh = preload("res://scripts/facet_mesh.gd")
 
 signal killed(at: Vector3)
 signal rammed(at: Vector3)
@@ -82,7 +84,23 @@ const SPAWN_OFF := 22.0
 const SPAWN_UP := 12.0
 ## Its size against the player's plane.
 const SIZE := 1.3
-const LIVERY := {"body":Color("2b2a2e"),"dark":Color("141416"),"trim":Color("9c2a1e"),"wing":Color("3b3a40"),"wear":0.55}
+## Wasp colours (spec round 2 item 6): yellow wings and a black body, red
+## trim, so it stands off rock, grass and sky; unlike the wanderer's rust,
+## teal and cream.
+const LIVERY := {"body":Color("1d1c20"),"dark":Color("0e0e10"),"trim":Color("e0281c"),"wing":Color("ffc21f"),"wear":0.2}
+## Its ribbon: a coloured strip trailing its tail, to read its line far off
+## and follow it. RIBBON points laid every RIBBON_EVERY s (so it trails
+## RIBBON*RIBBON_EVERY s of its line), its width at the tail and the end
+## (m, times SIZE), never under RIBBON_PX m per m from the eye (so it keeps
+## a few pixels far off), its colour and alpha at the tail.
+const RIBBON := 30
+const RIBBON_EVERY := 0.05
+const RIBBON_W := Vector2(1.8,0.5)
+const RIBBON_PX := 0.006
+const RIBBON_COLOR := Color(1.0,0.12,0.26,1.0)
+## Faded inside these (m from the eye), so a ribbon you fly down doesn't
+## sweep across the view.
+const RIBBON_FADE := Vector2(6.0,30.0)
 ## Flying: rad/s of turn at most, per rad off the aim, the ease (s), bank per
 ## rad/s of turn and the most it banks; pitch most (rad) and its rate (rad/s).
 const TURN_MAX := 1.3
@@ -266,6 +284,10 @@ var _prev := Vector3.INF
 var _plane_prev := Vector3.INF
 var _plane_was: Object = null
 var _glow: MeshInstance3D
+var _ribbon: MeshInstance3D
+var _ribbon_mesh: ImmediateMesh
+var _ribbon_points := PackedVector3Array()
+var _ribbon_clock := 0.0
 var _glow_mat: StandardMaterial3D
 var _pieces: Array[Dictionary] = []
 var _flash: MeshInstance3D
@@ -345,6 +367,25 @@ func setup(g: Node3D) -> void:
 	add_child(_flash)
 	_smoke = _smoke_trail(SMOKE)
 	_smoke_hard = _smoke_trail(SMOKE_HARD)
+	_ribbon_mesh = ImmediateMesh.new()
+	_ribbon = MeshInstance3D.new()
+	_ribbon.name = "RaiderRibbon"
+	_ribbon.mesh = _ribbon_mesh
+	_ribbon.top_level = true
+	var band := StandardMaterial3D.new()
+	band.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	band.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	band.vertex_color_use_as_albedo = true
+	band.albedo_texture = FacetMesh.soft_band()
+	band.cull_mode = BaseMaterial3D.CULL_DISABLED
+	band.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	band.distance_fade_min_distance = RIBBON_FADE.x
+	band.distance_fade_max_distance = RIBBON_FADE.y
+	_ribbon.material_override = band
+	_ribbon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ribbon.visible = false
+	add_child(_ribbon)
+	_ribbon_points.resize(RIBBON)
 	_layer = CanvasLayer.new()
 	_layer.layer = 5
 	add_child(_layer)
@@ -378,6 +419,7 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 				_wait -= delta
 				if _wait <= 0.0: _spawn()
 			if chase != null: chase.idle()
+			_ribbon.visible = false
 			_hud(false)
 			_prev = Vector3.INF
 			return
@@ -942,10 +984,11 @@ func _draw_figure(delta: float) -> void:
 	_smoke_hard.global_position = tail
 	_smoke.emitting = hits_home > 0 and not crippled()  # crippled: the black alone
 	_smoke_hard.emitting = crippled()
+	_trail_ribbon(delta,tail)
 	var glow := 0.0
 	if state == &"tell": glow = clampf(t/float(tuning.tell),0.0,1.0)*(0.75+0.25*sin(t*TAU*8.0))
 	elif state == &"ram": glow = 0.45
-	elif state == &"flee" and chase.phase != &"buzz": glow = FLEE_GLOW
+	elif state == &"flee" and chase.phase != &"buzz" and mode != &"chase": glow = FLEE_GLOW  # the chase: the ribbon reads it
 	_glow.visible = glow > 0.01
 	if _glow.visible:
 		# Running, at its tail (an engine's glow, to follow); else at its nose.
@@ -963,6 +1006,45 @@ func _draw_figure(delta: float) -> void:
 			alpha *= lerpf(0.45,1.0,smoothstep(FLEE_GLOW_NEAR,FLEE_GLOW_NEAR*2.0,d))
 		_glow.scale = Vector3.ONE*maxf(near,far*glow)
 		_glow_mat.albedo_color.a = alpha
+
+## The ribbon: the newest point at its tail each frame, the rest laid every
+## RIBBON_EVERY s and shifted down; a strip turned to the eye, tapering and
+## fading to its end. Hidden, then shown again (a spawn), it starts whole at
+## the tail.
+func _trail_ribbon(delta: float, tail: Vector3) -> void:
+	if not figure.visible:
+		_ribbon.visible = false
+		return
+	if not _ribbon.visible or _ribbon_points[0].distance_to(tail) > 80.0:
+		_ribbon_points.fill(tail)
+		_ribbon_clock = 0.0
+	_ribbon.visible = true
+	_ribbon_clock += delta
+	if _ribbon_clock >= RIBBON_EVERY:
+		_ribbon_clock = fmod(_ribbon_clock,RIBBON_EVERY)
+		for i in range(RIBBON-1,0,-1): _ribbon_points[i] = _ribbon_points[i-1]
+	_ribbon_points[0] = tail
+	var eye := (game.camera as Camera3D).global_position
+	_ribbon_mesh.clear_surfaces()
+	_ribbon_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	for i in range(RIBBON):
+		var p := _ribbon_points[i]
+		var age := float(i)/(RIBBON-1)
+		var along := _ribbon_points[maxi(i-1,0)]-_ribbon_points[mini(i+1,RIBBON-1)]
+		if along.length_squared() < 0.000001: along = flight.forward()
+		var across := along.cross(eye-p)
+		if across.length_squared() < 0.000001: across = Vector3.UP
+		var w := maxf(lerpf(RIBBON_W.x,RIBBON_W.y,age)*SIZE,eye.distance_to(p)*RIBBON_PX)
+		across = across.normalized()*w*0.5
+		var c := RIBBON_COLOR
+		c.a *= (1.0-age)*smoothstep(0.0,0.05,age+0.01)
+		_ribbon_mesh.surface_set_color(c)
+		_ribbon_mesh.surface_set_uv(Vector2(0.0,age))
+		_ribbon_mesh.surface_add_vertex(p-across)
+		_ribbon_mesh.surface_set_color(c)
+		_ribbon_mesh.surface_set_uv(Vector2(1.0,age))
+		_ribbon_mesh.surface_add_vertex(p+across)
+	_ribbon_mesh.surface_end()
 
 static func _seg_least(a: Vector3, b: Vector3) -> float:
 	var d := b-a
