@@ -360,6 +360,7 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 		return
 	var pace := float(plane.boost_speed())*lerpf(float(tuning.pace),EASE_PACE,smoothstep(EASE_M.x,EASE_M.y,gap))
 	if not ahead: pace = maxf(pace,ps+AHEAD_OVER)
+	pace *= float(raider.pace_k())  # pulling away after an ember's hit
 	_plan_t -= delta
 	if route.is_empty() and _plan_t <= 0.0:
 		_plan_t = PLAN_S

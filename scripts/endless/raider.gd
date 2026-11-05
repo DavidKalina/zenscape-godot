@@ -56,7 +56,9 @@ extends Node3D
 ## (`--raider-let-go=M`) or out of view LET_GO_S s (`--raider-let-go-s=S`),
 ## it's gone for good (`_leave`), and the next buzzes in GAP s later
 ## (`--raider-gap=S`; a kill waits the same). In the chase it has no marker
-## off screen: no arrow at the view's edge.
+## off screen: no arrow at the view's edge. While it runs it fires embers back
+## at the plane (raider_embers.gd: --raider-ember-every, --raider-ember-speed,
+## --raider-ember-seek), through the parry: it's a `parry_source`.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -64,6 +66,7 @@ const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RaiderChase = preload("res://scripts/endless/raider_chase.gd")
+const RaiderEmbers = preload("res://scripts/endless/raider_embers.gd")
 
 signal killed(at: Vector3)
 signal rammed(at: Vector3)
@@ -199,6 +202,8 @@ var tuning := {}
 var mode := &"chase"
 ## The chase (null in the dogfight alone).
 var chase: RefCounted
+## Its embers in the chase (raider_embers.gd), null in the dogfight.
+var embers: RefCounted
 ## The mix: rams flown since the dogfight began, and how many before it runs.
 var passes := 0
 var passes_want := 3
@@ -255,7 +260,10 @@ func setup(g: Node3D) -> void:
 		"fill":_flag("--raider-fill",DODGE_FILL.y),"turn":_flag("--raider-turn",TURN_MAX)}
 	flight = SkyTraffic.Flight.new()
 	mode = mode_of(LaunchArgs.user_args())
-	if mode != &"dogfight": chase = RaiderChase.new(self)
+	if mode != &"dogfight":
+		chase = RaiderChase.new(self)
+		embers = RaiderEmbers.new(self)
+		add_to_group(&"parry_source")  # its embers (scripts/endless/parry.gd)
 	figure = PlaneFigure.new(LIVERY)
 	figure.name = "RaiderPlane"
 	figure.visible = false
@@ -363,6 +371,7 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 		var r1 := flight.position-p
 		sweep = _seg_least(r0,r1)
 	if state == &"ram": _settle(sweep,p,events)
+	if embers != null: embers.step(delta,_plane_prev,p,events)
 	_prev = flight.position
 	_plane_prev = p
 	_draw_figure(delta)
@@ -435,12 +444,41 @@ func _in_view() -> bool:
 ## Let go: it's gone, the next one buzzes in after the gap.
 func _leave() -> void:
 	stats.gone = int(stats.get("gone",0))+1
+	if embers != null: embers.clear()
 	figure.visible = false
 	_glow.visible = false
 	chase.idle()
 	chased = false
 	_wait = float(tuning.every)
 	_go(&"away")
+
+# --- The embers (raider_embers.gd) and the parry's calls (parry.gd header) ----
+
+## Its pace's multiplier in the chase: pulling away after an ember's hit.
+func pace_k() -> float:
+	return float(embers.pace_k()) if embers != null else 1.0
+
+## A parried ember came home onto it (the slow is task 3's).
+func ember_home(_at: Vector3) -> void:
+	stats.embers_home = int(stats.get("embers_home",0))+1
+
+func parry_shots() -> Array[Dictionary]:
+	return embers.embers if embers != null else ([] as Array[Dictionary])
+
+func parry_take(shot: Dictionary) -> void:
+	embers.take(shot)
+
+func parry_aim(_shot: Dictionary) -> Vector3:
+	return embers.aim()
+
+func parry_inside(q: Vector3) -> bool:
+	return embers.inside(q)
+
+func parry_moved(shot: Dictionary, a: Vector3, n: Vector3) -> void:
+	embers.moved(shot,a,n)
+
+func parry_landed(shot: Dictionary, at: Vector3, hit: bool) -> void:
+	embers.landed(shot,at,hit)
 
 # --- The mix ------------------------------------------------------------------
 
@@ -619,6 +657,7 @@ func try_kill(g: Node3D) -> Vector3:
 
 func _break(at: Vector3) -> void:
 	stats.kills = int(stats.kills)+1
+	if embers != null: embers.clear()
 	var v: Vector3 = flight.velocity
 	var pv: Vector3 = game.plane.velocity
 	figure.visible = false
