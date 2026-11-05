@@ -1,66 +1,74 @@
 # Handoff: the raider chase with embers
 
-Branch `iter/raider-embers`, spec `spec-raider-embers.md`, four rounds
+Branch `iter/raider-embers`, spec `spec-raider-embers.md`, two rounds
 (`git log --grep='^ITER(raider-embers)'`). Everything is behind `--raider`;
 the game without it is unchanged.
 
 Play: `cd /Users/davidkalina/Documents/Projects/zenscape-raider-embers && python3 tools/play.py --no-pull -- --raider --pilot-file=/tmp/raider_pilot.json`
 
-## What it does
+## What it does (round 2)
 
 - A raider buzzes you from behind (overhead or beside, a whoosh), then runs
-  ahead low (`scripts/endless/raider_chase.gd`).
-- Lock on (R3 / Y / middle mouse) to chase it. Not locked, 550 m off or 4 s
-  out of view: it's gone, and the next one buzzes you after the gap.
-  No offscreen arrow.
-- While it runs it fires embers back from its tail
-  (`scripts/endless/raider_embers.gd`). They go through the parry. A missed
-  one knocks you (shove and wobble, chain lost, meter kept) and the raider
-  pulls away for a moment. A parried one goes home onto it: it slows for a
-  few seconds and trails smoke. Three stacked cripple it (slow, low, dark
-  smoke) until it dies or leaves.
-- With a full gauge, the surge roll that reaches it knocks it out of the sky.
-  20 s later the next one buzzes you.
-- `--raider-mode=dogfight` / `=mix` still reach the old fights.
+  ahead low (`scripts/endless/raider_chase.gd`), a crimson ribbon at its tail
+  and a wasp livery (black body, yellow wings, red trim).
+- Lock on (R3 / Y / middle mouse) to chase it. Close in, the lock's brackets
+  open round it so the plane shows (`scripts/endless/lock_on.gd`).
+- It panics only when you're on its tail (within 80 m, your nose within 30
+  deg of it, it flying away): it jinks (sharper turns, low, tree gaps the
+  plane fits) and drops embers off its tail
+  (`scripts/endless/raider_embers.gd`). Off its tail it fires nothing.
+- Embers are laid in the plane's frame: each closes on you at 30 m/s
+  whatever your pace, bowing in from one side, so from 40-80 m one takes
+  1.3-2.7 s and the parry's whistle (1.1 s) plays out whole. It strikes at
+  its nearest pass, which is what the whistle counts down to.
+- A missed ember knocks you (shove, wobble, chain lost) and the raider
+  surges away, off its tail. A parried one goes home: it staggers (no panic
+  for 1.2 s) and slows; three cripple it.
+- Behind past 200 m for 3 s, it gets away for good, locked or not. A full
+  gauge's surge roll that reaches it (14 m) kills it. The next one buzzes
+  after 20 s.
+- `--raider-mode=dogfight` / `=mix` still reach the old fights (embers there
+  keep the round 1 world-speed model).
 
 ## Numbers (defaults) and flags
 
 | knob | default | flag |
 |---|---|---|
-| ember every | 2.2 s (about 1 per 3 s actually fired, it must be in view and 35-300 m off) | `--raider-ember-every=` |
-| ember speed | 24 m/s | `--raider-ember-speed=` |
-| ember seek | 0.6 rad/s | `--raider-ember-seek=` |
-| slow per home hit | 0.12 of its pace | `--raider-slow=` |
-| slow held after the last | 4 s | `--raider-slow-s=` |
-| hit cap (crippled) | 3, then x0.64 pace for good, 0.75 x its low height | `--raider-hit-cap=` |
-| let go | 550 m / 4 s out of view | `--raider-let-go=`, `--raider-let-go-s=` |
-| gap between raiders | 20 s of flight (a kill waits the same) | `--raider-gap=` |
+| on its tail | 80 m, 30 deg, held 0.5 s past slipping off | `--raider-tail-m=`, `--raider-tail-deg=` |
+| kept close | 1.12 x Boost out to 150 m, easing to 1.05 by 200; inside 40 m the plane's speed + 4 | `--raider-keep-far=`, `--raider-keep-near=` |
+| getaway | past 200 m for 3 s | `--raider-getaway=`, `--raider-getaway-s=` |
+| jink turn | 1.6 rad/s (0.9 calm), side flip every 1.3 s | `--raider-jink-turn=` |
+| ember first / every | 0.6 s after getting on its tail, then 1.6 s | `--raider-ember-every=` |
+| ember closing | 30 m/s in the plane's frame, seeks 3 rad/s until 10 m off, then straight; rides 2.5 m over rises | `--raider-ember-close=` (0 = round 1's world speed) |
+| ember speed / seek (dogfight, mix) | 24 m/s, 0.6 rad/s | `--raider-ember-speed=`, `--raider-ember-seek=` |
+| missed ember | keep 0.72 of speed, shove 14 m/s, raider x1.4 for 3 s | |
+| parry stagger | 1.2 s no panic | `--raider-stagger=` |
+| slow per home hit | 0.12 of its pace, held 4 s | `--raider-slow=`, `--raider-slow-s=` |
+| hit cap (crippled) | 3, then x0.64 pace for good | `--raider-hit-cap=` |
+| gap between raiders | 20 s | `--raider-gap=` |
+| ribbon | 30 points every 0.05 s (1.5 s), 1.8 -> 0.5 m wide x SIZE, Color(1,0.12,0.26) | |
+| reticle | brackets at 2.4 x the target's half size on screen (3.5 m unless it says), never under 30 px or over 220 | |
 
-Its run is about 65 m/s against the plane's 57-62 at Boost, so a plane that
-only follows loses it (gap 200 m at 20 s, 400 m at 60 s, with no parries).
-Parries slow it to 49-52 m/s, and skim heat takes the plane to 72-78 m/s.
+## Pacing (round 2, a driven run, real play loop)
 
-## Pacing (a driven run, real play loop)
+`scratch/tail_check.gd` (uncommitted): Boost, steers onto it skimming,
+locks on, rolls when the parry's guess of the nearest pass says now (even
+on a full gauge with `--armed=1`), a surge roll inside 22 m.
 
-`scratch/kill_check.gd` (uncommitted) holds Boost, steers onto the raider,
-locks on, rolls when the parry's guess of the closest pass says now, and
-on a full gauge rolls inside 22 m.
-
-- Defaults, 130 s: kill 1 at 29.8 s after lock (3 parries), kill 2 at
-  42.9 s after lock (5 parries), the next raider 20 s after each.
-- `--raider-slow-s=6`: 34.4 s and 56.6 s. `--raider-slow-s=6 --raider-slow=0.15`:
-  29.7 s and 38.7 s.
-- No parries, 100 s: no kill, the gauge stays empty, gap 415 m.
-
-The defaults land in the 30-60 s window and stayed as they were. Driven runs
-vary (the driver crashes now and then and relaunches), so expect a real
-flight to differ.
+- Before the closing embers: 12 fired in 90 s, 1 parried, no kill. At
+  24 m/s world speed an ember closed at ~85 m/s, under the whistle, and the
+  plane's weave threw its straight last 35 m 10-17 m wide.
+- Closing embers, 90 s, parrying on a full gauge: kill 22.5 s after lock
+  (3 parries, 0 hits). 150 s: 12 fired, 8 parried, 3 passed, 1 kill, 1 got
+  away.
+- Not parrying on a full gauge (holding the surge for the kill): 7 fired, 4
+  parried, 3 hits, each hit knocking it out of reach; no kill in 90 s.
+- A lazy line (no Boost, loose): no embers, it got away 2 of 3.
 
 ## Open
 
-- Smoke reads weakly at range (mid-grey through the haze); a look pass could
-  give it a bigger start or a little emission.
-- Embers far off sit behind the plane in the chase cam and read small.
-- Locked on and far behind (past ember range, 300 m) nothing happens until
-  you close up or let it go.
+- The driver kills about one raider in three; a real pilot will differ.
+  The tension left: a full gauge means a roll spends the surge, so on the
+  run in you either parry (and lose the kill roll) or eat the knock-back.
+- Not counted: how often it takes tree gaps or arches while jinking.
 - All greybox: the ember's look, the smoke, the sounds.

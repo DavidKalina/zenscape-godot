@@ -52,6 +52,11 @@ const DOF_RAMP := 0.5
 const DOF_RAMP_PAD := 30.0
 const DOF_AMOUNT := 0.1
 ## The line of sight: samples against the land, m it may dip under it.
+## The reticle: a target's half size (m) unless it says (`lock_radius()`),
+## how far past it the brackets sit (x its half size on screen), the most (px).
+const RETICLE_R := 3.5
+const RETICLE_OPEN := 2.4
+const RETICLE_MOST := 220.0
 const SIGHT_SAMPLES := 8
 const SIGHT_DIP := 2.0
 
@@ -269,6 +274,12 @@ func _draw_reticle(cam: Camera3D) -> void:
 		if not cam.is_position_behind(p):
 			r.at = cam.unproject_position(p)
 			r.on = cam.get_viewport().get_visible_rect().has_point(r.at)
+			# The target's half size on screen (px), so close in the brackets
+			# open round it rather than sit on it.
+			var rad := float(target.call("lock_radius")) if target != null and target.has_method("lock_radius") else RETICLE_R
+			var dist := maxf(cam.global_position.distance_to(p),0.1)
+			var tall := cam.get_viewport().get_visible_rect().size.y
+			r.body = rad/(dist*tan(deg_to_rad(cam.fov)*0.5))*tall*0.5
 	r.weight = weight
 	r.locked = target != null
 	r.spin = _clock-r.born
@@ -283,6 +294,7 @@ class Reticle extends Control:
 	var spin := 0.0
 	var born := 0.0
 	var miss := 0.0
+	var body := 0.0
 
 	func _init() -> void:
 		set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -297,6 +309,11 @@ class Reticle extends Control:
 		# Four corners closing in and turning a quarter as it locks.
 		var k := smoothstep(0.0,1.0,weight)
 		var s := lerpf(64.0,30.0,k)
+		# Close in, it opens to clear the target (RETICLE_OPEN x its half size,
+		# up to RETICLE_MOST px), its corners short and thin, the dot gone.
+		var wide := clampf(body*RETICLE_OPEN,s,RETICLE_MOST)
+		var open := clampf((wide-s)/s,0.0,1.0)
+		s = wide
 		var turn := (1.0-minf(spin/0.35,1.0))*PI*0.5 if locked else 0.0
 		var col := Color(1.0,0.82,0.3,0.95*k) if locked else Color(1.0,1.0,1.0,0.6*k)
 		var dark := Color(0.05,0.03,0.02,0.7*k)
@@ -305,11 +322,11 @@ class Reticle extends Control:
 			var c := at+Vector2(cos(a),sin(a))*s
 			var u := (at-c).normalized()
 			var n := Vector2(-u.y,u.x)
-			var arm := s*0.45
+			var arm := minf(s*0.45,lerpf(s*0.45,16.0,open))
 			var pts := PackedVector2Array([c+(u+n).normalized()*arm,c,c+(u-n).normalized()*arm])
-			draw_polyline(pts,dark,5.0)
-			draw_polyline(pts,col,2.5)
-		draw_circle(at,2.5,col)
+			draw_polyline(pts,dark,lerpf(5.0,3.5,open))
+			draw_polyline(pts,col,lerpf(2.5,1.6,open))
+		if open < 0.99: draw_circle(at,2.5,Color(col,col.a*(1.0-open)))
 		if locked:
 			var font := ThemeDB.fallback_font
 			var p := at+Vector2(-60.0,s+22.0)

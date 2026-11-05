@@ -47,6 +47,22 @@ const SEEK := 0.6
 ## hidden behind the plane down the view's line; the seek brings it round.
 const OFF := 0.45
 const SEEK_M := 35.0
+## On its tail (chase mode) an ember is laid in the plane's frame: it closes on
+## the plane at CLOSE m/s (`--raider-ember-close=M/S`), whatever the plane's
+## pace, so from 40-80 m it takes 1.3-2.7 s and the parry's whole tell
+## (parry.gd TELL_S 1.1 s, about SEEK_M at CLOSE) plays out. In the world it
+## drifts back off the raider's tail like a dropped spark. It seeks (turns its
+## closing onto the plane) at SEEK_CLOSE rad/s and rides the plane's turns
+## until STRAIGHT_M off (the plane weaving after a jinking raider threw 1.1 s
+## of straight flight 10-17 m wide), then flies straight: a late jink or the
+## roll's timing answers it.
+const CLOSE := 30.0
+const STRAIGHT_M := 10.0
+const SEEK_CLOSE := 3.0
+## Its least height over the ground while closing, and the most it climbs to
+## hold it in one frame (m).
+const FLOAT := 2.5
+const CLIMB := 3.0
 ## The streak: its length (m) behind the ball, its width at the ball (x r).
 const TRAIL_M := 7.0
 const TRAIL_W := 0.7
@@ -87,7 +103,7 @@ func _init(r: Node3D) -> void:
 	raider = r
 	_size = float(r.get_script().get_script_constant_map().get("SIZE",1.0))
 	tuning = {"every":maxf(r._flag("--raider-ember-every",EVERY),0.2),"speed":maxf(r._flag("--raider-ember-speed",SPEED),2.0),
-		"seek":r._flag("--raider-ember-seek",SEEK)}
+		"seek":r._flag("--raider-ember-seek",SEEK),"close":maxf(r._flag("--raider-ember-close",CLOSE),0.0)}
 	_root = Node3D.new()
 	_root.name = "Embers"
 	_root.top_level = true
@@ -181,24 +197,34 @@ func _tail() -> Vector3:
 func _fire(p: Vector3) -> void:
 	var game: Node3D = raider.game
 	var from := _tail()
-	var shot := _lead(from,p)
+	var pv: Vector3 = game.plane.velocity
+	var shot := _lead(from,p)-pv if _closing() else _lead(from,p)
 	var right := shot.cross(Vector3.UP).normalized()
 	if right.is_normalized():
 		_side = -_side
 		var up := right.cross(shot).normalized()
 		shot = shot.rotated((up*_side*0.8+right*0.6).normalized(),OFF)
+	if _closing(): shot += pv
 	var node := _ember()
 	node.position = from
-	_face(node,shot)
+	_face(node,shot-pv if _closing() else shot)
 	node.visible = true
 	embers.append({"node":node,"at":from,"v":shot,"age":0.0,"least":INF,"near":from,"done":false,"parry":true,"r":EMBER_R})
 	stats.fired = int(stats.fired)+1
 	var d := from.distance_to(p)
 	game.sound.shot("thump",0.5/(1.0+d/120.0),1.6,from)
 
+## Chase mode with a CLOSE: embers laid in the plane's frame.
+func _closing() -> bool:
+	return raider.mode == &"chase" and float(tuning.close) > 0.0
+
 ## The velocity from `from` that meets the plane (at `p`, holding its way)
-## at SPEED, else straight at it.
+## at SPEED, else straight at it. Closing: the plane's velocity plus CLOSE
+## straight at it.
 func _lead(from: Vector3, p: Vector3) -> Vector3:
+	if _closing():
+		var pv: Vector3 = raider.game.plane.velocity
+		return pv+(p-from).normalized()*float(tuning.close)
 	var s := float(tuning.speed)
 	var to: Vector3 = p-from
 	var v: Vector3 = raider.game.plane.velocity
@@ -222,7 +248,20 @@ func _fly(delta: float, was: Vector3, p: Vector3, events: Dictionary, flying: bo
 		var e: Dictionary = embers[i]
 		var a: Vector3 = e.at
 		var v: Vector3 = e.v
-		if flying and not bool(e.done) and a.distance_to(p) > SEEK_M and float(tuning.seek) > 0.0:
+		var closing := _closing()
+		if closing and flying and not bool(e.done) and a.distance_to(p) > STRAIGHT_M:
+			# Turn its closing (in the plane's frame) onto the plane.
+			var pv: Vector3 = game.plane.velocity
+			var w: Vector3 = v-pv
+			var want_w: Vector3 = (p-a).normalized()*float(tuning.close)
+			var ang_w := w.angle_to(want_w)
+			if ang_w > 0.0001:
+				var axis_w := w.cross(want_w).normalized()
+				if axis_w.is_normalized(): w = w.rotated(axis_w,minf(ang_w,SEEK_CLOSE*delta))
+			v = pv+w.normalized()*float(tuning.close)
+			e.v = v
+		if closing and not bool(e.done): _face(e.node,v-(game.plane.velocity as Vector3))
+		if not closing and flying and not bool(e.done) and a.distance_to(p) > SEEK_M and float(tuning.seek) > 0.0:
 			var want := _lead(a,p)
 			var ang := v.angle_to(want)
 			if ang > 0.0001:
@@ -242,7 +281,9 @@ func _fly(delta: float, was: Vector3, p: Vector3, events: Dictionary, flying: bo
 			if gap < float(e.least):
 				e.least = gap
 				e.near = was.lerp(p,k)
-			if float(e.least) <= reach:
+			# Closing, it strikes at its nearest pass (the parry's tell counts
+			# down to that), not on touching the reach a beat before it.
+			if float(e.least) <= reach and (not closing or k < 0.999):
 				e.done = true
 				if not hot: _struck(e,events)
 				_drop(e.node)
@@ -253,6 +294,12 @@ func _fly(delta: float, was: Vector3, p: Vector3, events: Dictionary, flying: bo
 				stats.passed = int(stats.passed)+1
 				game.sound.shot("whoosh",0.5,1.5,e.near)
 		var ground := maxf(float(game.field.height(n.x,n.z)),float(game.water_at(n)))
+		# Laid on its tail, it rides FLOAT m over a rise rather than die on it
+		# (the plane skims after it); a wall (a step past CLIMB m) still eats it.
+		if closing and n.y < ground+FLOAT and n.y > ground+FLOAT-CLIMB:
+			n.y = ground+FLOAT
+			e.at = n
+			(e.node as Node3D).position = n
 		if n.y <= ground or float(e.age) > LIFE:
 			if n.y <= ground:
 				stats.ground = int(stats.ground)+1
