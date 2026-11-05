@@ -21,14 +21,19 @@ extends RefCounted
 ## its pace for PULL_S s. A hot surge roll goes through them unknocked. One
 ## that meets the ground, or LIFE s old, is gone.
 
+## Round 2: it fires only in a panic (raider.gd `panic`: the plane on its
+## tail, not staggered), the first TAIL_FIRST s after the plane gets there;
+## a missed one knocks the plane back out of tail range (KEEP, SHOVE, PULL).
+
 const WorldScale = preload("res://scripts/world_scale.gd")
 
-const EVERY := 2.2
+const EVERY := 1.6
+const TAIL_FIRST := 0.6
 const SPEED := 24.0
 ## The plane between RANGE.x and RANGE.y m off, behind it (its tail toward the
 ## plane within RANGE_COS), it fires; the first FIRST_S s after it starts to
 ## run, it doesn't.
-const RANGE := Vector2(35.0,300.0)
+const RANGE := Vector2(30.0,300.0)
 const RANGE_COS := 0.3
 const FIRST_S := 1.5
 const MOST := 6
@@ -48,14 +53,14 @@ const TRAIL_W := 0.7
 ## The tail: how far back off its middle (x SIZE x the plane's scale).
 const TAIL := 1.6
 ## A hit on the plane.
-const KEEP := 0.85
-const SHOVE := 11.0
+const KEEP := 0.72
+const SHOVE := 14.0
 const YAW := 0.25
 const WOBBLE := Vector2(1.0,0.7)
 const FEEL := Vector2(0.035,10.0)
 ## The raider pulls away after a hit: times its pace, for s.
-const PULL := 1.25
-const PULL_S := 2.5
+const PULL := 1.4
+const PULL_S := 3.0
 ## A parried one lands within this of its middle (x SIZE x the plane's scale).
 const BODY := 2.4
 
@@ -141,13 +146,16 @@ func step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> void:
 	pull_t = maxf(pull_t-delta,0.0)
 	var game: Node3D = raider.game
 	var flying: bool = game.hand_landing.flying()
-	if raider.state == &"flee" and raider.chase.phase == &"run" and flying:
+	var on: bool = raider.state == &"flee" and raider.chase.phase == &"run" and flying
+	if on and raider.mode == &"chase": on = bool(raider.panic())
+	if on:
 		_wait -= delta
 		if _wait <= 0.0 and _may_fire(p):
 			_fire(p)
 			_wait = float(tuning.every)
+			if bool(raider.on_tail): stats.fired_tail = int(stats.get("fired_tail",0))+1
 	else:
-		_wait = maxf(_wait,FIRST_S)
+		_wait = maxf(_wait,TAIL_FIRST if raider.mode == &"chase" else FIRST_S)
 	_fly(delta,was,p,events,flying)
 
 ## Off: every one in the air gone (a leave, a kill).
@@ -275,6 +283,8 @@ func _struck(e: Dictionary, events: Dictionary) -> void:
 	game.feel_hit(FEEL.x,FEEL.y)
 	game.sound.shot("crash",0.9,1.1)
 	pull_t = PULL_S
+	# It surges away at once (the pace eases slowly), out of tail range.
+	raider.speed = float(raider.speed)*PULL
 
 # --- The parry's calls (raider.gd hands them on) -------------------------------
 

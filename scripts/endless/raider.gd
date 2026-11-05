@@ -51,8 +51,8 @@ extends Node3D
 ##
 ## `chase` is the default (spec-raider-embers.md): each one arrives by a buzz
 ## (raider_chase.gd `buzz`: from behind, close overhead or beside, a whoosh)
-## and runs. Locked on (lock_on.gd), it's `chased`: lost, it comes round
-## ahead, as before. Not chased and more than LET_GO_M m off
+## and runs. Locked on (lock_on.gd), it's `chased`. Round 2: no come-round;
+## behind past GETAWAY_M for GETAWAY_S s it's gone, chased or not. Not chased and more than LET_GO_M m off
 ## (`--raider-let-go=M`) or out of view LET_GO_S s (`--raider-let-go-s=S`),
 ## it's gone for good (`_leave`), and the next buzzes in GAP s later
 ## (`--raider-gap=S`; a kill waits the same). In the chase it has no marker
@@ -156,6 +156,21 @@ const FLEE_UP := 0.6
 ## The chase let go: m off, s out of view (not locked on), before it's gone.
 const LET_GO_M := 550.0
 const LET_GO_S := 4.0
+## Round 2 (spec-raider-embers.md, round 2): on its tail is the plane within
+## ON_TAIL_M m behind it (`--raider-tail-m=`), its nose within ON_TAIL_DEG of it
+## (`--raider-tail-deg=`), held TAIL_HOLD s after it slips off. On its tail it
+## panics: it fires embers and jinks (raider_chase.gd). It keeps KEEP_M m
+## ahead (`--raider-keep-near=`, `--raider-keep-far=`); behind past GETAWAY_M
+## m (`--raider-getaway=`) for GETAWAY_S s (`--raider-getaway-s=`) it gets
+## away for good, locked on or not. A parried ember home on it staggers it:
+## no panic for STAGGER_S s (`--raider-stagger=`).
+const ON_TAIL_M := 80.0
+const ON_TAIL_DEG := 30.0
+const TAIL_HOLD := 0.5
+const KEEP_M := Vector2(40.0,150.0)
+const GETAWAY_M := 200.0
+const GETAWAY_S := 3.0
+const STAGGER_S := 1.2
 
 const MIX_PASSES := Vector2i(2,3)
 const MIX_BREAK_M := Vector2(40.0,450.0)
@@ -231,6 +246,12 @@ var _rounds_seen := 0
 ## a press). Chased, a lost raider comes round; else it leaves.
 var chased := false
 var _unseen_t := 0.0
+## Round 2: the plane on its tail (held TAIL_HOLD s past slipping off), the
+## seconds since it last was, the stagger's clock, the getaway's.
+var on_tail := false
+var _off_tail := INF
+var stagger_t := 0.0
+var _away_t := 0.0
 ## The slow: parried embers home on it now (to the cap), seconds the slow
 ## still holds (crippled at the cap: held for good).
 var hits_home := 0
@@ -280,7 +301,11 @@ func setup(g: Node3D) -> void:
 		"near":_flag("--raider-near",NEAR_R),"shove":_flag("--raider-shove",SHOVE),
 		"fill":_flag("--raider-fill",DODGE_FILL.y),"turn":_flag("--raider-turn",TURN_MAX),
 		"slow":minf(_flag("--raider-slow",SLOW),0.9),"slow_s":_flag("--raider-slow-s",SLOW_S),
-		"cap":maxi(int(_flag("--raider-hit-cap",HIT_CAP)),1)}
+		"cap":maxi(int(_flag("--raider-hit-cap",HIT_CAP)),1),
+		"tail_m":_flag("--raider-tail-m",ON_TAIL_M),"tail_cos":cos(deg_to_rad(_flag("--raider-tail-deg",ON_TAIL_DEG))),
+		"keep_near":_flag("--raider-keep-near",KEEP_M.x),"keep_far":_flag("--raider-keep-far",KEEP_M.y),
+		"getaway":_flag("--raider-getaway",GETAWAY_M),"getaway_s":_flag("--raider-getaway-s",GETAWAY_S),
+		"stagger":_flag("--raider-stagger",STAGGER_S)}
 	flight = SkyTraffic.Flight.new()
 	mode = mode_of(LaunchArgs.user_args())
 	if mode != &"dogfight":
@@ -440,6 +465,7 @@ func _spawn() -> void:
 	_count_from()
 	chased = false
 	_unseen_t = 0.0
+	_untail()
 	_unslow()
 	if mode == &"chase":
 		chase.buzz()
@@ -453,6 +479,13 @@ func _spawn() -> void:
 
 ## Chased or not, and gone for good when not: far off, or long out of view.
 func _watch(delta: float, dist: float) -> void:
+	_tail_step(delta,dist)
+	# Behind past GETAWAY_M for GETAWAY_S s: it got away, locked on or not.
+	_away_t = _away_t+delta if (chase.phase == &"run" and dist > float(tuning.getaway)) else 0.0
+	if _away_t > float(tuning.getaway_s):
+		stats.got_away = int(stats.get("got_away",0))+1
+		_leave()
+		return
 	var lock: Node = game.get("lock_on")
 	var locked: bool = lock != null and lock.target == figure
 	if locked: chased = true
@@ -462,6 +495,27 @@ func _watch(delta: float, dist: float) -> void:
 		return
 	_unseen_t = 0.0 if _in_view() else _unseen_t+delta
 	if dist > float(tuning.let_go) or _unseen_t > float(tuning.let_go_s): _leave()
+
+## On its tail: close behind it, its nose on it; held a moment past slipping off.
+func _tail_step(delta: float, dist: float) -> void:
+	stagger_t = maxf(stagger_t-delta,0.0)
+	var now := false
+	if chase.phase == &"run" and dist > 1.0 and bool(game.hand_landing.flying()) and dist <= float(tuning.tail_m):
+		var to: Vector3 = (flight.position-game.plane.position)/dist
+		now = flight.forward().dot(to) >= 0.3 and (game.plane.forward() as Vector3).dot(to) >= float(tuning.tail_cos)
+	_off_tail = 0.0 if now else _off_tail+delta
+	on_tail = _off_tail <= TAIL_HOLD
+	if on_tail: stats.tail_s = float(stats.get("tail_s",0.0))+delta
+
+## Panicking: on its tail and not staggered by a parried ember.
+func panic() -> bool:
+	return on_tail and stagger_t <= 0.0 and state == &"flee"
+
+func _untail() -> void:
+	on_tail = false
+	_off_tail = INF
+	stagger_t = 0.0
+	_away_t = 0.0
 
 func _in_view() -> bool:
 	var cam: Camera3D = game.camera
@@ -475,6 +529,7 @@ func _leave() -> void:
 	figure.visible = false
 	_glow.visible = false
 	_unslow()
+	_untail()
 	chase.idle()
 	chased = false
 	_wait = float(tuning.every)
@@ -498,6 +553,7 @@ func crippled() -> bool:
 ## A parried ember came home onto it: one more slow, to the cap.
 func ember_home(_at: Vector3) -> void:
 	stats.embers_home = int(stats.get("embers_home",0))+1
+	stagger_t = float(tuning.stagger)
 	if crippled(): return
 	hits_home += 1
 	slow_t = float(tuning.slow_s)

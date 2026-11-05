@@ -46,6 +46,18 @@ extends RefCounted
 ## back round (`round`): to a point BACK_M m ahead of the plane and off to
 ## the side, at the plane's speed + ROUND_OVER, then runs again.
 ##
+## Round 2 (spec-raider-embers.md, round 2): kept close and panicking.
+## In the chase mode it holds KEEP_M m ahead (raider.gd `tuning.keep_*`):
+## PACE times Boost out to keep_far, easing to KEEP_EASE by the getaway
+## distance (past it a few s, raider.gd lets it go for good: no come-round),
+## and inside keep_near it speeds up off the plane's own speed. With the
+## plane on its tail (raider.gd `panic`) it jinks: turns as hard as JINK_TURN
+## (`--raider-jink-turn=`), plans every JINK_PLAN s with the turn and keep
+## weights cut to JINK_EASE of themselves, leans to one side then the other
+## (every JINK_S s, W_JINK), likes tree gaps (W_GAP: trees either side, its
+## line clear SIDE m each way, the plane's WorldScale.opening at least) and
+## flies JINK_LOW times its low height (diving under what it can).
+##
 ## Tuning flags: --raider-skim=M/S (SKIM_GAIN), --raider-pace=X (PACE),
 ## --raider-low=M (LOW), --raider-dive=RAD (PITCH_DIVE).
 
@@ -170,6 +182,23 @@ const HEAT_UP := 0.6
 const HEAT_DOWN := 2.5
 const KICK := 0.4
 const SKIM_GAIN := 40.0
+## The jinks (panicking): its turn's cap (rad/s), the plan's period (s), the
+## turn and keep weights' share, the lean's period (s) and weight, a tree
+## gap's weight and how far out its trees stand (m), its low height's share.
+const JINK_TURN := 1.6
+const JINK_PLAN := 0.2
+const JINK_EASE := 0.25
+const JINK_S := 1.3
+const W_JINK := 1.2
+const W_GAP := 0.8
+const GAP_TREES := 13.0
+const JINK_LOW := 0.7
+## Past keep_far it eases to KEEP_EASE times Boost by the getaway distance:
+## still a little faster, so Boost alone, flown high, loses it.
+const KEEP_EASE := 1.05
+## Inside keep_near: m/s over the plane's speed per m inside, and the least.
+const KEEP_GAIN := 0.6
+const KEEP_OVER := 4.0
 
 var raider: Node3D
 ## buzz (arriving), run (fleeing), round (coming back)
@@ -201,12 +230,18 @@ var _buzz_s := 0.0
 var _buzz_line := Vector3.FORWARD
 var _buzz_off := Vector2.ZERO
 var _buzz_heard := false
+## Panicking this frame, the turn's cap now, the lean's side and clock.
+var _panic := false
+var _turn_cap := TURN
+var _jink_side := 1.0
+var _jink_t := 0.0
 
 func _init(r: Node3D) -> void:
 	raider = r
 	tuning = {"skim":r._flag("--raider-skim",SKIM_GAIN),"pace":maxf(r._flag("--raider-pace",PACE),0.3),
 		"low":maxf(r._flag("--raider-low",LOW),FLOOR),
-		"dive":clampf(r._flag("--raider-dive",PITCH_DIVE),PITCH_DOWN,1.2)}
+		"dive":clampf(r._flag("--raider-dive",PITCH_DIVE),PITCH_DOWN,1.2),
+		"jink_turn":maxf(r._flag("--raider-jink-turn",JINK_TURN),TURN)}
 
 ## Shown: ahead of the view, low, facing on along the plane's line.
 func spawn() -> void:
@@ -343,7 +378,7 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 	var unseen: bool = cam.is_position_behind(f.position)
 	_lost = _lost+delta if (dist > LOST_M or unseen) else 0.0
 	# Only a chased raider comes round (raider.gd `chased`); one let go leaves.
-	if phase == &"run" and _lost > LOST_S and bool(raider.chased):
+	if phase == &"run" and _lost > LOST_S and bool(raider.chased) and raider.mode != &"chase":
 		phase = &"round"
 		_drop_route()
 		stats.rounds = int(stats.rounds)+1
@@ -359,11 +394,26 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 			_want = f.heading
 		return
 	var pace := float(plane.boost_speed())*lerpf(float(tuning.pace),EASE_PACE,smoothstep(EASE_M.x,EASE_M.y,gap))
+	if raider.mode == &"chase":
+		var rt: Dictionary = raider.tuning
+		pace = float(plane.boost_speed())*lerpf(float(tuning.pace),KEEP_EASE,smoothstep(float(rt.keep_far),float(rt.getaway),gap))
+		if ahead and gap < float(rt.keep_near): pace = maxf(pace,ps+KEEP_OVER+(float(rt.keep_near)-gap)*KEEP_GAIN)
 	if not ahead: pace = maxf(pace,ps+AHEAD_OVER)
 	pace *= float(raider.pace_k())  # pulling away after an ember's hit
+	# On its tail: the jinks.
+	var was_panic := _panic
+	_panic = raider.mode == &"chase" and bool(raider.panic())
+	_turn_cap = float(tuning.jink_turn) if _panic else TURN
+	if _panic:
+		if not was_panic: _plan_t = 0.0
+		_jink_t -= delta
+		if _jink_t <= 0.0:
+			_jink_t = JINK_S
+			_jink_side = -_jink_side
+		stats.panic_s = float(stats.get("panic_s",0.0))+delta
 	_plan_t -= delta
 	if route.is_empty() and _plan_t <= 0.0:
-		_plan_t = PLAN_S
+		_plan_t = JINK_PLAN if _panic else PLAN_S
 		stats.plans = int(stats.plans)+1
 		if not _take_arch(p): _plan(p)
 	if not route.is_empty():
@@ -391,6 +441,7 @@ func _plan(p: Vector3) -> void:
 		var dir := Vector3(-sin(h),0.0,-cos(h))
 		var score := 0.0
 		var top := -INF
+		var gaps := 0
 		for s: float in LOOK:
 			var q := at+dir*s
 			var land := float(game.field.height(q.x,q.z))
@@ -404,9 +455,15 @@ func _plan(p: Vector3) -> void:
 			top = maxf(top,maxf(land,water))
 			if water > land: score -= W_SEA
 			elif _trees_at(q,land): score += W_TREE
+			if _panic and s <= 180.0 and water <= land and _tree_gap(q,dir,land): gaps += 1
 		score -= maxf(top-(at.y-float(tuning.low)),0.0)*W_CLIMB
-		score -= absf(k*FAN_STEP)*W_TURN
-		score -= absf(angle_difference(_want,h))*W_KEEP
+		var ease := JINK_EASE if _panic else 1.0
+		score -= absf(k*FAN_STEP)*W_TURN*ease
+		score -= absf(angle_difference(_want,h))*W_KEEP*ease
+		if _panic:
+			# The lean: a turn to this side's way scores, more the harder (to 3 steps).
+			score += clampf(k*_jink_side,0.0,3.0)/3.0*W_JINK
+			score += float(gaps)/3.0*W_GAP
 		var flee := dir.dot(away)
 		if flee < FLEE_COS: score -= (FLEE_COS-flee)*W_FLEE*(SEA_FLEE if land_way != Vector3.ZERO else 1.0)
 		if arch_way != Vector3.ZERO: score += maxf(dir.dot(arch_way),0.0)*W_ARCH
@@ -434,6 +491,17 @@ func _land_way(at: Vector3) -> Vector3:
 				best = d
 		if best != Vector3.ZERO: return best
 	return Vector3.ZERO
+
+## A tree gap at `q` along `dir`: trees GAP_TREES m to each side, none on the
+## line SIDE m (at least half the plane's WorldScale.opening) to each side.
+func _tree_gap(q: Vector3, dir: Vector3, land: float) -> bool:
+	var trees: Node3D = raider.game.trees
+	if trees == null: return false
+	var side := dir.cross(Vector3.UP)
+	var half := maxf(SIDE,WorldScale.opening(TOY_FIT)*0.5)
+	for o: float in [0.0,half,-half]:
+		if float(trees.top_at(q+side*o)) > land: return false
+	return float(trees.top_at(q+side*GAP_TREES)) > land+3.0 and float(trees.top_at(q-side*GAP_TREES)) > land+3.0
 
 ## A rock or an arch standing at `q`.
 func _pillar(q: Vector3) -> bool:
@@ -672,7 +740,7 @@ func _heading_to(aim: Vector3) -> float:
 ## FLOOR over the land.
 func _fly(want: float, delta: float, pace: float, y := NAN, solids := true, reach := INF) -> void:
 	var f: SkyTraffic.Flight = raider.flight
-	var rate := clampf(angle_difference(f.heading,want)*TURN_GAIN,-TURN,TURN)
+	var rate := clampf(angle_difference(f.heading,want)*TURN_GAIN,-_turn_cap,_turn_cap)
 	raider.turn = lerpf(raider.turn,rate,raider._ease(0.3,delta))
 	f.heading = wrapf(f.heading+raider.turn*delta,-PI,PI)
 	f.bank = clampf(-raider.turn*raider.BANK,-raider.BANK_MAX,raider.BANK_MAX)
@@ -681,7 +749,7 @@ func _fly(want: float, delta: float, pace: float, y := NAN, solids := true, reac
 	# Routed through an arch's opening (`y` the line's height, the way checked
 	# clear; `solids` off): only the land and the crowns under it.
 	var under := _floor_y(f.position,flat,solids,reach)
-	var want_y := y if not is_nan(y) else under+maxf(float(tuning.low)*float(raider.low_k()),FLOOR)
+	var want_y := y if not is_nan(y) else under+maxf(float(tuning.low)*float(raider.low_k())*(JINK_LOW if _panic else 1.0),FLOOR)
 	# The aim's own climb led (its rise a m on), then the miss closed.
 	var run := maxf(raider.speed*delta,0.01)
 	if not is_nan(_want_y):
