@@ -21,7 +21,9 @@ extends Node3D
 ##                                     source's own flight and hit tests
 ##   parry_aim(shot) -> Vector3        where it goes back to (world), each frame
 ##   parry_inside(p) -> bool           true once a point is in the sender's body
-##   parry_moved(shot, a, b) -> void   the returning shot moved a -> b (its trail)
+##   parry_moved(shot, a, b) -> void   the returning shot moved a -> b (its trail);
+##                                     setting `spent` true on the shot ends it there,
+##                                     a miss (it struck something on the way)
 ##   parry_landed(shot, at, hit)       its end: on the sender (hit) or not; the
 ##                                     node is the source's again
 
@@ -123,6 +125,10 @@ var _now := 0.0
 var _was_rolling := false
 var _asked := false
 var _smash_rolls := 0
+## The meter when the open window's roll began, and whether that roll was the
+## surge roll: a parry never spends the gauge, so it hands it back.
+var _meter_at_roll := 0.0
+var _roll_surged := false
 var _stop := 0
 var _slow_until := 0
 var _returning: Array[Dictionary] = []
@@ -181,7 +187,7 @@ func step(delta: float) -> void:
 	var flying: bool = plane.weighted and bool(game.hand_landing.flying())
 	var surged: bool = game.smash != null and int(game.smash.rolls) != _smash_rolls
 	if flying and bool(plane.rolling) and ((_asked and not _was_rolling) or surged):
-		_begin()
+		_begin(surged)
 	_asked = false
 	if locked > 0.0 and not bool(plane.rolling): locked = maxf(locked-delta,0.0)
 	var shots := _shots()
@@ -198,9 +204,11 @@ func step(delta: float) -> void:
 	_home_step(delta)
 
 ## A roll just began: the window's open; was anything coming?
-func _begin() -> void:
+func _begin(surged: bool = false) -> void:
 	rolls += 1
 	_open = _now
+	_meter_at_roll = float(game.near.meter)
+	_roll_surged = surged
 	_parried_this = 0
 	_threat = false
 	for s: Dictionary in _shots():
@@ -246,6 +254,12 @@ func _parry(s: Dictionary, perfect: bool) -> void:
 	shot["done"] = true
 	parries += 1
 	_parried_this += 1
+	# A parry never spends the gauge: a surge roll that parried is called off
+	# and the meter it had drained goes back.
+	if _roll_surged:
+		_roll_surged = false
+		if game.smash != null: game.smash.call_off()
+		game.near.meter = maxf(float(game.near.meter),_meter_at_roll)
 	if perfect: perfects += 1
 	chain = chain+1 if _now <= _chain_until else 0
 	_chain_until = _now+CHAIN_S
@@ -307,13 +321,15 @@ func _home_step(delta: float) -> void:
 		shot.at = n
 		(shot.node as Node3D).position = n
 		src.parry_moved(shot,a,n)
+		var spent := bool(shot.get("spent",false))
+		if spent: n = shot.at
 		var hit := false
-		for k in 4:
+		for k in (0 if spent else 4):
 			if src.parry_inside(a.lerp(n,float(k+1)/4.0)):
 				hit = true
 				n = a.lerp(n,float(k+1)/4.0)
 				break
-		if hit or float(r.age) > RETURN_LIFE:
+		if hit or spent or float(r.age) > RETURN_LIFE:
 			if hit: home_hits += 1
 			else: home_misses += 1
 			(r.glow as Node).queue_free()

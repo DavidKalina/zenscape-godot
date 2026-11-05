@@ -30,6 +30,7 @@ const BoreLine = preload("res://scripts/endless/bore_line.gd")
 const BoreSpurs = preload("res://scripts/endless/bore_spurs.gd")
 const BorePlugs = preload("res://scripts/endless/bore_plug.gd")
 const BorePlume = preload("res://scripts/endless/bore_plume.gd")
+const BoreRocks = preload("res://scripts/endless/bore_rocks.gd")
 const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 const RIDGE_SHADER = preload("res://shaders/burrower_bore_ridge.gdshader")
 
@@ -67,6 +68,15 @@ const ROWS_A_FRAME := 3
 const PAST_M := 60.0
 ## The bow rises this far ahead of him (m; the shader's `bow`).
 const BOW_M := 18.0
+## Struck by a parried rock (bore_rocks.gd): he runs at STAGGER_PACE of the plane's speed
+## for STAGGER_S, and each hit takes CUT_S off his LEAD_S for the rest of the chase, at
+## most CUT_MOST. His glow flares FLARE times, whiter.
+const STAGGER_S := 0.7
+const STAGGER_PACE := 0.35
+const CUT_S := 0.15
+const CUT_MOST := 0.6
+const FLARE := 3.0
+const FLARE_TINT := Color(1.0,0.9,0.75)
 ## The ridge sinks back this long (s) after the chase ends.
 const SINK_S := 4.0
 ## The glow he throws on the rock round his head.
@@ -122,6 +132,14 @@ var _glow: OmniLight3D
 ## The spurs, tunnel by tunnel, and the plume.
 var spurs: BoreSpurs
 var plugs: BorePlugs
+var rocks: BoreRocks
+## Staggered: time left; the lead cut by hits (s); the glow's flare (time left, its length).
+var staggered := 0.0
+var lead_cut := 0.0
+var hits := 0
+var _flare := 0.0
+var _flare_s := 1.0
+var _game_sound: Node
 var plume: BorePlume
 ## The rumble's voice (FlightSound Bed) and where it plays from now.
 var rumble_at := Vector3.ZERO
@@ -161,6 +179,9 @@ func setup(tunnels: Node3D) -> void:
 	plume = BorePlume.new()
 	add_child(plume)
 	plume.setup()
+	rocks = BoreRocks.new()
+	add_child(rocks)
+	rocks.setup(self)
 
 ## The chase is on.
 func running() -> bool:
@@ -197,15 +218,24 @@ func begin(t: Tunnels.Site, end: int, plane: RefCounted) -> void:
 	_lay(ROWS_A_FRAME)
 	spurs.begin(t,way)
 	plugs.begin(t,way)
+	rocks.begin(t,way)
+	staggered = 0.0
+	lead_cut = 0.0
+	hits = 0
+	_flare = 0.0
 
 ## One frame.
 func step(delta: float, game: Node3D) -> void:
 	_time += delta
+	_game_sound = game.sound
+	_flare = maxf(_flare-delta,0.0)
 	spurs.step(delta,game.plane.position,game.sound)
 	plugs.step(delta,game.plane.position,game.sound)
 	plume.step(delta)
 	if _sinking > 0.0: _sink(delta)
-	if site == null: return
+	if site == null:
+		rocks.step(delta,game,s,s,0.0,0.0)
+		return
 	_mat.set_shader_parameter("now",_time)
 	var p: Vector3 = game.plane.position
 	var plane_s := Tunnels.local(site,p.x,p.z).x
@@ -216,6 +246,7 @@ func step(delta: float, game: Node3D) -> void:
 		return
 	_pace(delta,game,plane_s)
 	s += pace*delta*way
+	rocks.step(delta,game,s,plane_s,along,lead)
 	if (s-(site.length if way > 0.0 else 0.0))*way >= 0.0:
 		_leave(game)
 		return
@@ -270,11 +301,34 @@ func _pace(delta: float, game: Node3D, plane_s: float) -> void:
 	var was := now if is_nan(along) else along
 	along = lerpf(was,now,1.0-exp(-delta/ALONG_EASE))
 	var flying := maxf(along,0.0)
-	want_lead = maxf(LEAD_S*flying,LEAD_LEAST)
+	want_lead = maxf((LEAD_S-lead_cut)*flying,LEAD_LEAST)
 	var want := flying+(want_lead-lead)*LEAD_GAIN
 	# The lead grows with the plane's speed: keep up with that too, above the floor.
 	if LEAD_S*flying > LEAD_LEAST and delta > 0.0: want += LEAD_S*(along-was)/delta
 	pace = move_toward(pace,clampf(want,PACE_LEAST,PACE_MOST),ACCEL*delta)
+	if staggered > 0.0:
+		staggered -= delta
+		pace = minf(pace,maxf(flying*STAGGER_PACE,PACE_LEAST))
+
+## A parried rock struck him at `at`: the flinch (his glow, a burst, a crash, low),
+## the stagger and the cut (the constants').
+func stagger(at: Vector3) -> void:
+	if site == null: return
+	hits += 1
+	staggered = STAGGER_S
+	lead_cut = minf(lead_cut+CUT_S,CUT_MOST)
+	flare(0.6,true)
+	var rub := spurs.rubble()
+	if rub != null: rub.burst(at,Vector3.UP*2.0,3.0,Vector3.UP*6.0,1.2)
+	if _game_sound != null:
+		_game_sound.shot("crash",1.0,0.55,at,FlightSound.SFX,true)
+		_game_sound.shot("debris",0.9,0.7,at,FlightSound.SFX,true)
+
+## His glow flares for `seconds` (a rock's tell, or a hit: whiter).
+func flare(seconds: float, white := false) -> void:
+	_flare = seconds
+	_flare_s = maxf(seconds,0.01)
+	_glow.light_color = FLARE_TINT if white else GLOW_TINT
 
 ## The chase is over: the ridge stops where he left it and sinks back.
 func finish(why: StringName) -> void:
@@ -283,6 +337,7 @@ func finish(why: StringName) -> void:
 	_plane = null
 	spurs.ended()
 	plugs.ended()
+	rocks.ended()
 	_glow.visible = false
 	if _rumble != null: _rumble.goal = 0.0
 	stats.why = why
@@ -398,6 +453,9 @@ func _place_glow() -> void:
 	var mid := Vector3(c.x,Tunnels.floor_at(site,s)+Tunnels.profile(site,s).z*BoreLine.MIDDLE,c.y)
 	_glow.position = at.lerp(mid,0.18)
 	_glow.visible = true
+	var k := _flare/_flare_s
+	_glow.light_energy = GLOW_ENERGY*(1.0+(FLARE-1.0)*k*(0.75+0.25*sin(_time*60.0)))
+	if k <= 0.0: _glow.light_color = GLOW_TINT
 
 ## His head (world).
 func head() -> Vector3:
