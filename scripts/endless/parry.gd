@@ -21,7 +21,9 @@ extends Node3D
 ##                                     source's own flight and hit tests
 ##   parry_aim(shot) -> Vector3        where it goes back to (world), each frame
 ##   parry_inside(p) -> bool           true once a point is in the sender's body
-##   parry_moved(shot, a, b) -> void   the returning shot moved a -> b (its trail)
+##   parry_moved(shot, a, b) -> void   the returning shot moved a -> b (its trail);
+##                                     setting `spent` true on the shot ends it there,
+##                                     a miss (it struck something on the way)
 ##   parry_landed(shot, at, hit)       its end: on the sender (hit) or not; the
 ##                                     node is the source's again
 
@@ -319,13 +321,15 @@ func _home_step(delta: float) -> void:
 		shot.at = n
 		(shot.node as Node3D).position = n
 		src.parry_moved(shot,a,n)
+		var spent := bool(shot.get("spent",false))
+		if spent: n = shot.at
 		var hit := false
-		for k in 4:
+		for k in (0 if spent else 4):
 			if src.parry_inside(a.lerp(n,float(k+1)/4.0)):
 				hit = true
 				n = a.lerp(n,float(k+1)/4.0)
 				break
-		if hit or float(r.age) > RETURN_LIFE:
+		if hit or spent or float(r.age) > RETURN_LIFE:
 			if hit: home_hits += 1
 			else: home_misses += 1
 			(r.glow as Node).queue_free()

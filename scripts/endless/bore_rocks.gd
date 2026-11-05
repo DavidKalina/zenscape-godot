@@ -13,6 +13,12 @@ extends Node3D
 ## for nothing. Parried (scripts/endless/parry.gd, group `parry_source`): it goes home onto
 ## him and he staggers (burrower_bore.gd `stagger`).
 ##
+## Spurs stand in its way both ways (scripts/endless/bore_spurs.gd `struck_any`): flying at
+## the plane, any spur shatters it. Parried, the first spur on its way home decides: a
+## cracked one smashes (the surge's break, surge_smash.gd `break_spur`, so it's gone for the
+## plane too) and the rock flies on into him; a solid one shatters it, no hit. One spur per
+## rock at most.
+##
 ## Each rock is a pooled lump, rock-coloured with an ember glow and a small light so it
 ## reads in the dark bore. Nothing goes in the save.
 
@@ -30,6 +36,10 @@ const ENDS := 220.0
 const SPUR_ROOM := 28.0
 const PLUG_ROOM := 80.0
 const APART := Vector2(220.0,340.0)
+## The share of spots moved to CRACK_BEFORE m short of a cracked spur within CRACK_REACH m.
+const CRACK_PICK := 0.4
+const CRACK_BEFORE := 45.0
+const CRACK_REACH := 110.0
 ## The tell (s), the rock's speed back down the bore (m/s, the world's; it closes at
 ## this plus the plane's), its radius (m), how far in from the rock it leaves him (a
 ## share of the way out from the bore's middle).
@@ -47,6 +57,13 @@ const AIM_ROOM := 0.65
 const COMMIT_S := 0.5
 ## Past the plane this far (m) it bursts; at most LIFE_S s in the air.
 const BEHIND_M := 30.0
+## Parried, it heads home along the bore, not straight: it steers for a point this far
+## (m) on along the path, on the line across the section from where it was parried to
+## his spot. If the first spur standing on the way is cracked, the line runs through
+## its middle (about one parry in four, as the spurs are; most stay to fly round).
+const HOME_LOOK := 25.0
+## How near a spur's rock its middle may pass (m) before the spur stops it.
+const SPUR_PAD := ROCK_R*0.6
 const LIFE_S := 6.0
 ## A hit: speed kept, the shove (m/s), the turn (rad), the view's shake and punch.
 const HIT_KEEP := 0.85
@@ -104,7 +121,8 @@ var _way := 1.0
 var _bore: Node3D
 var _game: Node3D
 ## For drivers.
-var stats := {"spat": 0, "dodged": 0, "hit": 0, "parried": 0, "home_hit": 0, "smashed": 0, "planned": 0}
+var stats := {"spat": 0, "dodged": 0, "hit": 0, "parried": 0, "home_hit": 0, "smashed": 0, "planned": 0,
+	"blocked": 0, "home_cracked": 0, "home_stopped": 0}
 
 func _init() -> void:
 	name = "BoreRocks"
@@ -122,13 +140,18 @@ func setup(bore: Node3D) -> void:
 	_mat.set_shader_parameter("ember",EMBER)
 	_mat.set_shader_parameter("glow",EMBER_ENERGY)
 
-## The meet spots of `t`, along its path: a plain function of its seed.
-static func plan(t: Tunnels.Site) -> PackedFloat32Array:
+## The meet spots of `t`, along its path, for a chase going `way`: a plain function of its
+## seed. Some (CRACK_PICK of them, as there's a cracked spur near) are moved to CRACK_BEFORE
+## m short of a cracked spur, so a parry there has one on its way home.
+static func plan(t: Tunnels.Site, way := 1.0) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([t.seed,"bore rocks"])
 	var spur_s := PackedFloat32Array()
-	for sp: BoreSpurs.Spur in BoreSpurs.plan(t): spur_s.append(sp.s)
+	var cracked := PackedFloat32Array()
+	for sp: BoreSpurs.Spur in BoreSpurs.plan(t):
+		spur_s.append(sp.s)
+		if sp.cracked and not cracked.has(sp.s): cracked.append(sp.s)
 	var plug_s := PackedFloat32Array()
 	for pl: BorePlugs.Plug in BorePlugs.plan(t): plug_s.append(pl.s)
 	var at := ENDS+rng.randf()*(APART.y-APART.x)*0.5
@@ -138,6 +161,20 @@ static func plan(t: Tunnels.Site) -> PackedFloat32Array:
 			at += lerpf(APART.x,APART.y,rng.randf())
 		else:
 			at += 5.0
+	var pick := RandomNumberGenerator.new()
+	pick.seed = hash([t.seed,"bore rocks by cracks",way])
+	for i in out.size():
+		if pick.randf() >= CRACK_PICK: continue
+		var best := INF
+		for c: float in cracked:
+			var to := c-way*CRACK_BEFORE
+			if absf(to-out[i]) > CRACK_REACH or absf(to-out[i]) >= absf(best-out[i]): continue
+			if to < ENDS or to > t.length-ENDS: continue
+			if not _clear(to,spur_s,SPUR_ROOM) or not _clear(to,plug_s,PLUG_ROOM): continue
+			if i > 0 and absf(to-out[i-1]) < APART.x*0.8: continue
+			if i < out.size()-1 and absf(out[i+1]-to) < APART.x*0.8: continue
+			best = to
+		if best < INF: out[i] = best
 	return out
 
 static func _clear(at: float, list: PackedFloat32Array, room: float) -> bool:
@@ -150,8 +187,9 @@ func begin(t: Tunnels.Site, way: float) -> void:
 	_clear_rocks()
 	_site = t
 	_way = way
-	if not _plans.has(t.name): _plans[t.name] = plan(t)
-	var spots: PackedFloat32Array = _plans[t.name]
+	var key := [t.name,way > 0.0]
+	if not _plans.has(key): _plans[key] = plan(t,1.0 if way > 0.0 else -1.0)
+	var spots: PackedFloat32Array = _plans[key]
 	stats.planned = spots.size()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([t.seed,"bore rock lumps"])
@@ -263,6 +301,14 @@ func _fly_step(r: Rock, delta: float, plane_s: float, game: Node3D) -> void:
 	r.from += r.sec_v*delta
 	var n := _place_on(site,r.rs,r.from)
 	r.shot.v = (n-a)/maxf(delta,0.0001)
+	# A spur in its way shatters it.
+	var sp := _spur_on(a,n)
+	if sp != null:
+		r.shot.at = a
+		r.shot.done = true
+		stats.blocked = int(stats.blocked)+1
+		_burst(r,true)
+		return
 	r.shot.at = n
 	var node: Node3D = r.shot.node
 	node.position = n
@@ -377,12 +423,57 @@ func parry_take(shot: Dictionary) -> void:
 	var r: Rock = shot.rock
 	r.state = "home"
 	stats.parried = int(stats.parried)+1
+	var site: Tunnels.Site = _bore.site if _bore != null else null
+	if site != null:
+		var at: Vector3 = shot.at
+		var s0 := Tunnels.local(site,at.x,at.z).x
+		shot["home_s0"] = s0
+		shot["home_sec0"] = _sect(site,s0,at)
+		var via := _first_spur(site,s0)
+		if via != null and via.cracked:
+			var mid := via.root+via.axis*(via.long*0.5)
+			shot["via"] = via
+			shot["via_s"] = Tunnels.local(site,mid.x,mid.z).x
+			shot["via_sec"] = _sect(site,float(shot.via_s),mid)
 
-## Home is his head, on the rock where he runs.
-func parry_aim(_shot: Dictionary) -> Vector3:
-	if _bore == null or _bore.site == null: return (_shot.at as Vector3)+Vector3.UP*20.0
+## Home is his head, on the rock where he runs, by the bore's path: HOME_LOOK m on along
+## it, on the way across the section from where it was parried to his spot.
+func parry_aim(shot: Dictionary) -> Vector3:
+	if _bore == null or _bore.site == null: return (shot.at as Vector3)+Vector3.UP*20.0
+	var site: Tunnels.Site = _bore.site
 	var s: float = _bore.s
-	return BoreLine.middle(_bore.site,s).lerp(BoreLine.about(_bore.site,s,BoreLine.angle_at(_bore.site,s)),OUT_SHARE)
+	var head := BoreLine.middle(site,s).lerp(BoreLine.about(site,s,BoreLine.angle_at(site,s)),OUT_SHARE)
+	if not shot.has("home_s0"): return head
+	var way := float(_bore.way)
+	var at: Vector3 = shot.at
+	var ahead := Tunnels.local(site,at.x,at.z).x+way*HOME_LOOK
+	var s0: float = shot.home_s0
+	if (s-ahead)*way <= 0.0 or absf(s-s0) < 1.0: return head
+	var sec0: Vector2 = shot.home_sec0
+	if shot.has("via_s") and not bool(shot.get("through",false)):
+		# By the cracked spur: to its middle, then on to him.
+		var vs: float = shot.via_s
+		if (vs-ahead)*way > 0.0:
+			return _place_on(site,ahead,sec0.lerp(shot.via_sec,clampf((ahead-s0)/(vs-s0) if absf(vs-s0) > 1.0 else 1.0,0.0,1.0)))
+		s0 = vs
+		sec0 = shot.via_sec
+		if absf(s-s0) < 1.0: return head
+	var k := clampf((ahead-s0)/(s-s0),0.0,1.0)
+	return _place_on(site,ahead,sec0.lerp(_sect(site,s,head),k))
+
+## The first spur standing (or on its way out) along the bore from `s0` toward him, or
+## null.
+func _first_spur(site: Tunnels.Site, s0: float) -> BoreSpurs.Spur:
+	if _bore == null or _bore.spurs == null: return null
+	var way := float(_bore.way)
+	var his: float = _bore.s
+	var best: BoreSpurs.Spur
+	for sp: BoreSpurs.Spur in _bore.spurs.of(site.name):
+		if sp.body == null or not sp.fired or sp.broken: continue
+		var d := (sp.s-s0)*way
+		if d < ROCK_R or (his-sp.s)*way < 0.0: continue
+		if best == null or d < (best.s-s0)*way: best = sp
+	return best
 
 ## In him: caught up with him along the bore.
 func parry_inside(p: Vector3) -> bool:
@@ -390,8 +481,41 @@ func parry_inside(p: Vector3) -> bool:
 	var q := Tunnels.local(_bore.site,p.x,p.z)
 	return (q.x-float(_bore.s))*float(_bore.way) > -6.0
 
-func parry_moved(_shot: Dictionary, _a: Vector3, _n: Vector3) -> void:
-	pass
+## On its way home the first spur it meets decides: a cracked one smashes and it flies on,
+## a solid one shatters it (`spent`: parry.gd ends it there, no hit).
+func parry_moved(shot: Dictionary, a: Vector3, n: Vector3) -> void:
+	if bool(shot.get("through",false)): return
+	var way := (n-a).normalized()
+	var sp := _spur_on(a,n)
+	# The cracked spur it's bound for is struck as it passes it along the bore, wherever
+	# its steering has it in the section.
+	var via: BoreSpurs.Spur = shot.get("via")
+	if via != null and _bore != null and _bore.site != null:
+		var vs: float = shot.via_s
+		var ns := Tunnels.local(_bore.site,n.x,n.z).x
+		if (ns-vs)*float(_bore.way) >= 0.0 and via.body != null: sp = via
+	if sp == null: return
+	if sp.cracked and _game != null and _game.smash != null:
+		shot["through"] = true
+		stats.home_cracked = int(stats.home_cracked)+1
+		_game.smash.break_spur(sp,way,shot.v)
+		return
+	shot["spent"] = true
+	shot.at = a
+	stats.home_stopped = int(stats.home_stopped)+1
+	var rub = _bore.spurs.rubble() if _bore != null and _bore.spurs != null else null
+	if rub != null: rub.burst(a-Vector3.UP*ROCK_R*0.5,Vector3.UP*ROCK_R,ROCK_R,-way*6.0,0.8)
+	if _game != null:
+		_game.sound.shot("crack",0.9,1.0,a)
+		_game.sound.shot("debris",0.7,1.3,a)
+
+## The spur that's out in the way from `a` to `n`, or null.
+func _spur_on(a: Vector3, n: Vector3) -> BoreSpurs.Spur:
+	if _bore == null or _bore.spurs == null: return null
+	var d := n-a
+	var len := d.length()
+	if len < 0.0001: return null
+	return _bore.spurs.struck_any(a,d/len,len,SPUR_PAD)
 
 ## Its end: on him (he staggers) or spent.
 func parry_landed(shot: Dictionary, at: Vector3, hit: bool) -> void:

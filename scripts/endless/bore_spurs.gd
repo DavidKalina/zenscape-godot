@@ -15,6 +15,10 @@ extends Node3D
 ## `inside`, through LandTunnels `ground`, `inside` and `sight`). FlightContact takes its
 ## normal from `face`. The bore overhead doesn't cancel a graze on one (NearMiss, `holds`).
 ##
+## About one in four is cracked (`cracked`, seeded): paler, a seam of his glow down it. A
+## parried rock on its way home smashes a cracked one and flies on; a solid one stops it
+## (`struck_any`; scripts/endless/bore_rocks.gd).
+##
 ## A surge smashes a spur that's out (`struck`, `smash`; scripts/endless/surge_smash.gd): it
 ## bursts into rubble (scripts/endless/bore_rubble.gd), its body goes back to the pool and its
 ## crack stays on the rock, and it stays broken for as long as its tunnel stays built.
@@ -58,6 +62,8 @@ const AFTER_SINGLE := 85.0
 const AFTER_PAIR := 110.0
 const AFTER_GATE := 110.0
 const AFTER_CORKSCREW := 130.0
+## The share of spurs that are cracked, drawn after the layout so it moves no spot.
+const CRACKED_SHARE := 0.25
 ## A corkscrew: how many spurs (least, most), how far apart along the path (m), and how far
 ## round each steps past the last (a share of a turn; which way is drawn).
 const CORK_COUNT := Vector2i(3,5)
@@ -145,6 +151,9 @@ class Spur:
 	var fired := false
 	## Smashed by a surge: gone for as long as its tunnel stays built.
 	var broken := false
+	## Cracked (about CRACKED_SHARE of them, from the seed): paler, with a seam of his
+	## glow; a parried rock smashes it on its way home (scripts/endless/bore_rocks.gd).
+	var cracked := false
 	var clock := 0.0
 	## How far out it is (0..1).
 	var out := 0.0
@@ -262,6 +271,9 @@ static func plan(t: Tunnels.Site) -> Array[Spur]:
 				sp.turn = CORK_TURN*k*hand
 			if not _in_hall(t,sp.s): out.append(sp)
 		s += span+{SINGLE: AFTER_SINGLE, PAIR: AFTER_PAIR, GATE: AFTER_GATE, CORKSCREW: AFTER_CORKSCREW}[kind]*(1.0+wander)
+	var crack := RandomNumberGenerator.new()
+	crack.seed = hash([t.seed,"bore spurs cracked"])
+	for sp: Spur in out: sp.cracked = crack.randf() < CRACKED_SHARE
 	return out
 
 ## Whether distance `at` along `t` is in a hall.
@@ -416,6 +428,7 @@ func _lay(g: Group, sp: Spur) -> void:
 	sp.body = _take()
 	var rock: MeshInstance3D = sp.body.get_child(0)
 	rock.mesh = _meshes[sp.shape]
+	rock.set_instance_shader_parameter("cracked",1.0 if sp.cracked else 0.0)
 	rock.scale = Vector3(sp.girth,sp.long,sp.girth)
 	var cs: CollisionShape3D = sp.body.get_child(1)
 	var hull := PackedVector3Array(_hulls[sp.shape])
@@ -578,17 +591,37 @@ func face(p: Vector3, grow: float) -> Vector3:
 ## there) and within `pad` m of the way from `p` along `way` (unit) for `look` m, or null.
 func struck(p: Vector3, way: Vector3, look: float, pad: float) -> Spur:
 	for sp: Spur in _near:
-		if sp.body == null or sp.out <= 0.0: continue
-		var to := sp.bound_at-p
-		var t := clampf(to.dot(way),0.0,look)
-		if (p+way*t).distance_to(sp.bound_at) > sp.bound+pad: continue
-		var from := sp.root+sp.axis*(sp.long*(sp.out-1.0))
-		for i in CHAIN:
-			var c := from+sp.chain[i]
-			var k := clampf((c-p).dot(way),0.0,look)
-			var r := sp.radii[i]+pad
-			if (p+way*k).distance_squared_to(c) < r*r: return sp
+		if _on_way(sp,p,way,look,pad): return sp
 	return null
+
+## The first spur that's out in the tunnel he's running (or any built) within `pad` m of
+## the way from `p` along `way` (unit) for `look` m, nearest `p` first, or null: for a rock
+## in flight, far from the plane (scripts/endless/bore_rocks.gd).
+func struck_any(p: Vector3, way: Vector3, look: float, pad: float) -> Spur:
+	var best: Spur
+	var near := INF
+	for g: Group in _groups.values():
+		if not g.site.box.grow(look+pad).has_point(Vector2(p.x,p.z)): continue
+		for sp: Spur in g.spurs:
+			if not _on_way(sp,p,way,look,pad): continue
+			var d := (sp.bound_at-p).dot(way)
+			if d < near:
+				near = d
+				best = sp
+	return best
+
+func _on_way(sp: Spur, p: Vector3, way: Vector3, look: float, pad: float) -> bool:
+	if sp.body == null or sp.out <= 0.0: return false
+	var to := sp.bound_at-p
+	var t := clampf(to.dot(way),0.0,look)
+	if (p+way*t).distance_to(sp.bound_at) > sp.bound+pad: return false
+	var from := sp.root+sp.axis*(sp.long*(sp.out-1.0))
+	for i in CHAIN:
+		var c := from+sp.chain[i]
+		var k := clampf((c-p).dot(way),0.0,look)
+		var r := sp.radii[i]+pad
+		if (p+way*k).distance_squared_to(c) < r*r: return true
+	return false
 
 ## Spur `sp` smashed by the plane going `blast` (m/s): it bursts, and it's gone.
 func smash(sp: Spur, blast: Vector3) -> void:

@@ -196,6 +196,14 @@ func _spur(p: Vector3, way: Vector3, look: float, pad: float, v: Vector3) -> boo
 	if bore_spurs == null: return false
 	var sp: RefCounted = bore_spurs.struck(p,way,look,pad)
 	if sp == null: return false
+	break_spur(sp,way,v)
+	return true
+
+## Spur `sp` smashed, struck going `way` (unit) at `v` (m/s): by a surge, or by a parried
+## rock on its way home (scripts/endless/bore_rocks.gd).
+func break_spur(sp: RefCounted, way: Vector3, v: Vector3) -> void:
+	var bore_spurs = game.tunnels.spurs if game.tunnels != null else null
+	if bore_spurs == null: return
 	var q: Vector3 = sp.root+sp.axis*(sp.long*sp.out*0.5)
 	bore_spurs.smash(sp,v)
 	spurs += 1
@@ -204,7 +212,6 @@ func _spur(p: Vector3, way: Vector3, look: float, pad: float, v: Vector3) -> boo
 	game.feel_hit(SPUR_KICK.x,SPUR_KICK.y)
 	game.sound.shot("thump",1.3,0.55,q)
 	game.near.moves.smash(game,"spur",q,hash([sp.root,sp.s]))
-	return true
 
 ## A plug he brought down on the way, smashed whole: true if one was.
 func _plug(p: Vector3, way: Vector3, look: float, pad: float, v: Vector3) -> bool:
