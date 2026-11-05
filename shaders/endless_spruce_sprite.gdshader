@@ -305,14 +305,18 @@ void fragment() {
 
 void light() {
 	float d = dot(NORMAL, LIGHT);
-	vec3 crown_sun = LIGHT_COLOR * mix(tone.z, 1.0, ATTENUATION);
+	// The sun's shadow keeps a floor (tone.z); a local light (a tunnel's torches,
+	// a mouth's spill) falls off with its distance, or it lit every crown in its
+	// range near white, cut off square at its clusters.
+	float fall = LIGHT_IS_DIRECTIONAL ? 1.0 : ATTENUATION;
+	vec3 crown_sun = LIGHT_COLOR * (LIGHT_IS_DIRECTIONAL ? mix(tone.z, 1.0, ATTENUATION) : ATTENUATION);
 	float lit = clamp((d + sun.x) / (1.0 + sun.x), 0.0, 1.0);
 	float tier = lit * 3.0;
 	float t = clamp((floor(tier) + smoothstep(0.5 - sun.w, 0.5 + sun.w, fract(tier))) / 3.0, 0.0, 1.0);
 	t = mix(lit, t, sun.z);
 	DIFFUSE_LIGHT += crown_sun * t * mix(mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t), ZS_ST_WARM, spruce_tier2.x * t) / PI;
 	float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
-	DIFFUSE_LIGHT += LIGHT_COLOR * sun.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
+	DIFFUSE_LIGHT += LIGHT_COLOR * fall * sun.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 	// Backlight: the crown's silhouette, seen against a low sun, catches it.
 	if (max(zs_backlight, spruce_rim.z) > 0.0 && LIGHT_IS_DIRECTIONAL && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
 		float edge_glow = max(0.6 * pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0), edge);

@@ -16,8 +16,11 @@ void light() {
 	if (ZS_SPRUCE_LIGHT.x > 0.0) {
 		// The crown is porous: its own shadow (the proxy cone's) takes only
 		// part of the sun, so a backlit crown has no hard dark half.
-		vec3 open_sun = LIGHT_COLOR * gate * inversion_transmit;
-		vec3 crown_sun = open_sun * mix(ZS_SPRUCE_TONE2.y, 1.0, ATTENUATION);
+		// That floor is the sun's alone: a local light (a tunnel's torches, a
+		// mouth's spill) falls off with its distance, or it lit every crown in
+		// its range near white, cut off square at its clusters.
+		vec3 open_sun = LIGHT_COLOR * gate * inversion_transmit * (LIGHT_IS_DIRECTIONAL ? 1.0 : ATTENUATION);
+		vec3 crown_sun = open_sun * (LIGHT_IS_DIRECTIONAL ? mix(ZS_SPRUCE_TONE2.y, 1.0, ATTENUATION) : 1.0);
 		float d = dot(NORMAL, LIGHT);
 		float t = zs_spruce_painted_light(d, ZS_SPRUCE_LIGHT.x, ZS_SPRUCE_LIGHT.z, ZS_SPRUCE_LIGHT.w);
 		vec3 lit_hue = mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t);
