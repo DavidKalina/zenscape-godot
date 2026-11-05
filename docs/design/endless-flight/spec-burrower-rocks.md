@@ -61,3 +61,28 @@ Cap: the skill's default. Budget per agent: 150000 tokens.
 
 `cd /Users/davidkalina/Documents/Projects/zenscape-burrower-rocks && python3 tools/play.py --no-pull -- --pilot-file=/tmp/rocks_pilot.json`
 plus any flag that starts near a burrower cave (find or add one).
+
+## Spec change (after the user flew task 1, 2026-11-04)
+
+The user: "Not bad. I like it." They want a parry to break some spurs, but
+not make dodging pointless: the run stays a mix of flying, bobbing and
+weaving, and parrying.
+
+- **Cracked spurs:** about 1 in 4 spurs is cracked (seeded, same seed same
+  run): reads at a glance at speed, paler stone with a seam of his ember
+  glow. The rest are solid as now.
+- **A parried rock on its way home** hits the first spur in its path
+  (between the plane and him). A cracked one smashes (reuse the surge's spur
+  break, `surge_smash.gd` `_spur()`, so it's gone for the plane too) and the
+  rock flies on and hits him. A solid one shatters the rock: no hit on him.
+  One spur per rock at most. This also fixes "rocks pass through spurs":
+  a rock flying toward the plane shatters on a spur in its way too (or is
+  planned so none is in its way).
+- **Keep dodging needed:** place rocks so a cracked spur sits in the rock's
+  path home only some of the time, not every time; most spurs are still
+  dodged by flying. The parry's window and whiff lockout stay as they are.
+- **Tuning pass** in the same task: rock speed, the 0.5 s commit, tell,
+  count, stagger, judged by a driven run. The user had no complaints on
+  these; change them only if a run shows a reason.
+
+Stop after this for the user to fly.
