@@ -681,7 +681,7 @@ func _fly(want: float, delta: float, pace: float, y := NAN, solids := true, reac
 	# Routed through an arch's opening (`y` the line's height, the way checked
 	# clear; `solids` off): only the land and the crowns under it.
 	var under := _floor_y(f.position,flat,solids,reach)
-	var want_y := y if not is_nan(y) else under+float(tuning.low)
+	var want_y := y if not is_nan(y) else under+maxf(float(tuning.low)*float(raider.low_k()),FLOOR)
 	# The aim's own climb led (its rise a m on), then the miss closed.
 	var run := maxf(raider.speed*delta,0.01)
 	if not is_nan(_want_y):

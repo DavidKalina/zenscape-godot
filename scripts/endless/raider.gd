@@ -67,6 +67,7 @@ const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RaiderChase = preload("res://scripts/endless/raider_chase.gd")
 const RaiderEmbers = preload("res://scripts/endless/raider_embers.gd")
+const BodyDust = preload("res://scripts/breaks/body_dust.gd")
 
 signal killed(at: Vector3)
 signal rammed(at: Vector3)
@@ -173,6 +174,20 @@ const RUNS_S := 1.6
 const FLEE_GLOW := 0.3
 const FLEE_GLOW_NEAR := 50.0
 
+## The slow (spec-raider-embers.md item 4): each parried ember home on it
+## takes SLOW off its pace (a fraction, `--raider-slow=`), stacked, held
+## SLOW_S s after the last (`--raider-slow-s=`), then it shakes them all off.
+## At HIT_CAP hits (`--raider-hit-cap=`) it's crippled for good: slowed by
+## the cap, flown CRIPPLED_LOW times its low height, smoking hard. It
+## trails smoke while slowed (SMOKE_*: particles, life s, size m).
+const SLOW := 0.12
+const SLOW_S := 4.0
+const HIT_CAP := 3
+const CRIPPLED_LOW := 0.75
+const SMOKE_LIFE := 3.2
+const SMOKE := {"amount":90,"size":3.2,"color":Color(0.5,0.49,0.5,0.8)}
+const SMOKE_HARD := {"amount":160,"size":4.6,"color":Color(0.08,0.07,0.07,0.95)}
+
 const PIECES := 16
 const PIECE_OUT := 22.0
 const PIECE_LIFE := 3.2
@@ -216,6 +231,12 @@ var _rounds_seen := 0
 ## a press). Chased, a lost raider comes round; else it leaves.
 var chased := false
 var _unseen_t := 0.0
+## The slow: parried embers home on it now (to the cap), seconds the slow
+## still holds (crippled at the cap: held for good).
+var hits_home := 0
+var slow_t := 0.0
+var _smoke: CPUParticles3D
+var _smoke_hard: CPUParticles3D
 
 var _wait := FIRST_S
 var _lost := 0.0
@@ -257,7 +278,9 @@ func setup(g: Node3D) -> void:
 		"let_go":_flag("--raider-let-go",LET_GO_M),"let_go_s":_flag("--raider-let-go-s",LET_GO_S),"ram":_flag("--raider-ram",RAM_OVER),
 		"tell":maxf(_flag("--raider-tell",TELL_S),0.1),"hit":_flag("--raider-hit",HIT_R),
 		"near":_flag("--raider-near",NEAR_R),"shove":_flag("--raider-shove",SHOVE),
-		"fill":_flag("--raider-fill",DODGE_FILL.y),"turn":_flag("--raider-turn",TURN_MAX)}
+		"fill":_flag("--raider-fill",DODGE_FILL.y),"turn":_flag("--raider-turn",TURN_MAX),
+		"slow":minf(_flag("--raider-slow",SLOW),0.9),"slow_s":_flag("--raider-slow-s",SLOW_S),
+		"cap":maxi(int(_flag("--raider-hit-cap",HIT_CAP)),1)}
 	flight = SkyTraffic.Flight.new()
 	mode = mode_of(LaunchArgs.user_args())
 	if mode != &"dogfight":
@@ -295,6 +318,8 @@ func setup(g: Node3D) -> void:
 	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_flash.visible = false
 	add_child(_flash)
+	_smoke = _smoke_trail(SMOKE)
+	_smoke_hard = _smoke_trail(SMOKE_HARD)
 	_layer = CanvasLayer.new()
 	_layer.layer = 5
 	add_child(_layer)
@@ -339,6 +364,7 @@ func step(delta: float, g: Node3D, events: Dictionary) -> void:
 	match state:
 		&"stalk": _stalk(delta,p,rel,dist,ps,flying)
 		&"flee":
+			_slow_step(delta)
 			chase.step(delta,p,rel,dist,ps)
 			if mode == &"chase": _watch(delta,dist)
 			if dist > MIX_NEAR_M: run_t += delta
@@ -414,6 +440,7 @@ func _spawn() -> void:
 	_count_from()
 	chased = false
 	_unseen_t = 0.0
+	_unslow()
 	if mode == &"chase":
 		chase.buzz()
 		figure.reset(flight)
@@ -447,6 +474,7 @@ func _leave() -> void:
 	if embers != null: embers.clear()
 	figure.visible = false
 	_glow.visible = false
+	_unslow()
 	chase.idle()
 	chased = false
 	_wait = float(tuning.every)
@@ -454,13 +482,87 @@ func _leave() -> void:
 
 # --- The embers (raider_embers.gd) and the parry's calls (parry.gd header) ----
 
-## Its pace's multiplier in the chase: pulling away after an ember's hit.
+## Its pace's multiplier in the chase: pulling away after an ember's hit,
+## held back by the embers home on it.
 func pace_k() -> float:
-	return float(embers.pace_k()) if embers != null else 1.0
+	var k := float(embers.pace_k()) if embers != null else 1.0
+	return k*(1.0-float(tuning.slow)*hits_home)
 
-## A parried ember came home onto it (the slow is task 3's).
+## Its low flying height's multiplier in the chase: lower crippled.
+func low_k() -> float:
+	return CRIPPLED_LOW if crippled() else 1.0
+
+func crippled() -> bool:
+	return hits_home >= int(tuning.cap)
+
+## A parried ember came home onto it: one more slow, to the cap.
 func ember_home(_at: Vector3) -> void:
 	stats.embers_home = int(stats.get("embers_home",0))+1
+	if crippled(): return
+	hits_home += 1
+	slow_t = float(tuning.slow_s)
+	stats.slowed = int(stats.get("slowed",0))+1
+	if crippled(): stats.crippled = int(stats.get("crippled",0))+1
+
+## The slow's clock: past it, the hits shaken off (not once crippled).
+func _slow_step(delta: float) -> void:
+	if hits_home == 0 or crippled(): return
+	slow_t -= delta
+	if slow_t <= 0.0: _unslow()
+
+func _unslow() -> void:
+	hits_home = 0
+	slow_t = 0.0
+	if _smoke != null:
+		_smoke.emitting = false
+		_smoke_hard.emitting = false
+
+## A smoke trail from its tail, in the world (left hanging as it flies on).
+func _smoke_trail(k: Dictionary) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.emitting = false
+	p.amount = int(k.amount)
+	p.lifetime = SMOKE_LIFE
+	p.local_coords = false
+	p.direction = Vector3.UP
+	p.spread = 40.0
+	p.initial_velocity_min = 0.5
+	p.initial_velocity_max = 2.0
+	p.gravity = Vector3(0.0,0.6,0.0)
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.6
+	p.angle_min = 0.0
+	p.angle_max = 360.0
+	p.scale_amount_min = 0.8
+	p.scale_amount_max = 1.2
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0,0.4))
+	grow.add_point(Vector2(1.0,3.2))
+	p.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.set_color(0,Color(1,1,1,1))
+	fade.add_point(0.6,Color(1,1,1,0.7))
+	fade.set_color(fade.get_point_count()-1,Color(1,1,1,0))
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*float(k.size)*SIZE
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.albedo_texture = BodyDust._blob_texture()
+	m.albedo_color = k.color  # on the material, as BodyDust (p.color read white)
+	# Faded near the eye, so flying through its trail doesn't fill the view.
+	m.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	m.distance_fade_min_distance = 3.0
+	m.distance_fade_max_distance = 12.0
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(p)
+	return p
 
 func parry_shots() -> Array[Dictionary]:
 	return embers.embers if embers != null else ([] as Array[Dictionary])
@@ -662,6 +764,7 @@ func _break(at: Vector3) -> void:
 	var pv: Vector3 = game.plane.velocity
 	figure.visible = false
 	_glow.visible = false
+	_unslow()
 	for i in PIECES:
 		var m := MeshInstance3D.new()
 		var box := BoxMesh.new()
@@ -778,6 +881,11 @@ func _floor_at(at: Vector3, fwd: Vector3) -> float:
 func _draw_figure(delta: float) -> void:
 	figure.update(delta,flight,0.0,Callable(),false,0.0,flight.bank)
 	PlaneGroundScale.grow(figure,WorldScale.plane*SIZE)
+	var tail := flight.position-flight.forward()*1.4*SIZE
+	_smoke.global_position = tail
+	_smoke_hard.global_position = tail
+	_smoke.emitting = hits_home > 0 and not crippled()  # crippled: the black alone
+	_smoke_hard.emitting = crippled()
 	var glow := 0.0
 	if state == &"tell": glow = clampf(t/float(tuning.tell),0.0,1.0)*(0.75+0.25*sin(t*TAU*8.0))
 	elif state == &"ram": glow = 0.45
