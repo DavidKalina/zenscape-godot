@@ -26,11 +26,13 @@ const BoreLine = preload("res://scripts/endless/bore_line.gd")
 const BoreSpurs = preload("res://scripts/endless/bore_spurs.gd")
 const BoreTell = preload("res://scripts/endless/bore_tell.gd")
 const BoreRubble = preload("res://scripts/endless/bore_rubble.gd")
+const BoreGates = preload("res://scripts/endless/bore_gates.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const PLUG_SHADER = preload("res://shaders/burrower_bore_plug.gdshader")
 
-## The hole, toy width (WorldScale `opening`: its least width across).
-const TOY_PLUG_HOLE := 6.0
+## The hole, toy width (WorldScale `opening`: its least width across). 6 at first; the user
+## found it too small (spec-burrower-rocks.md, spec change 2).
+const TOY_PLUG_HOLE := 9.0
 ## How many a tunnel gets (the most; fewer if there's no room), none this close to either
 ## mouth (m), none this close to a spur (m), none this close to another plug (m), none
 ## this close to a hall's ends or a shaft's edge (m).
@@ -50,11 +52,12 @@ const HOLE_OFF_MOST := 8.0
 const HOLE_RIM := 2.5
 ## The wall: its thickness along the path (m) at the hole's lip and the most it bulges
 ## to, how far its edge runs on into the rock (m), and its mesh: points round the hole and
-## rings out from it.
+## rings out from it (AROUND a multiple of 4: a partial wall's straight cut lies on two rays,
+## bore_gates.gd).
 const LIP := 3.0
 const BULGE := 6.5
 const PUSH := 1.5
-const AROUND := 30
+const AROUND := 64
 const RINGS := 5
 ## How much the rubble's points stray (m, along and across).
 const JAG_ALONG := 1.1
@@ -129,6 +132,27 @@ class Plug:
 	var outer := PackedFloat32Array()
 	var thick := PackedFloat32Array()
 	var body: StaticBody3D
+	## A partial wall (bore_gates.gd): its kind (BoreGates.KINDS; -1 a full plug), its cut (the
+	## way into the closed part, world; how far along it from the middle the cut is, m), the
+	## open part's middle and width across the cut (m). The way it comes in (`fall`, unit) and
+	## how far along it it waits (`fall_top`, m from the middle): up, and over the crown, for a plug.
+	var kind := -1
+	var cut_n := Vector3.UP
+	var cut_c := 0.0
+	var open_mid := Vector3.ZERO
+	var open_w := 0.0
+	var fall := Vector3.UP
+	var fall_top := 0.0
+
+	func gate() -> bool:
+		return kind >= 0
+
+	## Its tell's hold and drop (s).
+	func hold() -> float:
+		return BoreGates.GATE_HOLD if kind >= 0 else HOLD_S
+
+	func drop() -> float:
+		return BoreGates.GATE_DROP if kind >= 0 else DROP_S
 
 ## One tunnel he has run.
 class Group:
@@ -144,6 +168,7 @@ var _near: Array[Plug] = []
 var _moving: Array[Plug] = []
 var _spare: Array[StaticBody3D] = []
 var _mat: ShaderMaterial
+var _gate_mat: ShaderMaterial
 var _tell: BoreTell
 var _rubble: BoreRubble
 var _sound: Node
@@ -163,6 +188,10 @@ func setup(tunnels: Node3D, tell: BoreTell, rubble: BoreRubble) -> void:
 	_mat.shader = PLUG_SHADER
 	_mat.set_shader_parameter("hold",HOLD_S)
 	_mat.set_shader_parameter("drop",DROP_S)
+	_gate_mat = ShaderMaterial.new()
+	_gate_mat.shader = PLUG_SHADER
+	_gate_mat.set_shader_parameter("hold",BoreGates.GATE_HOLD)
+	_gate_mat.set_shader_parameter("drop",BoreGates.GATE_DROP)
 	if tunnels != null: tunnels.plugs = self
 
 ## The plugs of `t` in order along the path, before any is placed: a plain function of its
@@ -197,13 +226,46 @@ static func plan(t: Tunnels.Site) -> Array[Plug]:
 		for a: float in room:
 			if absf(a-pl.s) >= PLUG_APART: left.append(a)
 		room = left
+	# The partial walls (bore_gates.gd): their own draws, so no plug moved.
+	var grng := RandomNumberGenerator.new()
+	grng.seed = hash([t.seed,"bore gates"])
+	var kinds := range(BoreGates.KINDS.size())
+	var gdraws: Array[Plug] = []
+	var gpicks := PackedFloat32Array()
+	for k in BoreGates.GATE_COUNT:
+		var gt := Plug.new()
+		gpicks.append(grng.randf())
+		var pick := grng.randi_range(k,kinds.size()-1)
+		var was: int = kinds[k]
+		kinds[k] = kinds[pick]
+		kinds[pick] = was
+		gt.kind = kinds[k]
+		gt.seed = grng.randi()
+		gdraws.append(gt)
+	var groom := PackedFloat32Array()
+	at = PLUG_ENDS
+	while at <= t.length-PLUG_ENDS:
+		var ok := _clear(t,at,spur_s,BoreGates.GATE_ROOM)
+		for pl: Plug in out:
+			if absf(pl.s-at) < BoreGates.GATE_APART: ok = false
+		if ok: groom.append(at)
+		at += 5.0
+	for k in BoreGates.GATE_COUNT:
+		if groom.is_empty(): break
+		var gt := gdraws[k]
+		gt.s = groom[mini(int(gpicks[k]*groom.size()),groom.size()-1)]
+		out.append(gt)
+		var left := PackedFloat32Array()
+		for a: float in groom:
+			if absf(a-gt.s) >= BoreGates.GATE_APART: left.append(a)
+		groom = left
 	out.sort_custom(func(a: Plug, b: Plug) -> bool: return a.s < b.s)
 	return out
 
-## Whether a plug can stand at distance `at` along `t`.
-static func _clear(t: Tunnels.Site, at: float, spur_s: PackedFloat32Array) -> bool:
+## Whether a plug (or a gate, `room` its room from a spur) can stand at distance `at` along `t`.
+static func _clear(t: Tunnels.Site, at: float, spur_s: PackedFloat32Array, room := PLUG_ROOM) -> bool:
 	for s: float in spur_s:
-		if absf(s-at) < PLUG_ROOM: return false
+		if absf(s-at) < room: return false
 	for piece: Dictionary in t.pieces:
 		if piece.kind == "hall" and at >= float(piece.s0)-HALL_ROOM and at <= float(piece.s1)+HALL_ROOM: return false
 	var c: Vector2 = Tunnels.at_s(t,at)[0]
@@ -247,12 +309,13 @@ func _fire(g: Group, pl: Plug) -> void:
 	(pl.body.get_child(0) as MeshInstance3D).set_instance_shader_parameter("lit_at",_now)
 	stats.fired = int(stats.fired)+1
 	if _sound != null: _sound.bore_tell(pl.mid,RUMBLE_GAIN,RUMBLE_PITCH)
-	var crown := PI
+	# A partial wall's grit falls off the rock it comes in from.
+	var crown := PI if not pl.gate() else atan2(pl.cut_n.dot(pl.side),-pl.cut_n.y)
 	for k in SHOWERS:
 		var a := crown+TAU*SHOWER_TURN*(float(k)-(SHOWERS-1)*0.5)*2.0
 		var dir := pl.side*sin(a)+Vector3.UP*(-cos(a))
 		var rock := pl.mid+dir*BoreLine.across(BoreLine.ring(g.site,g.grain,pl.s),pl.mid,dir,pl.along)
-		_tell.shower(rock,(pl.mid-rock).normalized(),SHOWER_WIDE,SHOWER_TALL,maxf(HOLD_S-0.8,0.0))
+		_tell.shower(rock,(pl.mid-rock).normalized(),SHOWER_WIDE,SHOWER_TALL,maxf(pl.hold()-0.8,0.0))
 
 ## One frame, `at` the plane.
 func step(delta: float, at: Vector3, sound: Node) -> void:
@@ -260,10 +323,11 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 	_sound = sound
 	if _groups.is_empty(): return
 	_mat.set_shader_parameter("now",_now)
+	_gate_mat.set_shader_parameter("now",_now)
 	for i in range(_moving.size()-1,-1,-1):
 		var pl := _moving[i]
 		pl.clock += delta
-		pl.down = clampf((pl.clock-HOLD_S)/DROP_S,0.0,1.0)
+		pl.down = clampf((pl.clock-pl.hold())/pl.drop(),0.0,1.0)
 		if pl.down < 1.0: continue
 		# It lands: solid, unless the plane is in its slab (it waits a frame).
 		if _in_slab(pl,at,WorldScale.span*0.5): continue
@@ -273,7 +337,12 @@ func step(delta: float, at: Vector3, sound: Node) -> void:
 		stats.landed = int(stats.landed)+1
 		sound.bore_burst(pl.mid,LAND_GAIN,LAND_PITCH)
 		var wide := pl.reach*1.4
-		_rubble.burst(pl.mid+Vector3.UP*(pl.top-pl.mid.y-WAIT_OVER-1.0)-pl.side*wide*0.5,pl.side*wide,wide*LAND_GIRTH*0.5,Vector3.DOWN*LAND_THROW)
+		if pl.gate():
+			# Along the cut, thrown on into the open part.
+			var on := pl.along.cross(pl.cut_n).normalized()
+			_rubble.burst(pl.hole-on*wide*0.5,on*wide,wide*LAND_GIRTH*0.3,-pl.cut_n*LAND_THROW)
+		else:
+			_rubble.burst(pl.mid+Vector3.UP*(pl.top-pl.mid.y-WAIT_OVER-1.0)-pl.side*wide*0.5,pl.side*wide,wide*LAND_GIRTH*0.5,Vector3.DOWN*LAND_THROW)
 	var was := _near.duplicate()
 	_near.clear()
 	var flat := Vector2(at.x,at.z)
@@ -322,24 +391,30 @@ func _lay(g: Group, pl: Plug) -> void:
 	pl.along = Vector3(tg.x,0.0,tg.y)
 	pl.side = Vector3(-tg.y,0.0,tg.x)
 	pl.mid = BoreLine.middle(t,pl.s)
-	pl.r = WorldScale.opening(TOY_PLUG_HOLE)*0.5
-	# The hole: off the middle at its angle, keeping HOLE_RIM of rubble to the rock.
-	var a := pl.turn*TAU
-	var dir := pl.side*sin(a)+Vector3.UP*(-cos(a))
-	var room := BoreLine.across(ring,pl.mid,dir,pl.along)-pl.r-HOLE_RIM
-	pl.hole = pl.mid+dir*minf(maxf(room,0.0),HOLE_OFF_MOST/HOLE_OFF.y)*lerpf(HOLE_OFF.x,HOLE_OFF.y,pl.off)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = pl.seed
-	pl.outer.resize(AROUND)
+	if pl.gate():
+		BoreGates.shape(pl,ring,AROUND,PUSH)
+	else:
+		pl.r = WorldScale.opening(TOY_PLUG_HOLE)*0.5
+		# The hole: off the middle at its angle, keeping HOLE_RIM of rubble to the rock.
+		var a := pl.turn*TAU
+		var dir := pl.side*sin(a)+Vector3.UP*(-cos(a))
+		var room := BoreLine.across(ring,pl.mid,dir,pl.along)-pl.r-HOLE_RIM
+		pl.hole = pl.mid+dir*minf(maxf(room,0.0),HOLE_OFF_MOST/HOLE_OFF.y)*lerpf(HOLE_OFF.x,HOLE_OFF.y,pl.off)
+		pl.outer.resize(AROUND)
+		for k in AROUND: pl.outer[k] = BoreLine.across(ring,pl.hole,_round(pl,k),pl.along)+PUSH
 	pl.reach = 0.0
 	pl.top = -INF
+	pl.fall = pl.cut_n if pl.gate() else Vector3.UP
+	pl.fall_top = -INF
 	for k in AROUND:
-		var e := _round(pl,k)
-		pl.outer[k] = BoreLine.across(ring,pl.hole,e,pl.along)+PUSH
-		var tip := pl.hole+e*pl.outer[k]
+		var tip := pl.hole+_round(pl,k)*pl.outer[k]
 		pl.reach = maxf(pl.reach,tip.distance_to(pl.mid))
 		pl.top = maxf(pl.top,tip.y)
+		pl.fall_top = maxf(pl.fall_top,(tip-pl.mid).dot(pl.fall))
 	pl.top += WAIT_OVER
+	pl.fall_top += WAIT_OVER
 	# The wall's thickness: thin at the lip, bulging out, each point strayed.
 	pl.thick.resize(AROUND*RINGS)
 	pl.half = 0.0
@@ -364,7 +439,7 @@ static func _round(pl: Plug, k: int) -> Vector3:
 func _point(pl: Plug, j: int, k: int, face: float, jag: float) -> Vector3:
 	var q := float(j)/(RINGS-1)
 	var d := lerpf(pl.r,pl.outer[k],q*q*0.35+q*0.65)
-	if j > 0 and j < RINGS-1: d += jag
+	if j > 0 and j < RINGS-1 and pl.outer[k] > 0.0: d += jag
 	return pl.hole+_round(pl,k)*d+pl.along*(pl.thick[j*AROUND+k]*face)-pl.mid
 
 ## The plug's mesh and collision: both faces, the hole's wall, and the collar.
@@ -372,6 +447,8 @@ func _build(g: Group, pl: Plug, rng: RandomNumberGenerator) -> void:
 	var verts := PackedVector3Array()
 	var colors := PackedColorArray()
 	var tri := func(a: Vector3, b: Vector3, c: Vector3, collar: float) -> void:
+		# A partial wall's open rays all sit on its centre: no slivers.
+		if (b-a).cross(c-a).length_squared() < 1e-6: return
 		verts.append_array(PackedVector3Array([a,b,c]))
 		var col := Color(collar,0.0,0.0)
 		colors.append_array(PackedColorArray([col,col,col]))
@@ -391,8 +468,21 @@ func _build(g: Group, pl: Plug, rng: RandomNumberGenerator) -> void:
 				var d := pts[(j+1)*AROUND+k1]
 				tri.call(a,c,b,0.0)
 				tri.call(b,c,d,0.0)
+		# A partial wall's cut edge: the closed part's edge rays, face to face.
+		if face > 0.0 and pl.gate():
+			for k in AROUND:
+				var k1 := (k+1)%AROUND
+				var k0 := (k+AROUND-1)%AROUND
+				if pl.outer[k] <= 0.0 or (pl.outer[k1] > 0.0 and pl.outer[k0] > 0.0): continue
+				for j in RINGS-1:
+					var a := _point(pl,j,k,-1.0,jags[j*AROUND+k])
+					var b := _point(pl,j+1,k,-1.0,jags[(j+1)*AROUND+k])
+					var c := _point(pl,j,k,1.0,jags[j*AROUND+k])
+					var d := _point(pl,j+1,k,1.0,jags[(j+1)*AROUND+k])
+					tri.call(a,b,c,0.0)
+					tri.call(b,d,c,0.0)
 		# The hole's wall, lip to lip.
-		if face > 0.0:
+		if face > 0.0 and not pl.gate():
 			for k in AROUND:
 				var k1 := (k+1)%AROUND
 				var a := _point(pl,0,k,-1.0,0.0)
@@ -429,7 +519,10 @@ func _build(g: Group, pl: Plug, rng: RandomNumberGenerator) -> void:
 	var box := AABB(verts[0],Vector3.ZERO)
 	for v: Vector3 in verts: box = box.expand(v)
 	mesh.custom_aabb = box.grow(1.0)
-	rock.set_instance_shader_parameter("top",pl.top-pl.mid.y)
+	rock.material_override = _gate_mat if pl.gate() else _mat
+	rock.set_instance_shader_parameter("top",pl.fall_top)
+	rock.set_instance_shader_parameter("fall",pl.fall)
+	rock.set_instance_shader_parameter("cut",Vector4(pl.cut_n.x,pl.cut_n.y,pl.cut_n.z,pl.cut_c) if pl.gate() else Vector4(0,0,0,1e6))
 	rock.set_instance_shader_parameter("lit_at",-1000.0)
 	var cs: CollisionShape3D = pl.body.get_child(1)
 	(cs.shape as ConcavePolygonShape3D).set_faces(faces)
@@ -518,6 +611,10 @@ func stretches(p: Vector3, grow: float, list: Array) -> void:
 		var thick := _thick_at(pl,p)
 		if thick < 0.0 or absf(d.dot(pl.along)) > thick+grow: continue
 		var lo := pl.mid.y-pl.reach-1.0
+		if pl.gate():
+			BoreGates.stretches(pl,p,grow,lo,pl.top,list)
+			added = true
+			continue
 		var x := d.dot(pl.side)-(pl.hole-pl.mid).dot(pl.side)
 		var r := pl.r-grow
 		if absf(x) < r:
@@ -544,6 +641,15 @@ func face(p: Vector3, grow: float) -> Vector3:
 	for pl: Plug in _near:
 		var l := _local(pl,p)
 		var thick := _thick_at(pl,p)
+		if pl.gate():
+			# Off the cut edge into the open part, else straight off the face.
+			var into_edge := BoreGates.into(pl,p)+room
+			if thick < 0.0 and into_edge > 0.0 and into_edge < room*2.0: thick = LIP*0.5
+			if thick < 0.0 or into_edge <= 0.0: continue
+			var into_side := thick+room-absf(l.x)
+			if into_side <= 0.0: continue
+			if into_edge < into_side: return -pl.cut_n
+			return pl.along*signf(l.x if l.x != 0.0 else 1.0)
 		if thick < 0.0: continue
 		var into_face := thick+room-absf(l.x)
 		var into_lip := l.y-(pl.r-room)
@@ -562,6 +668,10 @@ func crossed(from: Vector3, to: Vector3) -> Dictionary:
 		var d1 := (to-pl.mid).dot(pl.along)
 		if (d0 > 0.0) == (d1 > 0.0): continue
 		var at := from.lerp(to,d0/(d0-d1))
+		if pl.gate():
+			var got := BoreGates.crossed(pl,at,THREAD_SLACK)
+			if got.is_empty(): continue
+			return got
 		var rho := _local(pl,at).y
 		if rho > pl.r+THREAD_SLACK: continue
 		return {"room":pl.r-rho,"half":pl.r,"name":"plug %.0f" % pl.s}
