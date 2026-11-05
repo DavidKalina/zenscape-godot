@@ -73,3 +73,48 @@ studies/endless_flight.tscn -- --raider`, and the same without `--raider`
 
 Cap: the skill's default. Budget per iteration: 150000 tokens (the user's
 pick for this loop).
+
+## Round 2 (spec change, 2026-11-04, after the user flew round 1)
+
+The user's verdict on round 1: "Pretty fun! But not enough chase. Plane is
+hard to see, and feels like parry spam." Parrying was fun, but it came
+whatever they did, so they never had to fly well and never felt they could
+focus on the chase. What they want: to keep the chase alive *for* the parry
+chances. The embers are the raider going "shoot, he's on my tail, I better
+lose him."
+
+Done looks like (round 2), on top of round 1:
+
+1. **Panic on its tail.** It fires embers only when you're on its tail:
+   close behind it (about 80 m, a knob) with your nose roughly on it. Off
+   its tail it just runs its line and fires nothing. On its tail it also
+   **jinks**: sharper turns, dives under arches, cuts through tree gaps
+   (always gaps the plane fits, `WorldScale.opening`), trying to shake you.
+   So the parry stretch is also the hardest stretch to hold on to.
+2. **Kept close.** It holds a tighter range (about 40 to 150 m) so it's big
+   on screen and you're reading its line. Slightly faster than you on a
+   plain line; skimming and following its line keep you in range.
+3. **Losing it is the stake.** Behind past about 200 m for a few seconds,
+   it gets away for good, locked on or not (no free come-round). The next
+   one buzzes after the gap.
+4. **A missed ember knocks you back** out of tail range (a real shove plus
+   it surging away), so you fight your way in again.
+5. **A parry pays.** A parried ember staggers it: its panic breaks for a
+   moment and the slow pulls you right onto its tail. Three cripple it
+   (as built); the surge roll kills it (as built).
+6. **Seeing it.** A coloured ribbon trailing it (reads its line from far
+   off, something to follow) and a brighter look on the raider so it
+   stands off rock and grass.
+
+Tasks, in order:
+
+1. Panic on its tail (fire only on its tail, the jinks), kept close, the
+   getaway, the missed-ember knock-back. Driver: embers fire only while on
+   its tail; a run that hangs back gets none and loses it; jinks stay
+   flyable (no clipping, gaps the plane fits). Look at: the launcher.
+2. The ribbon and the brighter look. Look at: stills at 40, 100 and 150 m
+   over land and trees.
+3. Tuning: jink strength, fire rate on the tail, skim gain, the parry's
+   stagger and slow, the ranges. A decent pilot holds on, parries a few and
+   kills in roughly 30 to 60 s; a lazy line loses it. Update
+   `raider-embers-handoff.md` with the numbers. Look at: the launcher.
