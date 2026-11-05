@@ -86,3 +86,27 @@ weaving, and parrying.
   these; change them only if a run shows a reason.
 
 Stop after this for the user to fly.
+
+## Spec change 2 (after the user flew task 2, 2026-11-04)
+
+The user: "that felt pretty good." Cracked spurs and rocks stay as built.
+Next round:
+
+- **Partial walls** he leaves behind him, beside the spurs, rocks and the
+  full plug: each closes one part of the tunnel's cross-section and leaves
+  the rest open. Kinds: top half, bottom half, left half, right half, and
+  thirds (one third closed, or two thirds closed so a third is open). The
+  player reads which part is open and flies into it; picking a part, not
+  jinking round a point. Seeded in the same plan (same seed, same run),
+  spaced clear of spurs, plugs and rocks so they never stack, with a tell
+  like the plug's (it closes after he passes, readable in time to choose).
+  Hitting the closed part is a crash, like the plug. Mix them in so a run
+  has a few, not one every stretch.
+- **The full wall's hole is too small:** widen the opening the plane flies
+  through in the plug (`scripts/endless/bore_plug.gd`), sized per AGENTS.md
+  Sizes (`WorldScale.opening(...)` from its toy width, not a raw number).
+  Prove it is wider by how often a driven pilot gets through.
+- Optional if it falls out cheaply: a cracked partial wall a parried rock
+  smashes, like a cracked spur. Skip it if it costs much.
+
+Stop after this for the user to fly.
