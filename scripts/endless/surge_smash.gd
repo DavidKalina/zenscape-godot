@@ -150,6 +150,11 @@ func _start(dir: float) -> void:
 	game.sound.shot("swish",0.8,0.8)
 	if game.burrower != null: game.burrower.chased(true)
 
+## A parry made by the surge roll: the surge stops spending the meter (the
+## parry hands back what it took, scripts/endless/parry.gd).
+func call_off() -> void:
+	if hot: _end()
+
 func _end() -> void:
 	hot = false
 	_hold = 0.0
