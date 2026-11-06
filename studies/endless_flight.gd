@@ -354,6 +354,9 @@ var rail_clock_at := 0.0
 var rail_held := 0.0
 ## The clock a --rail-start= quick start set (RailTrains `line_start`), or NAN.
 var _rail_start_clock := NAN
+## The ground the start parks the plane on instead of the land's (--rail-start=ride:
+## a flatcar's deck, RailRide `line_start`), or empty; `_launch` uses it once.
+var _rest_ground := Callable()
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -621,7 +624,7 @@ func _ready() -> void:
 			_alt = float(ship_pose.alt)
 			_alt_given = true
 	# --rail-start=beside|tunnel|bridge: in the gap behind train 0's van, the
-	# trains' clock to match (RailTrains `line_start`).
+	# trains' clock to match (RailTrains `line_start`); ride: parked on its flatcar.
 	if RailTrains.start_flag() != "" and RailTrack.wanted(field) and RailTrains.count_flag() > 0 and not RailTrain.test_wanted():
 		var rail_pose: Dictionary = RailTrains.line_start(RailLine.shared(),RailTrains.start_flag(),RailTrain.speed_flag())
 		if not rail_pose.is_empty():
@@ -632,6 +635,7 @@ func _ready() -> void:
 				_alt = float(rail_pose.y)-maxf(field.height(_start.x,_start.y),Field.SEA_Y)
 				_alt_given = true
 			_rail_start_clock = float(rail_pose.clock)
+			_rest_ground = rail_pose.get("ground",Callable())
 			print("rail start %s: s %.0f, clock %.1f" % [RailTrains.start_flag(),float(rail_pose.s),_rail_start_clock])
 	# --train-test: a box train on a test loop on the sea, the plane by its last car.
 	var rail_test: RefCounted = RailTrain.test_path(field) if RailTrain.test_wanted() else null
@@ -877,7 +881,7 @@ func _ready() -> void:
 	parry = Parry.new()
 	add_child(parry)
 	parry.setup(self)
-	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
+	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading,_rest_ground.is_valid())
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
 	shops = ShopSites.new()
@@ -1175,7 +1179,8 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	# a door changes it).
 	plane.fence = func(p: Vector3, h: float) -> Vector2: return field.fence(p,h)
 	if parked:
-		var rest := PlaneStrip.rest(func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
+		var rest := PlaneStrip.rest(_rest_ground if _rest_ground.is_valid() else func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
+		_rest_ground = Callable()
 		plane.park(Vector3(at.x,rest.x,at.z),heading,rest.y,rest.z)
 	else:
 		plane.launch(at,heading,plane.cruise(),false)

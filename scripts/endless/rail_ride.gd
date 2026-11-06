@@ -30,6 +30,15 @@ extends RefCounted
 ##   car's speed (ManualLanding `under`): on a moving car Boost and the stick back
 ##   lift it off at once; at a stop it needs its run, as on the land.
 ##
+## - **No scoring sat.** The near misses are measured only while flying (the
+##   study's `_near_misses`, NearMiss `_track`), so a train passing 7 m off a
+##   plane sat on a car scores nothing; lifted off, a channel arms only once it
+##   has been clear of its reach, so the car it sat on scores nothing either
+##   until it is flown at again.
+## - **The quick start** --rail-start=ride (`line_start`, by RailTrains'): sat on
+##   train 0's flatcar with the lowest cars either side, at RIDE_STOP, RIDE_SIT
+##   s before it pulls out (the study parks the plane on the deck: `ground`).
+##
 ## The engine's top is never a floor (the spec: weave round it, don't land).
 ## Only a train's solid is ridden (built within RailTrains' SOLID_NEAR).
 
@@ -52,6 +61,11 @@ const UNDER_GROW := 1.0
 ## `blocked`: a car's body is in the rolling plane's way this far past its
 ## wing's reach (m).
 const ROOM := 0.5
+## The quick start --rail-start=ride: the station train 0 is sat at, the
+## seconds before it pulls out, and the kind of car sat on.
+const RIDE_STOP := "rail/start-station"
+const RIDE_SIT := 3.0
+const RIDE_KIND := "flat"
 
 var game: Node3D
 var trains: Node3D
@@ -208,3 +222,69 @@ func _under(p: Vector3) -> Vector3:
 static func _yaw(xf: Transform3D) -> float:
 	var f := -xf.basis.z
 	return atan2(-f.x,-f.z)
+
+## The quick start --rail-start=ride on `line` (RailLine) with the line's
+## timetables `tables` (RailTrains `line_tables`): sat on train 0's car of kind
+## RIDE_KIND with the lowest cars either side (`_ride_car`), its nose at
+## RIDE_STOP, RIDE_SIT s before it pulls out. {at (Vector2, x z: the deck's
+## middle), heading (the car's way), y (the deck's top, world), clock (s), s
+## (the car's middle), car (its number), ground (Callable(Vector2) -> float: the
+## deck's height at a world x z, for PlaneStrip `rest`)}; {} if the line lacks
+## the stop or the train the kind.
+static func line_start(line: RefCounted, tables: Array) -> Dictionary:
+	var t0: RefCounted = tables[0]
+	var st: Dictionary = line.piece(RIDE_STOP)
+	var pick := _ride_car()
+	if st.is_empty() or pick.is_empty(): return {}
+	# Track 0's nose halts half a train past the station's s (RailTrains `line_tables`).
+	var nose := float(st.s0)+RailTrain.length_of()*0.5
+	var n := float(line.length())
+	var i := -1
+	for k in range((t0.stop_s as PackedFloat64Array).size()):
+		var off := absf(wrapf(float(t0.stop_s[k])-nose,-n*0.5,n*0.5))
+		if i < 0 or off < absf(wrapf(float(t0.stop_s[i])-nose,-n*0.5,n*0.5)): i = k
+	if i < 0: return {}
+	var clock := float(t0.time_at(float(t0.stop_s[i])))+float(t0.wait(i))-RIDE_SIT
+	if clock < 0.0: clock += float(t0.period)
+	var xf := car_xf(line,t0,0,float(t0.at(clock).d),float(pick.front),float(pick.long))
+	var top := float(pick.top)
+	var deck := xf*Vector3(0.0,top,0.0)
+	var up := xf.basis.y.normalized()
+	var f := -xf.basis.z
+	return {"at":Vector2(deck.x,deck.z),"heading":atan2(-f.x,-f.z),"y":deck.y,"clock":clock,
+		"s":float(t0.s_of(float(t0.at(clock).d)-float(pick.front)-float(pick.long)*0.5)),"car":int(pick.i),
+		"ground":func(p: Vector2) -> float: return deck.y-(up.x*(p.x-deck.x)+up.z*(p.y-deck.z))/up.y}
+
+## Train 0's car to sit on for the quick start: of kind RIDE_KIND, the one with
+## the lowest cars either side (the first of those), so the view isn't walled
+## in: {i, front (m from the nose), long, top (its deck, local y)}, or {}.
+static func _ride_car() -> Dictionary:
+	var cars: Array = RailTrain.CARS
+	var best := {}
+	var low := INF
+	var front := 0.0
+	for i in range(cars.size()):
+		var c: Array = cars[i]
+		if str(c[0]) == RIDE_KIND and i > 0 and i < cars.size()-1:
+			var by := float(cars[i-1][2])+float(cars[i+1][2])
+			if by < low:
+				var boxes: Array = []
+				for part: Array in (RailTrain._parts(str(c[0]),float(c[1]),float(c[2])).solid as Array): boxes.append(part[0])
+				var top := _top_of({"kind":str(c[0]),"all":boxes},Vector3(0.0,INF,0.0))
+				if not is_nan(top):
+					low = by
+					best = {"i":i,"front":front,"long":float(c[1]),"top":top}
+		front += float(c[1])+RailTrain.GAP
+	return best
+
+## A car's frame with the nose at odometer `d` on `path`'s `track` by `table`,
+## the car `front` m behind the nose and `long` long: between its bogies, as
+## RailTrain `place` puts it.
+static func car_xf(path: RefCounted, table: RefCounted, track: int, d: float, front: float, long: float) -> Transform3D:
+	var a: Transform3D = path.pose(table.s_of(d-front-RailTrain.BOGIE),track)
+	var b: Transform3D = path.pose(table.s_of(d-front-long+RailTrain.BOGIE),track)
+	var f := (a.origin-b.origin).normalized()
+	var up := (a.basis.y+b.basis.y).normalized()
+	up = (up-f*f.dot(up)).normalized()
+	var z := -f
+	return Transform3D(Basis(up.cross(z),up,z),(a.origin+b.origin)*0.5)

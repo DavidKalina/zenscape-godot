@@ -49,7 +49,7 @@ extends Node3D
 ##
 ## Knobs: --trains=0|1|2 (TRAINS: how many run; one is track 0's), and
 ## RailTrain's --train-speed=, --rail-clock=S; the quick starts
-## --rail-start=beside|tunnel|bridge (`line_start`).
+## --rail-start=beside|tunnel|bridge|ride (`line_start`).
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
@@ -105,7 +105,9 @@ const LINE_MEET := 35.0
 ##   mouth's trestle, 7 s short of the bore: train 0 goes in ahead on the
 ##   right and train 1 comes at the plane head on in the dark;
 ## - bridge: START_BEFORE s before the bay bridge's meeting, at its west end:
-##   between both trains on the deck.
+##   between both trains on the deck;
+## - ride: sat on a flatcar of train 0 about to pull out of the start station
+##   (RailRide `line_start`: its own pose, with the deck to park on).
 const START_BESIDE := 3800.0
 const START_BEFORE := 16.0
 const START_UP := 6.5
@@ -171,8 +173,9 @@ static func line_start(line: RefCounted, which: String, top := RailTrain.SPEED) 
 		"beside": clock = float(t0.time_at(START_BESIDE+long))
 		"tunnel": clock = float(t0.time_at(LINE_TUNNEL))-START_BEFORE
 		"bridge": clock = float(line_meet(t0,tables[1],float(line.length())).get("time",LINE_MEET))-START_BEFORE
+		"ride": return RailRide.line_start(line,tables)
 		_:
-			push_warning("--rail-start=%s: beside, tunnel or bridge" % which)
+			push_warning("--rail-start=%s: beside, tunnel, bridge or ride" % which)
 			return {}
 	var s: float = t0.s_of(float(t0.at(clock).d)-long-RailTrain.START_BACK)
 	var x: Transform3D = line.pose(s,0)
