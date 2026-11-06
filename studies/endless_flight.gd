@@ -144,6 +144,8 @@ const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const LandIceTunnel = preload("res://scripts/endless/land_ice_tunnel.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
+## The regions' hand-placed sites (scripts/endless/placed_sites.gd; --no-placed off).
+const PlacedSites = preload("res://scripts/endless/placed_sites.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
@@ -311,6 +313,8 @@ var tunnels: Node3D
 ## The ice tunnel in the Peak's shoulder (scripts/endless/land_ice_tunnel.gd;
 ## stands empty with --ice-tunnel=0).
 var ice: Node3D
+## The regions' hand-placed sites (scripts/endless/placed_sites.gd).
+var placed: Node3D
 ## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
 var trees: Node3D
 ## The birds flushed from the trees and the far flocks.
@@ -699,6 +703,10 @@ func _ready() -> void:
 	ice.name = "IceTunnel"
 	add_child(ice)
 	ice.setup(field)
+	placed = PlacedSites.new()
+	placed.name = "Placed"
+	add_child(placed)
+	placed.setup(field,world)
 	trees = LandTrees.new()
 	trees.name = "Trees"
 	add_child(trees)
@@ -759,6 +767,7 @@ func _ready() -> void:
 	halls.prime(eye)
 	tunnels.prime(eye)
 	ice.prime(eye)
+	placed.prime(eye)
 	trees.prime(eye)
 	debris = FlightDebris.new()
 	debris.name = "Debris"
@@ -1406,6 +1415,8 @@ func tick(delta: float) -> void:
 	tunnels.step(camera.global_position)
 	ice.step(camera.global_position)
 	FrameLog.mark(&"tunnels")
+	placed.step(camera.global_position)
+	FrameLog.mark(&"placed")
 	if doors != null: doors.late(camera.global_position)
 	FrameLog.mark(&"doors_late")
 	trees.step(camera.global_position,plane.position)
