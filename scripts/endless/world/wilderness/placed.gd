@@ -29,9 +29,9 @@ const SITES := [
 	# toward the start: its first lintel on the way in.
 	["wild/meadow_ring","uprights","stones",770.0,70.0,90.0,{"clear":80.0}],
 	# The same meadow's south edge, 40 m out from the treeline the herd bolts
-	# from; facing east, down the meadow's length. No clear: the treeline
-	# stays.
-	["wild/meadow_herd","marker","",660.0,145.0,-90.0,{}],
+	# from; facing east, down the meadow's length. The elk herd
+	# (spec-wild-kit-elk.md; --elk=off: its marker).
+	["wild/meadow_herd","ground_escort","elk",660.0,145.0,-90.0,{}],
 	# The inlet's east shore (m00), 130 m south of the start, south of the
 	# river mouth at (-10, 50): the shipwreck on the tideline, along the shore
 	# (NW-SE), its keel on the strip of sand, its sea side in the shallows,

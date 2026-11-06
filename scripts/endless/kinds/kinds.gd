@@ -21,6 +21,7 @@ const KINDS := {
 	"marker": preload("res://scripts/endless/kinds/marker.gd"),
 	"uprights": preload("res://scripts/endless/kinds/uprights.gd"),
 	"curtain": preload("res://scripts/endless/kinds/curtain.gd"),
+	"ground_escort": preload("res://scripts/endless/kinds/ground_escort.gd"),
 }
 
 ## Whether `kind` is in the table.

@@ -30,10 +30,13 @@ treeline: one or two bulls with antlers, the rest cows.
   and track the plane.
 - **Skim low past them, beside their line:** they break into a run alongside
   the plane, a bounding sprint that throws up grass and dust, holding beside it for a
-  stretch (a creek or a log to leap if the meadow has one), then peel off,
+  stretch (now and then one bounds high in a `leap` mid-run, a flourish with nothing to clear: the user, 2026-11-05; the meadow has no creek or log), then peel off,
   slow, halt and look back.
 - **Fly straight at them low:** they bolt, scatter and break back into the
   treeline.
+- **Afterwards:** once the plane is well away, the herd drifts home to its
+  spot at a trot and grazes there again (the user, 2026-11-05), so every pass
+  finds it where it lives.
 
 They run on the land (height from the ground), keep to the meadow and the
 wood's edge (no cliffs, no water), and keep off each other. The plane passes
