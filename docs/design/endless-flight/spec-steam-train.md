@@ -137,6 +137,12 @@ thread 3.5 gives 7 m.
   - **Logs:** each bundle solid across the car's whole 6 m width, 2.6 to 6.5 m
     over the bed.
 
+- **The engine's look, for a follow-up round (the user, 2026-11-06):** the
+  first engine (`afa61d24`) stands for this loop. Not now, but later: a
+  lower, narrower cab so the boiler and stack lead, a bigger funnel stack, a
+  big lantern headlamp, and red or black drivers. Carry them into the
+  handoff; this loop doesn't make them.
+
 ## Done (what the user plays and sees)
 
 - `./run-endless-flight.command` (seed 1): two classic steam trains run the
