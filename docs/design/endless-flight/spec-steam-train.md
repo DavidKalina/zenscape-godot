@@ -97,7 +97,7 @@ thread 3.5 gives 7 m.
 | 10 | `truss` | 24 | 8.5 | a bridge truss section on a flat | one web panel either side an opening 10 x 6, across |
 | 11 | `flat` | 20 | 2.6 | | |
 | 12 | `doors` | 24 | 9.0 | | |
-| 13 | `crane` | 20 | 9.0 | wrecking crane, its boom slung forward over the next car | |
+| 13 | `crane` | 20 | 9.0 | wrecking crane, its boom slung back over the car behind it | |
 | 14 | `flat` | 20 | 2.6 | the crane's idler, under the boom | under the boom, over the deck: at least 6 m clear, across |
 | 15 | `stock` | 24 | 9.0 | | |
 | 16 | `logs` | 20 | 6.5 | | |
@@ -125,6 +125,17 @@ thread 3.5 gives 7 m.
 - **Openings at other plane scales.** Models are built at the defaults. At
   another `--plane-scale` the colliders follow `WorldScale` but the models
   don't. That's accepted for the prototype; say it in the handoff.
+- **Settled by lane `cars` (2026-11-06, `08e7d447`):** the details its
+  greybox picked to keep every top under 9 m. The models match them.
+  - **Truss:** its flat's deck at 2.1 m over the bed. The closed end panels
+    are solid plates: a lattice there is drawn on or in relief, not
+    see-through, since what you see is what you hit.
+  - **Crane:** the boom is 1.6 m wide and 0.4 m deep, its underside 8.6 m and
+    its top 9.0 m over the bed, over the flat behind the crane.
+  - **Coaches:** end platforms 4.2 m long, railings 0.7 m high (top 2.1 m over
+    the bed), roof hoods 0.4 m deep.
+  - **Logs:** each bundle solid across the car's whole 6 m width, 2.6 to 6.5 m
+    over the bed.
 
 ## Done (what the user plays and sees)
 
@@ -223,7 +234,11 @@ the trains.
    runner, not an iteration).
 2. **The models on the 24-car trains,** in place of the greybox looks. The
    drivers turn and the rods work with the train's speed. The smash car's
-   plank walls burst and reseal. Colliders still match the models.
+   plank walls burst and reseal. Colliders still match the models. The
+   engine's don't yet: its bell, headlamp and sand dome have none, and its
+   funnel lip, cylinders and running boards (x +-2.53 against +-2.16) reach
+   past their blocks, while the cab's block overshoots the arched roof at the
+   eaves (lane `model`, `afa61d24`). Make the colliders follow the model.
 3. **The smoke:** stack puffs, cylinder steam at stops, the far plume, and the
    rhythm with speed and leaving stations. Stills and a short rendered clip.
 4. **The whole thing flown:** both meetings, every fly-through car and a ride.
