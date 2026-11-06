@@ -1,0 +1,15 @@
+{"loop": true, "grade": 0.035, "ease": 220, "stops": [
+ {"name": "Start station", "x": 1350, "z": 350, "kind": "station"},
+ {"name": "", "x": 1450, "z": -450, "kind": "via"},
+ {"name": "", "x": 600, "z": -1700, "kind": "via"},
+ {"name": "", "x": -1000, "z": -2650, "kind": "via"},
+ {"name": "Farm town", "x": -2500, "z": -3300, "kind": "town"},
+ {"name": "", "x": -3800, "z": -3050, "kind": "via"},
+ {"name": "", "x": -4650, "z": -2000, "kind": "via", "direct": true},
+ {"name": "", "x": -4750, "z": 0, "kind": "via"},
+ {"name": "Mine town", "x": -4500, "z": 700, "kind": "town"},
+ {"name": "Cattle town", "x": -2500, "z": 2300, "kind": "town"},
+ {"name": "", "x": -1100, "z": 1700, "kind": "via"},
+ {"name": "", "x": -650, "z": 1150, "kind": "via", "direct": true},
+ {"name": "", "x": 750, "z": 600, "kind": "via"}
+]}

@@ -77,8 +77,10 @@ func target(speed: float) -> float:
 
 ## One frame: `on_ground` on its wheels (rolling, stopped, getting out or
 ## hopping in), else `dipping` off an edge before the wings catch, else
-## flying (exactly 1).
-func step(delta: float, on_ground: bool, dipping: bool, glide: RefCounted) -> void:
+## flying (exactly 1). `under`: the velocity of the ground under the wheels
+## (a train's car: scripts/endless/rail_ride.gd), so the speed read is the
+## speed over it.
+func step(delta: float, on_ground: bool, dipping: bool, glide: RefCounted, under := Vector3.ZERO) -> void:
 	if not active():
 		k = 1.0
 		return
@@ -89,7 +91,7 @@ func step(delta: float, on_ground: bool, dipping: bool, glide: RefCounted) -> vo
 		k = lerpf(k,1.0,1.0-exp(-delta/DIP_EASE))
 		if k < 1.002: k = 1.0
 		return
-	var v: Vector3 = glide.velocity
+	var v: Vector3 = glide.velocity-under
 	var want := target(Vector2(v.x,v.z).length())
 	var eased := lerpf(k,want,1.0-exp(-delta/EASE)) if delta > 0.0 else want
 	var most := (factor-1.0)*RATE*delta

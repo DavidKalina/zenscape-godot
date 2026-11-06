@@ -23,7 +23,7 @@ extends RefCounted
 ## The score (`_score`): BASE[kind] x (1 + CLOSE_GAIN k²), k = 1 - least
 ## over REACH (bands RAZOR and CLOSE name it), x the edge's (under EDGE
 ## spans, (EDGE + EDGE_SOFT) / (least + EDGE_SOFT): x2 at 0.4 m, x4 at
-## 0.1 m, x6 touching, at plane 2), x speed over cruise, x for a
+## 0.1 m, x6 touching, at plane 2), x speed over cruise (`by`), x for a
 ## pull-out the closing rate's (1 + (closing / CLOSING_REF)^1.5, at most
 ## CLOSING_TOP), x the farming cut. CLOSING_REF and PULL_MIN are times the
 ## plane's pace (scripts/flight_pace.gd). Kinds:
@@ -43,6 +43,13 @@ extends RefCounted
 ## - a ball's pass (`shot_pass`, pirate_ship.gd): a graze, against the reach the
 ##   ball gives; each ball measures its own closest pass, as a fast ball slips
 ##   between the wing rays.
+## A moment by something moving (a train's car: `game.trains`, its `motion_at`)
+## scores by the speed relative to it (`by`): along a train at cruise, the few
+## m/s the plane creeps up it; head on, both speeds. Whether it scores at all
+## (FAST_FROM) is still the plane's own speed: a pass flown, not a braked one.
+## In a bore a car passed scores its own graze, as a burrower's spur does (the
+## bore's thread still comes as the plane flies out): the two trains' meeting
+## in the west tunnel, head on in the dark.
 ## Farming: each scored moment within FARM_RADIUS m and FARM_TIME s of this
 ## one cuts it by FARM_EACH more, and the same tree, ruin or patch of land
 ## again by FARM_SAME. A ball's pass neither takes the cut nor adds to it.
@@ -224,6 +231,14 @@ var _near_what := "stone"
 ## The nearest stone this frame is a burrower's spur (BoreSpurs `holds`).
 var _near_spur := false
 var _near_body: Object
+## Where the ray to the nearest stone met it, and the roof's ray what's over it
+## (INF: nothing): the points a moment by them asks the moving things about.
+var _near_at := Vector3.INF
+var _over_at := Vector3.INF
+## The last `_by`'s point was on something moving (a train's car).
+var _by_moved := false
+## A moment by something moving is measured this near it (m): its face or top.
+const MOVER_REACH := 2.0
 
 ## One channel's moment.
 class Tracker:
@@ -234,12 +249,15 @@ class Tracker:
 	var least := INF
 	var at := Vector3.ZERO
 	var speed := 0.0
+	## The speed it scores by (m/s): `speed`, or relative to what moved by it.
+	var by := 0.0
 	var surface := "land"
 	var id := 0
 	var closing := 0.0
 	var sides := 0
 	var over := false
-	## It came near a burrower's spur: a graze though the bore is overhead.
+	## It came near a burrower's spur or a train's car: a graze though the bore
+	## is overhead.
 	var spur := false
 	## The roll at the least (radians), and each wing's least (a gap's sides).
 	var roll := 0.0
@@ -258,6 +276,19 @@ class Tracker:
 	func cancel() -> void:
 		active = false
 		armed = false
+
+## The speed a moment by world `at` (a stone's face, a top, a roof; INF none)
+## scores by (m/s): the plane's own, or, within MOVER_REACH of something moving
+## (a train's car: `game.trains` `motion_at`), the plane's speed relative to it.
+func _by(game: Node3D, at: Vector3) -> float:
+	var plane = game.plane
+	var movers = game.get("trains")
+	_by_moved = false
+	if movers == null or at == Vector3.INF: return float(plane.speed)
+	var m: Variant = movers.motion_at(at,MOVER_REACH)
+	if m == null: return float(plane.speed)
+	_by_moved = true
+	return ((plane.velocity as Vector3)-(m as Vector3)).length()
 
 ## The multiplier the chain has now.
 func multiplier() -> float:
@@ -344,6 +375,8 @@ func measure(delta: float, game: Node3D) -> void:
 	var reach := STONE_REACH*WorldScale.span
 	_near_c = INF
 	_near_body = null
+	_near_at = Vector3.INF
+	_over_at = Vector3.INF
 	var xf := Transform3D(Basis.from_euler(Vector3(float(plane.pitch),float(plane.heading),-(float(plane.bank)+float(plane.spin)))),plane.position)
 	touching = {}
 	overhead = false
@@ -394,12 +427,14 @@ func measure(delta: float, game: Node3D) -> void:
 	if not hit.is_empty() and _what(game,hit.collider) != "land":
 		var c := xf.origin.distance_to(hit.position)-roof
 		overhead = true
+		_over_at = hit.position
 		if c < reach: over_clear = minf(over_clear,c)
 		if c < _near_c and c < reach:
 			_near_c = c
 			_near_id = hash([hit.collider.get_instance_id(),hit.shape])
 			_near_what = "stone"
 			_near_body = hit.collider
+			_near_at = hit.position
 	if game.tunnels != null and int(game.tunnels.tube(xf.origin)) == 0: overhead = true
 	_near_spur = game.tunnels != null and game.tunnels.spurs != null and game.tunnels.spurs.holds(_near_body)
 	stone_clear = minf(minf(left_clear,right_clear),over_clear)
@@ -425,6 +460,7 @@ func _wing(space: PhysicsDirectSpaceState3D, game: Node3D, xf: Transform3D, side
 			_near_id = hash([hit.collider.get_instance_id(),hit.shape])
 			_near_what = what
 			_near_body = hit.collider
+			_near_at = hit.position
 		if c < 0.0 and touching.is_empty():
 			touching = {"at":hit.position,"normal":-out,"what":what}
 	return best
@@ -461,8 +497,13 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	var speed: float = float(plane.speed)
 	var fast := speed >= FAST_FROM*cruise
 	var reach := REACH*WorldScale.span
+	# The speed each channel scores by: relative to a moving thing it is by.
+	var by_ground := _by(game,ground_at+Vector3.DOWN*maxf(ground_clear,0.0)) if ground_surface == "stone" and ground_clear < INF else speed
+	var by_stone := _by(game,_near_at)
+	var stone_moves := _by_moved
+	var by_over := _by(game,_over_at)
 	# The ground's moment.
-	if _track(_ground,ground_clear,reach,speed,game):
+	if _track(_ground,ground_clear,reach,speed,by_ground,game):
 		if _ground.surface in ["tree","stone"]:
 			if _ground.least < CLOSE*WorldScale.span: _moment("graze",_ground,reach,cruise,out,game)
 		elif _ground.closing >= PULL_MIN*_pace(game): _moment("pull-out",_ground,reach,cruise,out,game)
@@ -474,7 +515,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 			_ground.id = hash(Vector2i(floori(ground_at.x/FARM_CELL),floori(ground_at.z/FARM_CELL)))
 	# The stone's moment.
 	var stone_reach := STONE_REACH*WorldScale.span
-	if _track(_stone,stone_clear,stone_reach,speed,game) and (_stone.spur or not _stone.over):
+	if _track(_stone,stone_clear,stone_reach,speed,by_stone,game) and (_stone.spur or not _stone.over):
 		_moment("thread" if _stone.sides == 3 else "graze",_stone,stone_reach,cruise,out,game)
 	if _stone.active:
 		if left_clear < stone_reach: _stone.sides |= 1
@@ -482,7 +523,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		_stone.wl = minf(_stone.wl,left_clear)
 		_stone.wr = minf(_stone.wr,right_clear)
 		if overhead: _stone.over = true
-		if _near_spur and stone_clear < stone_reach: _stone.spur = true
+		if (_near_spur or stone_moves) and stone_clear < stone_reach: _stone.spur = true
 		if stone_clear <= _stone.least:
 			_stone.at = plane.position
 			_stone.id = _near_id
@@ -494,6 +535,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		if not _pass.active:
 			_pass.start(under)
 			_pass.speed = speed
+			_pass.by = by_over
 			_pass.roll = LineMoves.roll_of(plane)
 			_pass.at = plane.position
 			_pass.id = hash(Vector2i(floori(plane.position.x/FARM_CELL),floori(plane.position.z/FARM_CELL)))
@@ -501,6 +543,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		elif under < _pass.least:
 			_pass.least = under
 			_pass.speed = speed
+			_pass.by = by_over
 			_pass.roll = LineMoves.roll_of(plane)
 	elif _pass.active:
 		_out_for += delta
@@ -518,6 +561,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		if not hit.is_empty():
 			_gate.start(maxf(float(hit.room)-WorldScale.span*0.5,0.0))
 			_gate.speed = speed
+			_gate.by = speed
 			_gate.roll = LineMoves.roll_of(plane)
 			_gate.at = p_now
 			_gate.surface = "stone"
@@ -532,6 +576,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		var shot: Dictionary = _shots.pop_front()
 		_shot.least = float(shot.clear)
 		_shot.speed = speed
+		_shot.by = speed
 		_shot.at = shot.at
 		_shot.surface = "stone"
 		_shot.closing = 0.0
@@ -589,7 +634,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 
 ## A channel's tracker this frame; true when its moment just turned (scored
 ## by the caller).
-func _track(t: Tracker, clear: float, reach: float, speed: float, game: Node3D) -> bool:
+func _track(t: Tracker, clear: float, reach: float, speed: float, by: float, game: Node3D) -> bool:
 	if not bool(game.hand_landing.flying()):
 		t.cancel()
 		return false
@@ -600,11 +645,13 @@ func _track(t: Tracker, clear: float, reach: float, speed: float, game: Node3D) 
 		if clear < reach:
 			t.start(clear)
 			t.speed = speed
+			t.by = by
 			t.roll = LineMoves.roll_of(game.plane)
 		return false
 	if clear < t.least:
 		t.least = clear
 		t.speed = speed
+		t.by = by
 		t.roll = LineMoves.roll_of(game.plane)
 		return false
 	var back := maxf(HYST*WorldScale.span,HYST_SHARE*t.least)
@@ -618,11 +665,11 @@ func _track(t: Tracker, clear: float, reach: float, speed: float, game: Node3D) 
 func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Dictionary, game: Node3D) -> void:
 	if t.speed < FAST_FROM*cruise: return
 	var k := clampf(1.0-maxf(t.least,0.0)/reach,0.0,1.0)
-	var points := float(BASE[kind])*(1.0+CLOSE_GAIN*k*k)*edge(t.least)*clampf(t.speed/cruise,0.5,2.0)
+	var points := float(BASE[kind])*(1.0+CLOSE_GAIN*k*k)*edge(t.least)*clampf(t.by/cruise,0.5,2.0)
 	if kind == "pull-out": points *= minf(1.0+pow(maxf(t.closing,0.0)/(CLOSING_REF*_pace(game)),1.5),CLOSING_TOP)
 	var band := "razor" if t.least < RAZOR*WorldScale.span else ("close" if t.least < CLOSE*WorldScale.span else "near")
 	var m := {"kind":kind,"band":band,"points":points,"k":k,"clear":t.least,"at":t.at,"surface":t.surface,
-		"closing":t.closing,"speed":t.speed,"under":t == _pass or t == _gate,"roll":t.roll,"id":t.id}
+		"closing":t.closing,"speed":t.by,"own":t.speed,"under":t == _pass or t == _gate,"roll":t.roll,"id":t.id}
 	# A gap measured on both sides: its opening, wall to wall.
 	if t == _stone and t.sides == 3 and t.wl < INF and t.wr < INF: m.width = t.wl+t.wr+WorldScale.span
 	if t == _shot: m.shot = true

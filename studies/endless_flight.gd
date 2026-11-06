@@ -63,6 +63,11 @@ extends Node3D
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
 ## one of kind K (slot, winding, gorge, grand) where it fits, --split-slot=X
 ## the slot kind's toy width (6: 12 m).
+## The railroad (seed 1; scripts/endless/rail_trains.gd): --rail-start=beside
+## (behind train 0's van on the farm plain), =tunnel (at the west tunnel's farm
+## mouth as the trains are about to meet in it), =bridge (at the bay bridge's
+## west end, the same); --no-railroad, --trains=0|1|2, --train-speed=,
+## --rail-clock=S.
 ## The pirate ships (scripts/endless/pirate_ship.gd): --ship-start starts in the
 ## air off the first's beam, --full-meter with the meter full, and again each time
 ## a ship's plates come back or the plane leaves a sinking one; --ship-return=S the
@@ -122,6 +127,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
@@ -144,6 +150,13 @@ const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const LandIceTunnel = preload("res://scripts/endless/land_ice_tunnel.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
+## The railroad's track on its bed (scripts/endless/rail_track.gd; seed 1, off under --no-railroad).
+const RailTrack = preload("res://scripts/endless/rail_track.gd")
+const RailBore = preload("res://scripts/endless/rail_bore.gd")
+const RailSpan = preload("res://scripts/endless/rail_span.gd")
+const RailStops = preload("res://scripts/endless/rail_stops.gd")
+const RailLine = preload("res://scripts/endless/rail_line.gd")
+const RailTrains = preload("res://scripts/endless/rail_trains.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
@@ -313,6 +326,14 @@ var tunnels: Node3D
 var ice: Node3D
 ## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
 var trees: Node3D
+## The railroad's track, or null (RailTrack `wanted`).
+var rails: Node3D
+## The railroad's tunnels' bores and portals, or null (with `rails`).
+var rail_bore: Node3D
+## The railroad's trestles and bridges, or null (with `rails`).
+var rail_span: Node3D
+## The railroad's stations and towns (rail_stops.gd), with the bed.
+var rail_stops: Node3D
 ## The birds flushed from the trees and the far flocks.
 var birds: Node3D
 var fish: Node3D
@@ -324,6 +345,18 @@ var race: Node
 var shops: Node
 ## The lighthouse and the pirate ships on the coast (scripts/endless/coast_sites.gd).
 var coast: Node3D
+## The box trains (scripts/endless/rail_trains.gd): on the railroad's line, or
+## on their test loop (--train-test); null with --trains=0 or no railroad.
+var trains: Node3D
+## The trains' clock at the start (s, --rail-clock=; `rail_clock`).
+var rail_clock_at := 0.0
+## The menu's seconds, which the trains' clock doesn't count (`rail_clock`).
+var rail_held := 0.0
+## The clock a --rail-start= quick start set (RailTrains `line_start`), or NAN.
+var _rail_start_clock := NAN
+## The ground the start parks the plane on instead of the land's (--rail-start=ride:
+## a flatcar's deck, RailRide `line_start`), or empty; `_launch` uses it once.
+var _rest_ground := Callable()
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -590,6 +623,30 @@ func _ready() -> void:
 		if not _alt_given:
 			_alt = float(ship_pose.alt)
 			_alt_given = true
+	# --rail-start=beside|tunnel|bridge: in the gap behind train 0's van, the
+	# trains' clock to match (RailTrains `line_start`); ride: parked on its flatcar.
+	if RailTrains.start_flag() != "" and RailTrack.wanted(field) and RailTrains.count_flag() > 0 and not RailTrain.test_wanted():
+		var rail_pose: Dictionary = RailTrains.line_start(RailLine.shared(),RailTrains.start_flag(),RailTrain.speed_flag())
+		if not rail_pose.is_empty():
+			_start = rail_pose.at
+			_heading = float(rail_pose.heading)
+			_heading_given = true
+			if not _alt_given:
+				_alt = float(rail_pose.y)-maxf(field.height(_start.x,_start.y),Field.SEA_Y)
+				_alt_given = true
+			_rail_start_clock = float(rail_pose.clock)
+			_rest_ground = rail_pose.get("ground",Callable())
+			print("rail start %s: s %.0f, clock %.1f" % [RailTrains.start_flag(),float(rail_pose.s),_rail_start_clock])
+	# --train-test: a box train on a test loop on the sea, the plane by its last car.
+	var rail_test: RefCounted = RailTrain.test_path(field) if RailTrain.test_wanted() else null
+	if rail_test != null:
+		var rail_start: Dictionary = RailTrain.test_start(rail_test)
+		_start = rail_start.at
+		_heading = float(rail_start.heading)
+		_heading_given = true
+		if not _alt_given:
+			_alt = float(rail_start.alt)
+			_alt_given = true
 	if WaterContact.near_start_wanted():
 		var w: Dictionary = WaterContact.near_start(field,_start)
 		if w.is_empty(): push_warning("--water-near-start: no river mouth near the start")
@@ -613,7 +670,7 @@ func _ready() -> void:
 	# The Peak (scripts/endless/peak_massif.gd): the start faces its summit,
 	# unless a heading was named or a start flag set its own; the menu's
 	# meadow takes the clear heading nearest that.
-	var own_start := SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty()
+	var own_start := SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty() or not is_nan(_rail_start_clock)
 	var peak: RefCounted = field.peak()
 	var face_peak := peak != null and not _heading_given and not own_start
 	if face_peak:
@@ -703,6 +760,23 @@ func _ready() -> void:
 	trees.name = "Trees"
 	add_child(trees)
 	trees.setup(seed)
+	if RailTrack.wanted(field):
+		rails = RailTrack.new()
+		rails.name = "Rails"
+		add_child(rails)
+		rails.setup(field)
+		rail_bore = RailBore.new()
+		rail_bore.name = "RailBore"
+		add_child(rail_bore)
+		rail_bore.setup(field)
+		rail_span = RailSpan.new()
+		rail_span.name = "RailSpan"
+		add_child(rail_span)
+		rail_span.setup(field)
+		rail_stops = RailStops.new()
+		rail_stops.name = "RailStops"
+		add_child(rail_stops)
+		rail_stops.setup(field)
 	if EndlessFish.wanted() and field.ponds > 0.0:
 		fish = EndlessFish.new()
 		fish.name = "Fish"
@@ -759,6 +833,7 @@ func _ready() -> void:
 	halls.prime(eye)
 	tunnels.prime(eye)
 	ice.prime(eye)
+	if rail_bore != null: rail_bore.prime(eye)
 	trees.prime(eye)
 	debris = FlightDebris.new()
 	debris.name = "Debris"
@@ -806,7 +881,7 @@ func _ready() -> void:
 	parry = Parry.new()
 	add_child(parry)
 	parry.setup(self)
-	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
+	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading,_rest_ground.is_valid())
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
 	shops = ShopSites.new()
@@ -817,6 +892,16 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	if rail_test != null:
+		rail_test.build(self)
+		trains = preload("res://scripts/endless/rail_trains.gd").new()
+		add_child(trains)
+		trains.setup(self,rail_test)
+	elif rails != null and RailTrains.count_flag() > 0:
+		rail_clock_at = RailTrains.clock_flag(0.0 if is_nan(_rail_start_clock) else _rail_start_clock)
+		trains = RailTrains.new()
+		add_child(trains)
+		trains.on_line(self,RailLine.shared(),Callable(self,"rail_clock"))
 	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
 	ground_native = GroundNative.new()
 	ground_native.setup(arches,rocks,towers,stair,ice)
@@ -1094,7 +1179,8 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	# a door changes it).
 	plane.fence = func(p: Vector3, h: float) -> Vector2: return field.fence(p,h)
 	if parked:
-		var rest := PlaneStrip.rest(func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
+		var rest := PlaneStrip.rest(_rest_ground if _rest_ground.is_valid() else func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
+		_rest_ground = Callable()
 		plane.park(Vector3(at.x,rest.x,at.z),heading,rest.y,rest.z)
 	else:
 		plane.launch(at,heading,plane.cruise(),false)
@@ -1162,35 +1248,54 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
+	if rail_bore != null: g = rail_bore.ground(p,g,pad)
+	if rail_span != null: g = rail_span.ground(p,g,pad)
+	if rail_stops != null: g = rail_stops.ground(p,g,pad)
+	if rails != null: g = rails.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
 ## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
 ## the ice tunnel's (HallDoors hands them back on leaving its hall).
 func bore_guide(p: Vector3, heading: float, speed: float) -> Dictionary:
 	var g: Dictionary = tunnels.guide(p,heading,speed)
+	if g.is_empty() and rail_bore != null: g = rail_bore.guide(p,heading,speed)
 	return g if not g.is_empty() or ice == null else ice.guide(p,heading,speed)
 
 func bore_keep(p: Vector3) -> Vector3:
 	p = tunnels.keep(p)
+	if rail_bore != null: p = rail_bore.keep(p)
 	return p if ice == null else ice.keep(p)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
+## (A tree's test has no foot: in a railroad bore, the trees on the hill
+## over it don't count.)
 func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	var m := _stone_near(p)
-	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or (trees.inside(p) and (rail_bore == null or rail_bore.tube(p) != 0)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p)) or (trains != null and trains.ride.blocked(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
 	if GroundTally.on: GroundTally.tick(&"floor_at")
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
+	# On a train's car the plane is over, its top or its edge (rail_ride.gd).
+	if trains != null and plane != null:
+		var car_y: float = trains.ride.land_y(Vector3(p.x,plane.position.y,p.y),INF)
+		if car_y != INF: return car_y
 	var h: float = field.height(p.x,p.y)
+	# On a railroad span's deck (over water too), its top.
+	if rail_span != null and plane != null:
+		var deck: float = rail_span.land_y(Vector3(p.x,plane.position.y,p.y),-INF)
+		if deck > h: return deck
+	# On a railroad stop's platform or roof, its top.
+	if rail_stops != null and plane != null: h = rail_stops.land_y(Vector3(p.x,plane.position.y,p.y),h)
 	if (h < Field.SEA_Y+0.2 and not tunnels.dry(Vector3(p.x,h,p.y))) or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
 	var q := Vector3(p.x,plane.position.y if plane != null else h,p.y)
 	h = tunnels.land_y(q,h)
+	if rail_bore != null: h = rail_bore.land_y(q,h)
 	return ice.land_y(q,h) if _stone_near(q) & GroundNative.ICE else h
 
 ## Whether the field's last sample was on a river's water (not the sea's
@@ -1220,6 +1325,9 @@ func _eye_over(p: Vector3, land: float) -> float:
 	var h := land
 	if _on_river(): h = maxf(h,field.river_drawn())
 	h = tunnels.land_y(p,h)
+	if rail_bore != null: h = rail_bore.land_y(p,h)
+	if rail_span != null: h = rail_span.land_y(p,h)
+	if rail_stops != null: h = rail_stops.land_y(p,h)
 	if _stone_near(p) & GroundNative.ICE: h = ice.land_y(p,h)
 	if tunnels.dry(p): return h
 	return maxf(h,Field.SEA_Y+sea_height(p,land))
@@ -1236,7 +1344,7 @@ func _solid(p: Vector3) -> bool:
 	var m := _stone_near(p)
 	# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
 	var land: float = field.height(p.x,p.z)
-	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1250,10 +1358,28 @@ func sea_height(p: Vector3, land := NAN) -> float:
 	# Up a river's mouth the sea lies still, as the sea shader draws it.
 	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
 
+## The trains' clock on the line (s, RailTrains `on_line`): the world's seconds
+## since it was built (`flown`, the frames' deltas the flight ticks; a photo
+## holds it as it holds the world) from --rail-clock=. Not the day cycle's
+## time, which T skips, ] and [ speed up and --day=0 stops: this one is
+## steady, so the same clock time puts a train in the same place everywhere.
+## Held in the menu (`rail_held`, as the day cycle is), so a fresh start's
+## trains are where their timetable has them at takeoff, however long the
+## menu stood.
+func rail_clock() -> float:
+	return rail_clock_at+flown-rail_held
+
+## GlideCamera `sight`: the land's (`_sight_land`) and the trains' cars' (exact,
+## RailTrains `sight`: the march steps over a roof as thin as a car's).
+func _sight(from: Vector3, to: Vector3) -> float:
+	var got := _sight_land(from,to)
+	if trains != null and got > 0.0: got = minf(got,trains.sight(from,to,EYE_CLEAR*0.5))
+	return got
+
 ## The share of the way from `from` to `to` clear of the land and the water
 ## by EYE_CLEAR's half, as `_solid` (GlideCamera `sight`), marched over the
 ## field; in a bore, finer (LandTunnels `sight`).
-func _sight(from: Vector3, to: Vector3) -> float:
+func _sight_land(from: Vector3, to: Vector3) -> float:
 	if GroundTally.on: GroundTally.tick(&"_sight")
 	const STEPS := 10
 	if doors != null and doors.holds(from): return 1.0
@@ -1267,6 +1393,10 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	if FrameLog.on: FrameLog.add(&"s_ice",(Time.get_ticks_usec()-t1)/1000.0)
 	if ice.sight_whole: return minf(bore,ice_bore)
 	bore = minf(bore,ice_bore)
+	if rail_bore != null:
+		var rail_sight: float = rail_bore.sight(from,to)
+		if rail_bore.sight_whole: return minf(bore,rail_sight)
+		bore = minf(bore,rail_sight)
 	if FrameLog.on: t1 = Time.get_ticks_usec()
 	var got := bore
 	for i in range(1,STEPS+1):
@@ -1274,7 +1404,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		if t > bore: break
 		var p := from.lerp(to,t)
 		# In a bore's tube the fine march has answered.
-		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0: continue
+		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0 or (rail_bore != null and rail_bore.tube(p) >= 0): continue
 		var m := _stone_near(p)
 		# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
 		var land := NAN
@@ -1283,7 +1413,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		else:
 			land = field.height(p.x,p.z)
 			floor_y = _eye_over(p,land)
-		if p.y < floor_y+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p):
+		if p.y < floor_y+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p)):
 			got = float(i-1)/STEPS
 			break
 	if FrameLog.on: FrameLog.add(&"s_march",(Time.get_ticks_usec()-t1)/1000.0)
@@ -1302,6 +1432,7 @@ func tick(delta: float) -> void:
 	FrameLog.start()
 	var tick_from := Time.get_ticks_usec()
 	flown += delta
+	if stage != null and stage.holding(): rail_held += delta
 	var input := _fly_input(delta)
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)
@@ -1321,7 +1452,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"t_feel")
 	input["flaps"] = 1.0 if flaps else 0.0
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
-	plane_figure.bore = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (ice != null and int(ice.tube(plane.position)) == 0)
+	plane_figure.bore = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (ice != null and int(ice.tube(plane.position)) == 0) or (rail_bore != null and int(rail_bore.tube(plane.position)) == 0)
 	plane.roofed = plane_figure.bore or (doors != null and doors.holds(plane.position))
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
@@ -1335,6 +1466,9 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"glance")
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
+	# The train runs on and holds the plane out of its cars (rail_train.gd).
+	if trains != null and not held: trains.before(delta)
+	FrameLog.mark(&"trains")
 	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
 	FrameLog.mark(&"landing")
 	if events.has("lifted"): book.new_flight()
@@ -1346,6 +1480,9 @@ func tick(delta: float) -> void:
 	# The roll's parry window, before the shots fly and meet the plane.
 	if parry != null: parry.step(delta)
 	if coast != null: coast.after(delta,events)
+	FrameLog.mark(&"coast_after")
+	if trains != null: trains.after(delta)
+	FrameLog.mark(&"trains")
 	_near_misses(delta,events)
 	FrameLog.mark(&"near")
 	if water != null: water.step(delta,events)
@@ -1365,7 +1502,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"rumble")
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
 	FrameLog.mark(&"sound")
-	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
+	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane,hand_landing.under)
 	ground_scale.apply(plane_figure)
 	ground_scale.hold_spin(plane_figure,plane)
 	if water != null: water.shake_figure(plane_figure)
@@ -1375,6 +1512,8 @@ func tick(delta: float) -> void:
 	# takeoff: it comes round behind the plane and stays there.
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	chase.ground = hand_landing.on_ground()
+	# Sat on a train's car: framed by its motion over the car (rail_ride.gd).
+	chase.under = hand_landing.under if chase.ground else Vector3.ZERO
 	_stop_note()
 	FrameLog.mark(&"ground_scale")
 	# A door flown into carries the plane to the other side (region_doors.gd).
@@ -1410,6 +1549,10 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"doors_late")
 	trees.step(camera.global_position,plane.position)
 	FrameLog.mark(&"trees")
+	if rails != null: rails.step(camera.global_position,plane.position)
+	if rail_bore != null: rail_bore.step(camera.global_position,plane.position)
+	if rail_span != null: rail_span.step(camera.global_position,plane.position)
+	FrameLog.mark(&"rails")
 	knock.step(delta,self)
 	FrameLog.mark(&"knock")
 	birds.step(delta,camera.global_position,plane)
@@ -1716,7 +1859,8 @@ func _frame(delta: float) -> void:
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	if coast != null: coast.watch(chase)
 	FrameLog.mark(&"c_look")
-	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (doors != null and doors.holds(plane.position))
+	# Sat on a car it is in no car's hollow: a passing doorway drew the eye in at once.
+	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (rail_bore != null and rail_bore.near(plane.position)) or (doors != null and doors.holds(plane.position)) or (trains != null and not trains.ride.riding() and trains.tight(plane.position))
 	FrameLog.mark(&"c_tight")
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye
