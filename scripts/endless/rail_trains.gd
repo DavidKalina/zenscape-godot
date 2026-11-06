@@ -48,14 +48,19 @@ extends Node3D
 ## holds don't touch it, so the same seed and clock time put a train in the
 ## same place on every machine.
 ##
+## The smoke (rail_smoke.gd, `smoke`): each train's coal smoke, steam and far
+## plume, stepped after the trains are placed; posed from the timetable when a
+## train isn't built, so the plume shows from across the land.
+##
 ## Knobs: --trains=0|1|2 (TRAINS: how many run; one is track 0's), and
-## RailTrain's --train-speed=, --rail-clock=S; the quick starts
+## RailTrain's --train-speed=, --rail-clock=S, --no-train-smoke; the quick starts
 ## --rail-start=beside|tunnel|bridge|ride (`line_start`).
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
 const RailStops = preload("res://scripts/endless/rail_stops.gd")
 const RailRide = preload("res://scripts/endless/rail_ride.gd")
+const RailSmoke = preload("res://scripts/endless/rail_smoke.gd")
 
 const TRAINS := 2
 ## Built within LOOK_NEAR m of the plane, freed past LOOK_FAR; solid within
@@ -134,6 +139,8 @@ var built := 0
 var freed := 0
 ## Riding a car (rail_ride.gd): the study's `floor_at` and `_blocked` ask it.
 var ride: RefCounted
+## The trains' smoke and steam (rail_smoke.gd), or null (--no-train-smoke).
+var smoke: RefCounted
 
 static func count_flag(otherwise := TRAINS) -> int:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
@@ -292,6 +299,7 @@ func start(g: Node3D, rail_path: RefCounted, on_clock := Callable()) -> void:
 	name = "RailTrains"
 	if clock.is_valid(): time = float(clock.call())
 	ride = RailRide.new(g,self)
+	if RailSmoke.wanted(): smoke = RailSmoke.new(self)
 
 ## A train on `track` by `table` (on this path and track), its handle `label`.
 func add(track: int, table: RefCounted, label: String) -> void:
@@ -352,6 +360,7 @@ func before(delta: float) -> void:
 	time = float(clock.call()) if clock.is_valid() else time+delta
 	refresh()
 	for tr: Node3D in list: tr.before(delta,time)
+	if smoke != null: smoke.step(delta,time)
 	ride.before(delta)
 
 func after(delta: float) -> void:
