@@ -150,6 +150,8 @@ const RailTrack = preload("res://scripts/endless/rail_track.gd")
 const RailBore = preload("res://scripts/endless/rail_bore.gd")
 const RailSpan = preload("res://scripts/endless/rail_span.gd")
 const RailStops = preload("res://scripts/endless/rail_stops.gd")
+const RailLine = preload("res://scripts/endless/rail_line.gd")
+const RailTrains = preload("res://scripts/endless/rail_trains.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
@@ -338,8 +340,11 @@ var race: Node
 var shops: Node
 ## The lighthouse and the pirate ships on the coast (scripts/endless/coast_sites.gd).
 var coast: Node3D
-## The box trains on their test loop (--train-test; scripts/endless/rail_trains.gd), or null.
+## The box trains (scripts/endless/rail_trains.gd): on the railroad's line, or
+## on their test loop (--train-test); null with --trains=0 or no railroad.
 var trains: Node3D
+## The trains' clock at the start (s, --rail-clock=; `rail_clock`).
+var rail_clock_at := 0.0
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -866,6 +871,11 @@ func _ready() -> void:
 		trains = preload("res://scripts/endless/rail_trains.gd").new()
 		add_child(trains)
 		trains.setup(self,rail_test)
+	elif rails != null and RailTrains.count_flag() > 0:
+		rail_clock_at = RailTrains.clock_flag()
+		trains = RailTrains.new()
+		add_child(trains)
+		trains.on_line(self,RailLine.shared(),Callable(self,"rail_clock"))
 	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
 	ground_native = GroundNative.new()
 	ground_native.setup(arches,rocks,towers,stair,ice)
@@ -1316,6 +1326,14 @@ func sea_height(p: Vector3, land := NAN) -> float:
 	if (field.height(p.x,p.z) if is_nan(land) else land) > Field.SEA_Y+preload("res://scripts/burrower/game_land.gd").SWELL_ROOM: return 0.0
 	# Up a river's mouth the sea lies still, as the sea shader draws it.
 	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
+
+## The trains' clock on the line (s, RailTrains `on_line`): the world's seconds
+## since it was built (`flown`, the frames' deltas the flight ticks; a photo
+## holds it as it holds the world) from --rail-clock=. Not the day cycle's
+## time, which T skips, ] and [ speed up and --day=0 stops: this one is
+## steady, so the same clock time puts a train in the same place everywhere.
+func rail_clock() -> float:
+	return rail_clock_at+flown
 
 ## GlideCamera `sight`: the land's (`_sight_land`) and the trains' cars' (exact,
 ## RailTrains `sight`: the march steps over a roof as thin as a car's).

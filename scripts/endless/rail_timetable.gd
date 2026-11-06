@@ -92,6 +92,10 @@ func natural() -> float:
 func still() -> bool:
 	return speed < STILL
 
+## Stop `i`'s wait (s, in running order): its dwell with the period's share.
+func wait(i: int) -> float:
+	return _wait[i]
+
 ## Where the train is at clock `time`: {d, s, v, stop}.
 func at(time: float) -> Dictionary:
 	if still(): return {"d":_still_d,"s":s_of(_still_d),"v":0.0,"stop":-1}

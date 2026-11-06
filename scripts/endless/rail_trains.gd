@@ -28,8 +28,19 @@ extends Node3D
 ## (RailTrain `test_start`); track 1's meets the plane TEST_MEET s in (the plane
 ## at cruise).
 ##
+## The line (`on_line`, seed 1's railroad, RailLine): train 0 on track 0 (+s)
+## stops at the four stops (LINE_STOPS, its middle on the station's s) and
+## waits each one's dwell. At clock 0 it is rolling into the start station, to
+## pull out at LINE_PULL s, so it is seen from the start in the first minute.
+##
+## The clock on the line is the study's `rail_clock` (endless_flight.gd): the
+## world's seconds since it was built, the frames' deltas the flight ticks
+## (`flown`), plus --rail-clock=S (the clock's time at the start). Steady: the
+## day cycle's skips (T), speeds (] and [) and holds don't touch it, so the
+## same seed and clock time put a train in the same place on every machine.
+##
 ## Knobs: --trains=0|1|2 (TRAINS: how many run; one is track 0's), and
-## RailTrain's --train-speed=.
+## RailTrain's --train-speed=, --rail-clock=S.
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
@@ -49,6 +60,16 @@ const TEST_STOP := 3550.0
 const DWELL := 20.0
 const TEST_MEET := 8.0
 const CRUISE := 36.75
+## The line's stops in the order track 0 meets them: [piece, dwell (s)]. The
+## dwells are the train lane's (start and farm short, mine and cattle long):
+## with one period for both trains and the first meeting mid west tunnel they
+## put the second on the bay bridge.
+const LINE_STOPS := [["rail/start-station",30.0],["rail/farm-town",30.0],["rail/mine-town",90.0],["rail/cattle-town",90.0]]
+## Train 0 pulls out of the start station at this clock time (s); with the
+## station's 30 s dwell it is braking in at clock 0. The station is 1.4 km
+## behind the plane's start (which faces the Peak): a pilot who turns and flies
+## to it gets there as it pulls out.
+const LINE_PULL := 40.0
 
 var game: Node3D
 var path: RefCounted
@@ -82,6 +103,35 @@ func setup(g: Node3D, rail_path: RefCounted) -> void:
 	t1.aim(RailTrain.test_start_s()+CRUISE*TEST_MEET,TEST_MEET)
 	if n >= 1: add(0,t0,"rail/train0")
 	if n >= 2: add(1,t1,"rail/train1")
+	refresh()
+
+## --rail-clock=S: the trains' clock at the start (s), else 0.
+static func clock_flag() -> float:
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--rail-clock="): return a.trim_prefix("--rail-clock=").to_float()
+	return 0.0
+
+## The line's trains on `line` (RailLine) by `on_clock` (seconds).
+func on_line(g: Node3D, line: RefCounted, on_clock: Callable) -> void:
+	start(g,line,on_clock)
+	var n := mini(count_flag(),1)
+	var top := RailTrain.speed_flag()
+	var half := RailTrain.length_of()*0.5
+	var stops: Array = []
+	var waits: Array = []
+	for st: Array in LINE_STOPS:
+		var p: Dictionary = line.piece(str(st[0]))
+		if p.is_empty():
+			push_warning("rail trains: no stop %s on the line" % str(st[0]))
+			continue
+		# Its nose half a train past the station's s, its way (+s).
+		stops.append(float(p.s0)+half)
+		waits.append(float(st[1]))
+	if stops.is_empty(): return
+	var t0: RefCounted = Timetable.new(line,0,stops,waits,top)
+	# Its wait at the start station ends at LINE_PULL.
+	t0.aim(float(stops[0]),LINE_PULL-float(t0.wait(0)))
+	if n >= 1: add(0,t0,"rail/train0")
 	refresh()
 
 ## The holder on `rail_path`, with no trains yet.
