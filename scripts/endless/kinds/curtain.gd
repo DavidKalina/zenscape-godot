@@ -4,7 +4,10 @@ extends RefCounted
 ## spec-wild-kit-falls.md). No skin of its own: the kind keeps the sheet's
 ## shape, the punch and the space behind; a skin (SKINS) says what falls and
 ## dresses it (the wilderness's waterfall: scripts/endless/world/wilderness/
-## waterfall.gd; later a sand fall, an ice curtain, hanging moss).
+## waterfall.gd; later a sand fall, an ice curtain, hanging moss). A skin
+## has `dress(root, sheet, site)`, `punch(root, at, way, k, game)` (the plane
+## went through the sheet: curtain_punch.gd finds the crossing) and
+## `voice()` ({clip, gain, pitch}: the fall's loop, played by the kind).
 ##
 ## The land under it is the kind's too (curtain_land.gd, a layer over the
 ## land field keyed to the site): an alcove cut back into the slope to a face
@@ -23,6 +26,7 @@ extends RefCounted
 
 const Land = preload("res://scripts/endless/kinds/curtain_land.gd")
 const Cave = preload("res://scripts/endless/kinds/curtain_cave.gd")
+const Punch = preload("res://scripts/endless/kinds/curtain_punch.gd")
 const SKINS := {
 	"waterfall": preload("res://scripts/endless/world/wilderness/waterfall.gd"),
 }
@@ -35,7 +39,16 @@ static func build(site: Dictionary) -> Node3D:
 	var skin := str(site.get("skin",""))
 	if SKINS.has(skin): (SKINS[skin] as GDScript).dress(root,sheet,site)
 	# The space behind: the cave through the hill (curtain_cave.gd).
-	Cave.build(root,site,Land.shape_of(site,site.xform))
+	var c := Land.shape_of(site,site.xform)
+	Cave.build(root,site,c)
+	# The punch through the sheet and the fall's voice (curtain_punch.gd).
+	var punch := Punch.new()
+	punch.name = "Punch"
+	punch.sheet = sheet
+	punch.shape = c
+	punch.skin = SKINS.get(skin) as GDScript
+	punch.handle = str(site.get("handle",""))
+	root.add_child(punch)
 	return root
 
 ## The sheet in the piece's own frame (origin the foot, -Z its heading): {lip

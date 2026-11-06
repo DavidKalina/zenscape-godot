@@ -6,10 +6,13 @@ extends RefCounted
 ## colours: clear teal glass at the lip whitening down the fall in streaks,
 ## thinning over the cave mouth so it shows dark through it), churning foam
 ## where it lands in the pool and mist rising off it (the islets' plunge
-## pieces: cluster_falls_dress.gd), readable from the valley.
+## pieces: cluster_falls_dress.gd), readable from the valley. Punched
+## through (`punch`): a burst of spray, the screen doused and a splash; its
+## voice (`voice`) a roar.
 
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const FlowFalls = preload("res://scripts/flow_falls.gd")
+const BodyDust = preload("res://scripts/breaks/body_dust.gd")
 
 ## The sheet: STRANDS falls side by side across the lip, overlapping (each
 ## its own share of the sheet's half-width), each its own share of white
@@ -45,8 +48,94 @@ const MIST_LIFE := Vector2(4.0,7.0)
 const MIST_RANGE := 2600.0
 const MIST_STRENGTH := 0.38
 
+## The punch (curtain_punch.gd calls `punch`): the screen doused WET at the
+## sheet's middle (times the punch's k, less at its sides), a splash heard
+## SPLASH_GAIN at SPLASH_PITCH, and a burst where the plane went through:
+## DROPS drops thrown on along its way and PUFFS mist puffs (size, speed m/s,
+## life s).
+const WET := 0.8
+const SPLASH_GAIN := 1.3
+const SPLASH_PITCH := 0.75
+const DROPS := {"amount":90,"size":0.5,"speed":Vector2(8.0,22.0),"life":1.1,"spread":38.0,"gravity":-9.8,"damp":1.5}
+const PUFFS := {"amount":16,"size":5.0,"speed":Vector2(2.0,9.0),"life":2.2,"spread":70.0,"gravity":-1.0,"damp":2.5}
+## The fall's voice (curtain_punch.gd): a band of noise pitched down to a
+## roar, its gain at the foot.
+const VOICE := {"clip":"res://assets/audio/water-bed.wav","gain":0.9,"pitch":0.55}
+
 static var _fall_mesh: Mesh = null
 static var _quad: QuadMesh = null
+static var _blob: Texture2D = null
+
+## The fall's voice, for curtain_punch.gd.
+static func voice() -> Dictionary:
+	return VOICE
+
+## The plane punched through the sheet at `at` (world), flying `way` (m/s),
+## `k` 1 through its middle (less at its sides): `root` the curtain's root,
+## `game` the flight (its `wet`, `sound`).
+static func punch(root: Node3D, at: Vector3, way: Vector3, k: float, game: Node) -> void:
+	if game != null:
+		game.wet(WET*k)
+		var sound: Variant = game.get("sound")
+		if sound != null: sound.shot("splash",SPLASH_GAIN*k,SPLASH_PITCH,at)
+	var burst := root.get_node_or_null("PunchBurst") as Node3D
+	if burst == null:
+		burst = Node3D.new()
+		burst.name = "PunchBurst"
+		root.add_child(burst)
+		burst.add_child(_emitter(DROPS,Color(0.9,0.95,0.98,0.95),false))
+		burst.add_child(_emitter(PUFFS,Color(0.92,0.95,0.97,0.55),true))
+	var dir := way.normalized() if way.length() > 1.0 else Vector3.UP
+	for e: CPUParticles3D in burst.get_children():
+		e.global_position = at
+		# Drops carried on through with the plane, mist hanging back.
+		e.direction = (dir+Vector3.UP*0.25).normalized() if e.name == "Drops" else (dir*0.4+Vector3.UP).normalized()
+		e.restart()
+		e.emitting = true
+
+static func _emitter(k: Dictionary, color: Color, mist: bool) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.name = "Puffs" if mist else "Drops"
+	p.one_shot = true
+	p.emitting = false
+	p.amount = int(k.amount)
+	p.lifetime = float(k.life)
+	p.explosiveness = 0.95
+	p.local_coords = false
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 2.5 if mist else 1.5
+	p.spread = float(k.spread)
+	p.initial_velocity_min = (k.speed as Vector2).x
+	p.initial_velocity_max = (k.speed as Vector2).y
+	p.gravity = Vector3(0.0,float(k.gravity),0.0)
+	p.damping_min = float(k.damp)
+	p.damping_max = float(k.damp)*1.5
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.4 if not mist else 1.8
+	p.angle_max = 360.0
+	var fade := Gradient.new()
+	fade.set_color(0,Color(1,1,1,1))
+	fade.set_color(1,Color(1,1,1,0))
+	p.color_ramp = fade
+	p.color = color
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*float(k.size)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if _blob == null: _blob = BodyDust._blob_texture()
+	m.albedo_texture = _blob
+	# Faded out near the eye, so the camera flying through isn't filled with it.
+	m.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	m.distance_fade_min_distance = 1.5 if not mist else 3.0
+	m.distance_fade_max_distance = 5.0 if not mist else 12.0
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
 
 ## Dresses curtain `root` for `sheet` (curtain.gd `sheet_of`).
 static func dress(root: Node3D, sheet: Dictionary, site: Dictionary) -> void:
