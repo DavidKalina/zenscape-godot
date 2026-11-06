@@ -106,6 +106,12 @@ const KNOBS := {
 	# run) there or `climb` on the way, no trees along it (stepped round by
 	# `dodge` m when a side is clear).
 	"probe": 1.6, "probe_min": 12.0, "steep": 0.45, "climb": 0.3, "dodge": 8.0,
+	# The placed pieces' solids (the stone ring's uprights, the wreck's ribs:
+	# scripts/endless/placed_sites.gd `inside`) kept `piece_pad` m off, asked
+	# at `piece_lo` and `piece_hi` m over the land (legs and back: a lintel
+	# over a gap is no stone in the way). Asked where a way ends and every
+	# `tree_step` m along it; a step that would still go in is not taken.
+	"piece_pad": 1.0, "piece_lo": 0.5, "piece_hi": 1.8,
 	# The trees' solid asked every this many m along a way.
 	"tree_step": 3.0,
 	# Gaits by speed (m/s), switched `gait_hyst` past each.
@@ -216,11 +222,16 @@ var asleep := false
 var _reach := 0.0
 var _rng := RandomNumberGenerator.new()
 var _study: Node = null
+## The study's placed sites (scripts/endless/placed_sites.gd), found once;
+## null with none (--no-placed).
+var _placed: Node = null
+var _placed_looked := false
 var stats := {"count":0,"bulls":0,"awake_frames":0,"sensing_frames":0,"alerts":0,"settles":0,
 	"bolts":0,"peels":0,"halts":0,"beside_s":0.0,"top_speed":0.0,"probes":0,"dodges":0,"peel_why":{},
 	"scatters":0,"covers":0,"cover_sweeps":0,"cover_top_at":0,"cover_ground":0,"cover_fail":{},
 	"leaps":0,"leap_land_no":0,"leap_missed":0,"tucked":0,
-	"cover_retries":0,"homes":0,"home_arrived":0,"home_gave_up":0,"home_detours":0,"home_snaps":0}
+	"cover_retries":0,"homes":0,"home_arrived":0,"home_gave_up":0,"home_detours":0,"home_snaps":0,
+	"piece_blocks":0,"piece_block_in":{}}
 ## The herd's answer to this pass, set when the first one goes: "beside" or
 ## "straight" (the plane's line through the herd); "" once all are calm.
 var _verdict := ""
@@ -268,6 +279,7 @@ var w_top_at := 0
 var w_cells := 0
 var w_pairs := 0
 var w_placed := 0
+var w_pieces := 0
 var w_calls := 0
 
 static func build(s: Dictionary) -> Node3D:
@@ -339,7 +351,7 @@ func _process(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null: return
 	var far := Vector2(cam.global_position.x-center.x,cam.global_position.z-center.z).length() > float(KNOBS.sleep)+radius
-	w_height = 0; w_river = 0; w_top_at = 0; w_cells = 0; w_pairs = 0; w_placed = 0; w_calls = 0
+	w_height = 0; w_river = 0; w_top_at = 0; w_cells = 0; w_pairs = 0; w_placed = 0; w_pieces = 0; w_calls = 0
 	if far != asleep: _sleep(far)
 	if not asleep:
 		stats.awake_frames += 1
@@ -1253,6 +1265,15 @@ static func _turned(h: float, way: Vector3, rate: float, delta: float) -> float:
 func _step(a: Dictionary, delta: float) -> void:
 	var p: Vector3 = a.pos+_dir(float(a.heading))*float(a.speed)*delta
 	if field != null: p.y = _height(p.x,p.z)
+	# Never into a placed piece: the step not taken, the land ahead bad (the
+	# state's own answer to bad land follows: a peel, a detour, a halt).
+	if _piece_at(p,0.5*float(KNOBS.piece_pad)) and not _piece_at(a.pos,0.5*float(KNOBS.piece_pad)):
+		stats.piece_blocks = int(stats.piece_blocks)+1
+		stats.piece_block_in[a.state] = int(stats.piece_block_in.get(a.state,0))+1
+		a.bad = true
+		a.why = "piece"
+		a.speed = 0.0 if a.state == "halt" else minf(float(a.speed),2.0)
+		return
 	a.pos = p
 	if float(a.dodge_t) > 0.0:
 		a.dodge_t = float(a.dodge_t)-delta
@@ -1304,7 +1325,7 @@ func _probe() -> void:
 			a.bad = why != ""
 			a.why = why if why != "" else str(a.why)
 			return
-		if why == "trees" and float(a.dodge_t) <= 0.0:
+		if why in ["trees","piece"] and float(a.dodge_t) <= 0.0:
 			var across := Vector3(-way.z,0.0,way.x)
 			for s: float in [signf(float(a.side)),-signf(float(a.side))]:
 				var step: Vector3 = a.pos+across*s*float(KNOBS.dodge)
@@ -1323,6 +1344,7 @@ func _probe() -> void:
 func _land_why(from: Vector3, way: Vector3, dist: float) -> String:
 	var why := _ground_why(from,from+way*dist)
 	if why != "": return why
+	if _pieces_on(from,way,dist): return "piece"
 	return "trees" if _trees_on(from,way,dist) else ""
 
 ## Why the ground at `p` won't do, come to from `from`: water, a climb or a
@@ -1336,7 +1358,40 @@ func _ground_why(from: Vector3, p: Vector3) -> String:
 	var hx := _height(p.x+3.0,p.z)
 	var hz := _height(p.x,p.z+3.0)
 	if maxf(absf(hx-h),absf(hz-h))/3.0 > float(KNOBS.steep): return "steep"
+	if _piece_at(Vector3(p.x,h,p.z),float(KNOBS.piece_pad)): return "piece"
 	return ""
+
+## The study's placed sites, found once (null: none).
+func _pieces() -> Node:
+	if not _placed_looked:
+		_plane()
+		if _study == null: return null
+		_placed_looked = true
+		var n: Variant = _study.get("placed")
+		_placed = n if n is Node and (n as Node).has_method("inside") else null
+	return _placed
+
+## A placed piece's solid within `pad` m of an animal standing at `p` (its
+## y the land's), at its legs or its back.
+func _piece_at(p: Vector3, pad: float) -> bool:
+	var ps := _pieces()
+	if ps == null: return false
+	w_pieces += 1
+	if ps.inside(p+Vector3.UP*float(KNOBS.piece_lo),pad): return true
+	return ps.inside(p+Vector3.UP*float(KNOBS.piece_hi),pad)
+
+## A placed piece on the way `dist` m along `way` from `from`: asked every
+## `tree_step` m (the land's height under each), the body's width either
+## side in the pad.
+func _pieces_on(from: Vector3, way: Vector3, dist: float) -> bool:
+	if _pieces() == null or field == null: return false
+	var step := float(KNOBS.tree_step)
+	var n := int(dist/step)
+	for k in range(1,n+1):
+		var p := from+way*(step*float(k))
+		p.y = _height(p.x,p.z)
+		if _piece_at(p,float(KNOBS.piece_pad)): return true
+	return false
 
 ## A tree on the way `dist` m along `way` from `from`: the trees' solid
 ## (top_at) every `tree_step` m, a metre either side in turn (the body's
@@ -1372,10 +1427,10 @@ func _apart(delta: float) -> void:
 			var away := d/l if l > 1e-3 else _r
 			var push := (apart-l)*k
 			var share := 0.5 if am and bm else 1.0
-			if am:
+			if am and not _piece_at(a.pos-away*push*share,0.5*float(KNOBS.piece_pad)):
 				a.pos = a.pos-away*push*share
 				a.side = float(a.side)-away.dot(_r)*push*share
-			if bm:
+			if bm and not _piece_at(b.pos+away*push*share,0.5*float(KNOBS.piece_pad)):
 				b.pos = b.pos+away*push*share
 				b.side = float(b.side)+away.dot(_r)*push*share
 
