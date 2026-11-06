@@ -120,6 +120,8 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if str(hit.what) == "stone" and game.get("towers") != null: face = game.towers.face(hit.at,float(game.solid_pad)+FACE_ROOM)
 	if face != Vector3.ZERO: hit.normal = face
 	var v: Vector3 = hit.velocity
+	# A train's car: graded by the speed into it relative to the car (rail_train.gd).
+	if game.get("trains") != null: v = game.trains.relative(hit.at,v)
 	var n: Vector3 = hit.normal
 	var speed := v.length()
 	if speed < 0.1: return {}

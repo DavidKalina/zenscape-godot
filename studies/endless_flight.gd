@@ -122,6 +122,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
@@ -324,6 +325,8 @@ var race: Node
 var shops: Node
 ## The lighthouse and the pirate ships on the coast (scripts/endless/coast_sites.gd).
 var coast: Node3D
+## The box train on its test loop (--train-test; scripts/endless/rail_train.gd), or null.
+var trains: Node3D
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -590,6 +593,16 @@ func _ready() -> void:
 		if not _alt_given:
 			_alt = float(ship_pose.alt)
 			_alt_given = true
+	# --train-test: a box train on a test loop on the sea, the plane by its last car.
+	var rail_test: RefCounted = RailTrain.test_path(field) if RailTrain.test_wanted() else null
+	if rail_test != null:
+		var rail_start: Dictionary = RailTrain.test_start(rail_test)
+		_start = rail_start.at
+		_heading = float(rail_start.heading)
+		_heading_given = true
+		if not _alt_given:
+			_alt = float(rail_start.alt)
+			_alt_given = true
 	if WaterContact.near_start_wanted():
 		var w: Dictionary = WaterContact.near_start(field,_start)
 		if w.is_empty(): push_warning("--water-near-start: no river mouth near the start")
@@ -817,6 +830,11 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	if rail_test != null:
+		rail_test.build(self)
+		trains = RailTrain.new()
+		add_child(trains)
+		trains.setup(self,rail_test)
 	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
 	ground_native = GroundNative.new()
 	ground_native.setup(arches,rocks,towers,stair,ice)
@@ -1335,6 +1353,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"glance")
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
+	# The train runs on and holds the plane out of its cars (rail_train.gd).
+	if trains != null and not held: trains.before(delta)
 	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
 	FrameLog.mark(&"landing")
 	if events.has("lifted"): book.new_flight()
@@ -1346,6 +1366,7 @@ func tick(delta: float) -> void:
 	# The roll's parry window, before the shots fly and meet the plane.
 	if parry != null: parry.step(delta)
 	if coast != null: coast.after(delta,events)
+	if trains != null: trains.after(delta)
 	_near_misses(delta,events)
 	FrameLog.mark(&"near")
 	if water != null: water.step(delta,events)
