@@ -2,8 +2,12 @@ extends Node3D
 ## A box train on a rail path (docs/design/endless-flight/spec-railroad.md, lane
 ## `train`): an engine, its tender and a string of cars, each a plain block, run
 ## along `path` (the rail path contract: `length`, `pose(s, track)`, `kind`) on
-## one track by its timetable (rail_timetable.gd). Greybox: no model, no smoke,
-## no sound, nobody aboard.
+## one track by its timetable (rail_timetable.gd). Each car drawn by its model
+## (rail_train_look.gd: assets/models/train/<kind>.glb, its wheels and rods turned
+## with the train's run, the smash car's plugs thrown and put back), its solid the
+## blocks here, which follow the models (`_parts`, the engine's ENGINE); with
+## --train-greybox, or a kind with no model, the blocks are drawn instead. Nobody
+## aboard.
 ##
 ## Built only near the plane (RailTrains makes and frees it): its look within
 ## RailTrains' LOOK_NEAR, its solid (below) only within SOLID_NEAR (`set_solid`).
@@ -72,6 +76,7 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const TestPath = preload("res://scripts/endless/rail_test_path.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+const Look = preload("res://scripts/endless/rail_train_look.gd")
 
 ## A bit under the plane's cruise (36.75): at cruise it creeps up the train a car
 ## at a time, Boost runs it up to the engine.
@@ -182,6 +187,31 @@ const START_UP := 4.0
 ## The test train's nose at the start (m along the test path).
 const TEST_HEAD := 700.0
 
+## The engine's solid over its underframe: its model's parts
+## (art/blender/train/train_build.py build_engine, its numbers; Godot's frame,
+## the 22 m engine's), each [x0, y0, z0, x1, y1, z1, look], so what is seen is
+## what is hit. Front to back: the pilot raked down to its tip in three steps (from
+## UNDER under the bed, so nothing flies under it), the buffer beam with it; the
+## cylinders and the deck before the smokebox, the running boards (the rods and
+## drivers inside them); the boiler and smokebox (its door, the handrails and the
+## splashers in the lower block); the bell, sand dome, steam dome and whistle; the
+## funnel stack flaring in three steps to its lip; the headlamp and its vent; the
+## cab's steps, the cab under its arched roof (over the cab's front and back by
+## its overhang), the arch in four steps down to its eaves.
+const ENGINE := [
+	[-2.72,-2.0,-11.15, 2.72,2.45,-10.4,"iron"], [-2.4,-2.0,-11.6, 2.4,2.2,-11.15,"iron"],
+	[-1.4,-2.0,-12.2, 1.4,1.65,-11.6,"iron"],
+	[-2.54,1.4,-10.4, 2.54,3.3,-6.1,"iron"], [-2.43,1.4,-6.1, 2.43,3.3,4.0,"iron"],
+	[-1.78,3.3,-10.3, 1.78,5.45,4.0,"iron"], [-1.4,5.45,-10.1, 1.4,6.2,4.0,"iron"],
+	[-0.62,6.2,-6.1, 0.62,7.08,-5.1,"iron"], [-0.71,6.2,-4.1, 0.71,6.98,-2.7,"iron"],
+	[-0.85,6.2,-1.65, 0.85,7.33,0.05,"iron"], [-0.15,6.2,3.5, 0.15,6.76,3.8,"iron"],
+	[-0.67,6.2,-8.87, 0.67,7.35,-7.53,"iron"], [-0.9,7.35,-9.1, 0.9,8.0,-7.3,"iron"],
+	[-1.06,8.0,-9.26, 1.06,8.5,-7.14,"iron"],
+	[-0.76,6.0,-10.31, 0.76,7.62,-8.89,"iron"], [-0.25,7.62,-9.8, 0.25,8.02,-9.3,"iron"],
+	[-2.9,1.4,3.35, 2.9,2.35,3.75,"iron"], [-3.0,1.4,3.75, 3.0,7.55,11.3,"cab"], [-3.0,7.55,3.75, 3.0,7.87,11.3,"roof"],
+	[-2.5,7.87,3.75, 2.5,8.11,11.3,"roof"], [-2.0,8.11,3.75, 2.0,8.29,11.3,"roof"],
+	[-1.5,8.29,3.75, 1.5,8.5,11.3,"roof"]]
+
 ## The share of a block's colour it shows in shade (greybox sky fill).
 const FILL := 0.35
 const LOOKS := {
@@ -236,6 +266,9 @@ var rams := 0
 var ram_most := 0.0
 ## The plane rides one of its cars (scripts/endless/rail_ride.gd): no keep-out.
 var ridden := false
+## The models on the cars (rail_train_look.gd), or null: the greybox blocks
+## (--train-greybox).
+var look: RefCounted = null
 var _dt := 1.0/60.0
 static var _mats := {}
 
@@ -286,6 +319,7 @@ func setup(g: Node3D, rail_path: RefCounted, on_track: int, table: RefCounted, a
 	name = "RailTrain"
 	keep = not ("--train-keep=0" in LaunchArgs.user_args())
 	refill = "--full-meter" in LaunchArgs.user_args()
+	if Look.wanted(): look = Look.new()
 	var front := 0.0
 	for i in range(CARS.size()):
 		var spec: Array = CARS[i]
@@ -308,6 +342,7 @@ func before(delta: float, at_time: float) -> void:
 		car.was_inv = car.inv
 	var was_d := d
 	place(at_time)
+	if look != null: _look_step(delta)
 	var ran := absf(fposmod(d-was_d+0.5*float(timetable.lap()),float(timetable.lap()))-0.5*float(timetable.lap()))
 	if ran > float(timetable.speed)*maxf(delta,1.0/30.0)*2.0+1.0:
 		jumps += 1
@@ -394,7 +429,7 @@ static func _by_shut_plate(car: Dictionary, l: Vector3) -> bool:
 
 ## The plane's breaking plate record `r` (SurgeSmash `_hit`, its `strike`): gone
 ## till the plates come back, and the surge held hot to the far end.
-func _strike(r: Dictionary, _q: Vector3) -> void:
+func _strike(r: Dictionary, q: Vector3) -> void:
 	var car: Dictionary = cars[int(r.car_i)]
 	var plate: Dictionary = car.plates[int(r.plate_i)]
 	if bool(plate.open): return
@@ -402,7 +437,7 @@ func _strike(r: Dictionary, _q: Vector3) -> void:
 	game.arches.loose.erase(r)
 	GroundNative.bump_loose()
 	(plate.shape as CollisionShape3D).disabled = true
-	(plate.look as Node3D).visible = false
+	_plate_burst(car,plate,q)
 	_refresh(car)
 	var smash = game.get("smash")
 	if smash != null: smash.keep_hot(float(car.long)/maxf((game.plane.velocity as Vector3).length()-speed,10.0)+0.5)
@@ -415,11 +450,32 @@ func _reseal(car: Dictionary) -> void:
 		plate.open = false
 		game.arches.loose.push_front(plate.record)
 		(plate.shape as CollisionShape3D).disabled = false
-		(plate.look as Node3D).visible = true
+		_plate_shut(plate)
 	GroundNative.bump_loose()
 	_refresh(car)
 	reseals += 1
 	if refill: game.near.meter = 1.0
+
+## Plate `plate` of `car` broken by the plane at world `q`: its model's shards
+## thrown (rail_train_look.gd), or its block hidden.
+func _plate_burst(car: Dictionary, plate: Dictionary, q: Vector3) -> void:
+	if not plate.has("plug"):
+		(plate.look as Node3D).visible = false
+		return
+	var inv: Transform3D = car.inv
+	var v: Vector3 = (game.plane.velocity as Vector3)-velocity_at(car,q)
+	look.burst(car,plate.plug,inv*q,inv.basis*v)
+
+func _plate_shut(plate: Dictionary) -> void:
+	if plate.has("plug"): look.shut(plate.plug)
+	else: (plate.look as Node3D).visible = true
+
+## The models' running gear turned to the odometer near the camera, and the thrown
+## shards on (rail_train_look.gd).
+func _look_step(delta: float) -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var eye: Vector3 = cam.global_position if cam != null else (game.plane.position as Vector3)
+	look.step(delta,cars,d,eye,Vector3(smash_wide()*0.5,FLOOR,FLOOR+smash_high()),DECK)
 
 ## `v` (a touch's velocity at world `at`) less the velocity of the car `at` is
 ## on, if any: what FlightContact grades a touch of a car by.
@@ -680,6 +736,9 @@ func place(at_time: float) -> void:
 		var z := -f
 		var xf := Transform3D(Basis(up.cross(z),up,z),(a.origin+b.origin)*0.5)
 		car.xf = xf
+		# The track's way at each bogie, for the model's trucks.
+		car.ta = -a.basis.z
+		car.tb = -b.basis.z
 		car.inv = xf.affine_inverse()
 		(car.node as Node3D).transform = xf
 		if not solid: continue
@@ -720,19 +779,26 @@ func _build(car: Dictionary, i: int) -> void:
 	car.boxes = boxes
 	car.half = half
 	car.holes = parts.holes
-	var mi := MeshInstance3D.new()
-	mi.name = "Look"
-	mi.mesh = _look_of(car,parts)
-	node.add_child(mi)
+	var dressed: bool = look != null and look.dress(car)
+	if not dressed:
+		var mi := MeshInstance3D.new()
+		mi.name = "Look"
+		mi.mesh = _look_of(car,parts)
+		node.add_child(mi)
 	var plates: Array[Dictionary] = []
 	var ends: Array = parts.plates
 	for k in range(ends.size()):
 		var box: AABB = ends[k]
-		var look := MeshInstance3D.new()
-		look.name = "Plate%d" % k
-		look.mesh = _plate_mesh(box)
-		node.add_child(look)
-		plates.append({"box":box,"look":look,"open":false,"k":k})
+		var plate := {"box":box,"open":false,"k":k}
+		var plug: Dictionary = look.plug(car,k) if dressed else {}
+		if not plug.is_empty(): plate.plug = plug
+		else:
+			var pl := MeshInstance3D.new()
+			pl.name = "Plate%d" % k
+			pl.mesh = _plate_mesh(box)
+			node.add_child(pl)
+			plate.look = pl
+		plates.append(plate)
 	car.plates = plates
 	if kind == "smash": car.inner = Vector3(smash_wide()*0.5,FLOOR,FLOOR+smash_high(float(car.tall)))
 	_refresh(car)
@@ -754,7 +820,7 @@ func set_solid(on: bool) -> void:
 			car.erase("body")
 			for plate: Dictionary in car.plates:
 				plate.open = false
-				(plate.look as Node3D).visible = true
+				_plate_shut(plate)
 				plate.erase("shape")
 				plate.erase("record")
 			_refresh(car)
@@ -895,12 +961,8 @@ static func _parts(kind: String, long: float, tall: float) -> Dictionary:
 	var holes: Array = []
 	match kind:
 		"engine":
-			var cab := 7.0
-			out.append([_box(-w*0.72,FLOOR,-h+1.0,w*0.72,6.2,h-cab),"iron"])
-			out.append([_box(-w,FLOOR,h-cab,w,tall,h),"cab"])
-			out.append([_box(-0.8,6.2,-h+2.4,0.8,tall,-h+4.0),"iron"])
-			out.append([_box(-1.0,6.2,-h+9.0,1.0,7.4,-h+11.0),"iron"])
-			out.append([_box(-w,-UNDER,-h-1.2,w,FLOOR+0.6,-h),"iron"])
+			# The 4-4-0's model, block for block (ENGINE).
+			for b: Array in ENGINE: out.append([_box(b[0],b[1],b[2],b[3],b[4],b[5]),str(b[6])])
 		"tender":
 			out.append([_box(-w,FLOOR,-h,w,tall,h),"iron"])
 		"box":
