@@ -65,7 +65,8 @@ eye about 0.62 span, a bull's antlers reaching about 0.45 span above the head.
   elk's size and silhouette, the sockets in place, `play(clip)` driving
   procedural key poses timed to the beats below.
 - The real body: `scripts/endless/world/wilderness/elk_body.gd` on
-  `art/blender/elk/elk.glb`, built by `art/blender/elk/elk_build.py` (the
+  `assets/models/elk/elk.glb` (`art/blender/` is Godot-ignored), built by
+  `art/blender/elk/elk_build.py` (the
   pattern: `art/blender/plane/plane_build.py`; `tools/blender.py` runs it).
 
 ## The contract
@@ -142,7 +143,7 @@ mind lane's commits when they exist; don't wait for them):
 
 - A model and rig in Blender, stylised and in the world's palette (no photo
   textures), with the clips above authored to their names and beats (beats
-  as timeline markers), exported to `art/blender/elk/elk.glb`. Import it by
+  as timeline markers), exported to `assets/models/elk/elk.glb`. Import it by
   hand after a build (headless import in the worktree).
 - `scripts/endless/world/wilderness/elk_body.gd` implementing the API on the
   glb.
