@@ -28,11 +28,20 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const CLIPS := {
 	"graze": {"length":3.0,"loop":true,"ground":0.0,"beats":[["graze.lift",2.2]]},
 	"alert": {"length":0.6,"loop":false,"ground":0.0,"beats":[["alert.up",0.25]]},
-	"bolt_start": {"length":0.5,"loop":false,"ground":0.8,"beats":[["bolt_start.crouch",0.15],["bolt_start.launch",0.3]]},
+	"bolt_start": {"length":0.5,"loop":false,"ground":1.2,"beats":[["bolt_start.crouch",0.15],["bolt_start.launch",0.3]]},
 	"trot": {"length":0.8,"loop":true,"ground":2.0,"beats":[["trot.plant",0.0],["trot.plant",0.4]]},
 	"gallop": {"length":0.55,"loop":true,"ground":4.0,"beats":[["gallop.plant",0.05],["gallop.air",0.35]]},
+	"sprint": {"length":0.5,"loop":true,"ground":7.0,"beats":[["sprint.plant",0.05],["sprint.push",0.2],["sprint.air",0.25]]},
 	"leap": {"length":0.9,"loop":false,"ground":3.0,"beats":[["leap.takeoff",0.2],["leap.land",0.7]]},
 	"stop_look": {"length":1.2,"loop":false,"ground":0.5,"beats":[["stop_look.halt",0.35],["stop_look.hold",0.6]]},
+}
+
+## How a one-shot that travels spreads its ground over its time: [time (s),
+## fraction covered], as the real elk's clips do (assets/models/elk/
+## elk_clips.json, `ground_curve`); the mind moves the root by the same.
+const GROUND_CURVE := {
+	"bolt_start": [[0.0,0.0],[0.125,0.0],[0.1667,0.0064],[0.2083,0.0371],[0.25,0.1042],[0.2917,0.215],
+		[0.3333,0.355],[0.375,0.5043],[0.4167,0.6586],[0.4583,0.824],[0.5,1.0]],
 }
 
 ## The legs, in IK order: fore left, fore right, hind left, hind right.
@@ -89,9 +98,10 @@ var _look_weight := 0.0
 var _effects := {"dust":false}
 var _puffs: Array[MeshInstance3D] = []
 var _puff_age: Array[float] = []
+var _puff_size: Array[float] = []
 var _puff_next := 0
 
-const PUFFS := 6
+const PUFFS := 8
 const PUFF_LIFE := 0.7
 
 func _init() -> void:
@@ -189,6 +199,10 @@ func _fire_beats(from: float, to: float) -> void:
 func _on_beat(name: String) -> void:
 	if not _effects.dust: return
 	if name == "gallop.plant": _puff(socket("foot_fr").global_position)
+	elif name == "sprint.plant":
+		# The fores strike: a bigger puff, grass and dust thrown up.
+		_puff(socket("foot_fl").global_position,1.5)
+		_puff(socket("foot_fr").global_position,1.2)
 	elif name == "leap.land":
 		_puff(socket("foot_fl").global_position)
 		_puff(socket("foot_fr").global_position)
@@ -213,6 +227,7 @@ func _clip_pose(name: String, t: float) -> Dictionary:
 		"bolt_start": return _bolt_start(t)
 		"trot": return _trot(t)
 		"gallop": return _gallop(t)
+		"sprint": return _sprint(t)
 		"leap": return _leap(t)
 		"stop_look": return _stop_look(t)
 	return _base()
@@ -259,8 +274,9 @@ func _bolt_start(t: float) -> Dictionary:
 	p.head = _key(t,[[0.0,-5.0],[0.15,5.0],[0.5,10.0]])
 	p.ear = _key(t,[[0.0,-20.0],[0.3,40.0,"out"],[0.5,50.0]])
 	p.tail = _key(t,[[0.0,30.0],[0.3,50.0],[0.5,40.0]])
-	# The root's travel since the clip began (spans): slow, then fast.
-	var go := func(at: float) -> float: return CLIPS.bolt_start.ground*BODY_LENGTH*pow(at/0.5,2.0)
+	# The root's travel since the clip began (spans), on its ground curve:
+	# still through the crouch, then gathering speed.
+	var go := func(at: float) -> float: return CLIPS.bolt_start.ground*BODY_LENGTH*_curve("bolt_start",at)
 	var feet: Array = p.feet
 	for i in range(4):
 		var leg: String = LEGS[i]
@@ -314,6 +330,45 @@ func _gallop(t: float) -> Dictionary:
 	var plants := [0.88,0.09,0.70,0.78]
 	for i in range(4):
 		p.feet[i] = _gait_foot(i,u,plants[i],0.11,stride,0.17 if i < 2 else 0.13)
+	return p
+
+## The sprint beside the plane: long bounds, 7 BL a 0.5 s cycle. The fores
+## strike (sprint.plant 0.05 s: fl, then fr), the front drops onto them and
+## the hinds swing through under the belly (the gather); the hinds plant
+## well forward and drive (sprint.push 0.2 s), the front thrown up; all feet
+## off by sprint.air (0.25 s): the long stretched hang, fores reaching far
+## ahead, hinds trailing, the front coming down into the next strike.
+func _sprint(t: float) -> Dictionary:
+	var p := _base()
+	var u := t/0.5
+	p.y = _key(u,[[0.0,0.01],[0.16,-0.05,"out"],[0.3,-0.045],[0.4,-0.03],[0.72,0.07,"out"],[1.0,0.01,"in"]])
+	p.pitch = _key(u,[[0.0,-5.0],[0.16,-7.0],[0.28,0.0],[0.42,9.0,"out"],[0.6,5.0],[0.8,0.0],[1.0,-5.0]])
+	p.neck = _key(u,[[0.0,34.0],[0.18,44.0,"out"],[0.42,26.0],[0.75,32.0],[1.0,34.0]])
+	p.head = _key(u,[[0.0,10.0],[0.2,4.0],[0.5,12.0],[1.0,10.0]])
+	p.ear = 60.0
+	p.tail = _key(u,[[0.0,48.0],[0.2,40.0],[0.45,62.0,"out"],[1.0,48.0]])
+	var stride: float = CLIPS.sprint.ground*BODY_LENGTH
+	var stance := 0.075
+	var reach := stride*stance
+	var plants := [0.10,0.13,0.30,0.33]
+	for i in range(4):
+		var at: Vector3 = LEG_AT[LEGS[i]]
+		var r := fposmod(u-float(plants[i]),1.0)
+		var z := 0.0
+		var y := 0.0
+		if r < stance:
+			z = -reach*0.5+reach*r/stance
+		elif i < 2:
+			# Flicked up behind, folded under the chest in the gather, then
+			# reaching far ahead through the hang and down to strike.
+			z = _key(r,[[stance,reach*0.5],[0.12,0.24],[0.22,0.02],[0.45,-0.30],[0.7,-0.42],[0.9,-0.36],[1.0,-reach*0.5]])
+			y = _key(r,[[stance,0.0],[0.12,0.10],[0.22,0.24],[0.45,0.20],[0.7,0.12],[0.9,0.05],[1.0,0.0]])
+		else:
+			# Driving off, trailing stretched through the hang, then swung
+			# through under the belly to land well forward.
+			z = _key(r,[[stance,reach*0.5],[0.2,0.36],[0.45,0.42],[0.7,0.15],[0.85,-0.18],[0.95,-0.25],[1.0,-reach*0.5]])
+			y = _key(r,[[stance,0.0],[0.2,0.06],[0.45,0.12],[0.7,0.20],[0.85,0.16],[0.95,0.06],[1.0,0.0]])
+		p.feet[i] = Vector3(at.x,y,at.z+z)
 	return p
 
 ## Takeoff (0.2): the hinds drive and the fores tuck; over the top; land
@@ -388,6 +443,18 @@ func _tuck(p: Dictionary, i: int, k: float) -> void:
 	var hip := _torso_xform(p)*(LEG_AT[leg] as Vector3)
 	var folded := hip+Vector3(0.0,-0.2,-0.03 if leg[0] == "f" else 0.04)
 	p.feet[i] = (p.feet[i] as Vector3).lerp(folded,clampf(k,0.0,1.0))
+
+## The fraction of clip `name`'s ground covered by time `t` (its curve,
+## straight between points).
+static func _curve(name: String, t: float) -> float:
+	var c: Array = GROUND_CURVE[name]
+	if t <= float(c[0][0]): return float(c[0][1])
+	for k in range(1,c.size()):
+		if t <= float(c[k][0]):
+			var a: Array = c[k-1]
+			var b: Array = c[k]
+			return lerpf(float(a[1]),float(b[1]),(t-float(a[0]))/maxf(float(b[0])-float(a[0]),1e-5))
+	return float(c[-1][1])
 
 func _bump(t: float, a: float, b: float) -> float:
 	return sin(PI*clampf((t-a)/(b-a),0.0,1.0))
@@ -495,19 +562,23 @@ func _solve(leg: String, foot: Vector3) -> void:
 
 # --- Dust ----------------------------------------------------------------
 
-func _puff(at: Vector3) -> void:
+## A puff of grass and dust at `at` (world), `size` times the gallop's.
+func _puff(at: Vector3, size := 1.0) -> void:
 	if _puffs.is_empty():
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.vertex_color_use_as_albedo = true
 		mat.albedo_color = Color(0.72,0.66,0.5,0.6)
-		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		var quad := QuadMesh.new()
-		quad.size = Vector2.ONE*0.5*S
+		# A low faceted ball: a puff from any side, no square edges.
+		var ball := SphereMesh.new()
+		ball.radius = 0.2*S
+		ball.height = 0.3*S
+		ball.radial_segments = 7
+		ball.rings = 3
 		for k in range(PUFFS):
 			var mi := MeshInstance3D.new()
-			mi.mesh = quad
+			mi.mesh = ball
 			mi.material_override = mat.duplicate()
 			mi.top_level = true
 			mi.visible = false
@@ -515,8 +586,10 @@ func _puff(at: Vector3) -> void:
 			add_child(mi)
 			_puffs.append(mi)
 			_puff_age.append(PUFF_LIFE)
+			_puff_size.append(1.0)
 	var mi := _puffs[_puff_next]
 	_puff_age[_puff_next] = 0.0
+	_puff_size[_puff_next] = size
 	_puff_next = (_puff_next+1)%PUFFS
 	mi.global_position = at+Vector3(0.0,0.15*S,0.0)
 	mi.visible = true
@@ -527,7 +600,7 @@ func _puffs_step(delta: float) -> void:
 		_puff_age[k] += delta
 		var mi := _puffs[k]
 		var u := _puff_age[k]/PUFF_LIFE
-		mi.scale = Vector3.ONE*(0.6+1.6*u)
+		mi.scale = Vector3.ONE*(0.6+1.6*u)*_puff_size[k]
 		mi.global_position.y += delta*0.6
 		(mi.material_override as StandardMaterial3D).albedo_color.a = 0.6*(1.0-u)
 		if u >= 1.0: mi.visible = false
