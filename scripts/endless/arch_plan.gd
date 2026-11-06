@@ -150,6 +150,7 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 			if roll < TAKE.gate*ruin_k and (near_r <= 0.0 or _near_high(field,x,z,float(s.height),near_r)): spec = _gate(field,x,z,sub)
 		if spec.is_empty(): continue
 		if spec.kind != "aqueduct" and _in_river(field,spec): continue
+		if _in_clear(field,spec): continue
 		spec["name"] = "endless/arch/%d_%d/%d" % [cx,cz,out.size()]
 		spec["seed"] = pick
 		taken.append(Vector2(x,z))
@@ -176,6 +177,17 @@ static func _region_takes(world: RefCounted, x: float, z: float, density: float,
 	if d <= 0.0: return false
 	if d >= density: return true
 	return float(roll & 0xffffff)/16777216.0 < d/density
+
+## Whether an arch's feet or its middle come into a placed site's clear
+## footprint (land_field `off_placed`, placed_list.gd).
+static func _in_clear(field: RefCounted, spec: Dictionary) -> bool:
+	if not field.has_method("off_placed"): return false
+	var p: Vector3 = spec.pos
+	if not field.off_placed(p.x,p.z,float(spec.get("w",40.0))*0.5): return true
+	for foot: Array in spec.get("foot",[]):
+		var c: Vector2 = foot[0]
+		if not field.off_placed(c.x,c.y,(foot[1] as Vector2).length()): return true
+	return false
 
 ## Whether any of an arch's feet stands in a river or on its bank
 ## (land_field `last_river`; its corners and middle tried).

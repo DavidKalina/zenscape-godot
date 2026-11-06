@@ -533,6 +533,10 @@ var ice_tunnel: RefCounted = null
 var _m_on := false
 ## The coast's islands (coast_isles.gd), or null: a stamp like the massif.
 const CoastIsles = preload("res://scripts/endless/coast_isles.gd")
+## The regions' placed sites' clear footprints (scripts/endless/
+## placed_list.gd): no slot hall's cut, split mountain's slot or tunnel's
+## box in one.
+const PlacedList = preload("res://scripts/endless/placed_list.gd")
 var _isles: RefCounted = null
 ## The world's edge line (centre x, z, half side, corner radius), or half 0.
 var _edge := Vector4.ZERO
@@ -849,6 +853,35 @@ func _peak_clear(x: float, z: float, r: float) -> bool:
 func off_peak(x: float, z: float, r := 0.0) -> bool:
 	return (_massif == null or _massif.clear(x,z,r)) and (_isles == null or _isles.clear(x,z,r))
 
+## Whether a site of reach `r` at (x, z) keeps out of every placed site's
+## clear footprint (placed_list.gd; the arches, the rocks and the trees ask
+## too).
+func off_placed(x: float, z: float, r := 0.0) -> bool:
+	return PlacedList.clear_of(world,x,z,r)
+
+## Whether slot hall `s` keeps its cut and rims (hall_sites.gd `on_cut`) out
+## of every placed site's clear.
+func _hall_off_placed(s: PackedFloat32Array) -> bool:
+	for c: Vector3 in PlacedList.clears(world):
+		if Sites.on_cut(s,c.x,c.y,c.z): return false
+	return true
+
+## Whether split mountain `s` keeps its slot (split_sites.gd `on_cut`) out of
+## every placed site's clear.
+func _split_off_placed(s: PackedFloat32Array) -> bool:
+	for c: Vector3 in PlacedList.clears(world):
+		if Splits.on_cut(s,c.x,c.y,c.z): return false
+	return true
+
+## Whether tunnel `t` keeps its box (all its massif and trenches touch) out of
+## every placed site's clear.
+func _tunnel_off_placed(t: RefCounted) -> bool:
+	var b: Rect2 = t.box
+	for c: Vector3 in PlacedList.clears(world):
+		var q := Vector2(clampf(c.x,b.position.x,b.end.x),clampf(c.y,b.position.y,b.end.y))
+		if q.distance_squared_to(Vector2(c.x,c.y)) < c.z*c.z: return false
+	return true
+
 ## Vector2(height, meadow) `got` with the tunnels' massifs and trenches at
 ## (x, z): the meadow fades with the lift; `_t_on` where it was lifted.
 func _tunnel(ts: Array, got: Vector2, x: float, z: float) -> Vector2:
@@ -873,12 +906,13 @@ func tunnels_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 			all.append_array(_peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,Vector2i(ci,cj),_tunnel_local)))
 	return Tunnels.sites_in(all,x0,z0,x1,z1)
 
-## Tunnel sites `ts` without those whose box meets the Peak's massif.
+## Tunnel sites `ts` without those whose box meets the Peak's massif or a
+## placed site's clear.
 func _peak_tunnels(ts: Array) -> Array:
-	if _massif == null or ts.is_empty(): return ts
+	if ts.is_empty() or (_massif == null and PlacedList.clears(world).is_empty()): return ts
 	return ts.filter(func(t: RefCounted) -> bool:
 		var b: Rect2 = t.box
-		return _peak_clear(b.get_center().x,b.get_center().y,b.size.length()*0.5))
+		return _peak_clear(b.get_center().x,b.get_center().y,b.size.length()*0.5) and _tunnel_off_placed(t))
 
 ## The tunnels that may touch (x, z): its square's (the last square's
 ## kept), or the test tunnel.
@@ -908,7 +942,7 @@ func _hall_for(x: float, z: float) -> PackedFloat32Array:
 	if cx != _hall_cell.x or cz != _hall_cell.y:
 		_hall_here = Sites.cell_site(_impl,seed,halls,ponds,x,z,_hall_local)
 		if tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(x,z),_hall_here): _hall_here = PackedFloat32Array()
-		if not _hall_here.is_empty() and not _peak_clear(_hall_here[0],_hall_here[1],_hall_here[7]+_hall_here[8]): _hall_here = PackedFloat32Array()
+		if not _hall_here.is_empty() and not (_peak_clear(_hall_here[0],_hall_here[1],_hall_here[7]+_hall_here[8]) and _hall_off_placed(_hall_here)): _hall_here = PackedFloat32Array()
 		_hall_cell = Vector2i(cx,cz)
 	return _hall_here
 
@@ -918,6 +952,7 @@ func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if halls <= 0.0: return []
 	var got := Sites.sites_in(_impl,seed,halls,ponds,x0,z0,x1,z1,_hall_local)
 	if _massif != null: got = got.filter(func(s: PackedFloat32Array) -> bool: return _peak_clear(s[0],s[1],s[7]+s[8]))
+	if not PlacedList.clears(world).is_empty(): got = got.filter(_hall_off_placed)
 	if tunnels <= 0.0: return got
 	return got.filter(func(s: PackedFloat32Array) -> bool: return not Tunnels.blocks_hall(_tunnels_for(s[0],s[1]),s))
 
@@ -925,7 +960,7 @@ func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 func hall_info(key: Vector2i) -> Dictionary:
 	if halls <= 0.0: return {}
 	var got := Sites.site_info(_impl,seed,halls,ponds,key)
-	if not got.is_empty() and not _peak_clear(got.site[0],got.site[1],got.site[7]+got.site[8]): return {}
+	if not got.is_empty() and not (_peak_clear(got.site[0],got.site[1],got.site[7]+got.site[8]) and _hall_off_placed(got.site)): return {}
 	if not got.is_empty() and tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(got.site[0],got.site[1]),got.site): return {}
 	return got
 
@@ -943,7 +978,7 @@ func _split_cell(key: Vector2i) -> PackedFloat32Array:
 	var s := Splits.cell_site(_impl,seed,splits,ponds,key,_split_local,split_mix)
 	if s.is_empty(): return s
 	var r := s[7]+s[8]
-	if not _peak_clear(s[0],s[1],r): return PackedFloat32Array()
+	if not _peak_clear(s[0],s[1],r) or not _split_off_placed(s): return PackedFloat32Array()
 	if tunnels > 0.0 and Tunnels.blocks_hall(tunnels_in(s[0]-r,s[1]-r,s[0]+r,s[1]+r),s): return PackedFloat32Array()
 	if halls > 0.0:
 		for h: PackedFloat32Array in Sites.sites_in(_impl,seed,halls,ponds,s[0]-r,s[1]-r,s[0]+r,s[1]+r,_hall_local):

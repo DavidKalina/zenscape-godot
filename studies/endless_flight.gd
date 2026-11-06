@@ -573,6 +573,9 @@ func _ready() -> void:
 	# The layout file first: the slot halls' sites read its moves when
 	# the land is first looked at (scripts/endless/hall_sites.gd).
 	LayoutOverrides.begin("endless_flight")
+	# The placed sites' clears after it (moved with their sites), made here
+	# on the main thread before the land's workers ask (placed_list.gd).
+	PlacedSites.PlacedList.clears(world)
 	field = Field.new(seed,world)
 	# --split-near-start: the start moved out of the nearest split
 	# mountain's lower mouth, heading in (scripts/endless/split_sites.gd).
