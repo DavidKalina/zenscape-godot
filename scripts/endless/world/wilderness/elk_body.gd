@@ -37,6 +37,28 @@ const LOOK_YAW_MAX := 2.0
 const LOOK_UP_MAX := 0.75
 const LOOK_DOWN_MAX := 0.6
 
+## Detail by the camera's distance, in spans (the elk scales with the span,
+## so each cut falls at the same size on screen; at 1440x900 and the flight's
+## field of view an elk is about 9 px tall at NEAR, 3.5 at MID, 2 at FINE,
+## 1.5 at FAR). Inside NEAR the clip is posed every frame, to MID every 2nd,
+## past MID or off screen every 4th (time and beats still run every frame).
+## Past FINE the antlers, the mane, the dust and the shadow go; past FAR the
+## whole elk (the meshes' visibility ranges). The mesh LODs come from the
+## import (generate_lods) and need nothing here.
+const NEAR := 40.0
+const MID := 100.0
+const FINE := 160.0
+const FAR := 220.0
+## Each mesh's visibility range, in spans.
+const RANGE := {"ElkBody":FAR,"Antlers":FINE,"Mane":FINE}
+## The import's LODs switched at twice the distance the engine would pick:
+## its coarsest levels drop legs (the body's 82 and 40 triangles) and break
+## the antlers (44), and at 2 those fall past FAR and FINE, so never show.
+const LOD_BIAS := 2.0
+## The sphere tested against the camera's view, in spans: round the body's
+## middle, wide enough to keep its shadow (a low sun's) in.
+const VIEW_RADIUS := 1.2
+
 ## The dust: puffs a body keeps (they come round in turn), their life (s),
 ## and their size at the start and end of it, in spans.
 const PUFFS := 8
@@ -57,6 +79,12 @@ static var _scene: PackedScene
 static var _coat: StandardMaterial3D
 static var _puff_mesh: QuadMesh
 static var _puff_mat: ShaderMaterial
+## The camera's view planes, worked out once a frame for every elk.
+static var _view_planes: Array[Plane] = []
+static var _view_frame := -1
+static var _view_cam := 0
+## Spreads the far elk's posing over the frames.
+static var _count := 0
 
 var variant := "cow"
 var clip := ""
@@ -82,9 +110,21 @@ var _puff_size: Array[float] = []
 var _puff_next := 0
 var _puff_seed := 0.0
 var _pending: Array = []
+## Pose every `_step`-th frame (1, 2 or 4), offset by `_phase`; the clip's
+## time owed to the AnimationPlayer since it was last posed (s, and s times
+## the rate).
+var _step := 1
+var _phase := 0
+var _owed := 0.0
+var _owed_play := 0.0
+## The look is laid on the bones now; past FINE (no shadow, no dust).
+var _looked := false
+var _fine := true
 
 func _init() -> void:
 	_load_shared()
+	_phase = _count
+	_count += 1
 	_model = _scene.instantiate() as Node3D
 	_model.name = "Elk"
 	_model.scale = Vector3.ONE*WorldScale.span
@@ -95,6 +135,8 @@ func _init() -> void:
 	for n: Node in _model.find_children("*","MeshInstance3D",true,false):
 		var mi := n as MeshInstance3D
 		mi.material_override = _coat
+		mi.visibility_range_end = float(RANGE.get(String(mi.name),FAR))*WorldScale.span
+		mi.lod_bias = LOD_BIAS
 		_meshes[String(mi.name)] = mi
 	var where: Dictionary = _table.get("sockets",{})
 	for key: String in where:
@@ -115,7 +157,7 @@ func _init() -> void:
 func _ready() -> void:
 	# Posed at once, so a body put to sleep before its first frame stands in
 	# its clip, not the bind pose.
-	if clip != "": _advance(0.0)
+	if clip != "": _advance()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_DISABLED:
@@ -134,13 +176,15 @@ func play(name: String, play_rate := 1.0, blend := 0.15) -> void:
 	rate = play_rate
 	_ap.speed_scale = maxf(play_rate,0.0)
 	if name == clip and not _done: return
+	# The clip shown caught up first, so the crossfade starts from where it is.
+	if _owed > 0.0: _advance()
 	# AnimationPlayer's blend runs at its speed_scale: scaled back to seconds.
 	_ap.play(name,maxf(blend,0.0)*maxf(play_rate,0.01))
 	clip = name
 	time = 0.0
 	_done = false
 	_fire_beats(-1.0,0.0)
-	if is_inside_tree(): _advance(0.0)
+	if is_inside_tree(): _advance()
 
 func clip_length(name: String) -> float:
 	var c: Dictionary = _clips().get(name,{})
@@ -178,8 +222,11 @@ func _process(delta: float) -> void:
 	_tick(delta)
 	if FrameLog.on: FrameLog.add(&"herd_bodies",float(Time.get_ticks_usec()-t0)/1000.0)
 
-## One step of `delta` s: the clip, its beats, the look, the dust.
+## One step of `delta` s: the clip, its beats, the look, the dust. The
+## clip's time and beats run every step; the pose only on the frames its
+## distance calls for (and when a one-shot ends).
 func _tick(delta: float) -> void:
+	_detail()
 	if clip != "" and not _done:
 		var c: Dictionary = _clips()[clip]
 		var length := float(c.length)
@@ -197,18 +244,60 @@ func _tick(delta: float) -> void:
 				time = length
 				_done = true
 			_fire_beats(was,time)
-		_advance(delta)
-	else:
+		_owed += delta
+		_owed_play += delta*maxf(rate,0.0)
+		if _done or _due(): _advance()
+	elif _due():
 		_pose_look()
 	_dust_step(delta)
 
-## The AnimationPlayer moved on by `delta` s (it scales by the rate), the
-## clip's neck and head kept, and the look laid over them.
-func _advance(delta: float) -> void:
-	_ap.advance(delta)
+func _due() -> bool:
+	return _step <= 1 or (Engine.get_process_frames()+_phase)%_step == 0
+
+## The AnimationPlayer moved on by the time owed it (at the rates the clip
+## ran at over it), the clip's neck and head kept, and the look laid over
+## them.
+func _advance() -> void:
+	if _owed > 0.0:
+		_ap.speed_scale = _owed_play/_owed
+		_ap.advance(_owed)
+		_ap.speed_scale = maxf(rate,0.0)
+	else:
+		_ap.advance(0.0)
+	_owed = 0.0
+	_owed_play = 0.0
 	for k in range(_look_idx.size()):
 		_look_rot[k] = _skel.get_bone_pose_rotation(_look_idx[k])
+	_looked = false
 	_pose_look()
+
+## How often to pose and what to show, from the camera's distance and view.
+func _detail() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		_step = 1
+		return
+	var s := WorldScale.span
+	var mid := global_position+global_transform.basis.y.normalized()*0.4*s
+	var d := cam.global_position.distance_to(mid)/s
+	_step = 1 if d < NEAR else (2 if d < MID else 4)
+	if _step < 4 and not _in_view(cam,mid,VIEW_RADIUS*s): _step = 4
+	var fine := d < FINE
+	if fine != _fine:
+		_fine = fine
+		var cast := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if fine else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for mi: MeshInstance3D in _meshes.values(): mi.cast_shadow = cast
+
+## Whether a sphere is inside the camera's view (its planes face out).
+static func _in_view(cam: Camera3D, at: Vector3, radius: float) -> bool:
+	var frame := Engine.get_process_frames()
+	if frame != _view_frame or cam.get_instance_id() != _view_cam:
+		_view_frame = frame
+		_view_cam = cam.get_instance_id()
+		_view_planes = cam.get_frustum()
+	for p: Plane in _view_planes:
+		if p.distance_to(at) > radius: return false
+	return true
 
 ## Each beat of the clip in (from, to].
 func _fire_beats(from: float, to: float) -> void:
@@ -232,9 +321,16 @@ func _on_beat(name: String) -> void:
 ## weight, the turn spread down the chain (yaw about the body's up, the nod
 ## about the gaze's own level right).
 func _pose_look() -> void:
+	if _look_weight <= 0.001 or not is_inside_tree():
+		# Left alone when no look is laid on, so a held pose costs nothing.
+		if _looked:
+			for k in range(_look_idx.size()):
+				_skel.set_bone_pose_rotation(_look_idx[k],_look_rot[k])
+			_looked = false
+		return
 	for k in range(_look_idx.size()):
 		_skel.set_bone_pose_rotation(_look_idx[k],_look_rot[k])
-	if _look_weight <= 0.001 or not is_inside_tree(): return
+	_looked = true
 	var head := _skel.get_bone_global_pose(_look_idx[2])
 	var to := _skel.global_transform.affine_inverse()*_look_at-head*_eye_local
 	var gaze := head.basis*_gaze_local
@@ -261,7 +357,7 @@ func _pose_look() -> void:
 ## leaves them behind.
 func _puff(foot: String, size := 1.0) -> void:
 	var at := socket(foot)
-	if at == null or not is_inside_tree(): return
+	if at == null or not is_inside_tree() or not _fine: return
 	if _puffs.is_empty():
 		for k in range(PUFFS):
 			var mi := MeshInstance3D.new()
@@ -271,6 +367,7 @@ func _puff(foot: String, size := 1.0) -> void:
 			mi.top_level = true
 			mi.visible = false
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.visibility_range_end = FINE*WorldScale.span
 			add_child(mi)
 			_puffs.append(mi)
 			_puff_age.append(PUFF_LIFE)
