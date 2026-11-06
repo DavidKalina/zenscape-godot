@@ -1,5 +1,5 @@
 {
- "fps": 30,
+ "fps": 60,
  "units": "span",
  "bl": 0.9,
  "clips": {
@@ -89,6 +89,46 @@
      1.0
     ]
    ]
+  },
+  "trot": {
+   "length": 0.8,
+   "loop": true,
+   "ground_bl": 2.0,
+   "beats": {
+    "trot.plant": [
+     0.0,
+     0.4
+    ]
+   }
+  },
+  "gallop": {
+   "length": 0.55,
+   "loop": true,
+   "ground_bl": 4.0,
+   "beats": {
+    "gallop.plant": [
+     0.05
+    ],
+    "gallop.air": [
+     0.35
+    ]
+   }
+  },
+  "sprint": {
+   "length": 0.5,
+   "loop": true,
+   "ground_bl": 7.0,
+   "beats": {
+    "sprint.plant": [
+     0.05
+    ],
+    "sprint.push": [
+     0.2
+    ],
+    "sprint.air": [
+     0.25
+    ]
+   }
   }
  },
  "sockets": {

@@ -679,6 +679,41 @@ for _trk in rig.animation_data.nla_tracks:
     _trk.mute = False
 ec.reset(rig)
 
+
+def _slide_report(clip, hz=240):
+    """A moving loop's foot slide: each planted toe, posed by the rig, in
+    the ground's frame (the root moving at the clip's own speed). It should
+    hold still: the worst drift along and the worst lift over any one
+    stance (span), and how long the foot is down."""
+    speed = clip.ground * ec.BL / clip.length
+    n = round(clip.length * hz)
+    worst = {}
+    for leg, (fh, s) in ec.LEGS.items():
+        bone, toe = (f"hoof_{s}", JOINT[f"f_toe_{s}"]) if fh == "f" else (f"hhoof_{s}", JOINT[f"h_toe_{s}"])
+        runs, cur = [], []
+        for i in range(2 * n):              # two cycles, so a stance across the seam is whole
+            t = i / hz
+            if clip.values(t)[f"fz.{leg}"] <= 1e-6:
+                p = KRIG.moves(clip, t)[bone] @ toe
+                cur.append((p.y + speed * t, p.z))
+            elif cur:
+                runs.append(cur)
+                cur = []
+        runs = [r for r in runs if len(r) > 1]
+        drift = max((max(a for a, _ in r) - min(a for a, _ in r)) for r in runs) if runs else 0.0
+        lift = max((max(abs(z) for _, z in r)) for r in runs) if runs else 0.0
+        r0 = runs[0] if runs else [(0.0, 0.0)]
+        ends = f"{r0[0][1]:.3f}/{r0[len(r0) // 2][1]:.3f}/{r0[-1][1]:.3f}"
+        worst[leg] = (drift, lift, len(r0) / hz, ends)
+    print("ELK_SLIDE", clip.name, f"speed={speed:.3f} span/s",
+          " ".join(f"{k}: drift={a:.4f} lift={b:.4f} down={c:.3f}s z(td/mid/lo)={e}"
+                   for k, (a, b, c, e) in worst.items()))
+
+
+for c in CLIPS:
+    if c.loop and c.ground > 0:
+        _slide_report(c)
+
 if EXPORT:
     table = {"fps": ec.FPS, "units": "span", "bl": ec.BL,
              "clips": {c.name: c.table() for c in CLIPS},
