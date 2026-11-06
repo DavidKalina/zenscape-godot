@@ -116,9 +116,9 @@ const CATCH_MOST := 12.0
 ## reach and a frame's step at the speed relative to the car (0.7 m at 43) off it.
 const TOUCH := 1.8
 ## The test: where the plane starts by the train (--train-test): this far behind
-## the last car's end, this far out from the train's side, this high over the bed.
+## the last car's end, in the middle of the gap between the tracks (track 1's
+## train comes down it: RailTrains), this high over the bed.
 const START_BACK := 30.0
-const START_OUT := 9.0
 const START_UP := 4.0
 ## The test train's nose at the start (m along the test path).
 const TEST_HEAD := 700.0
@@ -126,10 +126,10 @@ const TEST_HEAD := 700.0
 ## The share of a block's colour it shows in shade (greybox sky fill).
 const FILL := 0.35
 const LOOKS := {
-	"under":Color(0.12,0.12,0.13), "iron":Color(0.17,0.18,0.2), "cab":Color(0.3,0.12,0.1),
+	"under":Color(0.12,0.12,0.13), "iron":Color(0.26,0.27,0.3), "cab":Color(0.3,0.12,0.1),
 	"box":Color(0.55,0.25,0.17), "flat":Color(0.45,0.37,0.28), "van":Color(0.62,0.2,0.14),
 	"load":Color(0.2,0.19,0.18), "open":Color(0.35,0.3,0.24), "door":Color(0.42,0.18,0.12),
-	"inside":Color(0.1,0.07,0.05), "smash":Color(0.6,0.52,0.4), "plate":Color(0.72,0.67,0.56),
+	"inside":Color(0.22,0.16,0.11), "smash":Color(0.6,0.52,0.4), "plate":Color(0.72,0.67,0.56),
 	"crack":Color(1.0,0.45,0.1)}
 ## The looks that glow (their emission, over FILL's): the cracks, as the ship's.
 const GLOW := {"crack":2.5}
@@ -178,15 +178,18 @@ static func length_of() -> float:
 	return n+GAP*(CARS.size()-1)
 
 ## Where the plane starts on the test (--train-test): {at (XZ), heading, alt
-## (over the sea)}, beside the test train's last car, flying its way, the
-## train on its right.
+## (over the sea)}, behind the test train's last car, flying its way, the
+## train on its right, in the middle of the gap between the tracks.
 static func test_start(p: RefCounted) -> Dictionary:
-	var s := TEST_HEAD-length_of()-START_BACK
-	var x: Transform3D = p.pose(s,0)
-	var at := x.origin+x.basis.x*(-0.5*WIDE-START_OUT)
+	var x: Transform3D = p.pose(test_start_s(),0)
+	var at := x.origin-x.basis.x*0.5*float(p.track_gap())
 	var f := -x.basis.z
 	var sea: float = preload("res://scripts/endless/land_field.gd").SEA_Y
 	return {"at":Vector2(at.x,at.z),"heading":atan2(-f.x,-f.z),"alt":at.y-sea+START_UP}
+
+## The plane's start on the test, m along the path.
+static func test_start_s() -> float:
+	return TEST_HEAD-length_of()-START_BACK
 
 static func speed_flag(otherwise := SPEED) -> float:
 	for a: String in LaunchArgs.user_args():
@@ -348,17 +351,61 @@ func scrape(plane: RefCounted, n: Vector3, at: Vector3, keep: float, kick: float
 	var rel := path*float(plane.speed)-vc
 	var into := -rel.dot(n)
 	if into > 0.0: rel += n*into
-	var w := vc+rel
+	# `keep` of the speed relative to the car, not of the world's: a car's side
+	# brushed creeping up it costs a share of the creep, not of cruise. Of the
+	# world's, each scrape took the plane down to the train's pace, and one held
+	# against a curving car's side stayed by that one car, scraping (rail_collide
+	# curve: 13 scrapes in 15 s by the doors car). Never more than a still face's
+	# scrape would take: a train brushed head on (70 m/s by it) took a quarter.
+	var w := vc+rel*keep
 	if w.length() < 0.1: return false
-	plane.scrape(n,w.length()*keep/maxf(float(plane.speed),0.1),kick,w.normalized().dot(n)+SkyPlane.SCRAPE_OUT)
+	var plane_speed := maxf(float(plane.speed),0.1)
+	plane.scrape(n,maxf(w.length(),plane_speed*keep)/plane_speed,kick,w.normalized().dot(n)+SkyPlane.SCRAPE_OUT)
 	return true
+
+## The way out of the car nearest world `p` (the plane's middle), within `reach`
+## m of its solid, from the nearest point of it: a corner's is round, as the
+## arches' pad (FlightContact, as a Peak tower's `face`). Without it a car touched
+## by its corner took the land's slope there for its face (a brush's normal where
+## the slope is steep), which reads the corner as a cliff at 45 degrees: a wing
+## caught by the next car's end as the plane threaded two trains crashed at 66
+## m/s across it. ZERO if no car is that near.
+func face(p: Vector3, reach: float) -> Vector3:
+	var best := INF
+	var got := Vector3.ZERO
+	for car: Dictionary in cars:
+		var xf: Transform3D = car.xf
+		if xf.origin.distance_to(p) > float(car.long)*0.5+NEAR+reach: continue
+		var l: Vector3 = (car.inv as Transform3D)*p
+		for b: AABB in car.all:
+			var c := l.clamp(b.position,b.end)
+			var d := l.distance_to(c)
+			if d > reach or d >= best: continue
+			var n := l-c
+			if d < 0.0001:
+				# Inside: out the nearest face.
+				var ways := [Vector4(l.x-b.position.x,-1.0,0.0,0.0),Vector4(b.end.x-l.x,1.0,0.0,0.0),Vector4(l.y-b.position.y,0.0,-1.0,0.0),
+					Vector4(b.end.y-l.y,0.0,1.0,0.0),Vector4(l.z-b.position.z,0.0,0.0,-1.0),Vector4(b.end.z-l.z,0.0,0.0,1.0)]
+				var near := Vector4(INF,0.0,0.0,0.0)
+				for w: Vector4 in ways:
+					if w.x < near.x: near = w
+				n = Vector3(near.y,near.z,near.w)
+			best = d
+			got = (xf.basis*n).normalized()
+	return got
 
 ## The velocity (m/s) of the car whose solid is nearest world `at`, within
 ## `reach` m of it, or null: what a near miss by a car is scored relative to
 ## (NearMiss `_by`) and a touch of one graded by (`relative`).
 func motion_at(at: Vector3, reach: float) -> Variant:
+	var near := nearest(at,reach)
+	return null if near.is_empty() else near.velocity
+
+## The car whose solid is nearest world `at`, within `reach` m: {d (m off its
+## solid), velocity (of its point at `at`)}, or {} (RailTrains asks each train).
+func nearest(at: Vector3, reach: float) -> Dictionary:
 	var best := INF
-	var got: Variant = null
+	var got := {}
 	for car: Dictionary in cars:
 		if (car.xf as Transform3D).origin.distance_to(at) > float(car.long)*0.5+NEAR+reach: continue
 		var l: Vector3 = (car.inv as Transform3D)*at
@@ -367,8 +414,9 @@ func motion_at(at: Vector3, reach: float) -> Variant:
 				maxf(0.0,maxf(b.position.z-l.z,l.z-b.end.z))).length()
 			if d <= reach and d < best:
 				best = d
-				got = velocity_at(car,at)
-	return got
+				got = car
+	if got.is_empty(): return {}
+	return {"d":best,"velocity":velocity_at(got,at)}
 
 ## The velocity (m/s) of the point of `car` now at world `at`.
 func velocity_at(car: Dictionary, at: Vector3) -> Vector3:
@@ -409,6 +457,14 @@ static func _out_of(b: AABB, l: Vector3, lw: Vector3, pad: float) -> Dictionary:
 	var dx := maxf(0.0,maxf(b.position.x-l.x,l.x-b.end.x))
 	var dz := maxf(0.0,maxf(b.position.z-l.z,l.z-b.end.z))
 	if dx*dx+dz*dz > pad*pad: return {}
+	# In a corner's round (off both faces): out from the corner, as the arches'
+	# pad rounds it. By the face crossed, a wing a hair over a passing car's side
+	# line was put out ahead of the next car's end, square to it, and crashed.
+	if dx > 0.0 and dz > 0.0:
+		var c := Vector2(clampf(l.x,b.position.x,b.end.x),clampf(l.z,b.position.z,b.end.z))
+		var dir := (Vector2(l.x,l.z)-c).normalized()
+		var to := c+dir*(pad+EASE)
+		return {"at":Vector3(to.x,l.y,to.y),"normal":Vector3(dir.x,0.0,dir.y)}
 	var lo := Vector2(b.position.x-pad,b.position.z-pad)
 	var hi := Vector2(b.end.x+pad,b.end.z+pad)
 	# The faces crossed, and when on the way from `lw` to `l` (the latest is the one).

@@ -119,6 +119,11 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	var face := Vector3.ZERO
 	if str(hit.what) == "stone" and game.get("towers") != null: face = game.towers.face(hit.at,float(game.solid_pad)+FACE_ROOM)
 	if face != Vector3.ZERO: hit.normal = face
+	# A train's car too (RailTrain `face`): its corner is round, not the land's
+	# 45 degree cliff a brush is otherwise turned off.
+	if face == Vector3.ZERO and str(hit.what) == "stone" and game.get("trains") != null:
+		var car_face: Vector3 = game.trains.face(plane.position,float(game.solid_pad)+1.0)
+		if car_face != Vector3.ZERO: hit.normal = car_face
 	var v: Vector3 = hit.velocity
 	# A train's car: graded by the speed into it relative to the car (rail_train.gd).
 	var by_car: bool = game.get("trains") != null and str(hit.what) == "stone"

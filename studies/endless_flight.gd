@@ -325,7 +325,7 @@ var race: Node
 var shops: Node
 ## The lighthouse and the pirate ships on the coast (scripts/endless/coast_sites.gd).
 var coast: Node3D
-## The box train on its test loop (--train-test; scripts/endless/rail_train.gd), or null.
+## The box trains on their test loop (--train-test; scripts/endless/rail_trains.gd), or null.
 var trains: Node3D
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
@@ -832,7 +832,7 @@ func _ready() -> void:
 	coast.setup(self)
 	if rail_test != null:
 		rail_test.build(self)
-		trains = RailTrain.new()
+		trains = preload("res://scripts/endless/rail_trains.gd").new()
 		add_child(trains)
 		trains.setup(self,rail_test)
 	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
