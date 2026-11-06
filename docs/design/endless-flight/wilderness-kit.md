@@ -32,9 +32,9 @@ the cost is plain.
 
 | Item | What it does | Size | Depends on | Status |
 |---|---|---|---|---|
-| Placed sites | A region's hand list: `[handle, kind, skin, x, z, heading, params]`, read by the land the way generated sites are; the layout file's moves win | S | — | **now (step 0)** |
-| Happenings director | Fires rare moments keyed to place, hour and weather, one at a time, with a cooldown per area; moments register with it | M | placed sites (to key on a place) | **now** |
-| Life reacts | Shared reactions to the plane passing: flush, bolt, look up, follow; a creature declares which it does | M | director | **now (with the director)** |
+| Placed sites | A region's hand list: `[handle, kind, skin, x, z, heading, params]`, read by the land the way generated sites are; the layout file's moves win | S | — | built (wild-kit, PR #45) |
+| Happenings director | Fires rare moments keyed to place, hour and weather, one at a time, with a cooldown per area; moments register with it | M | placed sites (to key on a place) | built (wild-kit) |
+| Life reacts | Shared reactions to the plane passing: flush, bolt, look up, follow; a creature declares which it does | M | director | built (wild-kit) |
 | Stillness | When the plane has landed and stops, nearby life comes closer (creatures approach, birds land on the wing, sound swells) | S | life reacts | next |
 | Weather states | Clear, overcast, rain, storm front, snow; re-colours the look, the water and the sound; wind stays a look and never acts on the plane (shelved 2026-11-03) | L | — | next |
 | Lightning | Strikes in a storm count as near misses; feeds the unused lightning input of `cloud_volume.gd` | S | weather | later |
@@ -46,9 +46,9 @@ the cost is plain.
 
 | Kind | Verb | Wilderness skin | Later skins | Spot on seed 1 | Size | Status |
 |---|---|---|---|---|---|---|
-| **Curtain** | punch through | Waterfall with a cave behind it, out a mouth below | sand fall, ice curtain, a curtain of hanging moss | river cliff near m08-m10 | M | **now** |
-| **Upright row / ring** | thread | Standing stones (ring in a meadow); shipwreck ribs (row on a beach) | bone ribs, crystal spires, broken columns | stones on the fast meadow (m03, ~770,70); wreck on the inlet shore west of the start (m00, ~0,40) | M | **now** |
-| **Ground escort** | skim beside | Elk or deer herd running alongside | camels, wild horses, ostrich-like runners | the fast meadow (m03) | L (a body + rig + run cycle) | **now** |
+| **Curtain** | punch through | Waterfall with a cave behind it, out a mouth below | sand fall, ice curtain, a curtain of hanging moss | river cliff near m08-m10 | M | built (wild-kit): waterfall at `wild/river_falls` |
+| **Upright row / ring** | thread | Standing stones (ring in a meadow); shipwreck ribs (row on a beach) | bone ribs, crystal spires, broken columns | stones on the fast meadow (m03, ~770,70); wreck on the inlet shore west of the start (m00, ~0,40) | M | built (wild-kit): ring and wreck |
+| **Ground escort** | skim beside | Elk or deer herd running alongside | camels, wild horses, ostrich-like runners | the fast meadow (m03) | L (a body + rig + run cycle) | built (wild-kit): elk herd |
 | **Roost** | pass by, flush | Owl or pigeons out of a ruin room's rafters; herons off the shallows; ducks running on water | bats in a desert cave (careful: dark swept birds read as bats), gulls off a sea stack | ruin room (m02, ~538,-24); inlet (m00) | S (bird bodies exist) | next |
 | **Burst** | skim over | Butterflies or bees up out of flower patches | sand moths, snow off a ledge, ash | poppy patches (m04-m05, ~1350,90) | S (pollen system exists) | next |
 | **Slot** | thread, carve | Slot canyon cut by the river, sky a slit overhead | wind-cut desert slot, ice crevasse | river past the butte (m09, ~1910,30) | L | next |
@@ -95,8 +95,8 @@ The secret area behind a door is a place of its own and gets its own list.
 
 | Moment | Where | When | Size | Status |
 |---|---|---|---|---|
-| Cloud punch: burst out into sun with a rainbow (`celestial.gd` has rainbows), frost on the canopy | any cloud | day | S | **now (first moment)** |
-| Ducks or herons run off the water at takeoff | lakes, the inlet | day | S | **now (first moment)** |
+| Cloud punch: burst out into sun with a rainbow (`celestial.gd` has rainbows), frost on the canopy | any cloud | day | S | built (wild-kit) |
+| Ducks or herons run off the water at takeoff | lakes, the inlet | day | S | built (wild-kit) |
 | Something huge glides past inside a cloud (sky whale, giant condor) | clouds | rare | L (body) | later |
 | Meteor shower; one falling star lands and becomes a find | open sky | night | M | later |
 | UFO at night, pulls away if chased | far from the start | very rare, night | M | later (maybe a later world) |
@@ -122,7 +122,9 @@ The secret area behind a door is a place of its own and gets its own list.
 
 ## Now
 
-Step 0, then four lanes that don't touch each other's files:
+Built (2026-11-06, loop wild-kit, PR #45; `wild-kit-handoff.md` has the
+launch lines and what's open). Step 0, then four lanes that don't touch
+each other's files:
 
 0. **Placed sites** (engine, small): the region's hand list and its reader,
    so the lanes below put their pieces at named spots on seed 1.
