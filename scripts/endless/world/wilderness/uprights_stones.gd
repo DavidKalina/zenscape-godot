@@ -24,8 +24,11 @@ const SEGMENTS := 16
 const LINTEL_TALL := 3.2
 const OVERHANG := 0.75
 const LINTEL_EVERY := 1.0
-## How much of a fallen stone's thickness is sunk in the turf.
-const SUNK := 0.35
+## How much of a fallen stone's thickness is sunk in the turf at its foot
+## end; it lies tipped TIP deg, its far end dug in deeper (so it stands
+## clear of the grass and reads as toppled).
+const SUNK := 0.1
+const TIP := 4.0
 
 static func defaults() -> Dictionary:
 	return {"shape":"ring","count":14,"radius":32.0,"tall":22.0,"jitter":0.15,"wide":2,"spans":3,
@@ -116,14 +119,14 @@ static func _lying(slot: Dictionary) -> Dictionary:
 	var pillar := _weather({"at":Vector3.ZERO,"profile":profile,"ring_every":RING_EVERY,"dome":0.8},seed_value,_tint(seed_value)*0.94)
 	# Turned a little off straight out, as it fell.
 	var dir := out.rotated(Vector3.UP,(float(seed_value%21)-10.0)*0.02)
-	return _piece(Build.build({"pos":Vector3(seed_value%83,-20.0,seed_value%79),"pillars":[pillar]}),_laid(from,dir))
+	return _piece(Build.build({"pos":Vector3(seed_value%83,-20.0,seed_value%79),"pillars":[pillar]}),_laid(from,dir,deg_to_rad(TIP)))
 
-## A pillar lofted up its +Y laid along `dir` (level) from `from`: its +Y
-## along `dir`, its x across (level), its z up. A turn, not a mirror (the
-## skin's winding keeps facing out).
-static func _laid(from: Vector3, dir: Vector3) -> Transform3D:
+## A pillar lofted up its +Y laid along `dir` (level, or tipped `tip` rad
+## down) from `from`: its +Y along `dir`, its x across (level), its z up. A
+## turn, not a mirror (the skin's winding keeps facing out).
+static func _laid(from: Vector3, dir: Vector3, tip := 0.0) -> Transform3D:
 	var side := dir.cross(Vector3.UP).normalized()
-	return Transform3D(Basis(side,dir,Vector3.UP),from)
+	return Transform3D(Basis(side,dir*cos(tip)-Vector3.UP*sin(tip),Vector3.UP*cos(tip)+dir*sin(tip)),from)
 
 ## A built pillar (rock_build.gd) as a piece, moved by `t`.
 static func _piece(b: Dictionary, t: Transform3D) -> Dictionary:

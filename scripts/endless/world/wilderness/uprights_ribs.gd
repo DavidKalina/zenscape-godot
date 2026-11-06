@@ -35,6 +35,14 @@ const RIB := [Vector2(0.55,0.0),Vector2(0.84,0.12),Vector2(1.0,0.38),Vector2(0.9
 const TIP_IN := 0.8
 ## The middle frames this share wider than the end ones (the hull's belly).
 const BULGE := 0.03
+## The hull's ends: the frames lower toward them (the end ones this share
+## under the middle's: a ribcage's line from the side) and leaning out toward
+## them (the end ones CANT deg off upright, fading in from CANT_FROM of the
+## way out). The lean is a shear above each frame's foot, along the row, so
+## each gap only opens with height and the channel's width stays.
+const SHEER := 0.3
+const CANT := 20.0
+const CANT_FROM := 0.15
 ## The strakes of planking left, a low wall: their middles over the sand
 ## under each rib (m) and the chance each run between two frames is there
 ## (fewer higher up); half their thickness and height (m); of one that is
@@ -52,10 +60,22 @@ const BOW_PAST := 6.0
 const BOW_OUT := 3.5
 const BOW_TURN := 35.0
 const BOW_LEAN := 12.0
-## The wood: wet and weedy at the sand, weathered, sun-bleached at the tops.
-const WET := Color(0.17,0.17,0.14)
-const WOOD := Color(0.38,0.33,0.27)
-const BLEACHED := Color(0.66,0.63,0.57)
+## A rib that came loose, lying on the sand past the stern on the keel's land
+## side: its root (m out from the keel's line, m past the stern's frame), its
+## way (deg off the row toward the land), how far its curve is tipped up off
+## the sand (deg), its height as a frame (m) and how much is sunk (m).
+const LOOSE_AT := Vector2(5.0,8.0)
+const LOOSE_TURN := 8.0
+const LOOSE_TIP := 30.0
+const LOOSE_TALL := 8.0
+const LOOSE_SINK := 0.25
+## The wood: wet and weedy at the sand, weathered, sun-bleached at the tops;
+## some ribs silvered more than others (up to SILVER_MOST of the way).
+const WET := Color(0.15,0.17,0.12)
+const WOOD := Color(0.36,0.3,0.24)
+const BLEACHED := Color(0.8,0.77,0.69)
+const SILVER := Color(0.6,0.6,0.58)
+const SILVER_MOST := 0.4
 ## The LOD's error (m): every other ring.
 const LOD_ERR := 0.3
 
@@ -105,24 +125,32 @@ static func pieces(layout: Dictionary) -> Array:
 		if float(slot.short) < 1.0:
 			if rng.randf() < 0.5: cut.x = float(slot.short)
 			else: cut.y = float(slot.short)
+		# Lower toward the ends, leaning out toward its end (+Z the stern).
+		var h := float(slot.tall)*(1.0-SHEER*u*u)
+		var cant := signf(u)*deg_to_rad(CANT)*smoothstep(CANT_FROM,1.0,absf(u))
 		var piece := _new_piece()
-		sides.append(_frame(piece,at,Vector3.RIGHT,Vector3.FORWARD,b,float(slot.tall),list+rng.randf_range(-1.5,1.5)*PI/180.0,
-			cut,rd,minf(float(slot.wide),RIB_T),land))
+		sides.append(_frame(piece,at,Vector3.RIGHT,Vector3.FORWARD,b,h,list+rng.randf_range(-1.5,1.5)*PI/180.0,
+			cut,rd,minf(float(slot.wide),RIB_T),land,cant))
 		out.append(_done(piece))
 	out.append(_done(_planks(slots,sides,int(layout.seed),land)))
 	out.append(_done(_keel(slots,half_len,land)))
 	out.append(_done(_bow(Vector3(-(b_end+BOW_OUT),0.0,-(half_len+BOW_PAST)),float(p.tall),int(layout.seed),land)))
+	var stern: Vector3 = (slots[0] as Dictionary).at
+	out.append(_done(_loose(Vector3(LOOSE_AT.x,0.0,stern.z+LOOSE_AT.y),b_end,int(layout.seed),land)))
 	return out
 
 ## A frame at `at` (its foot's middle, y the land's there): two ribs either
 ## side across `across`, in the plane of `across` and up, `b` the widest
 ## middle of a rib from the line, `h` tall, listed `list` (rad, its top
-## toward -across), each side cut to `cut` (x the -across side's share).
+## toward -across), each side cut to `cut` (x the -across side's share),
+## leaning `cant` (rad) toward +Z above its foot (a shear: heights kept).
 ## Gives each side's whole middle line ([-across side, +across side]).
 static func _frame(piece: Dictionary, at: Vector3, across: Vector3, along: Vector3, b: float, h: float, list: float,
-		cut: Vector2, rd: float, rt: float, land: Callable) -> Array:
+		cut: Vector2, rd: float, rt: float, land: Callable, cant := 0.0) -> Array:
 	var cl := cos(list)
 	var sl := sin(list)
+	var shear := tan(cant)
+	var silver := _silver(int(absf(at.z)*53.0))
 	var lines: Array = []
 	for s: float in [-1.0,1.0]:
 		var ctrl: Array = []
@@ -137,7 +165,7 @@ static func _frame(piece: Dictionary, at: Vector3, across: Vector3, along: Vecto
 		var under := minf(first.y,float(land.call(w0.x,w0.z))-at.y)-BURY
 		ctrl.insert(0,Vector2(root_x,under))
 		var pts := PackedVector3Array()
-		for c: Vector2 in ctrl: pts.append(at+across*c.x+Vector3.UP*c.y)
+		for c: Vector2 in ctrl: pts.append(at+across*c.x+Vector3.UP*c.y+Vector3.BACK*maxf(c.y,0.0)*shear)
 		pts = _curve(pts,STEP)
 		lines.append(pts)
 		var share := cut.x if s < 0.0 else cut.y
@@ -151,7 +179,7 @@ static func _frame(piece: Dictionary, at: Vector3, across: Vector3, along: Vecto
 			var t := float(i)/maxf(1.0,n-1.0)
 			ha.append(rt*0.5*lerpf(1.0,0.85,t))
 			hb.append(rd*0.5*lerpf(1.1,0.75,t))
-			cols.append(_wood_at((pts[i].y-at.y)/h)*tint)
+			cols.append(_wood_at((pts[i].y-at.y)/h).lerp(SILVER,silver*smoothstep(0.1,0.4,(pts[i].y-at.y)/h))*tint)
 		_timber(piece,pts,ha,hb,along,cols,0.15 if share >= 1.0 else 0.0,share < 1.0)
 	return lines
 
@@ -257,6 +285,42 @@ static func _bow(foot: Vector3, tall: float, seed_value: int, land: Callable) ->
 	var at := foot-fwd*3.0
 	at.y = float(land.call(at.x,at.z))
 	_frame(piece,at,side,fwd,2.6,6.0,deg_to_rad(BOW_LEAN),Vector2(rng.randf_range(0.45,0.7),rng.randf_range(0.6,0.85)),0.7,RIB_T,land)
+	return piece
+
+## The rib that came loose: lying with its root at `root` (y from the land)
+## and its tip along the row past it, turned LOOSE_TURN toward the land, its
+## curve's bulge tipped LOOSE_TIP up off the sand toward the land, both ends
+## in the sand. `b` the frames' widest (its curve is theirs).
+static func _loose(root: Vector3, b: float, seed_value: int, land: Callable) -> Dictionary:
+	var turn := deg_to_rad(LOOSE_TURN)
+	var way := Vector3(sin(turn),0.0,cos(turn))
+	var flat := Vector3(way.z,0.0,-way.x)
+	var tip := deg_to_rad(LOOSE_TIP)
+	var bulge := flat*cos(tip)+Vector3.UP*sin(tip)
+	# The rib's curve, measured from its root along its chord and out from it.
+	var r0 := Vector2((RIB[0] as Vector2).x*b,0.0)
+	var r1 := Vector2((RIB[RIB.size()-1] as Vector2).x*b,LOOSE_TALL)
+	var c := (r1-r0).normalized()
+	var n := Vector2(c.y,-c.x)
+	var ctrl := PackedVector3Array()
+	for k: Vector2 in RIB:
+		var q := Vector2(k.x*b,k.y*LOOSE_TALL)-r0
+		var w := root+way*q.dot(c)+bulge*absf(q.dot(n))
+		w.y = float(land.call(w.x,w.z))-LOOSE_SINK+(bulge*absf(q.dot(n))).y
+		ctrl.append(w)
+	var pts := _curve(ctrl,STEP)
+	var m := pts.size()
+	var ha := PackedFloat32Array()
+	var hb := PackedFloat32Array()
+	var cols := PackedColorArray()
+	var tint := _tint(seed_value+29)
+	for i in range(m):
+		var t := float(i)/maxf(1.0,m-1.0)
+		ha.append(RIB_T*0.5*lerpf(1.0,0.85,t))
+		hb.append(0.5*lerpf(1.1,0.75,t))
+		cols.append(WOOD.lerp(BLEACHED,0.45).lerp(SILVER,0.3)*tint)
+	var piece := _new_piece()
+	_timber(piece,pts,ha,hb,way.cross(bulge).normalized(),cols,0.1,true)
 	return piece
 
 # --- Timber -------------------------------------------------------------------
@@ -392,7 +456,13 @@ static func _cut(pts: PackedVector3Array, share: float) -> PackedVector3Array:
 ## The wood's colour at `t` of the way up (0 the sand, 1 the top).
 static func _wood_at(t: float) -> Color:
 	if t < 0.15: return WET.lerp(WOOD,clampf(t/0.15,0.0,1.0))
-	return WOOD.lerp(BLEACHED,smoothstep(0.2,1.0,t))
+	return WOOD.lerp(BLEACHED,smoothstep(0.25,0.95,t))
+
+## How silvered a rib is (0 to SILVER_MOST), by its seed.
+static func _silver(seed_value: int) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	return rng.randf()*SILVER_MOST
 
 static func _tint(seed_value: int) -> Color:
 	var rng := RandomNumberGenerator.new()
