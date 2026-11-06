@@ -23,6 +23,12 @@ extends RefCounted
 ##   (RailTrain `ridden`). A clock jump carries it too.
 ## - **In the way.** Rolling, another car's body is a wall (`blocked`, for the
 ##   study's `_blocked`): the plane stops short of it as of an arch's leg.
+## - **Sitting and lifting off.** The chase camera reads the plane's motion over
+##   the car (GlideCamera `under`, set in the study's tick), so sat on a car it
+##   frames and looks round as stood on the land, and while sat no car's hollow
+##   makes it tight (a passing doorway drew it in at once). The wings feel the
+##   car's speed (ManualLanding `under`): on a moving car Boost and the stick back
+##   lift it off at once; at a stop it needs its run, as on the land.
 ##
 ## The engine's top is never a floor (the spec: weave round it, don't land).
 ## Only a train's solid is ridden (built within RailTrains' SOLID_NEAR).

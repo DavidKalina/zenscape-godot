@@ -1507,6 +1507,8 @@ func tick(delta: float) -> void:
 	# takeoff: it comes round behind the plane and stays there.
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	chase.ground = hand_landing.on_ground()
+	# Sat on a train's car: framed by its motion over the car (rail_ride.gd).
+	chase.under = hand_landing.under if chase.ground else Vector3.ZERO
 	_stop_note()
 	FrameLog.mark(&"ground_scale")
 	# A door flown into carries the plane to the other side (region_doors.gd).
@@ -1852,7 +1854,8 @@ func _frame(delta: float) -> void:
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	if coast != null: coast.watch(chase)
 	FrameLog.mark(&"c_look")
-	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (rail_bore != null and rail_bore.near(plane.position)) or (doors != null and doors.holds(plane.position)) or (trains != null and trains.tight(plane.position))
+	# Sat on a car it is in no car's hollow: a passing doorway drew the eye in at once.
+	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (rail_bore != null and rail_bore.near(plane.position)) or (doors != null and doors.holds(plane.position)) or (trains != null and not trains.ride.riding() and trains.tight(plane.position))
 	FrameLog.mark(&"c_tight")
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye

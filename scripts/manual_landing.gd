@@ -430,7 +430,9 @@ var land_most := INF
 ## a train's car it is over or rides, scripts/endless/rail_ride.gd; none by
 ## default): a touch is graded by the speed relative to it, rolling it is the
 ## plane's velocity less the roll's, and leaving the wheels the plane flies off
-## with its share along the nose (`_carried`).
+## with its share along the nose (`_carried`). The wings feel that share too:
+## ROTATE_FROM and LIFT_SPEED are of the air's speed (the roll's and the car's),
+## so on a moving car Boost and the stick back lift it off at once.
 var under := Vector3.ZERO
 
 func begin(on_plane: RefCounted, on_ground := false) -> void:
@@ -892,8 +894,9 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		if along < minf(ROLL_TOP,load_top): along = minf(along+boost*ROLL_PUSH*(1.0-load_roll)*(1.0+SURGE*_surge)*(1.0-brake)*delta,maxf(along,minf(ROLL_TOP,load_top)))
 		_v = fwd*along
 		beta = 0.0
-		# Fast enough, Boost held and the stick back: the nose comes up.
-		rotate = boost > 0.0 and brake <= 0.3 and along >= ROTATE_FROM and pull
+		# Fast enough, Boost held and the stick back: the nose comes up. On a
+		# moving car, fast enough through the air (the car's speed too).
+		rotate = boost > 0.0 and brake <= 0.3 and along+_carried() >= ROTATE_FROM and pull
 	plane.heading = heading
 	slip = beta
 	speed = _v.length()
@@ -959,7 +962,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		var nose := lerpf(level,maxf(ROTATE_NOSE,level),_rot)
 		plane.pitch = nose
 		plane.position.y += PlaneStrip.contact(nose)-PlaneStrip.contact(was)
-	if rotate and _rot >= 1.0 and speed >= LIFT_SPEED+load_lift and not too_heavy:
+	if rotate and _rot >= 1.0 and speed+_carried() >= LIFT_SPEED+load_lift and not too_heavy:
 		stats.lift_offs += 1
 		out["lifted"] = {"speed":speed}
 		_surge = 0.0

@@ -199,6 +199,10 @@ var sight := Callable()
 var near := 0.0
 ## On the wheels (the host says): the way follows the nose (GROUND_PATH).
 var ground := false
+## The velocity of what carries the glider (the host says; a train's car the
+## plane rides, scripts/endless/rail_ride.gd): its way, pace and view read its
+## motion over that, so sat on a moving car it frames as stood on the land.
+var under := Vector3.ZERO
 ## The top of the land or the water under a point: Callable(Vector3) ->
 ## float. Framed, the eye keeps FLOOR_KEEP over it (not `tight`: in a bore
 ## the tunnel's own sight keeps it). `_floor_lift`: how far it is lifted now.
@@ -281,7 +285,7 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 		roll = -glide.bank
 		return
 	# The way it flies: half where it points, half where it goes.
-	var moving: Vector3 = glide.velocity
+	var moving: Vector3 = glide.velocity-under
 	var way: Vector3 = glide.forward()
 	if ground:
 		# On the wheels: the nose, and the path only rolling forwards; level,
@@ -353,7 +357,7 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 ## The glide's speed as a share of the plane's cruise (1 at cruise; of the
 ## old toy's when none is given).
 func _pace(glide: RefCounted) -> float:
-	return glide.velocity.length()/(cruise if cruise > 0.0 else TOY_CRUISE)
+	return (glide.velocity-under).length()/(cruise if cruise > 0.0 else TOY_CRUISE)
 
 static func _flag(prefix: String, fallback: float) -> float:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
@@ -367,7 +371,7 @@ func _lean(bank: float) -> float:
 ## The field of view eases towards the speed's, the jet's kick and the
 ## float's narrowing.
 func _widen(delta: float, glide: RefCounted) -> void:
-	var t := clampf((glide.velocity.length()-FOV_SPEED.x)/(FOV_SPEED.y-FOV_SPEED.x),0.0,1.0)
+	var t := clampf(((glide.velocity-under).length()-FOV_SPEED.x)/(FOV_SPEED.y-FOV_SPEED.x),0.0,1.0)
 	if framed: t = clampf((_pace(glide)-FOV_SHARE.x)/(FOV_SHARE.y-FOV_SHARE.x),0.0,1.0)
 	var fast := 1.0-(1.0-t)*(1.0-t)
 	var jet := float(glide.in_jet)
