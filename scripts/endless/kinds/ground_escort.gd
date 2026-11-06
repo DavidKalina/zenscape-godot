@@ -198,7 +198,7 @@ var _study: Node = null
 var stats := {"count":0,"bulls":0,"awake_frames":0,"sensing_frames":0,"alerts":0,"settles":0,
 	"bolts":0,"peels":0,"halts":0,"beside_s":0.0,"top_speed":0.0,"probes":0,"dodges":0,"peel_why":{},
 	"scatters":0,"covers":0,"cover_sweeps":0,"cover_top_at":0,"cover_ground":0,"cover_fail":{},
-	"leaps":0,"leap_land_no":0,"leap_missed":0}
+	"leaps":0,"leap_land_no":0,"leap_missed":0,"tucked":0}
 ## The herd's answer to this pass, set when the first one goes: "beside" or
 ## "straight" (the plane's line through the herd); "" once all are calm.
 var _verdict := ""
@@ -217,6 +217,8 @@ var _r := Vector3.RIGHT
 var _v := 0.0
 var _cruise := 36.75
 var _low := INF
+## The plane's position this frame (INF: none).
+var _at := Vector3.INF
 ## The next runner whose land ahead is probed (one a frame).
 var _probe_next := 0
 ## Seconds until the herd's next leap is asked for (the run beside).
@@ -269,7 +271,7 @@ func _spawn(s: Dictionary) -> void:
 		var a := {"body":body,"pos":world,"heading":yaw,"variant":variant,"rate":rate,"state":"graze",
 			"nerve":nerve,"wait":-1.0,"calm":0.0,"look":0.0,"gaze":Vector2.ZERO,"clip":"graze","t":0.0,
 			"flee":-1.0,"speed":0.0,"side":0.0,"lead":0.0,"stretch":0.0,"peel":0.0,
-			"bad":false,"hard":false,"dodge":0.0,"dodge_t":0.0,"why":"","mode":"","goal":Vector3.ZERO,"best":INF,"since":0.0,
+			"bad":false,"hard":false,"dodge":0.0,"dodge_t":0.0,"why":"","mode":"","out":1.0,"goal":Vector3.ZERO,"best":INF,"since":0.0,
 			"clip_rate":1.0,"gap":0.0,"leap":"","leap_in":0.0,"leap_rate":1.0,"leaps":0}
 		herd.append(a)
 		body.connect("beat_reached",_on_beat.bind(a))
@@ -341,10 +343,10 @@ func _sense(delta: float) -> void:
 				else:
 					a.wait = -1.0
 			"alert":
-				if not _flee_step(a,at,delta):
-					_calm_step(a,d,reach,delta)
-					if a.state == "alert" and float(a.t) >= 0.2:
-						a.look = minf(float(a.look)+float(KNOBS.look_in)*delta,1.0)
+				# Tucked in the wood (no way out holds), it watches too.
+				if not _flee_step(a,at,delta): _calm_step(a,d,reach,delta)
+				if a.state == "alert" and float(a.t) >= 0.2:
+					a.look = minf(float(a.look)+float(KNOBS.look_in)*delta,1.0)
 			"settle":
 				if _flee_step(a,at,delta): pass
 				elif d < reach:
@@ -391,6 +393,7 @@ func _sense(delta: float) -> void:
 ## and cruise, once a frame: `_threat` when low and fast.
 func _read_plane(plane: RefCounted, at: Vector3, vel: Vector3) -> void:
 	_threat = false
+	_at = at
 	if plane == null or at == Vector3.INF: return
 	if plane.has_method("cruise"): _cruise = float(plane.call("cruise"))
 	var flat := Vector2(vel.x,vel.z)
@@ -455,9 +458,31 @@ func _flee_step(a: Dictionary, at: Vector3, delta: float) -> bool:
 			if not straight: _leap_wait = _rng.randf_range(float(KNOBS.leap_first_min),float(KNOBS.leap_first_max))
 	a.flee = float(a.flee)-delta
 	if float(a.flee) <= 0.0:
+		var yaw := _scatter_way(a,o) if straight else _run_out(a,o,side)
+		if is_nan(yaw):
+			# Tucked in the wood's edge, no way out that holds: head up, it
+			# stays and watches until the plane has gone.
+			if a.state != "alert": _alert(a)
+			a.flee = INF
+			stats.tucked += 1
+			return true
 		_bolt(a,side,_lead_of(side,o.x,at))
-		if straight: _scatter_from(a,o)
+		if straight: _scatter_from(a,o,yaw)
 	return true
+
+## The bolt's ground and a probe's on: how far the land must hold for it to
+## go (m).
+func _bolt_reach() -> float:
+	return float(GROUND_BL.bolt_start)*bl+float(KNOBS.probe_min)
+
+## The way the run beside starts (yaw): the plane's way, toward its side
+## station; NAN when the land won't hold for the bolt (no water, climb,
+## steep face or trees on it).
+func _run_out(a: Dictionary, o: Vector2, side: float) -> float:
+	var across := clampf(float(KNOBS.side_steer)*(side-o.y),-float(KNOBS.side_most),float(KNOBS.side_most))
+	var way := (_f*4.0+_r*across).normalized()
+	if _land_why(a.pos,way,_bolt_reach()) != "": return NAN
+	return atan2(-way.x,-way.z)
 
 ## Off: the bolt_start clip (crouch, launch), turning to run with the plane.
 func _bolt(a: Dictionary, side: float, lead: float) -> void:
@@ -645,15 +670,25 @@ func _leap_step(a: Dictionary, at: Vector3, delta: float) -> void:
 ## Straight at them: the bolt turns out from the plane's line on its own side
 ## (one on the line takes a side at random), wide off the plane's way when on
 ## the line, narrower the farther out it stands; its way held in `peel`.
-func _scatter_from(a: Dictionary, o: Vector2) -> void:
+func _scatter_from(a: Dictionary, o: Vector2, yaw: float) -> void:
+	a.mode = "scatter"
+	a.side = float(a.out)*maxf(absf(o.y),1.0)
+	a.peel = yaw
+	stats.scatters += 1
+
+## The scatter's way (yaw) and side (a.out): out from the line on its own
+## side; when the land won't hold for the bolt that way, wider (back from
+## the plane's way) in steps, or a little narrower. NAN: none holds.
+func _scatter_way(a: Dictionary, o: Vector2) -> float:
 	var s := signf(o.y) if absf(o.y) > 1.5 else (1.0 if _rng.randf() < 0.5 else -1.0)
 	var off := lerpf(float(KNOBS.scatter_wide),float(KNOBS.scatter_narrow),clampf(absf(o.y)/float(KNOBS.side_max),0.0,1.0))
-	off = deg_to_rad(off+_rng.randf_range(-1.0,1.0)*float(KNOBS.scatter_jitter))
-	var way := _f*cos(off)+_r*s*sin(off)
-	a.mode = "scatter"
-	a.side = s*maxf(absf(o.y),1.0)
-	a.peel = atan2(-way.x,-way.z)
-	stats.scatters += 1
+	off += _rng.randf_range(-1.0,1.0)*float(KNOBS.scatter_jitter)
+	a.out = s
+	for k: float in [0.0,25.0,50.0,75.0,100.0,-25.0]:
+		var t := deg_to_rad(clampf(off+k,20.0,170.0))
+		var way := _f*cos(t)+_r*s*sin(t)
+		if _land_why(a.pos,way,_bolt_reach()) == "": return atan2(-way.x,-way.z)
+	return NAN
 
 ## Scattering: out from the line at speed (once `scatter_out` m out, bent
 ## along the plane's way, still drawing off), until the plane has passed it
@@ -745,6 +780,8 @@ func _cover_goal(a: Dictionary) -> Vector3:
 	var trees: Node = _study.get("trees") if _study != null else null
 	if trees == null: return Vector3.INF
 	var step := float(KNOBS.tree_step)
+	var cells := {}
+	var ahead := _threat and _at != Vector3.INF and _off(a,_at).x > -float(KNOBS.behind)
 	for r in range(mini(ranked.size(),int(KNOBS.cover_tries))):
 		var way: Vector3 = ranked[r][1]
 		var reach := minf(float(ranked[r][2])+20.0,float(KNOBS.cover_reach))
@@ -782,7 +819,12 @@ func _cover_goal(a: Dictionary) -> Vector3:
 			var why := _ground_why(last,g)
 			if why == "" and _in_crown(g): why = "in a crown"
 			if why == "" and _taken(a,g): why = "taken"
+			# Not across the plane's line before it has passed.
+			if why == "" and ahead and signf((g-_at).dot(_r)) != signf(float(a.side)): why = "across the line"
 			if why == "" and k != 0.0 and float(trees.call("top_at",g)) == -INF and not _wood_by(g,trees): why = "off the wood"
+			if why == "":
+				why = _cover_run_why(a,g,cells)
+				if why != "": why = "run "+why
 			if why != "":
 				_tally("goal "+why)
 				continue
@@ -839,12 +881,7 @@ func _cover_step(a: Dictionary, delta: float) -> void:
 	var to: Vector3 = a.goal-a.pos
 	to.y = 0.0
 	var dist := to.length()
-	var halt := _halt_speed()
-	var slide := float(GROUND_BL.stop_look)*bl
-	var cap := sqrt(halt*halt+2.0*float(KNOBS.peel_brake)*maxf(dist-slide,0.0))
-	var want := minf(float(KNOBS.cover_speed),cap)
-	var rate := float(KNOBS.accel) if want > float(a.speed) else float(KNOBS.peel_brake)*1.5
-	a.speed = move_toward(float(a.speed),want,rate*delta)
+	a.speed = _cover_speed(float(a.speed),dist,delta)
 	a.look = move_toward(float(a.look),0.0,float(KNOBS.look_out)*delta)
 	if dist > 0.5: _turn(a,to/dist,float(KNOBS.turn_cover),delta)
 	_step(a,delta)
@@ -855,11 +892,92 @@ func _cover_step(a: Dictionary, delta: float) -> void:
 		a.best = dist
 		a.since = 0.0
 	a.since = float(a.since)+delta
-	if dist <= slide+0.3 or passed or float(a.since) > float(KNOBS.stuck):
-		a.state = "halt"
-		a.t = 0.0
-		(a.body as Node).call("play","stop_look",1.0,0.2)
-		a.clip = "stop_look"
+	if dist <= _cover_end() or passed or float(a.since) > float(KNOBS.stuck):
+		_halt_now(a)
+
+## The run for the trees' speed at `v`, `dist` m from its goal, after
+## `delta`: at speed, braking so it comes in at the halt's slide speed.
+func _cover_speed(v: float, dist: float, delta: float) -> float:
+	var halt := _halt_speed()
+	var slide := float(GROUND_BL.stop_look)*bl
+	var cap := sqrt(halt*halt+2.0*float(KNOBS.peel_brake)*maxf(dist-slide,0.0))
+	var want := minf(float(KNOBS.cover_speed),cap)
+	var rate := float(KNOBS.accel) if want > v else float(KNOBS.peel_brake)*1.5
+	return move_toward(v,want,rate*delta)
+
+## How near its goal the run for the trees ends in the halt (m).
+func _cover_end() -> float:
+	return float(GROUND_BL.stop_look)*bl+0.3
+
+## The halt from here: stop_look (the slide, the look back).
+func _halt_now(a: Dictionary) -> void:
+	a.state = "halt"
+	a.t = 0.0
+	(a.body as Node).call("play","stop_look",1.0,0.2)
+	a.clip = "stop_look"
+
+## Why the run for the trees from where `a` stands to `goal` won't do, as it
+## will run it (its heading and speed now, turning at `turn_cover`, braking
+## in, the halt's slide past the end), "" when it will: the ground every
+## `tree_step` m run (water, a climb, a steep face) and no trunk within
+## `trunk_clear` m every half step. A turn back from a gallop swings wide;
+## the straight line from where it stands misses that.
+func _cover_run_why(a: Dictionary, goal: Vector3, cells: Dictionary) -> String:
+	var dt := 1.0/30.0
+	var p: Vector3 = a.pos
+	var h := float(a.heading)
+	var v := float(a.speed)
+	var last: Vector3 = a.pos
+	var run := 0.0
+	var best := INF
+	var since := 0.0
+	var step := float(KNOBS.tree_step)*0.5
+	var odd := false
+	for i in range(int(10.0/dt)):
+		var to := Vector3(goal.x-p.x,0.0,goal.z-p.z)
+		var dist := to.length()
+		var end := dist <= _cover_end() or (dist < 4.0 and to.dot(_dir(h)) < 0.0) or since > float(KNOBS.stuck)
+		if end:
+			# The halt's slide on along its heading.
+			p += _dir(h)*float(GROUND_BL.stop_look)*bl
+			run = step
+		else:
+			v = _cover_speed(v,dist,dt)
+			if dist > 0.5: h = _turned(h,to/dist,float(KNOBS.turn_cover),dt)
+			p += _dir(h)*v*dt
+			run += v*dt
+			if dist < best-0.5:
+				best = dist
+				since = 0.0
+			since += dt
+		if run >= step:
+			run = 0.0
+			odd = not odd
+			if _trunk_by(p,float(KNOBS.trunk_clear),cells): return "trunk"
+			if not odd or end:
+				if field != null: p.y = float(field.height(p.x,p.z))
+				var why := _ground_why(last,p)
+				if why != "": return why
+				last = p
+		if end: return ""
+	return ""
+
+## A tree's trunk within `r` m of `p` (XZ), from the trees' plan cells
+## (kept in `cells` for the call's run).
+func _trunk_by(p: Vector3, r: float, cells: Dictionary) -> bool:
+	var trees: Node = _study.get("trees") if _study != null else null
+	if trees == null or not trees.has_method("cell_trees"): return false
+	var seen := {}
+	for d: Vector2 in [Vector2(-r,-r),Vector2(r,-r),Vector2(-r,r),Vector2(r,r)]:
+		var ck: Vector2i = TreePlan.cell_of(p.x+d.x,p.z+d.y)
+		if seen.has(ck): continue
+		seen[ck] = true
+		if not cells.has(ck): cells[ck] = trees.call("cell_trees",ck)
+		var t: PackedFloat32Array = cells[ck]
+		for q in range(0,t.size(),8):
+			if t[q+3] <= 0.0: continue
+			if Vector2(p.x-t[q],p.z-t[q+1]).length() < r: return true
+	return false
 
 ## Peeled off: turned out from the plane's line, braking to the halt; the
 ## first way whose land holds to a stop: out, half out, on, half in, in.
@@ -1000,9 +1118,12 @@ func _dir(yaw: float) -> Vector3:
 
 ## Turned toward `way` at `rate` rad/s.
 func _turn(a: Dictionary, way: Vector3, rate: float, delta: float) -> void:
+	a.heading = _turned(float(a.heading),way,rate,delta)
+
+## Heading `h` turned toward `way` at `rate` rad/s over `delta`.
+static func _turned(h: float, way: Vector3, rate: float, delta: float) -> float:
 	var want := atan2(-way.x,-way.z)
-	var h := float(a.heading)
-	a.heading = h+clampf(wrapf(want-h,-PI,PI),-rate*delta,rate*delta)
+	return h+clampf(wrapf(want-h,-PI,PI),-rate*delta,rate*delta)
 
 ## Along its heading at its speed, on the land.
 func _step(a: Dictionary, delta: float) -> void:
