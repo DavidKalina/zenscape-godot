@@ -313,6 +313,8 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 	if seed == 1: out.append_array(preload("res://scripts/endless/hall_seat.gd").tree_keepouts(x0,z0,x1,z1))
 	# The way towers (way_towers.gd).
 	if seed == 1: out.append_array(preload("res://scripts/endless/way_towers.gd").tree_keepouts(x0,z0,x1,z1))
+	# The railroad's stations and towns (rail_stops.gd).
+	if seed == 1 and field.get("_rail") != null: out.append_array(preload("res://scripts/endless/rail_stops.gd").tree_keepouts(x0,z0,x1,z1))
 	var rocks := _rock_flags()
 	var any_rocks: bool = RockPlan.any(rocks,false)
 	if float(arches.density) <= 0.0 and not any_rocks: return out

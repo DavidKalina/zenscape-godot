@@ -148,6 +148,7 @@ const LandTrees = preload("res://scripts/endless/land_trees.gd")
 const RailTrack = preload("res://scripts/endless/rail_track.gd")
 const RailBore = preload("res://scripts/endless/rail_bore.gd")
 const RailSpan = preload("res://scripts/endless/rail_span.gd")
+const RailStops = preload("res://scripts/endless/rail_stops.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
@@ -323,6 +324,8 @@ var rails: Node3D
 var rail_bore: Node3D
 ## The railroad's trestles and bridges, or null (with `rails`).
 var rail_span: Node3D
+## The railroad's stations and towns (rail_stops.gd), with the bed.
+var rail_stops: Node3D
 ## The birds flushed from the trees and the far flocks.
 var birds: Node3D
 var fish: Node3D
@@ -726,6 +729,10 @@ func _ready() -> void:
 		rail_span.name = "RailSpan"
 		add_child(rail_span)
 		rail_span.setup(field)
+		rail_stops = RailStops.new()
+		rail_stops.name = "RailStops"
+		add_child(rail_stops)
+		rail_stops.setup(field)
 	if EndlessFish.wanted() and field.ponds > 0.0:
 		fish = EndlessFish.new()
 		fish.name = "Fish"
@@ -1188,6 +1195,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
 	if rail_bore != null: g = rail_bore.ground(p,g,pad)
 	if rail_span != null: g = rail_span.ground(p,g,pad)
+	if rail_stops != null: g = rail_stops.ground(p,g,pad)
 	if rails != null: g = rails.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
@@ -1208,7 +1216,7 @@ func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	var m := _stone_near(p)
-	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p))
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1220,6 +1228,8 @@ func floor_at(p: Vector2) -> float:
 	if rail_span != null and plane != null:
 		var deck: float = rail_span.land_y(Vector3(p.x,plane.position.y,p.y),-INF)
 		if deck > h: return deck
+	# On a railroad stop's platform or roof, its top.
+	if rail_stops != null and plane != null: h = rail_stops.land_y(Vector3(p.x,plane.position.y,p.y),h)
 	if (h < Field.SEA_Y+0.2 and not tunnels.dry(Vector3(p.x,h,p.y))) or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
 	var q := Vector3(p.x,plane.position.y if plane != null else h,p.y)
@@ -1256,6 +1266,7 @@ func _eye_over(p: Vector3, land: float) -> float:
 	h = tunnels.land_y(p,h)
 	if rail_bore != null: h = rail_bore.land_y(p,h)
 	if rail_span != null: h = rail_span.land_y(p,h)
+	if rail_stops != null: h = rail_stops.land_y(p,h)
 	if _stone_near(p) & GroundNative.ICE: h = ice.land_y(p,h)
 	if tunnels.dry(p): return h
 	return maxf(h,Field.SEA_Y+sea_height(p,land))
@@ -1272,7 +1283,7 @@ func _solid(p: Vector3) -> bool:
 	var m := _stone_near(p)
 	# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
 	var land: float = field.height(p.x,p.z)
-	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p))
+	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1323,7 +1334,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		else:
 			land = field.height(p.x,p.z)
 			floor_y = _eye_over(p,land)
-		if p.y < floor_y+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)):
+		if p.y < floor_y+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p)):
 			got = float(i-1)/STEPS
 			break
 	if FrameLog.on: FrameLog.add(&"s_march",(Time.get_ticks_usec()-t1)/1000.0)
