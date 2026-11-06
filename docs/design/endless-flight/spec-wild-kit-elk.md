@@ -29,7 +29,7 @@ treeline: one or two bulls with antlers, the rest cows.
 - **Fly over high or slow:** they graze, and the near ones lift their heads
   and track the plane.
 - **Skim low past them, beside their line:** they break into a run alongside
-  the plane, a gallop that throws up grass and dust, holding beside it for a
+  the plane, a bounding sprint that throws up grass and dust, holding beside it for a
   stretch (a creek or a log to leap if the meadow has one), then peel off,
   slow, halt and look back.
 - **Fly straight at them low:** they bolt, scatter and break back into the
@@ -41,10 +41,15 @@ through or over them unharmed; they move off before it reaches them. A run
 beside them scores nothing yet: say in the handoff how it could join the
 line score.
 
-**Speed:** the herd's top run is a knob. Read the plane's speed range off
-the flight code and set the knob so a plane flown at its slow end can hold
-beside a running herd, and a plane on Boost overtakes it. Say the numbers in
-Decisions.
+**Speed:** the run beside the plane matches **cruise** (the user,
+2026-11-05: they keep cruise speed; no brake to stay with the herd). Read
+cruise and Boost off the flight code (36.75 and 57.75 m/s at the default
+pace when this was written). The herd's top run is a knob set to cruise: it
+holds beside a plane flown at cruise, and a plane on Boost pulls away. That
+is far faster than a real elk, so the run beside the plane is its own clip,
+`sprint`: long bounding strides with a long hang in the air, so the speed
+reads as a feat and the feet never slide. `gallop` stays for the natural
+runs: the bolt and the peel-off.
 
 ## Size
 
@@ -88,12 +93,14 @@ foot sliding (play rate within about ±30%).
 | `bolt_start` | 0.5 | no | 0.8 BL | `bolt_start.crouch` 0.15, `bolt_start.launch` 0.3 |
 | `trot` | 0.8 | yes | 2.0 BL | `trot.plant` 0.0, 0.4 |
 | `gallop` | 0.55 | yes | 4.0 BL | `gallop.plant` 0.05 (lead fore), `gallop.air` 0.35 (all feet off) |
+| `sprint` | 0.5 | yes | 7.0 BL | `sprint.plant` 0.05 (fores down), `sprint.push` 0.2 (hinds drive), `sprint.air` 0.25 (all feet off: the long hang) |
 | `leap` | 0.9 | no | 3.0 BL | `leap.takeoff` 0.2, `leap.land` 0.7 |
 | `stop_look` | 1.2 | no | 0.5 BL | `stop_look.halt` 0.35, `stop_look.hold` 0.6 (head turned back, held) |
 
 Each move reads at a glance, with anticipation, follow-through and holds
 (AGENTS.md, Animation): the alert's snap and hold, the bolt's crouch before
-the launch, the gallop's reach and gather, the leap's tuck and the landing's
+the launch, the gallop's reach and gather, the sprint's long stretched hang
+and the gather before each push, the leap's tuck and the landing's
 give, the halt's slide and the look back.
 
 ### Sockets
@@ -110,7 +117,7 @@ length. Eye height as in Size.
 
 - Variants, set once at spawn: `bull` (antlers), `cow`.
 - Effect `dust`, on or off: a puff of grass and dust at a foot socket on each
-  `gallop.plant` and `leap.land` while on.
+  `gallop.plant`, `sprint.plant` and `leap.land` while on.
 
 ### The body's API
 
@@ -125,6 +132,19 @@ func set_variant(name: String) -> void
 func set_effect(name: String, on: bool) -> void
 func look_at_world(target: Vector3, weight: float) -> void  # procedural head turn
 ```
+
+### How the API plays
+
+Both bodies follow AnimationPlayer's ways, so the mind sees no difference
+(found building the stand-in):
+
+- `play()` on the clip already playing keeps its phase and only changes the
+  rate.
+- `play()` on a finished one-shot starts it over.
+- The body advances itself each frame; the mind puts it to sleep by turning
+  its `process_mode` off, and wakes it the same way.
+- A beat at a clip's time 0 fires when `play()` is called. Every beat fires
+  once per pass of a one-shot and once per cycle of a loop.
 
 ## Mind lane: done and proof
 
