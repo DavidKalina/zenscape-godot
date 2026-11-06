@@ -1459,6 +1459,7 @@ func tick(delta: float) -> void:
 	var held: bool = beats != null and beats.holding()
 	# The train runs on and holds the plane out of its cars (rail_train.gd).
 	if trains != null and not held: trains.before(delta)
+	FrameLog.mark(&"trains")
 	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
 	FrameLog.mark(&"landing")
 	if events.has("lifted"): book.new_flight()
@@ -1470,7 +1471,9 @@ func tick(delta: float) -> void:
 	# The roll's parry window, before the shots fly and meet the plane.
 	if parry != null: parry.step(delta)
 	if coast != null: coast.after(delta,events)
+	FrameLog.mark(&"coast_after")
 	if trains != null: trains.after(delta)
+	FrameLog.mark(&"trains")
 	_near_misses(delta,events)
 	FrameLog.mark(&"near")
 	if water != null: water.step(delta,events)
