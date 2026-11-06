@@ -234,6 +234,8 @@ var rammed := {}
 ## How many frames a car has run into the plane, and the most it moved it (m).
 var rams := 0
 var ram_most := 0.0
+## The plane rides one of its cars (scripts/endless/rail_ride.gd): no keep-out.
+var ridden := false
 var _dt := 1.0/60.0
 static var _mats := {}
 
@@ -578,6 +580,7 @@ func velocity_at(car: Dictionary, at: Vector3) -> Vector3:
 
 ## The plane held out of every car near it the way the car came at it (above).
 func keep_out() -> void:
+	if ridden: return
 	var plane = game.plane
 	var p: Vector3 = plane.position
 	var pad := float(game.solid_pad)

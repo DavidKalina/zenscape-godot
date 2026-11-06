@@ -354,6 +354,9 @@ var rail_clock_at := 0.0
 var rail_held := 0.0
 ## The clock a --rail-start= quick start set (RailTrains `line_start`), or NAN.
 var _rail_start_clock := NAN
+## The ground the start parks the plane on instead of the land's (--rail-start=ride:
+## a flatcar's deck, RailRide `line_start`), or empty; `_launch` uses it once.
+var _rest_ground := Callable()
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -621,7 +624,7 @@ func _ready() -> void:
 			_alt = float(ship_pose.alt)
 			_alt_given = true
 	# --rail-start=beside|tunnel|bridge: in the gap behind train 0's van, the
-	# trains' clock to match (RailTrains `line_start`).
+	# trains' clock to match (RailTrains `line_start`); ride: parked on its flatcar.
 	if RailTrains.start_flag() != "" and RailTrack.wanted(field) and RailTrains.count_flag() > 0 and not RailTrain.test_wanted():
 		var rail_pose: Dictionary = RailTrains.line_start(RailLine.shared(),RailTrains.start_flag(),RailTrain.speed_flag())
 		if not rail_pose.is_empty():
@@ -632,6 +635,7 @@ func _ready() -> void:
 				_alt = float(rail_pose.y)-maxf(field.height(_start.x,_start.y),Field.SEA_Y)
 				_alt_given = true
 			_rail_start_clock = float(rail_pose.clock)
+			_rest_ground = rail_pose.get("ground",Callable())
 			print("rail start %s: s %.0f, clock %.1f" % [RailTrains.start_flag(),float(rail_pose.s),_rail_start_clock])
 	# --train-test: a box train on a test loop on the sea, the plane by its last car.
 	var rail_test: RefCounted = RailTrain.test_path(field) if RailTrain.test_wanted() else null
@@ -877,7 +881,7 @@ func _ready() -> void:
 	parry = Parry.new()
 	add_child(parry)
 	parry.setup(self)
-	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
+	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading,_rest_ground.is_valid())
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
 	shops = ShopSites.new()
@@ -1175,7 +1179,8 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	# a door changes it).
 	plane.fence = func(p: Vector3, h: float) -> Vector2: return field.fence(p,h)
 	if parked:
-		var rest := PlaneStrip.rest(func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
+		var rest := PlaneStrip.rest(_rest_ground if _rest_ground.is_valid() else func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
+		_rest_ground = Callable()
 		plane.park(Vector3(at.x,rest.x,at.z),heading,rest.y,rest.z)
 	else:
 		plane.launch(at,heading,plane.cruise(),false)
@@ -1268,13 +1273,17 @@ func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	var m := _stone_near(p)
-	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or (trees.inside(p) and (rail_bore == null or rail_bore.tube(p) != 0)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p))
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or (trees.inside(p) and (rail_bore == null or rail_bore.tube(p) != 0)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p)) or (trains != null and trains.ride.blocked(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
 	if GroundTally.on: GroundTally.tick(&"floor_at")
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
+	# On a train's car the plane is over, its top or its edge (rail_ride.gd).
+	if trains != null and plane != null:
+		var car_y: float = trains.ride.land_y(Vector3(p.x,plane.position.y,p.y),INF)
+		if car_y != INF: return car_y
 	var h: float = field.height(p.x,p.y)
 	# On a railroad span's deck (over water too), its top.
 	if rail_span != null and plane != null:
@@ -1493,7 +1502,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"rumble")
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
 	FrameLog.mark(&"sound")
-	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
+	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane,hand_landing.under)
 	ground_scale.apply(plane_figure)
 	ground_scale.hold_spin(plane_figure,plane)
 	if water != null: water.shake_figure(plane_figure)
@@ -1503,6 +1512,8 @@ func tick(delta: float) -> void:
 	# takeoff: it comes round behind the plane and stays there.
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	chase.ground = hand_landing.on_ground()
+	# Sat on a train's car: framed by its motion over the car (rail_ride.gd).
+	chase.under = hand_landing.under if chase.ground else Vector3.ZERO
 	_stop_note()
 	FrameLog.mark(&"ground_scale")
 	# A door flown into carries the plane to the other side (region_doors.gd).
@@ -1848,7 +1859,8 @@ func _frame(delta: float) -> void:
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	if coast != null: coast.watch(chase)
 	FrameLog.mark(&"c_look")
-	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (rail_bore != null and rail_bore.near(plane.position)) or (doors != null and doors.holds(plane.position)) or (trains != null and trains.tight(plane.position))
+	# Sat on a car it is in no car's hollow: a passing doorway drew the eye in at once.
+	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (rail_bore != null and rail_bore.near(plane.position)) or (doors != null and doors.holds(plane.position)) or (trains != null and not trains.ride.riding() and trains.tight(plane.position))
 	FrameLog.mark(&"c_tight")
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye

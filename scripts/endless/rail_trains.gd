@@ -50,11 +50,12 @@ extends Node3D
 ##
 ## Knobs: --trains=0|1|2 (TRAINS: how many run; one is track 0's), and
 ## RailTrain's --train-speed=, --rail-clock=S; the quick starts
-## --rail-start=beside|tunnel|bridge (`line_start`).
+## --rail-start=beside|tunnel|bridge|ride (`line_start`).
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
 const RailStops = preload("res://scripts/endless/rail_stops.gd")
+const RailRide = preload("res://scripts/endless/rail_ride.gd")
 
 const TRAINS := 2
 ## Built within LOOK_NEAR m of the plane, freed past LOOK_FAR; solid within
@@ -112,6 +113,8 @@ const LINE_MEET := 35.0
 ## - bridge: the van START_DECK m onto the bay bridge's west end: between both
 ##   trains on the deck (the noses meet 7 s in, train 1's meets the plane 15
 ##   s in).
+## - ride: sat on a flatcar of train 0 about to pull out of the start station
+##   (RailRide `line_start`: its own pose, with the deck to park on).
 const START_BESIDE := 3800.0
 const START_MOUTH := 194.0
 const START_DECK := 26.0
@@ -129,6 +132,8 @@ var list: Array[Node3D] = []
 ## Trains made and freed (counted, for the drivers).
 var built := 0
 var freed := 0
+## Riding a car (rail_ride.gd): the study's `floor_at` and `_blocked` ask it.
+var ride: RefCounted
 
 static func count_flag(otherwise := TRAINS) -> int:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
@@ -176,8 +181,9 @@ static func line_start(line: RefCounted, which: String, top := RailTrain.SPEED) 
 		"beside": van = START_BESIDE
 		"tunnel": van = float(line.piece("rail/west-tunnel").get("s0",LINE_TUNNEL))-START_MOUTH
 		"bridge": van = float(line.piece("rail/bay-bridge").get("s0",LINE_BRIDGE))+START_DECK
+		"ride": return RailRide.line_start(line,tables)
 		_:
-			push_warning("--rail-start=%s: beside, tunnel or bridge" % which)
+			push_warning("--rail-start=%s: beside, tunnel, bridge or ride" % which)
 			return {}
 	var clock := float(t0.time_at(van+long))
 	var s: float = t0.s_of(float(t0.at(clock).d)-long-RailTrain.START_BACK)
@@ -285,6 +291,7 @@ func start(g: Node3D, rail_path: RefCounted, on_clock := Callable()) -> void:
 	clock = on_clock
 	name = "RailTrains"
 	if clock.is_valid(): time = float(clock.call())
+	ride = RailRide.new(g,self)
 
 ## A train on `track` by `table` (on this path and track), its handle `label`.
 func add(track: int, table: RefCounted, label: String) -> void:
@@ -345,8 +352,10 @@ func before(delta: float) -> void:
 	time = float(clock.call()) if clock.is_valid() else time+delta
 	refresh()
 	for tr: Node3D in list: tr.before(delta,time)
+	ride.before(delta)
 
 func after(delta: float) -> void:
+	ride.after(delta)
 	for tr: Node3D in list: tr.after(delta)
 
 ## The train whose car is nearest world `at`, within `reach` m, or null.
