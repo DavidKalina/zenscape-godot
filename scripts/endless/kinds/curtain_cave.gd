@@ -31,12 +31,17 @@ const LUMP := 7.0
 ## Each mouth's face reaches FACE_PAD m past the cave's sides, stands
 ## FACE_PROUD m out of the hill's face and stops FACE_UNDER m under its top.
 ## The hill's top edge over a face is read FACE_TOP m back from its strip;
-## a face is found STEP m at a time along the path.
+## a face is found STEP m at a time along the path, then REFINE halvings.
 const FACE_PAD := 3.0
 const FACE_PROUD := 0.3
+## A face is FACE_BANDS bands from the rim out to its edge, each ring laid
+## on the hill, so it follows the hill's face rather than cutting a chord
+## behind it (where the chunk's cliff triangles stood in front as teeth).
+const FACE_BANDS := 4
 const FACE_UNDER := 0.3
 const FACE_TOP := 0.6
-const STEP := 0.25
+const STEP := 1.0
+const REFINE := 3
 ## The roof's solid: columns COLUMN m square.
 const COLUMN := 1.0
 const LAYER := 1
@@ -182,12 +187,24 @@ static func _top(tops: Array, u: float) -> float:
 ## the hill's drawn height reaches it, FACE_PROUD out from there.
 static func _face_t(c: PackedFloat32Array, surface: Callable, u: float, y: float, exit: bool) -> float:
 	var foot := Land.cave_length(c)
-	var t := -0.5 if not exit else foot+0.5
+	var start := -0.5 if not exit else foot+0.5
 	var last := Land.WALL+Land.WALL*0.5 if not exit else foot-Land.WALL*1.5
+	var way := 1.0 if not exit else -1.0
+	var reached := func(at: float) -> bool:
+		var p: Array = Land.cave_point(c,at)
+		return float(surface.call(p[0]+(p[2] as Vector2)*u)) >= y+0.05
+	var t := start
 	while (t < last) if not exit else (t > last):
-		var p: Array = Land.cave_point(c,t)
-		if float(surface.call(p[0]+(p[2] as Vector2)*u)) >= y+0.05: break
-		t += STEP if not exit else -STEP
+		if reached.call(t):
+			if t != start:
+				# Between the last step short of it and this one.
+				var short := t-STEP*way
+				for i in REFINE:
+					var mid := (short+t)*0.5
+					if reached.call(mid): t = mid
+					else: short = mid
+			break
+		t += STEP*way
 	return t+FACE_PROUD if exit else t-FACE_PROUD
 
 ## A face round a mouth: from the mouth's rim (`ring`, its section's points
@@ -203,7 +220,7 @@ static func _face(st: SurfaceTool, faces: PackedVector3Array, c: PackedFloat32Ar
 	var inner_len := 0.0
 	for j in m-1: inner_len += Vector2(section[j+1].x-section[j].x,section[j+1].y-section[j].y).length()
 	var run := 0.0
-	var outer := PackedVector3Array()
+	var edge: Array[Vector2] = []
 	for j in m:
 		if j > 0: run += Vector2(section[j].x-section[j-1].x,section[j].y-section[j-1].y).length()
 		var d := run/inner_len*span
@@ -213,10 +230,17 @@ static func _face(st: SurfaceTool, faces: PackedVector3Array, c: PackedFloat32Ar
 			var u := -w+(d-left)
 			q = Vector2(u,_top(tops,u)-FACE_UNDER)
 		else: q = Vector2(w,y0+right-(d-left-2.0*w))
-		outer.append(_at(c,_face_t(c,surface,q.x,q.y,exit),q))
-	for j in m-1:
-		if exit: _quad(st,faces,ring[j],outer[j],outer[j+1],ring[j+1])
-		else: _quad(st,faces,outer[j],ring[j],ring[j+1],outer[j+1])
+		edge.append(q)
+	var inner := ring
+	for b in range(1,FACE_BANDS+1):
+		var outer := PackedVector3Array()
+		for j in m:
+			var q := Vector2(section[j].x,section[j].y).lerp(edge[j],float(b)/FACE_BANDS)
+			outer.append(_at(c,_face_t(c,surface,q.x,q.y,exit),q))
+		for j in m-1:
+			if exit: _quad(st,faces,inner[j],outer[j],outer[j+1],inner[j+1])
+			else: _quad(st,faces,outer[j],inner[j],inner[j+1],outer[j+1])
+		inner = outer
 
 ## A quad a, b, c, d (its front the cave's side), into `st` and `faces`.
 static func _quad(st: SurfaceTool, faces: PackedVector3Array, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
