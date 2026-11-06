@@ -1268,13 +1268,17 @@ func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	var m := _stone_near(p)
-	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or (trees.inside(p) and (rail_bore == null or rail_bore.tube(p) != 0)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p))
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or (trees.inside(p) and (rail_bore == null or rail_bore.tube(p) != 0)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p)) or (trains != null and trains.ride.blocked(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
 	if GroundTally.on: GroundTally.tick(&"floor_at")
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
+	# On a train's car the plane is over, its top or its edge (rail_ride.gd).
+	if trains != null and plane != null:
+		var car_y: float = trains.ride.land_y(Vector3(p.x,plane.position.y,p.y),INF)
+		if car_y != INF: return car_y
 	var h: float = field.height(p.x,p.y)
 	# On a railroad span's deck (over water too), its top.
 	if rail_span != null and plane != null:

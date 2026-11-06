@@ -53,6 +53,7 @@ extends Node3D
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
+const RailRide = preload("res://scripts/endless/rail_ride.gd")
 
 const TRAINS := 2
 ## Built within LOOK_NEAR m of the plane, freed past LOOK_FAR; solid within
@@ -121,6 +122,8 @@ var list: Array[Node3D] = []
 ## Trains made and freed (counted, for the drivers).
 var built := 0
 var freed := 0
+## Riding a car (rail_ride.gd): the study's `floor_at` and `_blocked` ask it.
+var ride: RefCounted
 
 static func count_flag(otherwise := TRAINS) -> int:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
@@ -273,6 +276,7 @@ func start(g: Node3D, rail_path: RefCounted, on_clock := Callable()) -> void:
 	clock = on_clock
 	name = "RailTrains"
 	if clock.is_valid(): time = float(clock.call())
+	ride = RailRide.new(g,self)
 
 ## A train on `track` by `table` (on this path and track), its handle `label`.
 func add(track: int, table: RefCounted, label: String) -> void:
@@ -333,8 +337,10 @@ func before(delta: float) -> void:
 	time = float(clock.call()) if clock.is_valid() else time+delta
 	refresh()
 	for tr: Node3D in list: tr.before(delta,time)
+	ride.before(delta)
 
 func after(delta: float) -> void:
+	ride.after(delta)
 	for tr: Node3D in list: tr.after(delta)
 
 ## The train whose car is nearest world `at`, within `reach` m, or null.

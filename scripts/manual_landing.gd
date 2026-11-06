@@ -426,6 +426,12 @@ var held_by_load := false
 ## presets, scripts/endless/flight_contact.gd: a scrape or a crash). INF,
 ## the default: every touch is graded as a landing, as ever.
 var land_most := INF
+## The velocity of the ground under the wheels (m/s; set from outside each frame:
+## a train's car it is over or rides, scripts/endless/rail_ride.gd; none by
+## default): a touch is graded by the speed relative to it, rolling it is the
+## plane's velocity less the roll's, and leaving the wheels the plane flies off
+## with its share along the nose (`_carried`).
+var under := Vector3.ZERO
 
 func begin(on_plane: RefCounted, on_ground := false) -> void:
 	plane = on_plane
@@ -518,7 +524,7 @@ static func thump(speed: float, sink: float, bank: float) -> float:
 ## the dive and sink remembered ("" not flying).
 func grade_now(floor_at: Callable) -> String:
 	if phase != AIR or plane == null: return ""
-	var v: Vector3 = plane.velocity
+	var v: Vector3 = plane.velocity-under
 	var at := Vector2(plane.position.x,plane.position.z)
 	var now := _dive_now()
 	return grade(Vector2(v.x,v.z).length(),maxf(sink_seen,maxf(0.0,-v.y-_kick)),float(plane.bank),float(plane.pitch),_slope(floor_at,at,v),
@@ -635,7 +641,8 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	if not is_nan(land): _land_y = land
 	_watch_go_around(land,out)
 	var on_land: bool = not is_nan(land) and plane.skimming and plane.position.y <= land+SkyPlane.SKIM+0.05
-	if on_land and _grace <= 0.0 and Vector2(_air_velocity.x,_air_velocity.z).length() <= land_most:
+	var rel := _air_velocity-under
+	if on_land and _grace <= 0.0 and Vector2(rel.x,rel.z).length() <= land_most:
 		_touch(at,land,floor_at,out)
 		return
 	_remember(delta,on_land)
@@ -673,7 +680,7 @@ func _dive_now() -> Vector2:
 ## forgotten, so a slam can't be ridden out on the ground.
 func _remember(delta: float, riding: bool) -> void:
 	var now := _dive_now()
-	var sink := maxf(0.0,-float(plane.velocity.y)-_kick)
+	var sink := maxf(0.0,-float(plane.velocity.y-under.y)-_kick)
 	var keep := 0.0 if riding else 1.0
 	dive = maxf(now.x,dive-DIVE_FORGET*delta*keep)
 	dive_sink = maxf(now.y,dive_sink-SINK_FORGET*delta*keep)
@@ -704,7 +711,7 @@ func _watch_go_around(land: float, out: Dictionary) -> void:
 ## The wheels meet the land: graded on the air step before.
 func _touch(at: Vector2, land: float, floor_at: Callable, out: Dictionary) -> void:
 	_dip_time = -1.0
-	var v := _air_velocity
+	var v := _air_velocity-under
 	var speed := Vector2(v.x,v.z).length()
 	var sink := maxf(maxf(0.0,-v.y),sink_seen)
 	var slope := _slope(floor_at,at,v)
@@ -930,12 +937,15 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		stats.off_edge += 1
 		out["off_edge"] = {"speed":speed}
 		plane.position = Vector3(next_at.x,plane.position.y,next_at.y)
-		_lift(speed,0.0,true)
-		_dip_speed = speed
-		_dip_time = 0.0
+		# Off a car it rode: with the car's speed too, flying already if that is enough.
+		var carried_off := _carried()
+		var off := speed+carried_off
+		_lift(off,0.0,true)
+		_dip_speed = off
+		_dip_time = -1.0 if carried_off > 0.0 and off >= FLY_SPEED+load_dip else 0.0
 		plane.slip = -clampf(beta,-1.2,1.2)
 		return
-	plane.carry(Vector3(next_at.x,plane.position.y,next_at.y),Vector3(_v.x,0.0,_v.y),speed)
+	plane.carry(Vector3(next_at.x,plane.position.y,next_at.y),Vector3(_v.x,0.0,_v.y)+under,speed)
 	_place_on(land,floor_at,smoothstep(0.0,TAIL_DOWN,_since_touch))
 	# Under power the tail comes up and it rolls on its mains; pulled back,
 	# the nose comes up on them; nose up and fast enough, the wheels let go.
@@ -954,9 +964,10 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		out["lifted"] = {"speed":speed}
 		_surge = 0.0
 		var nose := float(plane.pitch)
-		_lift(speed,nose,false)
+		var off := speed+_carried()
+		_lift(off,nose,false)
 		_unstick = 0.0
-		_unstick_speed = speed
+		_unstick_speed = off
 		_unstick_nose = nose
 		_unstick_y = float(plane.position.y)
 		return
@@ -1055,6 +1066,7 @@ func _hops(t: float) -> float:
 func _hold(floor_at: Callable) -> void:
 	_v = Vector2.ZERO
 	plane.set_pace(0.0)
+	plane.velocity = under
 	slip = 0.0
 	var at := Vector2(plane.position.x,plane.position.z)
 	var land := float(floor_at.call(at))
@@ -1117,6 +1129,22 @@ static func _slope(floor_at: Callable, at: Vector2, v: Vector3) -> float:
 		var h := float(floor_at.call(at+d*0.6))
 		if not is_nan(h): most = maxf(most,absf(h-here)/0.6)
 	return most
+
+## Carried by the ground under it (a train's car it rides, scripts/endless/
+## rail_ride.gd), before the step: put at `to` and turned `turn` rad with it, the
+## roll's way turned too.
+func carried(to: Vector3, turn: float) -> void:
+	plane.position = to
+	plane.heading = float(plane.heading)+turn
+	_v = _v.rotated(-turn)
+	_way = _way.rotated(-turn)
+
+## The speed the ground under the wheels gives the plane leaving it, along its
+## nose (m/s; 0 on still ground).
+func _carried() -> float:
+	if under == Vector3.ZERO: return 0.0
+	var h := float(plane.heading)
+	return under.dot(Vector3(-sin(h),0.0,-cos(h)))
 
 ## Where the wheels set down (global), for the rollout.
 func touched_at() -> Vector3:
