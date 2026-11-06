@@ -1,14 +1,17 @@
 """The elk: the wilderness skin of the ground escort kind
 (docs/design/endless-flight/spec-wild-kit-elk.md, the body lane).
 
-    python3 tools/blender.py run art/blender/elk/elk_build.py [-- --stills=DIR] [--no-export]
+    python3 tools/blender.py run art/blender/elk/elk_build.py [-- --stills=DIR] [--strips=DIR] [--clips=a,b] [--no-export]
 
 Writes assets/models/elk/elk.glb: one skinned body (ElkBody), the bull's mane
 (Mane) and antlers (Antlers) as their own meshes on the same skeleton, so
 the body script shows them for `bull` and hides them for `cow`, and the
 contract's sockets as empties riding their bones (Godot imports them as
-BoneAttachment3Ds). --stills renders a turntable of both variants and a
-head close-up there (Workbench, vertex colours).
+BoneAttachment3Ds), and the clips (elk_clips.py) as its animations, with
+their table (length, loop, ground, beats) in elk_clips.json beside it.
+--stills renders a turntable of both variants and a head close-up there
+(Workbench, vertex colours); --strips a strip of each clip's key poses (or
+those --clips names), side-on and three-quarter, the time over each.
 
 Units: the plane's span (scripts/world_scale.gd `span`) is 1. The body
 script scales the glb by WorldScale.span, so every size here is the spec's
@@ -22,6 +25,7 @@ a chocolate neck, head and legs, a cream rump patch, dark hooves, pale
 antlers with bone-white tips. Crevice darkness (belly, inner legs, under
 the neck) is painted into the same colours.
 """
+import json
 import math
 import sys
 from pathlib import Path
@@ -33,10 +37,15 @@ from mathutils import Matrix, Vector
 V = Vector
 HERE = Path(__file__).resolve().parent
 GLB = HERE.parents[2] / "assets" / "models" / "elk" / "elk.glb"   # art/blender is Godot-ignored
+TABLE = GLB.with_name("elk_clips.json")
+sys.path.insert(0, str(HERE))
+import elk_clips as ec  # noqa: E402
 X = V((1, 0, 0))
 
 ARGS = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 STILLS = next((Path(a.split("=", 1)[1]) for a in ARGS if a.startswith("--stills=")), None)
+STRIPS = next((Path(a.split("=", 1)[1]) for a in ARGS if a.startswith("--strips=")), None)
+ONLY = next((set(a.split("=", 1)[1].split(",")) for a in ARGS if a.startswith("--clips=")), None)
 EXPORT = "--no-export" not in ARGS
 SIDES = {"l": -1.0, "r": 1.0}
 
@@ -637,6 +646,46 @@ for ob in meshes:
 print("ELK_TRIS", tris, "cow", tris["ElkBody"], "bull", sum(tris.values()))
 print("ELK_BONES", len(BONES), "sockets", [e.name for e in sockets])
 
+# ------------------------------------------------------------------ clips
+rig.animation_data_create()
+for pb in rig.pose.bones:
+    pb.rotation_mode = "QUATERNION"
+KRIG = ec.Rig(rig, JOINT)
+CLIPS = ec.clips()
+ACTIONS = {c.name: ec.bake(KRIG, c) for c in CLIPS}
+ec.reset(rig)
+scene.render.fps = ec.FPS
+scene.render.fps_base = 1.0
+SOCKET_BONES = {e.name[len("socket_"):]: e.parent_bone for e in sockets}
+
+
+def _pose_report(clip, t):
+    """Where the muzzle and the hooves are at t (span): the graze's reach, a lifted foot."""
+    KRIG.apply(clip, t)
+    bpy.context.view_layer.update()
+    pb = rig.pose.bones
+    nose = rig.matrix_world @ pb["head"].tail
+    feet = {s: round((rig.matrix_world @ pb[b].tail).z, 3)
+            for s, b in (("fl", "hoof_l"), ("fr", "hoof_r"), ("hl", "hhoof_l"), ("hr", "hhoof_r"))}
+    return f"t={t:.2f} muzzle z={nose.z:.3f} y={nose.y:.3f} toes z={feet}"
+
+
+for _trk in rig.animation_data.nla_tracks:
+    _trk.mute = True
+for c in CLIPS:
+    for t in c.shots:
+        print("ELK_POSE", c.name, _pose_report(c, t))
+for _trk in rig.animation_data.nla_tracks:
+    _trk.mute = False
+ec.reset(rig)
+
+if EXPORT:
+    table = {"fps": ec.FPS, "units": "span", "bl": ec.BL,
+             "clips": {c.name: c.table() for c in CLIPS},
+             "sockets": SOCKET_BONES}
+    TABLE.write_text(json.dumps(table, indent=1) + "\n")
+    print("ELK_TABLE", TABLE)
+
 # ------------------------------------------------------------------ export
 if EXPORT:
     GLB.parent.mkdir(parents=True, exist_ok=True)
@@ -645,7 +694,8 @@ if EXPORT:
         ob.select_set(True)
     bpy.context.view_layer.objects.active = rig
     kw = dict(filepath=str(GLB), export_format="GLB", use_selection=True, export_yup=True,
-              export_apply=False, export_animations=False, export_def_bones=False,
+              export_apply=False, export_animations=True, export_animation_mode="ACTIONS",
+              export_force_sampling=True, export_frame_step=1, export_def_bones=False,
               export_materials="EXPORT", export_normals=True, export_extras=True, export_texcoords=False)
     try:
         bpy.ops.export_scene.gltf(**kw, export_vertex_color="ACTIVE")
@@ -654,9 +704,13 @@ if EXPORT:
     print("ELK_EXPORTED", GLB)
 
 # ------------------------------------------------------------------ stills
-if STILLS:
+if STILLS or STRIPS:
     import numpy as np
-    STILLS.mkdir(parents=True, exist_ok=True)
+    OUTDIR = STILLS or STRIPS
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    for _trk in rig.animation_data.nla_tracks:
+        _trk.mute = True
+    ec.reset(rig)
     scene.render.engine = "BLENDER_WORKBENCH"
     shd = scene.display.shading
     shd.light = "STUDIO"
@@ -703,7 +757,7 @@ if STILLS:
         cam.rotation_euler = (V(at) - V(eye)).normalized().to_track_quat("-Z", "Y").to_euler()
         scene.render.resolution_x, scene.render.resolution_y = res
         cam_data.lens = lens
-        path = STILLS / "_cell.png"
+        path = OUTDIR / "_cell.png"
         scene.render.filepath = str(path)
         bpy.ops.render.render(write_still=True)
         img = bpy.data.images.load(str(path), check_existing=False)
@@ -711,52 +765,93 @@ if STILLS:
         bpy.data.images.remove(img)
         return a
 
-    def save(a, name):
+    def save(a, name, where=None):
+        where = where or OUTDIR
         out = bpy.data.images.new(name, a.shape[1], a.shape[0])
         out.pixels = a.ravel()
-        out.filepath_raw = str(STILLS / f"{name}.png")
+        out.filepath_raw = str(where / f"{name}.png")
         out.file_format = "PNG"
         out.save()
-        print("ELK_STILL", STILLS / f"{name}.png")
+        print("ELK_STILL", where / f"{name}.png")
 
-    mane_ob, antler_ob = meshes[1], meshes[2]
-    at = V((0, 0.05, 0.48))
-    views = [(-90, 0.55), (-40, 0.75), (0, 0.6), (40, 0.75), (140, 0.75), (180, 0.6)]
+    if STILLS:
+        mane_ob, antler_ob = meshes[1], meshes[2]
+        at = V((0, 0.05, 0.48))
+        views = [(-90, 0.55), (-40, 0.75), (0, 0.6), (40, 0.75), (140, 0.75), (180, 0.6)]
 
-    def ring_of(dist, height):
-        out = []
-        for ang, h in views:
-            a = math.radians(ang)
-            eye = V((math.sin(a) * dist, math.cos(a) * dist, height * h + 0.15))
-            out.append(shoot(eye, at, lens=50))
-        return out
+        def ring_of(dist, height):
+            out = []
+            for ang, h in views:
+                a = math.radians(ang)
+                eye = V((math.sin(a) * dist, math.cos(a) * dist, height * h + 0.15))
+                out.append(shoot(eye, at, lens=50))
+            return out
 
-    for variant in ("bull", "cow"):
-        mane_ob.hide_render = variant == "cow"
-        antler_ob.hide_render = variant == "cow"
-        cells = ring_of(2.6, 0.9)
-        row1 = np.concatenate(cells[:3], axis=1)
-        row2 = np.concatenate(cells[3:], axis=1)
-        save(np.concatenate([row2, row1], axis=0), f"turntable_{variant}")
-    mane_ob.hide_render = False
-    antler_ob.hide_render = False
-    # the head, three-quarter and side; the whole bull flat side-on (the size check)
-    c1 = shoot((-0.55, 0.95, 0.78), (0, 0.42, 0.68), lens=50, res=(640, 640))
-    c2 = shoot((-1.3, 0.45, 0.70), (0, 0.42, 0.75), lens=50, res=(640, 640))
-    save(np.concatenate([c1, c2], axis=1), "head")
-    side = shoot((-3.2, 0.1, 0.55), (0, 0.1, 0.55), lens=60, res=(900, 640))
-    save(side, "side_scale")
-    # A rig check (not a clip): the head down to graze, a fore leg folded
-    # up, a hind leg reaching back, the body pitched; side and three-quarter.
-    TEST = {"neck1": -50, "neck2": -30, "head": -20, "upper_l": -35, "fore_l": 95, "cannon_l": -70,
-            "thigh_r": 28, "shin_r": -25, "hcannon_r": 20, "ear_l": -30, "tail": 40}
-    for pb in rig.pose.bones:
-        pb.rotation_mode = "XYZ"
-        pb.rotation_euler = (math.radians(TEST.get(pb.name, 0)), 0, 0)
-    bpy.context.view_layer.update()
-    c1 = shoot((-3.0, 0.1, 0.55), (0, 0.1, 0.45), lens=60, res=(800, 600))
-    c2 = shoot((-1.9, 1.9, 0.9), (0, 0.05, 0.42), lens=55, res=(800, 600))
-    save(np.concatenate([c1, c2], axis=1), "rig_check")
-    for pb in rig.pose.bones:
-        pb.rotation_euler = (0, 0, 0)
-    (STILLS / "_cell.png").unlink(missing_ok=True)
+        for variant in ("bull", "cow"):
+            mane_ob.hide_render = variant == "cow"
+            antler_ob.hide_render = variant == "cow"
+            cells = ring_of(2.6, 0.9)
+            row1 = np.concatenate(cells[:3], axis=1)
+            row2 = np.concatenate(cells[3:], axis=1)
+            save(np.concatenate([row2, row1], axis=0), f"turntable_{variant}")
+        mane_ob.hide_render = False
+        antler_ob.hide_render = False
+        # the head, three-quarter and side; the whole bull flat side-on (the size check)
+        c1 = shoot((-0.55, 0.95, 0.78), (0, 0.42, 0.68), lens=50, res=(640, 640))
+        c2 = shoot((-1.3, 0.45, 0.70), (0, 0.42, 0.75), lens=50, res=(640, 640))
+        save(np.concatenate([c1, c2], axis=1), "head")
+        side = shoot((-3.2, 0.1, 0.55), (0, 0.1, 0.55), lens=60, res=(900, 640))
+        save(side, "side_scale")
+        # A rig check (not a clip): the head down to graze, a fore leg folded
+        # up, a hind leg reaching back, the body pitched; side and three-quarter.
+        TEST = {"neck1": -50, "neck2": -30, "head": -20, "upper_l": -35, "fore_l": 95, "cannon_l": -70,
+                "thigh_r": 28, "shin_r": -25, "hcannon_r": 20, "ear_l": -30, "tail": 40}
+        for pb in rig.pose.bones:
+            pb.rotation_mode = "XYZ"
+            pb.rotation_euler = (math.radians(TEST.get(pb.name, 0)), 0, 0)
+        bpy.context.view_layer.update()
+        c1 = shoot((-3.0, 0.1, 0.55), (0, 0.1, 0.45), lens=60, res=(800, 600))
+        c2 = shoot((-1.9, 1.9, 0.9), (0, 0.05, 0.42), lens=55, res=(800, 600))
+        save(np.concatenate([c1, c2], axis=1), "rig_check")
+        for pb in rig.pose.bones:
+            pb.rotation_euler = (0, 0, 0)
+
+    if STRIPS:
+        # A strip a clip: its key poses side-on (from his left) over the
+        # same three-quarter front, the time in the corner of each cell.
+        meshes[1].hide_render = meshes[2].hide_render = False
+        font = bpy.data.curves.new("label", "FONT")
+        font.size = 0.055
+        label = bpy.data.objects.new("label", font)
+        scene.collection.objects.link(label)
+        label.parent = cam
+        label.location = (-0.40, -0.33, -1.0)
+        for pb in rig.pose.bones:
+            pb.rotation_mode = "QUATERNION"
+        views = [((-1.75, 0.05, 0.5), (0, 0.05, 0.5), 42), ((-1.3, 1.3, 0.8), (0, 0.04, 0.45), 42)]
+        for c in CLIPS:
+            if ONLY and c.name not in ONLY:
+                continue
+            rows = []
+            for eye, at_, lens in views:
+                row = []
+                for t in c.shots:
+                    KRIG.apply(c, t)
+                    font.body = f"{c.name}  {t:.2f}"
+                    bpy.context.view_layer.update()
+                    row.append(shoot(eye, at_, lens=lens, res=(360, 300)))
+                rows.append(np.concatenate(row, axis=1))
+            save(np.concatenate(rows[::-1], axis=0), f"strip_{c.name}", STRIPS)
+        # the held poses close: graze.lift, alert.up held, stop_look.hold
+        cells = []
+        by = {c.name: c for c in CLIPS}
+        for name, t, eye in (("graze", 2.2, (-1.05, 0.95, 0.55)), ("alert", 0.6, (-1.0, 1.1, 0.7)),
+                             ("stop_look", 0.8, (-1.15, 0.85, 0.75))):
+            KRIG.apply(by[name], t)
+            font.body = f"{name}  {t:.2f}"
+            bpy.context.view_layer.update()
+            cells.append(shoot(eye, (0, 0.12, 0.45), lens=40, res=(560, 560)))
+        save(np.concatenate(cells, axis=1), "holds", STRIPS)
+        ec.reset(rig)
+        bpy.data.objects.remove(label, do_unlink=True)
+    (OUTDIR / "_cell.png").unlink(missing_ok=True)

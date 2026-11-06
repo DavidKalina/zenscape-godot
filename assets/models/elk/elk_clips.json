@@ -1,0 +1,103 @@
+{
+ "fps": 30,
+ "units": "span",
+ "bl": 0.9,
+ "clips": {
+  "graze": {
+   "length": 3.0,
+   "loop": true,
+   "ground_bl": 0.0,
+   "beats": {
+    "graze.lift": [
+     2.2
+    ]
+   }
+  },
+  "alert": {
+   "length": 0.6,
+   "loop": false,
+   "ground_bl": 0.0,
+   "beats": {
+    "alert.up": [
+     0.25
+    ]
+   }
+  },
+  "stop_look": {
+   "length": 1.2,
+   "loop": false,
+   "ground_bl": 0.5,
+   "beats": {
+    "stop_look.halt": [
+     0.35
+    ],
+    "stop_look.hold": [
+     0.6
+    ]
+   },
+   "ground_curve": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.1,
+     0.4898
+    ],
+    [
+     0.2,
+     0.8163
+    ],
+    [
+     0.3,
+     0.9796
+    ],
+    [
+     0.4,
+     1.0
+    ],
+    [
+     0.5,
+     1.0
+    ],
+    [
+     0.6,
+     1.0
+    ],
+    [
+     0.7,
+     1.0
+    ],
+    [
+     0.8,
+     1.0
+    ],
+    [
+     0.9,
+     1.0
+    ],
+    [
+     1.0,
+     1.0
+    ],
+    [
+     1.1,
+     1.0
+    ],
+    [
+     1.2,
+     1.0
+    ]
+   ]
+  }
+ },
+ "sockets": {
+  "head": "head",
+  "chest": "chest",
+  "rump": "hips",
+  "foot_fl": "hoof_l",
+  "foot_hl": "hhoof_l",
+  "foot_fr": "hoof_r",
+  "foot_hr": "hhoof_r"
+ }
+}
