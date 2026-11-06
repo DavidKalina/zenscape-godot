@@ -40,6 +40,11 @@ extends Node3D
 ##   lean     the leaners' lean (deg); leaners: how many
 ##   fallen   how many lie fallen; broken: how many stand broken short
 ##   depth    an upright's thickness (m, across the path)
+##   channel  a row's channel's toy width (WorldScale `opening`), 0 none: its
+##            uprights stand either side of it (a wreck's ribs), the
+##            skin's own named width
+##   land     the step (m) of the land's heights the kind reads under the
+##            piece for the skin (0 none)
 ##
 ## Every flown gap is at least its opening: an upright's width is what the
 ## path leaves after them, and the skin's pieces stay inside `wide` (their
@@ -57,6 +62,7 @@ const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
 const SKINS := {
 	"stones": preload("res://scripts/endless/world/wilderness/uprights_stones.gd"),
+	"ribs": preload("res://scripts/endless/world/wilderness/uprights_ribs.gd"),
 }
 
 ## The flown gaps' toy widths (WorldScale `opening`: x2 at the defaults):
@@ -69,7 +75,7 @@ const TOY_SPAN_GAP := 4.5
 const LAYER := 1
 
 const PLAIN := {"shape":"ring","count":12,"radius":30.0,"length":120.0,"tall":20.0,"jitter":0.15,
-	"gap":TOY_GAP,"wide":0,"spans":0,"lean":0.0,"leaners":0,"fallen":0,"broken":0,"depth":3.0}
+	"gap":TOY_GAP,"wide":0,"spans":0,"lean":0.0,"leaners":0,"fallen":0,"broken":0,"depth":3.0,"channel":0.0,"land":0.0}
 
 ## The built data by site and spot ({key: built}), and the tasks running.
 static var _made := {}
@@ -339,7 +345,43 @@ static func lay_out(params: Dictionary, xf: Transform3D, field: RefCounted, seed
 		var top := maxf((a.at as Vector3).y+float(a.tall),(b.at as Vector3).y+float(b.tall))
 		a.tall = top-(a.at as Vector3).y
 		b.tall = top-(b.at as Vector3).y
-	return {"shape":str(p.shape),"slots":slots,"spans":spans,"gaps":gap,"params":p,"seed":seed_value}
+	var channel := WorldScale.opening(float(p.channel)) if float(p.channel) > 0.0 else 0.0
+	var land := {}
+	if float(p.land) > 0.0:
+		# Round the piece: a ring's stones and what falls from them, a row's
+		# length and its sides, with room past each end.
+		var half := Vector2(float(p.radius)+tall,float(p.radius)+tall) if ring else \
+			Vector2(channel*0.5+float(p.depth)+tall,path*0.5+tall*1.2)
+		land = _land(Vector2(-half.x,-half.y),half*2.0,float(p.land),xf,inv,field)
+	return {"shape":str(p.shape),"slots":slots,"spans":spans,"gaps":gap,"channel":channel,"land":land,"params":p,"seed":seed_value}
+
+## The land's heights in the piece's frame over the box from `lo`, `size`
+## (local XZ), every `step` m.
+static func _land(lo: Vector2, size: Vector2, step: float, xf: Transform3D, inv: Transform3D, field: RefCounted) -> Dictionary:
+	var nx := int(ceil(size.x/step))+1
+	var nz := int(ceil(size.y/step))+1
+	var h := PackedFloat32Array()
+	h.resize(nx*nz)
+	for j in range(nz):
+		for i in range(nx):
+			h[j*nx+i] = _local_ground(Vector3(lo.x+i*step,0.0,lo.y+j*step),xf,inv,field)
+	return {"x0":lo.x,"z0":lo.y,"step":step,"nx":nx,"nz":nz,"h":h}
+
+## The land's height at local (x, z) from `layout.land` (bilinear; the
+## nearest edge past it; 0 with none). Any thread.
+static func land_y(lay: Dictionary, x: float, z: float) -> float:
+	var g: Dictionary = lay.get("land",{})
+	if g.is_empty(): return 0.0
+	var nx := int(g.nx)
+	var nz := int(g.nz)
+	var fx := clampf((x-float(g.x0))/float(g.step),0.0,nx-1.001)
+	var fz := clampf((z-float(g.z0))/float(g.step),0.0,nz-1.001)
+	var i := int(fx)
+	var j := int(fz)
+	var h: PackedFloat32Array = g.h
+	var tx := fx-i
+	var tz := fz-j
+	return lerpf(lerpf(h[j*nx+i],h[j*nx+i+1],tx),lerpf(h[(j+1)*nx+i],h[(j+1)*nx+i+1],tx),tz)
 
 ## The land's height under local `at` (in the piece's frame).
 static func _local_ground(at: Vector3, xf: Transform3D, inv: Transform3D, field: RefCounted) -> float:

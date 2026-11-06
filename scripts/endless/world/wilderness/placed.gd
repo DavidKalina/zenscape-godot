@@ -32,11 +32,13 @@ const SITES := [
 	# from; facing east, down the meadow's length. No clear: the treeline
 	# stays.
 	["wild/meadow_herd","marker","",660.0,145.0,-90.0,{}],
-	# The inlet's east shore (m00), 100 m south of the start: a flat beach
-	# 2-3 m over the sea, south of the river mouth at (-10, 50); along the
-	# shore (NNW). The shipwreck's ribs, a 60 m clear round them (the beach
-	# is open to 40 m already).
-	["wild/inlet_wreck","marker","",25.0,100.0,30.0,{"clear":60.0}],
+	# The inlet's east shore (m00), 130 m south of the start, south of the
+	# river mouth at (-10, 50): the shipwreck on the tideline, along the shore
+	# (NW-SE), its keel on the strip of sand, its sea side in the shallows,
+	# its land side on the turf under a flat terrace 3 m over the sea. Its
+	# ribs in a row 74 m long, its bow (the north-west end) broken away into
+	# the water, its stern open to the south-east; a 60 m clear round it.
+	["wild/inlet_wreck","uprights","ribs",15.0,128.0,47.0,{"clear":60.0}],
 	# The river (m08-m10) where its west bank rises steeply, 60-75 m in 50 m,
 	# with the water 30-50 m out from its foot; facing the river (east). The
 	# waterfall, a 40 m clear on the bank (lane 3 sizes it with its cliff).
