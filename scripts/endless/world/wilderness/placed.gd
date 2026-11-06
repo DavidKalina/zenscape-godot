@@ -26,8 +26,9 @@ const SITES := [
 	# north-south; a river runs past 120 m east. The standing-stone ring.
 	["wild/meadow_ring","marker","",770.0,70.0,0.0,{}],
 	# The same meadow's south edge, 40 m out from the treeline the herd bolts
-	# from; facing east, down the meadow's length.
-	["wild/meadow_herd","marker","",660.0,145.0,-90.0,{}],
+	# from; facing east, down the meadow's length. The elk herd
+	# (spec-wild-kit-elk.md; --elk=off: its marker).
+	["wild/meadow_herd","ground_escort","elk",660.0,145.0,-90.0,{}],
 	# The inlet's east shore (m00), 100 m south of the start: a flat beach
 	# 2-3 m over the sea, south of the river mouth at (-10, 50); along the
 	# shore (NNW). The shipwreck's ribs.
