@@ -2,7 +2,11 @@ extends Node3D
 ## A box train on a rail path (docs/design/endless-flight/spec-railroad.md, lane
 ## `train`): an engine, its tender and a string of cars, each a plain block, run
 ## along `path` (the rail path contract: `length`, `pose(s, track)`, `kind`) on
-## one track at `speed` m/s. Greybox: no model, no smoke, no sound, nobody aboard.
+## one track by its timetable (rail_timetable.gd). Greybox: no model, no smoke,
+## no sound, nobody aboard.
+##
+## Built only near the plane (RailTrains makes and frees it): its look within
+## RailTrains' LOOK_NEAR, its solid (below) only within SOLID_NEAR (`set_solid`).
 ##
 ## Its solid, as the pirate ship's: each car one record in LandArches `loose`
 ## (`xf`, `inv` its whole frame, the bed's grade too), rewritten each frame
@@ -40,9 +44,10 @@ extends Node3D
 ##   FlightContact), but by a plate still shut it is graded as anywhere. The
 ##   plates come back once the plane is RESEAL_FAR m off (`_reseal`).
 ##
-## Its place is a pure function of time: the engine's nose at `s0` + `way`*`speed`
-## *`t` along the path (`head`), `t` the seconds it has run (for now its own; the
-## world clock's in the trunk).
+## Its place is a pure function of the clock: its timetable's `at(time)`, the
+## nose's odometer `d` (m along its own track) and s (`head`); each car's bogies
+## so many metres of its own track behind the nose (`place`). A clock that jumps
+## moves it at once, with no push on the plane (`before`).
 ##
 ## Knobs: --train-speed=<m/s> (SPEED), --train-keep=0 (no keep-out: the A/B of
 ## what it fixes), --full-meter (the meter filled again each time the smash car's
@@ -53,6 +58,7 @@ const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const TestPath = preload("res://scripts/endless/rail_test_path.gd")
+const Timetable = preload("res://scripts/endless/rail_timetable.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 
 ## A bit under the plane's cruise (36.75): at cruise it creeps up the train a car
@@ -139,12 +145,20 @@ var path: RefCounted
 var track := 0
 ## +1 runs +s along the path (track 0), -1 the other way (track 1).
 var way := 1.0
-var speed := SPEED
-var s0 := 0.0
-var t := 0.0
+var timetable: RefCounted
+## Its speed now (m/s along its track), the nose's odometer and its s (`head`),
+## the clock time it was placed at, and its timetable's stop it waits at (-1 running).
+var speed := 0.0
+var d := 0.0
 var head := 0.0
+var time := 0.0
+var stop := -1
 var label := "rail/train"
 var keep := true
+## Its solid is built (records in LandArches `loose`, a StaticBody a car).
+var solid := false
+## Frames its clock jumped further than it can run (moved with no push).
+var jumps := 0
 ## Each car: {kind, long, tall, front (m from the nose to its front), node, body,
 ## record, records (its own and its plates'), boxes (its solid but its plates),
 ## all (and its plates still shut), plates ([{box, record, shape, look, open}]),
@@ -161,7 +175,7 @@ var rammed := {}
 var rams := 0
 var ram_most := 0.0
 var _dt := 1.0/60.0
-var _mats := {}
+static var _mats := {}
 
 static func test_wanted() -> bool:
 	return "--train-test" in LaunchArgs.user_args()
@@ -196,42 +210,56 @@ static func speed_flag(otherwise := SPEED) -> float:
 		if a.begins_with("--train-speed="): return maxf(0.0,a.trim_prefix("--train-speed=").to_float())
 	return otherwise
 
-func setup(g: Node3D, rail_path: RefCounted, on_track := 0, nose := TEST_HEAD, handle := "rail/train") -> void:
+## The train on `rail_path`'s track `on_track` by `table` (rail_timetable.gd, on
+## the same path and track), placed at clock `at_time`: its look only; its solid
+## comes with `set_solid`.
+func setup(g: Node3D, rail_path: RefCounted, on_track: int, table: RefCounted, at_time: float, handle := "rail/train") -> void:
 	game = g
 	path = rail_path
 	track = on_track
+	timetable = table
 	# Each track's train runs the way its pose faces: track 1's -s.
 	way = 1.0 if on_track == 0 else -1.0
-	s0 = nose
 	label = handle
 	name = "RailTrain"
-	speed = speed_flag()
 	keep = not ("--train-keep=0" in LaunchArgs.user_args())
 	refill = "--full-meter" in LaunchArgs.user_args()
 	var front := 0.0
 	for i in range(CARS.size()):
 		var spec: Array = CARS[i]
-		var car := {"kind":str(spec[0]),"long":float(spec[1]),"tall":float(spec[2]),"front":front}
+		var car := {"kind":str(spec[0]),"long":float(spec[1]),"tall":float(spec[2]),"front":front,"records":[],"plates":[]}
 		front += float(spec[1])+GAP
 		_build(car,i)
 		cars.append(car)
-	_pose()
-	for car: Dictionary in cars:
-		car.was = car.xf
-		car.was_inv = car.inv
+	place(at_time)
+	_settle()
 
-## One frame, before the plane's move (after the study's `solid_pad` is set):
-## the train runs on, and the plane is held out of the cars that came at it.
-func before(delta: float) -> void:
+## One frame, before the plane's move (after the study's `solid_pad` is set): the
+## train to its place at clock `at_time`, and the plane held out of the cars that
+## came at it. A clock that jumped further than the train can run (a skip, a
+## stall) moves it with no push: the cars were never between.
+func before(delta: float, at_time: float) -> void:
 	_dt = maxf(delta,0.0001)
-	t += delta
 	rammed = {}
 	for car: Dictionary in cars:
 		car.was = car.xf
 		car.was_inv = car.inv
-	_pose()
+	var was_d := d
+	place(at_time)
+	var ran := absf(fposmod(d-was_d+0.5*float(timetable.lap()),float(timetable.lap()))-0.5*float(timetable.lap()))
+	if ran > float(timetable.speed)*maxf(delta,1.0/30.0)*2.0+1.0:
+		jumps += 1
+		_settle()
+		return
+	if not solid: return
 	if keep: keep_out()
 	_smash_step()
+
+## Last frame's place taken as now's: no motion seen.
+func _settle() -> void:
+	for car: Dictionary in cars:
+		car.was = car.xf
+		car.was_inv = car.inv
 
 ## One frame, after the plane's move and before FlightContact: a car that ran
 ## into the plane gives it the speed it came at it by, along the face (so the
@@ -567,15 +595,18 @@ static func _out_of(b: AABB, l: Vector3, lw: Vector3, pad: float) -> Dictionary:
 	if near.y != 0.0: return {"at":Vector3(near.w,l.y,l.z),"normal":Vector3(near.y,0.0,0.0)}
 	return {"at":Vector3(l.x,l.y,near.w),"normal":Vector3(0.0,0.0,near.z)}
 
-## Every car where the train is now: between its bogies on the path.
-func _pose() -> void:
-	var n: float = path.length()
-	head = fposmod(s0+way*speed*t,n)
+## Every car where the train is at clock `at_time`: between its bogies on its
+## track, each so many metres of the track behind the nose.
+func place(at_time: float) -> void:
+	time = at_time
+	var now: Dictionary = timetable.at(at_time)
+	d = float(now.d)
+	head = float(now.s)
+	speed = float(now.v)
+	stop = int(now.stop)
 	for car: Dictionary in cars:
-		var sf := head-way*(float(car.front)+BOGIE)
-		var sr := head-way*(float(car.front)+float(car.long)-BOGIE)
-		var a: Transform3D = path.pose(sf,track)
-		var b: Transform3D = path.pose(sr,track)
+		var a: Transform3D = path.pose(timetable.s_of(d-float(car.front)-BOGIE),track)
+		var b: Transform3D = path.pose(timetable.s_of(d-float(car.front)-float(car.long)+BOGIE),track)
 		var f := (a.origin-b.origin).normalized()
 		var up := (a.basis.y+b.basis.y).normalized()
 		up = (up-f*f.dot(up)).normalized()
@@ -584,73 +615,138 @@ func _pose() -> void:
 		car.xf = xf
 		car.inv = xf.affine_inverse()
 		(car.node as Node3D).transform = xf
+		if not solid: continue
 		# The body told now, not at the tree's next flush: the wing rays this
 		# frame (NearMiss) meet the car where it is, not 0.53 m back.
 		if is_inside_tree(): (car.body as Node3D).force_update_transform()
-		var yaw := atan2(-f.x,-f.z)
-		for r: Dictionary in car.records:
-			r.pos = xf.origin
-			r.cos = cos(yaw)
-			r.sin = sin(yaw)
-			r.xf = xf
-			r.inv = car.inv
-	GroundNative.bump_loose()
+		_tell(car)
+	if solid: GroundNative.bump_loose()
 
-## Car `car` (number `i`): its blocks drawn as one mesh, its StaticBody, its
-## record in `loose`; the smash car's plates each a record of their own, first in
-## `loose` (so a strike near a jamb finds the plate), a shape and a look.
+## Car `car`'s records in `loose` told its frame.
+static func _tell(car: Dictionary) -> void:
+	var xf: Transform3D = car.xf
+	var f := -xf.basis.z
+	var yaw := atan2(-f.x,-f.z)
+	for r: Dictionary in car.records:
+		r.pos = xf.origin
+		r.cos = cos(yaw)
+		r.sin = sin(yaw)
+		r.xf = xf
+		r.inv = car.inv
+
+## Car `car` (number `i`): its look, its blocks drawn as one mesh (shared by
+## every train: `_looks`), and the smash car's plates' looks; its boxes for the
+## solid (`set_solid`).
 func _build(car: Dictionary, i: int) -> void:
 	var node := Node3D.new()
 	node.name = "Car%d" % i
 	add_child(node)
 	car.node = node
-	var parts := _parts(str(car.kind),float(car.long),float(car.tall))
+	var kind := str(car.kind)
+	var parts := _parts(kind,float(car.long),float(car.tall))
 	var boxes: Array[AABB] = []
-	var looks: Array = []
-	for part: Array in parts.solid:
-		boxes.append(part[0])
-		if str(part[1]) != "": looks.append(part)
-	looks.append_array(parts.dress)
+	for part: Array in parts.solid: boxes.append(part[0])
 	car.boxes = boxes
 	var mi := MeshInstance3D.new()
 	mi.name = "Look"
-	mi.mesh = _merged(looks)
+	mi.mesh = _look_of(car,parts)
 	node.add_child(mi)
-	var body := StaticBody3D.new()
-	body.name = "Body"
-	body.collision_layer = game.arches.LAYER
-	body.collision_mask = 0
-	for box: AABB in boxes: body.add_child(_shape(box))
-	node.add_child(body)
-	car.body = body
-	var reach := float(car.long)*0.5+BoxSolid.grow_most()+2.0
-	var record := {"name":"%s/car%d" % [label,i],"kind":"train","node":node,"pos":Vector3.ZERO,"cos":1.0,"sin":0.0,
-		"xf":Transform3D.IDENTITY,"inv":Transform3D.IDENTITY,"solid":BoxSolid.build(boxes),
-		"reach":reach,"spec":{},"no_break":true,"adopted":0}
-	car.record = record
-	car.records = [record]
-	game.arches.loose.append(record)
 	var plates: Array[Dictionary] = []
 	var ends: Array = parts.plates
 	for k in range(ends.size()):
 		var box: AABB = ends[k]
-		var cs := _shape(box)
-		body.add_child(cs)
 		var look := MeshInstance3D.new()
 		look.name = "Plate%d" % k
-		look.mesh = _merged(_plate_look(box))
+		look.mesh = _plate_mesh(box)
 		node.add_child(look)
-		var pr := {"name":"%s/car%d/plate%d" % [label,i,k],"kind":"train","node":node,"pos":Vector3.ZERO,"cos":1.0,"sin":0.0,
-			"xf":Transform3D.IDENTITY,"inv":Transform3D.IDENTITY,"solid":BoxSolid.build([box]),
+		plates.append({"box":box,"look":look,"open":false,"k":k})
+	car.plates = plates
+	if kind == "smash": car.inner = Vector3(smash_wide()*0.5,FLOOR,FLOOR+smash_high(float(car.tall)))
+	_refresh(car)
+
+## The solid on or off: each car its StaticBody on layer 1 (the wing rays) and
+## its record in LandArches `loose`, the smash car's plates each a record of its
+## own, first in `loose` (so a strike near a jamb finds the plate), and a shape.
+## Off, the plates are put back whole.
+func set_solid(on: bool) -> void:
+	if on == solid: return
+	solid = on
+	for i in range(cars.size()):
+		var car: Dictionary = cars[i]
+		if on: _solidify(car,i)
+		else:
+			for r: Dictionary in car.records: game.arches.loose.erase(r)
+			car.records = []
+			(car.body as Node).queue_free()
+			car.erase("body")
+			for plate: Dictionary in car.plates:
+				plate.open = false
+				(plate.look as Node3D).visible = true
+				plate.erase("shape")
+				plate.erase("record")
+			_refresh(car)
+	_settle()
+	GroundNative.bump_loose()
+
+func _solidify(car: Dictionary, i: int) -> void:
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	body.collision_layer = game.arches.LAYER
+	body.collision_mask = 0
+	for box: AABB in car.boxes: body.add_child(_shape(box))
+	(car.node as Node3D).add_child(body)
+	car.body = body
+	var reach := float(car.long)*0.5+BoxSolid.grow_most()+2.0
+	var record := {"name":"%s/car%d" % [label,i],"kind":"train","node":car.node,"pos":Vector3.ZERO,"cos":1.0,"sin":0.0,
+		"xf":Transform3D.IDENTITY,"inv":Transform3D.IDENTITY,"solid":_solid_of(car.boxes),
+		"reach":reach,"spec":{},"no_break":true,"adopted":0}
+	car.record = record
+	car.records = [record]
+	game.arches.loose.append(record)
+	for plate: Dictionary in car.plates:
+		var k := int(plate.k)
+		var box: AABB = plate.box
+		var cs := _shape(box)
+		body.add_child(cs)
+		var pr := {"name":"%s/car%d/plate%d" % [label,i,k],"kind":"train","node":car.node,"pos":Vector3.ZERO,"cos":1.0,"sin":0.0,
+			"xf":Transform3D.IDENTITY,"inv":Transform3D.IDENTITY,"solid":_solid_of([box]),
 			"reach":reach,"spec":{},"no_break":true,"adopted":0,
 			"strike":Callable(self,"_strike"),"car_i":i,"plate_i":k}
-		car.records.append(pr)
+		(car.records as Array).append(pr)
 		game.arches.loose.push_front(pr)
-		plates.append({"box":box,"record":pr,"shape":cs,"look":look,"open":false})
-	car.plates = plates
-	if str(car.kind) == "smash": car.inner = Vector3(smash_wide()*0.5,FLOOR,FLOOR+smash_high(float(car.tall)))
-	_refresh(car)
-	GroundNative.bump_loose()
+		plate.record = pr
+		plate.shape = cs
+	if is_inside_tree(): body.force_update_transform()
+	_tell(car)
+
+## BoxSolid's build of `boxes`, made once a car kind (every train's cars alike).
+static var _solids := {}
+
+static func _solid_of(boxes: Array) -> Variant:
+	var key := str(boxes)
+	if not _solids.has(key):
+		var typed: Array[AABB] = []
+		for b: AABB in boxes: typed.append(b)
+		_solids[key] = BoxSolid.build(typed)
+	return _solids[key]
+
+## A car's look and a plate's, made once a kind and size (every train's alike).
+static var _looks := {}
+
+func _look_of(car: Dictionary, parts: Dictionary) -> ArrayMesh:
+	var key := "%s/%s/%s" % [car.kind,car.long,car.tall]
+	if not _looks.has(key):
+		var looks: Array = []
+		for part: Array in parts.solid:
+			if str(part[1]) != "": looks.append(part)
+		looks.append_array(parts.dress)
+		_looks[key] = _merged(looks)
+	return _looks[key]
+
+func _plate_mesh(box: AABB) -> ArrayMesh:
+	var key := "plate/%s" % box
+	if not _looks.has(key): _looks[key] = _merged(_plate_look(box))
+	return _looks[key]
 
 static func _shape(box: AABB) -> CollisionShape3D:
 	var cs := CollisionShape3D.new()
