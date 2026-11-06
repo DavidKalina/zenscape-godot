@@ -40,10 +40,8 @@ const TestPath = preload("res://scripts/endless/rail_test_path.gd")
 ## A bit under the plane's cruise (36.75): at cruise it creeps up the train a car
 ## at a time, Boost runs it up to the engine.
 const SPEED := 32.0
-## The gap between two trains' sides on the two tracks, threaded side by side:
-## an opening (WorldScale) from this toy width (7.0 m at plane 2).
-const TOY_BETWEEN := 3.5
-## Every car's width, and its floor over the bed (m): over the wheels.
+## Every car's width (no wider than the path's CAR_WIDTH: the tracks' gap is the
+## path's, `track_gap`), and its floor over the bed (m): over the wheels.
 const WIDE := 6.0
 const FLOOR := 1.4
 ## How far a car's underframe reaches under the bed (m): down into it, so
@@ -90,7 +88,7 @@ const LOOKS := {
 var game: Node3D
 var path: RefCounted
 var track := 0
-## +1 runs +s along the path, -1 the other way.
+## +1 runs +s along the path (track 0), -1 the other way (track 1).
 var way := 1.0
 var speed := SPEED
 var s0 := 0.0
@@ -109,11 +107,6 @@ var ram_most := 0.0
 var _dt := 1.0/60.0
 var _mats := {}
 
-## The spacing of a path's two tracks, centre to centre, that leaves an
-## opening between two trains side by side (m).
-static func spacing() -> float:
-	return WIDE+WorldScale.opening(TOY_BETWEEN)
-
 static func test_wanted() -> bool:
 	return "--train-test" in LaunchArgs.user_args()
 
@@ -121,7 +114,7 @@ static func test_wanted() -> bool:
 static func test_path(field: RefCounted) -> RefCounted:
 	var sea: float = preload("res://scripts/endless/land_field.gd").SEA_Y
 	var h := func(x: float, z: float) -> float: return maxf(float(field.height(x,z)),sea)+TestPath.BED
-	return TestPath.new(h,spacing())
+	return TestPath.new(h)
 
 static func length_of() -> float:
 	var n := 0.0
@@ -144,11 +137,12 @@ static func speed_flag(otherwise := SPEED) -> float:
 		if a.begins_with("--train-speed="): return maxf(0.0,a.trim_prefix("--train-speed=").to_float())
 	return otherwise
 
-func setup(g: Node3D, rail_path: RefCounted, on_track := 0, runs := 1.0, nose := TEST_HEAD, handle := "rail/train") -> void:
+func setup(g: Node3D, rail_path: RefCounted, on_track := 0, nose := TEST_HEAD, handle := "rail/train") -> void:
 	game = g
 	path = rail_path
 	track = on_track
-	way = runs
+	# Each track's train runs the way its pose faces: track 1's -s.
+	way = 1.0 if on_track == 0 else -1.0
 	s0 = nose
 	label = handle
 	name = "RailTrain"
@@ -198,15 +192,25 @@ func after(_delta: float) -> void:
 ## `v` (a touch's velocity at world `at`) less the velocity of the car `at` is
 ## on, if any: what FlightContact grades a touch of a car by.
 func relative(at: Vector3, v: Vector3) -> Vector3:
+	var m: Variant = motion_at(at,TOUCH)
+	return v if m == null else v-(m as Vector3)
+
+## The velocity (m/s) of the car whose solid is nearest world `at`, within
+## `reach` m of it, or null: what a near miss by a car is scored relative to
+## (NearMiss `_by`) and a touch of one graded by (`relative`).
+func motion_at(at: Vector3, reach: float) -> Variant:
+	var best := INF
+	var got: Variant = null
 	for car: Dictionary in cars:
-		if (car.xf as Transform3D).origin.distance_to(at) > float(car.long)*0.5+NEAR: continue
+		if (car.xf as Transform3D).origin.distance_to(at) > float(car.long)*0.5+NEAR+reach: continue
 		var l: Vector3 = (car.inv as Transform3D)*at
 		for b: AABB in car.boxes:
-			if l.y < b.position.y-TOUCH or l.y > b.end.y+TOUCH: continue
-			var dx := maxf(0.0,maxf(b.position.x-l.x,l.x-b.end.x))
-			var dz := maxf(0.0,maxf(b.position.z-l.z,l.z-b.end.z))
-			if dx*dx+dz*dz <= TOUCH*TOUCH: return v-velocity_at(car,at)
-	return v
+			var d := Vector3(maxf(0.0,maxf(b.position.x-l.x,l.x-b.end.x)),maxf(0.0,maxf(b.position.y-l.y,l.y-b.end.y)),
+				maxf(0.0,maxf(b.position.z-l.z,l.z-b.end.z))).length()
+			if d <= reach and d < best:
+				best = d
+				got = velocity_at(car,at)
+	return got
 
 ## The velocity (m/s) of the point of `car` now at world `at`.
 func velocity_at(car: Dictionary, at: Vector3) -> Vector3:
@@ -305,6 +309,9 @@ func _pose() -> void:
 		car.xf = xf
 		car.inv = xf.affine_inverse()
 		(car.node as Node3D).transform = xf
+		# The body told now, not at the tree's next flush: the wing rays this
+		# frame (NearMiss) meet the car where it is, not 0.53 m back.
+		if is_inside_tree(): (car.body as Node3D).force_update_transform()
 		var r: Dictionary = car.record
 		r.pos = xf.origin
 		var yaw := atan2(-f.x,-f.z)

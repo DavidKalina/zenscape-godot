@@ -7,16 +7,22 @@ extends RefCounted
 ## The contract (the line lane's real path offers the same):
 ## - `length()`: one lap (m);
 ## - `pose(s, track)`: the centre of track 0 or 1 at `s` m along the loop
-##   (wrapping), the basis's -z along +s (the way track 0's train runs), y up off
-##   the bed, x to the right of +s;
-## - `kind(s)`: grade, cut, fill, tunnel, trestle or bridge.
+##   (wrapping), the basis's -z the way that track's train runs (+s on track 0,
+##   -s on track 1), y up off the bed, x to the train's right;
+## - `kind(s)`: grade, cut, fill, tunnel, trestle or bridge;
+## - `track_gap()`: the tracks' centres apart (m).
 ##
-## Track 0 runs on the right of +s, track 1 on the left, SPACING m apart centre
-## to centre (RailTrain `spacing`: the gap between two trains' sides an opening).
+## Track 0 runs on the right of +s, track 1 on the left (each train on its
+## right), `track_gap()` apart centre to centre: a car's width and the opening
+## between two trains side by side (WorldScale.opening of TOY_BETWEEN, or
+## `--track-gap-toy=`), as the line's (rail_line.gd); the trains hold no spacing.
 ##
 ## Its bed: the land under it (the mean of the middle and both tracks' outer
 ## edges) every STEP m, eased over EASE m either way and graded to GRADE: a
 ## little fill over the hollows and a little cut through the rises (`fill_range`).
+
+const WorldScale = preload("res://scripts/world_scale.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const STEP := 10.0
 const EASE := 150.0
@@ -44,11 +50,16 @@ const BALLAST := Vector2(2.3,0.1)
 const LOOK_STEP := 5.0
 ## How far out from the middle line the land is read for the bed, past a track.
 const EDGE := 5.0
+## The gap between two trains' sides, threaded side by side: an opening from
+## this toy width (7 m at the defaults), past the widest car (CAR_WIDTH m).
+const TOY_BETWEEN := 3.5
+const CAR_WIDTH := 6.0
 
 var at := AT
 var turn := TURN
 var leg := LEG
 var radius := RADIUS
+## The tracks' centres apart (m): `track_gap()`.
 var spacing := 13.0
 var _len := 0.0
 ## The bed's samples' spacing (m): STEP, shortened to a whole number a lap.
@@ -58,19 +69,29 @@ var _land := PackedFloat32Array()
 
 ## `height`: the bed's floor, (x, z) -> float (the land's height, or the sea's
 ## plus BED).
-func _init(height: Callable, track_spacing: float, centre := AT, long_turn := TURN, straight := LEG, round_r := RADIUS) -> void:
+func _init(height: Callable, centre := AT, long_turn := TURN, straight := LEG, round_r := RADIUS) -> void:
 	at = centre
 	turn = long_turn
 	leg = straight
 	radius = round_r
-	spacing = track_spacing
+	spacing = CAR_WIDTH+WorldScale.opening(gap_toy())
 	_len = 2.0*leg+TAU*radius
 	_lay(height)
 
 func length() -> float:
 	return _len
 
-## The centre of `track` (0 or 1) at `s` m along the loop.
+## The tracks' centres apart (m).
+func track_gap() -> float:
+	return spacing
+
+## The toy width of the gap between two trains: TOY_BETWEEN, or --track-gap-toy=.
+static func gap_toy() -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--track-gap-toy="): return maxf(0.0,a.trim_prefix("--track-gap-toy=").to_float())
+	return TOY_BETWEEN
+
+## The centre of `track` (0 or 1) at `s` m along the loop, facing its train's way.
 func pose(s: float, track: int) -> Transform3D:
 	s = fposmod(s,_len)
 	var p := point(s)
@@ -83,6 +104,9 @@ func pose(s: float, track: int) -> Transform3D:
 	var x := up.cross(z)
 	var side := 0.5*spacing*(1.0 if track == 0 else -1.0)
 	var o := Vector3(p.x,y,p.y)+Vector3(-d.y,0.0,d.x)*side
+	if track != 0:
+		x = -x
+		z = -z
 	return Transform3D(Basis(x,up,z),o)
 
 func kind(s: float) -> String:
@@ -192,8 +216,12 @@ func build(parent: Node3D) -> MeshInstance3D:
 		_strip(st,ma,mb,a.basis,b.basis,half,half,0.0,-CAUSEWAY_DEEP,side)
 		_strip(st,ma,mb,a.basis,b.basis,-half,-half,-CAUSEWAY_DEEP,0.0,side)
 		for track in range(2):
-			var ta := pose(i*_len/n,track)
-			var tb := pose((i+1)*_len/n,track)
+			# Both tracks in track 0's frame (+s), so their faces wind alike.
+			var ta := a
+			var tb := b
+			if track == 1:
+				ta.origin -= a.basis.x*spacing
+				tb.origin -= b.basis.x*spacing
 			_strip(st,ta.origin,tb.origin,ta.basis,tb.basis,-BALLAST.x,BALLAST.x,BALLAST.y,BALLAST.y,gravel)
 			for g: float in [-GAUGE_HALF,GAUGE_HALF]:
 				var y := BALLAST.y+RAIL.y
