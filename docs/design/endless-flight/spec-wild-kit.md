@@ -27,11 +27,10 @@ default.
   user's `user://` saves or `layouts/` files except the ones this spec names.
 - No `git stash` (the stash list is shared with the user's checkouts).
 
-## This loop's task: step 0, placed sites
+## Step 0, placed sites (done)
 
-Only this. Lanes 1-4 below run in their own worktrees after step 0 lands;
-they are not this loop's tasks. Signal COMPLETE when step 0 is committed and
-checked.
+Built and checked (4397081a, 9d7c0ee5). The lanes below built on it and are
+merged; the loop's tasks now are the trunk's, at the end of this spec.
 
 Done looks like:
 
@@ -101,6 +100,42 @@ additive, and ends each commit with **Notes for merge**.
 
 ## Trunk after the lanes
 
-The lanes merge into this branch (the orchestrator does it, joining the
-kind table's lines), the smoke check runs, and a driven flight past every
-piece gives stills. Then the handoff beside this spec.
+All five lanes are merged into this branch: director, uprights, falls,
+elk-body and elk-mind (each lane's handoff or last commit says what it built
+and left open). The trunk is this loop's tasks now, one per iteration, in
+order. Signal COMPLETE when the last is committed and checked.
+
+1. **The real elk.** Point `BODIES["elk"]` in
+   `scripts/endless/kinds/ground_escort.gd` at
+   `scripts/endless/world/wilderness/elk_body.gd`; keep the stand-in behind a
+   flag (`--elk-body=standin`). Then the procedural layers on the real clips
+   (skill `enemy-build`, Trunk): feet planted on the real ground (the clips
+   plant on a flat plane, the meadow is not flat), the head's look-at on the
+   real neck, and the mind's timings re-tuned to the real clips. Re-run the
+   elk drivers (`scratch/elk/`, each with the run line in its header, one at a
+   time) with the real body, and rendered stills of each pass.
+2. **The herd keeps out of placed pieces.** The stone ring
+   (`wild/meadow_ring`, 770, 70) stands about 110 m from the herd's spot. The
+   herd checks trees, water and steep ground, not placed pieces' solids. No
+   elk may run, leap, halt or drift home through a stone: make the herd's
+   land check read the placed pieces (`placed.inside`, or the sites' clear
+   circles), and prove it with a run beside aimed past the ring.
+3. **Headings agree.** A placed site's heading turns the opposite way from
+   the `--heading` launch flag (the ring's 90 faces west; `--heading=90` flies
+   east). Make them one convention, the launch flag's (the plane's own), and
+   flip the rows in `scripts/endless/world/wilderness/placed.gd` so every
+   piece stands exactly where it stands now: stills of each piece before and
+   after match.
+4. **A flight past every piece.** One driven route from the start: the
+   wreck's channel, the stone ring (under a lintel), the herd (a run beside),
+   the falls (in through the curtain, out through the cave), a still at each,
+   and the director's moments forced along it (`--happen=`). A launch line
+   per piece. The smoke check, and each lane's main driver once more on this
+   branch.
+5. **The handoff**, `wild-kit-handoff.md` beside this spec, from the trail
+   and the lanes' handoffs: what's built, where to play each piece (launch
+   lines), what's stood in, what's open (each lane's open list, plus the
+   frost's streaks and the wreck's thin side-on look, both judged good
+   enough for now by the user), and which existing tests the build breaks:
+   find the tests under `tests/` that read the files this branch changed
+   (`git diff --name-only main...`) and run only those, headless.
