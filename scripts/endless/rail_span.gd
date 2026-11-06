@@ -32,6 +32,7 @@ const RailBed = preload("res://scripts/endless/rail_bed.gd")
 const RailTrack = preload("res://scripts/endless/rail_track.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const RailStops = preload("res://scripts/endless/rail_stops.gd")
 
 const LAYER := 1
 ## The deck's frames (m of s) and its pieces (m of s): one mesh and one
@@ -52,7 +53,7 @@ const DECK_PAST := 0.9
 ## a post's side; the cap under the deck; girts every GIRT_EVERY m down.
 const BENT_STEP := 24.0
 const TOY_BAY := 4.0
-const POST := 1.2
+const POST := 1.8
 const CAP_DEEP := 1.2
 const CAP_ALONG := 1.6
 const GIRT_EVERY := 14.0
@@ -75,8 +76,17 @@ const ABUT_PAST := 1.0
 ## Feet sink this far under the ground.
 const SINK := 2.0
 ## Colours over the ruins' stone (its vertex colour).
+## The deck and the trestles' bents are timber in the stops' flat paint
+## (RailStops.paint); the bridges' piers and the abutments stone (the
+## ruins'). On the deck's top a bed under each track (TRACK_STRIP m past
+## the sleepers' ends), up to the land's ballast top, so the sleepers stand
+## as on the land (with the deck at their foot, their gaps' shade flickered
+## from afar).
 const DECK_C := Color(0.42,0.36,0.31)
-const DECK_TOP_C := Color(0.34,0.31,0.28)
+const DECK_TOP_C := Color(0.46,0.40,0.33)
+const TRACK_C := Color(0.36,0.31,0.26)
+const TRACK_STRIP := 0.3
+const TRACK_UP := RailTrack.BALLAST_TOP-RailTrack.SLEEPER_BASE
 const TIMBER_C := Color(0.55,0.42,0.30)
 const STONE_C := Color(0.80,0.74,0.65)
 const CAP_C := Color(0.70,0.64,0.56)
@@ -115,6 +125,7 @@ var _pr := PackedFloat32Array()
 var _faces: Array = []
 var _body: Array = []
 var _stone: Material
+var _paint: Material
 ## What was built (a driver's count).
 var supports := 0
 var tris := 0
@@ -130,6 +141,7 @@ func setup(land_field: RefCounted) -> void:
 	var outer := WorldScale.opening(TOY_BAY)+POST
 	_deck_half = maxf(gap*0.5+RailTrack.SLEEPER_HALF+DECK_PAST,outer+POST*0.5+0.3)
 	_stone = RuinKit.materials().stone
+	_paint = RailStops.paint()
 	for sp: Array in line.spans():
 		_s0.append(float(sp[0]))
 		_s1.append(float(sp[1]))
@@ -267,6 +279,7 @@ func _grid(k: int) -> void:
 ## abutment at the span's start or end if it holds one.
 func _build_piece(k: int, a: float, b: float, first: bool, last: bool) -> void:
 	var m := RailTrack._Mesh.new()
+	var wood := RailTrack._Mesh.new()
 	# The deck, from the span's start to its end.
 	var d0 := maxf(a,_s0[k])
 	var d1 := minf(b,_s1[k])
@@ -275,17 +288,19 @@ func _build_piece(k: int, a: float, b: float, first: bool, last: bool) -> void:
 		var prev := {}
 		for q in steps+1:
 			var f := _frame(lerpf(d0,d1,float(q)/steps))
-			if not prev.is_empty(): _deck(m,prev,f)
+			if not prev.is_empty(): _deck(wood,prev,f)
 			prev = f
 	# The supports.
 	var ss: PackedFloat32Array = _sup_s[k]
 	for q in ss.size():
 		if ss[q] < a or ss[q] >= b: continue
-		_support_mesh(m,ss[q],_sup_parts[k][q])
+		_support_mesh(m if line.kind(ss[q]) == "bridge" else wood,ss[q],_sup_parts[k][q])
 	if first: _abutment(m,_s0[k],1.0,_abut_foot[k].x)
 	if last: _abutment(m,_s1[k],-1.0,_abut_foot[k].y)
-	if m.verts.is_empty(): return
+	if m.verts.is_empty() and wood.verts.is_empty(): return
 	var mi := m.instance(_stone)
+	wood.add_to(mi.mesh as ArrayMesh,_paint)
+	m.verts.append_array(wood.verts)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	mi.visibility_range_end = VISIBLE
 	add_child(mi)
@@ -314,10 +329,28 @@ func _deck(m: RefCounted, f0: Dictionary, f1: Dictionary) -> void:
 	var rb: Vector3 = f1.r*h
 	var da: Vector3 = -f0.u*DECK_DEPTH
 	var db: Vector3 = -f1.u*DECK_DEPTH
-	m.quad(a-ra,b-rb,b+rb,a+ra,f0.u,DECK_TOP_C)
+	# The top in strips across: planks, a track's strip, planks between,
+	# the other track's strip, planks.
+	var g := float(line.track_gap())*0.5
+	var w := RailTrack.SLEEPER_HALF+TRACK_STRIP
+	var cuts := [-h,-g-w,-g+w,g-w,g+w,h]
+	for q in cuts.size()-1:
+		var x0: float = cuts[q]
+		var x1: float = cuts[q+1]
+		if x1 <= x0: continue
+		if q%2 == 0:
+			m.quad(a+f0.r*x0,b+f1.r*x0,b+f1.r*x1,a+f0.r*x1,f0.u,DECK_TOP_C)
+			continue
+		# A track's bed on the deck, up to the land's ballast top, so its
+		# sleepers stand as proud of it as on the land.
+		var ua: Vector3 = f0.u*TRACK_UP
+		var ub: Vector3 = f1.u*TRACK_UP
+		m.quad(a+f0.r*x0+ua,b+f1.r*x0+ub,b+f1.r*x1+ub,a+f0.r*x1+ua,f0.u,TRACK_C)
+		m.quad(a+f0.r*x0,b+f1.r*x0,b+f1.r*x0+ub,a+f0.r*x0+ua,-f0.r,TRACK_C)
+		m.quad(a+f0.r*x1,b+f1.r*x1,b+f1.r*x1+ub,a+f0.r*x1+ua,f0.r,TRACK_C)
 	m.quad(a+ra,b+rb,b+rb+db,a+ra+da,f0.r,DECK_C)
 	m.quad(a-ra,b-rb,b-rb+db,a-ra+da,-f0.r,DECK_C)
-	m.quad(a-ra+da,b-rb+db,b+rb+db,a+ra+da,-f0.u,Color(DECK_C,UNDER_SHELTER))
+	m.quad(a-ra+da,b-rb+db,b+rb+db,a+ra+da,-f0.u,Color(DECK_C.darkened(0.35),UNDER_SHELTER))
 
 ## A support's parts as boxes, level, along the line at s.
 func _support_mesh(m: RefCounted, s: float, parts: PackedFloat32Array) -> void:

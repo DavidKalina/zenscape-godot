@@ -58,6 +58,11 @@ const REACH_FADE := 20.0
 const FOOT := 3.0
 const RIM := 6.0
 const RIM_GROW := 0.6
+## Round a portal block the hill is cut back under a face rising at
+## PORTAL_SLOPE (rise per m) from the cover's top behind and beside the
+## block, eased off by PORTAL_REACH m from it (`_cover`).
+const PORTAL_SLOPE := 2.2
+const PORTAL_REACH := 45.0
 const SPILL_SLOPE := 1.0
 const SPAN_REACH := 40.0
 const SPAN_FADE := 10.0
@@ -405,6 +410,18 @@ func _cover(got: Vector2, bed: float, fade: float) -> Vector2:
 	var to := bed+BoreShape.cover_over(last_d)
 	var cap := last_into <= BoreShape.BLOCK_IN and last_d < _face_half
 	var y := got.x if to <= got.x and not cap else lerpf(got.x,to,fade)
+	if not cap and to < got.x:
+		# Round the block the hill is cut back: under a face rising at
+		# PORTAL_SLOPE from the cover's top at the block's back and sides
+		# (BoreShape.block_top less the parapet), never under the cover.
+		var px := maxf(last_into-BoreShape.BLOCK_IN,0.0)
+		var pd := maxf(last_d-_face_half,0.0)
+		var past := Vector2(px,pd).length()
+		if past < PORTAL_REACH:
+			var face := bed+BoreShape.cover_over(0.0)+past*PORTAL_SLOPE
+			var k := minf(past*RIM_GROW,RIM)
+			var held := maxf(_smin(got.x,face,k),to)
+			y = lerpf(got.x,lerpf(held,got.x,smoothstep(PORTAL_REACH*0.6,PORTAL_REACH,past)),fade)
 	last_lift = y-got.x
 	last_clear = last_lift > 0.5 or in_block()
 	var m := got.y*(1.0-fade*clampf(last_lift/3.0,0.0,1.0))

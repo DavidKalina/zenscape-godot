@@ -244,7 +244,7 @@ func _build_near(i: int) -> void:
 			var r := rs[k].lerp(rs[k+1],t).normalized()
 			var u := us[k].lerp(us[k+1],t).normalized()
 			var fw := u.cross(r)
-			earth.box(c+r*off+u*((SLEEPER_BASE+SLEEPER_TOP)*0.5),r*SLEEPER_HALF,fw*(SLEEPER_WIDTH*0.5),u*((SLEEPER_TOP-SLEEPER_BASE)*0.5),SLEEPER_C)
+			earth.box_lit(c+r*off+u*((SLEEPER_BASE+SLEEPER_TOP)*0.5),r*SLEEPER_HALF,fw*(SLEEPER_WIDTH*0.5),u*((SLEEPER_TOP-SLEEPER_BASE)*0.5),SLEEPER_C)
 			s += SLEEPER_STEP
 		# The two rails, on the sleepers.
 		for rail: float in [-0.5,0.5]:
@@ -301,6 +301,30 @@ class _Mesh:
 			verts.append(v)
 			normals.append(n)
 			colors.append(col)
+
+	## The quad a b c d facing `face`'s side, every corner's normal `n`.
+	func quad_n(a: Vector3, b: Vector3, c: Vector3, d: Vector3, face: Vector3, col: Color, n: Vector3) -> void:
+		if (b-a).cross(c-a).dot(face) > 0.0:
+			var t := b
+			b = d
+			d = t
+		for v: Vector3 in [a,b,c,a,c,d]:
+			verts.append(v)
+			normals.append(n)
+			colors.append(col)
+
+	## A box as `box`, its sides lit as its top (their normal its top's): a
+	## small box seen edge on from afar (the sleepers) shades as one surface
+	## instead of striping light and dark.
+	func box_lit(c: Vector3, x: Vector3, z: Vector3, y: Vector3, col: Color) -> void:
+		var top := c+y
+		var bot := c-y
+		var up := y.normalized()
+		quad_n(top-x-z,top+x-z,top+x+z,top-x+z,y,col,up)
+		quad_n(bot-x-z,bot+x-z,top+x-z,top-x-z,-z,col,up)
+		quad_n(bot-x+z,bot+x+z,top+x+z,top-x+z,z,col,up)
+		quad_n(bot-x-z,bot-x+z,top-x+z,top-x-z,-x,col,up)
+		quad_n(bot+x-z,bot+x+z,top+x+z,top+x-z,x,col,up)
 
 	## A box at `c` with half-axes `x`, `z` (level) and `y` (up), no floor.
 	func box(c: Vector3, x: Vector3, z: Vector3, y: Vector3, col: Color) -> void:
