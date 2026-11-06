@@ -47,6 +47,9 @@ extends RefCounted
 ##               foot (split_sites.gd), a layer cut in last; the world's
 ##               `splits` layer (wilderness), --splits=X their density, 0 or
 ##               --no-splits none (split-mountain-handoff.md).
+##   railroad    the railroad's bed round the Peak (rail_bed.gd), seed 1's
+##               wilderness only: cut and banked in last, over either field;
+##               --no-railroad the land as before (spec-railroad.md).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
@@ -534,6 +537,11 @@ var _m_on := false
 ## The coast's islands (coast_isles.gd), or null: a stamp like the massif.
 const CoastIsles = preload("res://scripts/endless/coast_isles.gd")
 var _isles: RefCounted = null
+## The railroad's bed (rail_bed.gd), or null: a stamp like the isles, cut
+## in last; the land it moves counts as the massif's for the rivers (`_m_on`).
+## --no-railroad takes it off.
+const RailBed = preload("res://scripts/endless/rail_bed.gd")
+var _rail: RefCounted = null
 ## The world's edge line (centre x, z, half side, corner radius), or half 0.
 var _edge := Vector4.ZERO
 ## The region it rings, in a world of regions.
@@ -566,6 +574,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed,Callable(_impl,"height"))
 	ice_tunnel = PeakTunnel.make(_massif)
 	_isles = null if k.get("old_land",false) else CoastIsles.make(land_seed,String(world.id))
+	_rail = null if k.get("old_land",false) else RailBed.make(land_seed,String(world.id))
 	_set_edge(k)
 	if _blend:
 		for r: int in world.regions.size():
@@ -714,6 +723,7 @@ func native_impl_in(x0: float, z0: float, x1: float, z1: float) -> Object:
 	# The native kernels read the field without the Peak's massif.
 	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	if _isles != null and _isles.meets(x0,z0,x1,z1): return null
+	if _rail != null and _rail.meets(x0,z0,x1,z1): return null
 	if not _blend: return native_impl()
 	var one: int = _impl.one_in(x0,z0,x1,z1)
 	return _impl.kids[one] if one >= 0 and _impl.kid_native[one] else null
@@ -734,6 +744,7 @@ func region_in(x0: float, z0: float, x1: float, z1: float) -> int:
 func native_band_in(x0: float, z0: float, x1: float, z1: float) -> Object:
 	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	if _isles != null and _isles.meets(x0,z0,x1,z1): return null
+	if _rail != null and _rail.meets(x0,z0,x1,z1): return null
 	return _impl.band_in(x0,z0,x1,z1) if _blend else null
 
 ## Region `r`'s own native field (ZenScapeLandField), or null (GDScript).
@@ -758,6 +769,24 @@ func region_pick(x: float, z: float, u: float) -> int:
 
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
+	if _rail == null: return _sample_under(x,z)
+	return _on_rail(_sample_under(x,z),x,z)
+
+## The land's height without the railroad's bed (its chunk pass's rim).
+func _under_rail(x: float, z: float) -> float:
+	return _sample_under(x,z).x
+
+## Vector2(height, meadow) `got` with the railroad's bed on it at (x, z).
+func _on_rail(got: Vector2, x: float, z: float) -> Vector2:
+	if not _rail.reaches(x,z): return got
+	got = _rail.apply(got,x,z)
+	if absf(float(_rail.last_lift)) > 0.25:
+		_m_on = true
+		_p_on = false
+	return got
+
+## `sample` without the railroad's bed.
+func _sample_under(x: float, z: float) -> Vector2:
 	if GroundTally.on: GroundTally.tick(&"field.sample")
 	_p_on = false
 	_t_on = false
@@ -1040,7 +1069,7 @@ func shape(x: float, z: float) -> Dictionary:
 	_t_on = false
 	_m_on = false
 	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
-		return _isle_shape(_impl.shape(x,z) if _massif == null else _peak_shape(_impl.shape(x,z),x,z),x,z)
+		return _rail_shape(_isle_shape(_impl.shape(x,z) if _massif == null else _peak_shape(_impl.shape(x,z),x,z),x,z),x,z)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var h := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
@@ -1063,7 +1092,22 @@ func shape(x: float, z: float) -> Dictionary:
 	if not h.is_empty(): s.height = Sites.carve(h,float(s.height),x,z)
 	if not sp.is_empty(): s.height = Splits.carve(sp,float(s.height),x,z)
 	if _massif != null: s = _peak_shape(s,x,z)
-	return _isle_shape(s,x,z)
+	return _rail_shape(_isle_shape(s,x,z),x,z)
+
+## `shape`'s dictionary `s` with the railroad's bed on it at (x, z): no river
+## where it moved the land; by the line, read as a valley's floor (no trees).
+func _rail_shape(s: Dictionary, x: float, z: float) -> Dictionary:
+	if _rail == null or not _rail.reaches(x,z): return s
+	var got: Vector2 = _rail.apply(Vector2(float(s.height),float(s.meadow)),x,z)
+	s.height = got.x
+	s.meadow = got.y
+	if absf(float(_rail.last_lift)) > 0.25:
+		s.river = 1000.0
+		s.river_r = 1000.0
+	if _rail.last_clear:
+		s.valley = 0.0
+		s.half = 1.0
+	return s
 
 ## `shape`'s dictionary `s` with the islands on it at (x, z): no river there.
 func _isle_shape(s: Dictionary, x: float, z: float) -> Dictionary:
@@ -1104,6 +1148,9 @@ func _peak_shape(s: Dictionary, x: float, z: float) -> Dictionary:
 ## The river's water level (world y) where a point is on a river's water,
 ## else NAN.
 func river_y(x: float, z: float) -> float:
+	if _rail != null and _rail.reaches(x,z):
+		sample(x,z)
+		if _m_on and not _p_on and absf(float(_rail.last_lift)) > 0.25: return NAN
 	if _isles != null and _isles.reaches(x,z):
 		sample(x,z)
 		if _m_on and not _p_on: return NAN
@@ -1137,6 +1184,7 @@ func height(x: float, z: float) -> float:
 	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
 	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	if _isles != null and _isles.reaches(x,z): return sample(x,z).x
+	if _rail != null and _rail.reaches(x,z): return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
@@ -1180,6 +1228,8 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 		if _massif.tarn_meets(x0,z0,x0+cells*step,z0+cells*step): Ponds.apply_chunk(self,_impl,made,[_massif.pond],x0,z0,step,cells,skirt_drop)
 	if _isles != null and _isles.meets(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step):
 		_isles.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
+	if _rail != null and _rail.meets(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step):
+		_rail.apply_chunk(self,Callable(self,"_under_rail"),made,x0,z0,step,cells,skirt_drop)
 	return made
 
 ## The field whose `colour` a chunk pass over the box (x0, z0)..(x1, z1) may
@@ -1319,6 +1369,8 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 	if not hs.is_empty(): Sites.apply_grid(got,hs,x0,z0,step,nx,nz,pad)
 	if not sps.is_empty(): Splits.apply_grid(got,sps,x0,z0,step,nx,nz,pad)
 	peak_grid(got,x0,z0,step,nx,nz,pad)
+	if _rail != null and _rail.meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step):
+		_rail.apply_grid(got,x0,z0,step,nx,nz,pad)
 	return got
 
 ## The Peak's massif over `grid`'s (or `_grid`'s: the horizon's) arrays.
