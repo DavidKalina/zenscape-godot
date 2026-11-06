@@ -19,6 +19,12 @@ extends RefCounted
 ## (`offers`). `begin(kind, at, plane_at, knobs)` starts one; each frame
 ## `step(delta, at, plane_at, plane_velocity)` returns where the creature is
 ## now. It is over when `phase` is DONE (after the knob `time`, s).
+##
+## Sitting tight: with the knob `near` (m) a flush, bolt or follow holds in
+## `wait`, unroused (`roused` false), watching the plane, until the plane
+## comes within `near` m (flat), `hold` s pass or the creature calls
+## `rouse()` (a flock rousing as one); then its `wait` beat runs. Its clock
+## (`t`, `time`) starts at the rousing.
 
 const FLUSH := &"flush"
 const BOLT := &"bolt"
@@ -36,12 +42,13 @@ const DONE := &"done"
 ## Each kind's knobs, merged under the ones given to `begin`: s (wait, run,
 ## climb_for, time), m/s (run_speed, speed, climb), m/s² (accel), rad/s
 ## (turn, wander), m (gap, side, clear: flush's height kept over its surface
-## in the air).
+## in the air; near: sits tight until the plane is this near, 0 not at all),
+## s (hold: the longest it sits tight).
 const KNOBS := {
-	FLUSH: {"wait":0.0,"run":1.0,"run_speed":6.0,"speed":14.0,"accel":5.0,"climb":3.5,"climb_for":6.0,"wander":0.15,"clear":4.0,"time":20.0},
-	BOLT: {"wait":0.0,"speed":9.0,"accel":8.0,"time":6.0},
+	FLUSH: {"wait":0.0,"near":0.0,"hold":12.0,"run":1.0,"run_speed":6.0,"speed":14.0,"accel":5.0,"climb":3.5,"climb_for":6.0,"wander":0.15,"clear":4.0,"time":20.0},
+	BOLT: {"wait":0.0,"near":0.0,"hold":12.0,"speed":9.0,"accel":8.0,"time":6.0},
 	LOOK_UP: {"turn":4.0,"time":4.0},
-	FOLLOW: {"wait":0.0,"speed":16.0,"accel":6.0,"gap":14.0,"side":5.0,"fly":true,"time":8.0},
+	FOLLOW: {"wait":0.0,"near":0.0,"hold":12.0,"speed":16.0,"accel":6.0,"gap":14.0,"side":5.0,"fly":true,"time":8.0},
 }
 
 var kind := &""
@@ -61,6 +68,10 @@ var knobs := {}
 ## `func(p: Vector3) -> float`: the height of what it runs on under `p`
 ## (water, ground). Unset: it keeps its height while it runs.
 var surface := Callable()
+## Whether it has been roused (always, without the knob `near`), and how
+## long it sat tight before.
+var roused := true
+var held := 0.0
 ## A phase for the flush's slow wander (from `begin`'s `wobble`).
 var _wobble := 0.0
 
@@ -87,11 +98,24 @@ static func begin(what: StringName, at: Vector3, plane_at: Vector3, given := {})
 	r.facing = r.away
 	r._wobble = float(given.get("wobble",0.0))
 	r.phase = WATCH if what == LOOK_UP else WAIT
+	r.roused = r.phase != WAIT or float(r.knobs.get("near",0.0)) <= 0.0
 	r._look_at(at,plane_at)
 	return r
 
+## Ends sitting tight: its `wait` beat starts now.
+func rouse() -> void:
+	if roused: return
+	roused = true
+	in_phase = 0.0
+
 func step(delta: float, at: Vector3, plane_at: Vector3, plane_velocity := Vector3.ZERO) -> Vector3:
 	if phase == DONE: return at
+	if not roused:
+		_look_at(at,plane_at)
+		if kind != FLUSH: _turn_to(Vector3(look.x,0.0,look.z),3.0,delta)
+		held += delta
+		if Vector2(plane_at.x-at.x,plane_at.z-at.z).length() < float(knobs.near) or held >= float(knobs.hold): rouse()
+		else: return at
 	t += delta
 	in_phase += delta
 	_look_at(at,plane_at)

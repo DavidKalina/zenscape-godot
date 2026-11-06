@@ -3,11 +3,13 @@ extends Node3D
 ## scripts/endless/moments/waterfowl_takeoff.gd): a few mallards, or a grey
 ## heron in the shallows. Each bird is a pivot of a few MeshInstance3Ds
 ## (body, a head or neck, two wings, the heron's legs), flushed by
-## scripts/endless/life_reacts.gd: alert a beat (heads turn to the plane, the
-## heron crouches), a run along the surface beating its wings with spray at
-## its feet (the fish's splashes, scripts/endless/endless_fish.gd, when the
-## land has them), then a climb away from the plane. Built when the moment
-## starts and freed when it ends; nothing idle.
+## scripts/endless/life_reacts.gd: they sit tight on the water watching the
+## plane come (heads turned to it) until it is NEAR or turning past them,
+## then go as one, each a beat after the last (the heron croaks and
+## crouches): a run along the surface beating its wings with spray at its
+## feet (the fish's splashes, scripts/endless/endless_fish.gd, when the land
+## has them) and a flurry of wingbeats, then a climb away from the plane.
+## Built when the moment starts and freed when it ends; nothing idle.
 ##
 ## The models face +Z with their feet (a duck's waterline) at the origin, in
 ## metres at life size (scripts/life_models.gd's way); each is drawn at a
@@ -22,11 +24,11 @@ const DUCK := &"duck"
 const HERON := &"heron"
 ## Wingtip to wingtip as built (m), and as drawn: this share of the plane's span.
 const LIFE_SPAN := {DUCK:1.06,HERON:1.78}
-const SPAN_SHARE := {DUCK:0.5,HERON:0.8}
+const SPAN_SHARE := {DUCK:0.6,HERON:0.8}
 ## The flush's knobs per kind (scripts/endless/life_reacts.gd KNOBS).
 const FLUSH := {
-	DUCK:{"run":1.1,"run_speed":7.0,"speed":15.0,"accel":5.0,"climb":3.8,"climb_for":6.0,"wander":0.18,"time":18.0},
-	HERON:{"run":0.55,"run_speed":2.6,"speed":9.0,"accel":2.5,"climb":2.6,"climb_for":7.0,"wander":0.1,"time":18.0},
+	DUCK:{"near":60.0,"hold":14.0,"run":1.1,"run_speed":7.0,"speed":15.0,"accel":5.0,"climb":5.0,"climb_for":6.0,"wander":0.18,"time":18.0},
+	HERON:{"near":80.0,"hold":14.0,"run":0.55,"run_speed":2.6,"speed":9.0,"accel":2.5,"climb":2.6,"climb_for":7.0,"wander":0.1,"time":18.0},
 }
 ## Wingbeats a second, and the beat's swing (rad) either side of its middle:
 ## on the water (the run) and in the air.
@@ -38,6 +40,20 @@ const SHOULDER := {DUCK:Vector3(0.07,0.12,0.05),HERON:Vector3(0.08,0.88,0.0)}
 ## between the rings they leave.
 const PATTER := 0.09
 const PATTER_RING := 0.27
+## They go too once the plane, within PASSING m, heads more than PASSING_OFF
+## rad off them: it is going by to one side and they would go unseen.
+const PASSING := 120.0
+const PASSING_OFF := 0.9
+## The sounds: a flurry of wingbeats as each bird starts its run (deeper for
+## the heron), the heron's croak as it rouses. dB, pitch range, and the
+## voices' reach (the grass birds' numbers, scripts/endless/grass_birds.gd).
+const WINGS := "res://assets/audio/kit/wings-%d.wav"
+const CROAK := "res://assets/audio/heron-call.wav"
+const WINGS_DB := {DUCK:-7.0,HERON:-5.0}
+const WINGS_PITCH := {DUCK:Vector2(0.78,0.92),HERON:Vector2(0.52,0.6)}
+const CROAK_DB := -4.0
+const VOICE_UNIT := 26.0
+const VOICE_FAR := 240.0
 ## Gone past this far from the plane (m), or when its flush is over.
 const GONE := 450.0
 ## Shrinks away over its last seconds.
@@ -49,6 +65,9 @@ var birds: Array = []
 var _fish: Node = null
 var _game: Node = null
 var _rng := RandomNumberGenerator.new()
+## One voice a bird; how many sounds have started (a check reads it).
+var _voices: Array[AudioStreamPlayer3D] = []
+var sounds := 0
 
 static var _mat: StandardMaterial3D = null
 static var _meshes := {}
@@ -82,6 +101,16 @@ func setup(game: Node, spot: Dictionary, kind: StringName, count: int, draw_seed
 					break
 			if tries >= 8: continue
 		_add_bird(kind,p,float(spot.get("bed",at.y-1.0)),way,plane_at,i)
+	for i in birds.size():
+		var v := AudioStreamPlayer3D.new()
+		v.bus = &"SFX"  # FlightSound.SFX
+		v.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		v.unit_size = VOICE_UNIT
+		v.max_distance = VOICE_FAR
+		v.panning_strength = 0.7
+		v.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
+		add_child(v)
+		_voices.append(v)
 
 func _add_bird(kind: StringName, at: Vector3, bed: float, way: Vector3, plane_at: Vector3, i: int) -> void:
 	var drake := kind == DUCK and i%2 == 0
@@ -140,13 +169,22 @@ func _surface(p: Vector3, depth: float) -> float:
 func step(delta: float, game: Node) -> bool:
 	_game = game
 	var plane_at: Vector3 = game.plane.position
+	var plane_v: Vector3 = game.plane.velocity
+	_rouse_all(plane_at,plane_v)
 	var left := 0
-	for b: Dictionary in birds:
+	for i in birds.size():
+		var b: Dictionary = birds[i]
 		if b.root == null: continue
 		var react: RefCounted = b.react
 		var was: StringName = react.phase
-		b.at = react.step(delta,b.at,plane_at,game.plane.velocity)
+		b.at = react.step(delta,b.at,plane_at,plane_v)
 		b.t = float(b.t)+delta
+		if react.roused and b.kind == HERON and not b.has("croaked"):
+			b.croaked = true
+			_sound(i,load(CROAK),CROAK_DB,_rng.randf_range(0.95,1.03))
+		if was == LifeReacts.WAIT and react.phase != LifeReacts.WAIT:
+			var pitch: Vector2 = WINGS_PITCH[b.kind]
+			_sound(i,load(WINGS % _rng.randi_range(1,4)),float(WINGS_DB[b.kind]),_rng.randf_range(pitch.x,pitch.y))
 		if was == LifeReacts.RUN and react.phase == LifeReacts.AIR: _lift_splash(b)
 		if react.phase == LifeReacts.RUN: _patter(b,delta)
 		var far := (b.at as Vector3).distance_to(plane_at) > GONE
@@ -157,6 +195,43 @@ func step(delta: float, game: Node) -> bool:
 		left += 1
 		_pose(b,delta,plane_at)
 	return left > 0
+
+## The flock goes as one: once one is roused (the plane NEAR it), or the
+## plane is going by to one side of them, every bird is (each then waits its
+## own beat).
+func _rouse_all(plane_at: Vector3, plane_v: Vector3) -> void:
+	var any := false
+	var sitting := false
+	for b: Dictionary in birds:
+		if b.root == null: continue
+		var react: RefCounted = b.react
+		if react.roused: any = true
+		else: sitting = true
+	if not sitting: return
+	if not any:
+		var c := Vector3.ZERO
+		var n := 0
+		for b: Dictionary in birds:
+			if b.root == null: continue
+			c += b.at
+			n += 1
+		var to := Vector2(c.x/n-plane_at.x,c.z/n-plane_at.z)
+		var way := Vector2(plane_v.x,plane_v.z)
+		any = to.length() < PASSING and way.length() > 2.0 and absf(way.angle_to(to)) > PASSING_OFF
+	if not any: return
+	for b: Dictionary in birds:
+		if b.root != null: (b.react as RefCounted).rouse()
+
+## Plays `clip` at bird `i`.
+func _sound(i: int, clip: AudioStream, db: float, pitch: float) -> void:
+	if clip == null or i >= _voices.size(): return
+	var v := _voices[i]
+	v.global_position = birds[i].at
+	v.stream = clip
+	v.volume_db = db+_rng.randf_range(-1.5,1.5)
+	v.pitch_scale = pitch
+	v.play()
+	sounds += 1
 
 ## Poses bird `b`: where it is, which way, its wings, head and legs by phase.
 func _pose(b: Dictionary, delta: float, _plane_at: Vector3) -> void:
@@ -181,7 +256,13 @@ func _pose(b: Dictionary, delta: float, _plane_at: Vector3) -> void:
 	# The body bobs against the wings; pitched up on the run, along its way in the air.
 	var pitch := 0.0
 	var dip := 0.0
-	if phase == LifeReacts.WAIT:
+	if phase == LifeReacts.WAIT and not react.roused:
+		# Sitting tight: a duck rides the ripples, a heron stands still.
+		if not heron:
+			var bob := float(react.held)*2.1+float(b.beat)
+			dip = 0.012*float(b.scale)*sin(bob)
+			pitch = 0.03*sin(bob*0.7+1.0)
+	elif phase == LifeReacts.WAIT:
 		# The heron crouches before it goes (anticipation); a duck sits up.
 		var k := smoothstep(wait-0.35,wait,float(react.in_phase))
 		pitch = 0.18*k if heron else -0.08*k
