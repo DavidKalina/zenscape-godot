@@ -146,7 +146,9 @@ func look_at_world(target: Vector3, weight: float) -> void:
 # --- Time ----------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec() if FrameLog.on else 0
 	_tick(delta)
+	if FrameLog.on: FrameLog.add(&"herd_bodies",float(Time.get_ticks_usec()-t0)/1000.0)
 
 ## One step of `delta` s: the clip, its beats, the blend, the pose.
 func _tick(delta: float) -> void:
