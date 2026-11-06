@@ -142,6 +142,9 @@ const KNOBS := {
 	# least), at up to `cover_speed`, turning at `turn_cover` (rad/s). No
 	# wood in reach: a peel in the open.
 	"cover_ways": 24, "cover_reach": 160.0, "cover_tries": 24, "cover_back": 1.5, "trunk_clear": 1.5,
+	# One cover search a frame across the herd: a slice of a sweep
+	# (`cover_slice` ways) or one animal's goal; the rest wait a frame.
+	"cover_slice": 6,
 	"body_half": 0.2,
 	"cover_speed": 20.0, "turn_cover": 3.0, "stuck": 2.0,
 	# Home: all calm, the plane beyond the herd's reach for `home_wait_min`
@@ -223,6 +226,13 @@ var _verdict := ""
 ## The wood's edge round the herd for this pass (swept once, when the first
 ## one breaks for the trees): [way, metres to the first crown] per way.
 var _cover: Array = []
+## Where that sweep was made from.
+var _cover_from := Vector3.ZERO
+## A sweep under way, a slice a frame: {from, k (the next way), edges, owner
+## (the body of the animal sweeping for itself; null: the herd's)}; {} none.
+var _sweep := {}
+## No cover search yet this frame.
+var _cover_free := true
 ## The herd's middle and how far its farthest animal is from it, kept as
 ## they move: the senses and the sleep reckon from it.
 var center := Vector3.ZERO
@@ -247,6 +257,17 @@ var _home_check := false
 ## Why the last cover goal search passed each over (for drivers).
 var _last_fail := {}
 var _home_wait := -1.0
+## This frame's work, counted (no clock; for drivers and the lane handoff):
+## land heights, river asks, tree solids (top_at), tree plan cells read,
+## pair distances, bodies placed, per-frame calls on a body (play, look).
+## Zeroed at the top of each frame.
+var w_height := 0
+var w_river := 0
+var w_top_at := 0
+var w_cells := 0
+var w_pairs := 0
+var w_placed := 0
+var w_calls := 0
 
 static func build(s: Dictionary) -> Node3D:
 	if LaunchArgs.user_args().has("--elk=off"): return Marker.build(s)
@@ -280,7 +301,7 @@ func _spawn(s: Dictionary) -> void:
 	var herd_yaw := xform.basis.get_euler().y
 	for i in range(spots.size()):
 		var world := xform*spots[i]
-		if field != null: world.y = float(field.height(world.x,world.z))
+		if field != null: world.y = _height(world.x,world.z)
 		var yaw := herd_yaw+deg_to_rad(rng.randf_range(-float(KNOBS.face_spread),float(KNOBS.face_spread)))
 		var body: Node3D = body_script.new()
 		body.name = "Elk%d" % i
@@ -313,6 +334,7 @@ func _process(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null: return
 	var far := Vector2(cam.global_position.x-center.x,cam.global_position.z-center.z).length() > float(KNOBS.sleep)+radius
+	w_height = 0; w_river = 0; w_top_at = 0; w_cells = 0; w_pairs = 0; w_placed = 0; w_calls = 0
 	if far != asleep: _sleep(far)
 	if not asleep:
 		stats.awake_frames += 1
@@ -350,12 +372,20 @@ func _sense(delta: float) -> void:
 	if not busy:
 		_verdict = ""
 		_cover = []
+		_sweep = {}
 		if _home_check:
 			if at == Vector3.INF or Vector2(at.x-center.x,at.z-center.z).length() > float(KNOBS.home_far): _home_due(delta)
 			else: _home_wait = -1.0
 		return
 	_home_wait = -1.0
 	stats.sensing_frames += 1
+	_cover_free = true
+	if not _sweep.is_empty() and _sweep.owner != null:
+		# One sweeping for itself that has stopped looking (alerted, halted):
+		# its sweep dropped.
+		var still := false
+		for a: Dictionary in herd: if a.body == _sweep.owner and a.state in ["scatter","peel"]: still = true
+		if not still: _sweep = {}
 	_read_plane(plane,at,vel)
 	var moving := false
 	for a: Dictionary in herd:
@@ -420,6 +450,7 @@ func _sense(delta: float) -> void:
 		if not waiting:
 			_verdict = ""
 			_cover = []
+			_sweep = {}
 
 ## The plane's way over the ground, speed, height over the ground under it
 ## and cruise, once a frame: `_threat` when low and fast.
@@ -433,7 +464,7 @@ func _read_plane(plane: RefCounted, at: Vector3, vel: Vector3) -> void:
 	if _v > 1.0:
 		_f = Vector3(flat.x/_v,0.0,flat.y/_v)
 		_r = Vector3(-_f.z,0.0,_f.x)
-	_low = at.y-(float(field.height(at.x,at.z)) if field != null else 0.0)
+	_low = at.y-(_height(at.x,at.z) if field != null else 0.0)
 	_threat = _v >= float(KNOBS.fast)*_cruise and _low <= float(KNOBS.low)
 
 ## The top run (m/s): the plane's cruise times `top_run`.
@@ -739,23 +770,57 @@ func _scatter_step(a: Dictionary, at: Vector3, delta: float) -> void:
 	_step(a,delta)
 	_gait(a)
 	var passed := at == Vector3.INF or not _threat or _off(a,at).x < -float(KNOBS.behind)
-	if (passed and float(a.t) >= float(KNOBS.scatter_min)) or float(a.t) >= float(KNOBS.scatter_max) or bool(a.bad):
+	if _cover_free and ((passed and float(a.t) >= float(KNOBS.scatter_min)) or float(a.t) >= float(KNOBS.scatter_max) or bool(a.bad)):
 		_to_cover(a)
 
 ## For the trees: its goal in the wood's edge, or a peel in the open when no
-## wood in reach will do.
+## wood in reach will do. While the search is under way it scatters on.
 func _to_cover(a: Dictionary) -> void:
+	var goal: Variant = _cover_find(a)
+	if goal == null: return
 	a.bad = false
-	if _cover.is_empty(): _cover = _cover_sweep(center)
-	var goal := _cover_goal(a,_cover,center)
-	if goal == Vector3.INF:
-		# None from the herd's middle (its rays stopped by a bank, or its
-		# edges taken): the wood's edge swept from where it stands.
-		goal = _cover_goal(a,_cover_sweep(a.pos),a.pos)
 	if goal == Vector3.INF:
 		_peel(a,"no cover")
 		return
 	_cover_go(a,goal)
+
+## This frame's cover search for `a`: its goal, Vector3.INF for none, or null
+## while a sweep is under way (a slice a frame). The herd's sweep (from its
+## middle, once a pass) first; none from there (its rays stopped by a bank,
+## or its edges taken): the wood's edge swept from where it stands.
+func _cover_find(a: Dictionary) -> Variant:
+	_cover_free = false
+	if _cover.is_empty():
+		if _sweep.is_empty(): _sweep_begin(center,null)
+		if _sweep.owner != null: return null
+		if not _sweep_step(): return null
+		_cover = _sweep.edges
+		_cover_from = _sweep.from
+		_sweep = {}
+	if _sweep.is_empty():
+		var goal := _cover_goal(a,_cover,_cover_from)
+		if goal != Vector3.INF: return goal
+		_sweep_begin(a.pos,a.body)
+		return null
+	if _sweep.owner != a.body: return null
+	if not _sweep_step(): return null
+	var edges: Array = _sweep.edges
+	var from: Vector3 = _sweep.from
+	_sweep = {}
+	return _cover_goal(a,edges,from)
+
+func _sweep_begin(from: Vector3, owner: Variant) -> void:
+	stats.cover_sweeps += 1
+	_sweep = {"from":from,"k":0,"edges":[],"owner":owner}
+
+## The next `cover_slice` ways of the sweep under way; true once it has all.
+func _sweep_step() -> bool:
+	var n := int(KNOBS.cover_ways)
+	var k0 := int(_sweep.k)
+	var stop := mini(k0+int(KNOBS.cover_slice),n)
+	for k in range(k0,stop): (_sweep.edges as Array).append(_cover_way(_sweep.from,k))
+	_sweep.k = stop
+	return stop >= n
 
 ## Off for its goal in the wood.
 func _cover_go(a: Dictionary, goal: Vector3) -> void:
@@ -766,39 +831,33 @@ func _cover_go(a: Dictionary, goal: Vector3) -> void:
 	a.since = 0.0
 	stats.covers += 1
 
-## The wood's edge round `from` (the herd's middle, or one animal): in each
-## of `cover_ways` ways, [the way, the
-## metres to the first tree's solid], when the land on the way there and
+## The wood's edge round `from` (the herd's middle, or one animal), its way
+## `k` of `cover_ways` (a sweep is `_sweep_step`'s slices of them): [the way,
+## the metres to the first tree's solid], when the land on the way there and
 ## under it holds (INF: none in `cover_reach`, or water, a climb or a steep
 ## face first: a wood on a steep bank is no cover).
-func _cover_sweep(from: Vector3) -> Array:
-	stats.cover_sweeps += 1
-	var edges: Array = []
+func _cover_way(from: Vector3, k: int) -> Array:
 	var trees: Node = _study.get("trees") if _study != null else null
-	var n := int(KNOBS.cover_ways)
 	var step := float(KNOBS.tree_step)
-	for k in range(n):
-		var yaw := TAU*float(k)/float(n)
-		var way := _dir(yaw)
-		var edge := INF
-		if trees != null:
-			var d := step
-			var last := from
-			while d <= float(KNOBS.cover_reach):
-				var p := from+way*d
-				stats.cover_top_at += 1
-				var hit := float(trees.call("top_at",p)) > -INF
-				if hit or int(d/step)%3 == 0:
-					stats.cover_ground += 1
-					if _ground_why(last,p) != "": break
-					last = p
-					if field != null: last.y = float(field.height(p.x,p.z))
-				if hit:
-					edge = d
-					break
-				d += step
-		edges.append([way,edge])
-	return edges
+	var way := _dir(TAU*float(k)/float(int(KNOBS.cover_ways)))
+	var edge := INF
+	if trees != null:
+		var d := step
+		var last := from
+		while d <= float(KNOBS.cover_reach):
+			var p := from+way*d
+			stats.cover_top_at += 1
+			var hit := float(_top_at(trees,p)) > -INF
+			if hit or int(d/step)%3 == 0:
+				stats.cover_ground += 1
+				if _ground_why(last,p) != "": break
+				last = p
+				if field != null: last.y = _height(p.x,p.z)
+			if hit:
+				edge = d
+				break
+			d += step
+	return [way,edge]
 
 ## Its goal in the wood: the edge a sweep from `origin` found in each way
 ## (`edges`), shifted along
@@ -839,7 +898,7 @@ func _cover_goal(a: Dictionary, edges: Array, origin: Vector3) -> Vector3:
 		while d <= reach:
 			var p: Vector3 = from+way*d
 			stats.cover_top_at += 1
-			if float(trees.call("top_at",p+Vector3(-way.z,0.0,way.x)*(float(int(d/step)%3)-1.0))) > -INF:
+			if float(_top_at(trees,p+Vector3(-way.z,0.0,way.x)*(float(int(d/step)%3)-1.0))) > -INF:
 				# At the solid's rim, or a little short of it: under no bough.
 				goal = p
 				if _in_crown(goal): goal = p-way*float(KNOBS.cover_back)
@@ -851,7 +910,7 @@ func _cover_goal(a: Dictionary, edges: Array, origin: Vector3) -> Vector3:
 					_tally("way "+bad)
 					break
 				last = p
-				if field != null: last.y = float(field.height(p.x,p.z))
+				if field != null: last.y = _height(p.x,p.z)
 			# Finer near the aim (a crown met on a short chord).
 			d += step if d < float(ranked[r][2])-2.0*step else step*0.5
 		if goal == Vector3.INF:
@@ -862,13 +921,13 @@ func _cover_goal(a: Dictionary, edges: Array, origin: Vector3) -> Vector3:
 		for k: float in [0.0,1.0,-1.0]:
 			var g := goal+Vector3(-way.z,0.0,way.x)*room*k
 			stats.cover_ground += 1
-			if field != null: g.y = float(field.height(g.x,g.z))
+			if field != null: g.y = _height(g.x,g.z)
 			var why := _ground_why(last,g)
 			if why == "" and _in_crown(g): why = "in a crown"
 			if why == "" and _taken(a,g): why = "taken"
 			# Not across the plane's line before it has passed.
 			if why == "" and ahead and signf((g-_at).dot(_r)) != signf(float(a.side)): why = "across the line"
-			if why == "" and k != 0.0 and float(trees.call("top_at",g)) == -INF and not _wood_by(g,trees): why = "off the wood"
+			if why == "" and k != 0.0 and float(_top_at(trees,g)) == -INF and not _wood_by(g,trees): why = "off the wood"
 			if why == "":
 				why = _cover_run_why(a,g,cells)
 				if why != "": why = "run "+why
@@ -888,7 +947,7 @@ func _tally(why: String) -> void:
 func _wood_by(p: Vector3, trees: Node) -> bool:
 	var r := float(KNOBS.tree_step)
 	for d: Vector3 in [Vector3(r,0,0),Vector3(-r,0,0),Vector3(0,0,r),Vector3(0,0,-r)]:
-		if float(trees.call("top_at",p+d)) > -INF: return true
+		if float(_top_at(trees,p+d)) > -INF: return true
 	return false
 
 ## Another of the herd standing, or bound for a goal, within the apart
@@ -916,7 +975,7 @@ func _in_crown(p: Vector3) -> bool:
 		var ck: Vector2i = TreePlan.cell_of(p.x+d.x,p.z+d.y)
 		if seen.has(ck): continue
 		seen[ck] = true
-		var t: PackedFloat32Array = trees.call("cell_trees",ck)
+		var t: PackedFloat32Array = _cell_trees(trees,ck)
 		for q in range(0,t.size(),8):
 			if t[q+3] <= 0.0: continue
 			var clear := maxf(float(KNOBS.trunk_clear),t[q+6]/solid+half)
@@ -1003,7 +1062,7 @@ func _cover_run_why(a: Dictionary, goal: Vector3, cells: Dictionary) -> String:
 			odd = not odd
 			if _trunk_by(p,float(KNOBS.trunk_clear),cells): return "trunk"
 			if not odd or end:
-				if field != null: p.y = float(field.height(p.x,p.z))
+				if field != null: p.y = _height(p.x,p.z)
 				var why := _ground_why(last,p)
 				if why != "": return why
 				last = p
@@ -1020,7 +1079,7 @@ func _trunk_by(p: Vector3, r: float, cells: Dictionary) -> bool:
 		var ck: Vector2i = TreePlan.cell_of(p.x+d.x,p.z+d.y)
 		if seen.has(ck): continue
 		seen[ck] = true
-		if not cells.has(ck): cells[ck] = trees.call("cell_trees",ck)
+		if not cells.has(ck): cells[ck] = _cell_trees(trees,ck)
 		var t: PackedFloat32Array = cells[ck]
 		for q in range(0,t.size(),8):
 			if t[q+3] <= 0.0: continue
@@ -1070,7 +1129,7 @@ func _arc_ok(a: Dictionary, yaw: float, dist: float) -> bool:
 		h += clampf(wrapf(yaw-h,-PI,PI),-turn,turn)
 		var way := _dir(h)
 		p += way*step
-		if trees != null and float(trees.call("top_at",p+Vector3(-way.z,0.0,way.x)*(float(k%3)-1.0))) > -INF: return false
+		if trees != null and float(_top_at(trees,p+Vector3(-way.z,0.0,way.x)*(float(k%3)-1.0))) > -INF: return false
 		if k == n or k == n/3 or k == 2*n/3:
 			if _ground_why(a.pos,p) != "": return false
 	return true
@@ -1084,16 +1143,17 @@ func _peel_stop(a: Dictionary) -> float:
 ## The peel: braking to the stop_look's slide speed, turning out, then the
 ## halt. Land ahead that won't do: a new way round (or braking hard).
 func _peel_step(a: Dictionary, delta: float) -> void:
-	if a.why == "no cover" and not bool(a.retried) and (_at == Vector3.INF or not _threat or _off(a,_at).x < -float(KNOBS.behind)):
+	if a.why == "no cover" and not bool(a.retried) and _cover_free and (_at == Vector3.INF or not _threat or _off(a,_at).x < -float(KNOBS.behind)):
 		# No cover while the plane was coming (the spots near taken, the wood
-		# across its line): once it has passed, the trees again.
-		a.retried = true
-		var goal := _cover_goal(a,_cover,center) if not _cover.is_empty() else Vector3.INF
-		if goal == Vector3.INF: goal = _cover_goal(a,_cover_sweep(a.pos),a.pos)
-		if goal != Vector3.INF:
-			stats.cover_retries += 1
-			_cover_go(a,goal)
-			return
+		# across its line): once it has passed, the trees again (peeling on
+		# while the search is under way).
+		var goal: Variant = _cover_find(a)
+		if goal != null:
+			a.retried = true
+			if goal != Vector3.INF:
+				stats.cover_retries += 1
+				_cover_go(a,goal)
+				return
 	var halt := _halt_speed()
 	var brake := float(KNOBS.peel_brake)*(2.5 if bool(a.hard) else 1.0)
 	a.speed = move_toward(float(a.speed),halt,brake*delta)
@@ -1167,6 +1227,7 @@ func _gait(a: Dictionary) -> void:
 	var body: Node = a.body
 	var rate := v/(float(GROUND_BL[clip])*bl/float(body.call("clip_length",clip)))
 	a.clip_rate = clampf(rate,0.4,2.0)
+	w_calls += 1
 	body.call("play",clip,float(a.clip_rate),0.2)
 	a.clip = clip
 
@@ -1186,13 +1247,14 @@ static func _turned(h: float, way: Vector3, rate: float, delta: float) -> float:
 ## Along its heading at its speed, on the land.
 func _step(a: Dictionary, delta: float) -> void:
 	var p: Vector3 = a.pos+_dir(float(a.heading))*float(a.speed)*delta
-	if field != null: p.y = float(field.height(p.x,p.z))
+	if field != null: p.y = _height(p.x,p.z)
 	a.pos = p
 	if float(a.dodge_t) > 0.0:
 		a.dodge_t = float(a.dodge_t)-delta
 		if float(a.dodge_t) <= 0.0: a.dodge = 0.0
 
 func _place(a: Dictionary) -> void:
+	w_placed += 1
 	(a.body as Node3D).transform = Transform3D(Basis(Vector3.UP,float(a.heading)),a.pos)
 
 ## The land ahead of one runner a frame (in turn): no water or steep ground
@@ -1262,12 +1324,12 @@ func _land_why(from: Vector3, way: Vector3, dist: float) -> String:
 ## steep face ("" when it will).
 func _ground_why(from: Vector3, p: Vector3) -> String:
 	if field == null: return ""
-	var h := float(field.height(p.x,p.z))
-	if h < SEA_Y+0.5 or not is_nan(float(field.river_y(p.x,p.z))): return "water"
+	var h := _height(p.x,p.z)
+	if h < SEA_Y+0.5 or not is_nan(_river(p.x,p.z)): return "water"
 	var run := maxf(Vector2(p.x-from.x,p.z-from.z).length(),1.0)
 	if absf(h-from.y)/run > float(KNOBS.climb): return "climb"
-	var hx := float(field.height(p.x+3.0,p.z))
-	var hz := float(field.height(p.x,p.z+3.0))
+	var hx := _height(p.x+3.0,p.z)
+	var hz := _height(p.x,p.z+3.0)
 	if maxf(absf(hx-h),absf(hz-h))/3.0 > float(KNOBS.steep): return "steep"
 	return ""
 
@@ -1282,7 +1344,7 @@ func _trees_on(from: Vector3, way: Vector3, dist: float) -> bool:
 	var n := int(dist/step)
 	for k in range(1,n+1):
 		var p := from+way*(step*float(k))+across*(float(k%3)-1.0)
-		if float(trees.call("top_at",p)) > -INF: return true
+		if float(_top_at(trees,p)) > -INF: return true
 	return false
 
 ## Kept apart by the body length: each pair closer than `apart_bl` BL pushed
@@ -1298,6 +1360,7 @@ func _apart(delta: float) -> void:
 			var b: Dictionary = herd[j]
 			var bm: bool = b.state in MOVING
 			if not am and not bm: continue
+			w_pairs += 1
 			var d := Vector3(b.pos.x-a.pos.x,0.0,b.pos.z-a.pos.z)
 			var l := d.length()
 			if l >= apart: continue
@@ -1310,6 +1373,26 @@ func _apart(delta: float) -> void:
 			if bm:
 				b.pos = b.pos+away*push*share
 				b.side = float(b.side)+away.dot(_r)*push*share
+
+## The land's height at (x, z), counted.
+func _height(x: float, z: float) -> float:
+	w_height += 1
+	return float(field.height(x,z))
+
+## The river's surface at (x, z) (NAN off water), counted.
+func _river(x: float, z: float) -> float:
+	w_river += 1
+	return float(field.river_y(x,z))
+
+## The trees' solid top at `p` (-INF where none), counted.
+func _top_at(trees: Node, p: Vector3) -> float:
+	w_top_at += 1
+	return float(trees.call("top_at",p))
+
+## One plan cell's trees, counted.
+func _cell_trees(trees: Node, ck: Vector2i) -> PackedFloat32Array:
+	w_cells += 1
+	return trees.call("cell_trees",ck)
 
 ## The herd's middle and reach.
 func _recenter() -> void:
@@ -1387,6 +1470,7 @@ func _track(a: Dictionary, target: Vector3, delta: float) -> void:
 	a.gaze = gaze
 	var yaw := heading+gaze.x
 	var dir := Vector3(-sin(yaw)*cos(gaze.y),sin(gaze.y),-cos(yaw)*cos(gaze.y))
+	w_calls += 1
 	body.call("look_at_world",eye+dir*60.0,smoothstep(0.0,1.0,float(a.look)))
 
 # --- Home -------------------------------------------------------------------
@@ -1505,6 +1589,7 @@ func _home_snap() -> void:
 	_home_wait = -1.0
 	_verdict = ""
 	_cover = []
+	_sweep = {}
 	_recenter()
 
 ## Stops (or starts) every body's clip: a sleeping herd costs one distance
