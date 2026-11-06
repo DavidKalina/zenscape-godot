@@ -48,7 +48,8 @@ extends Node3D
 ## same place on every machine.
 ##
 ## Knobs: --trains=0|1|2 (TRAINS: how many run; one is track 0's), and
-## RailTrain's --train-speed=, --rail-clock=S.
+## RailTrain's --train-speed=, --rail-clock=S; the quick starts
+## --rail-start=beside|tunnel|bridge (`line_start`).
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
@@ -89,6 +90,24 @@ const LINE_BRIDGE := 17316.0
 ## out of the start station; both on the bridge from about 10 s to 70 s, the
 ## pass itself (noses to tails) 35-43 s.
 const LINE_MEET := 35.0
+## The quick starts on the line (--rail-start=beside|tunnel|bridge,
+## `line_start`): the plane RailTrain START_BACK m behind train 0's van, in
+## the gap between the tracks, START_UP m over the rails (over the low zone,
+## FlightWeight `low_spans`, so hands off it holds its height; at the test's
+## 4 m it settles onto the deck in 2.5 s), flying its way at cruise, the clock
+## set to match (so they hold at any --train-speed=):
+## - beside: the van at START_BESIDE, where the farm plain's 2 km run to the
+##   farm town starts, at full speed, train 1 far off on the cattle side: creep
+##   up the train at cruise (about a minute to the engine, as it brakes into
+##   the farm town), Boost to it;
+## - tunnel: START_BEFORE s before the noses meet mid west tunnel, at the farm
+##   mouth's trestle, 7 s short of the bore: train 0 goes in ahead on the
+##   right and train 1 comes at the plane head on in the dark;
+## - bridge: START_BEFORE s before the bay bridge's meeting, at its west end:
+##   between both trains on the deck.
+const START_BESIDE := 3800.0
+const START_BEFORE := 16.0
+const START_UP := 6.5
 
 var game: Node3D
 var path: RefCounted
@@ -124,11 +143,39 @@ func setup(g: Node3D, rail_path: RefCounted) -> void:
 	if n >= 2: add(1,t1,"rail/train1")
 	refresh()
 
-## --rail-clock=S: the trains' clock at the start (s), else 0.
-static func clock_flag() -> float:
+## --rail-clock=S: the trains' clock at the start (s), else `otherwise`.
+static func clock_flag(otherwise := 0.0) -> float:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--rail-clock="): return a.trim_prefix("--rail-clock=").to_float()
-	return 0.0
+	return otherwise
+
+## --rail-start=beside|tunnel|bridge (`line_start`), or "".
+static func start_flag() -> String:
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--rail-start="): return a.trim_prefix("--rail-start=")
+	return ""
+
+## The quick start `which` (beside, tunnel, bridge: START_BESIDE above) on
+## `line` with the trains at `top` m/s: {at (Vector2, x z), heading (rad, the
+## study's: forward is (-sin, -cos)), y (world), clock (s), s}; {} if unknown.
+static func line_start(line: RefCounted, which: String, top := RailTrain.SPEED) -> Dictionary:
+	var tables := line_tables(line,top)
+	if tables.size() < 2 or (tables[0] as RefCounted).still(): return {}
+	var t0: RefCounted = tables[0]
+	var long := RailTrain.length_of()
+	var clock := 0.0
+	match which:
+		"beside": clock = float(t0.time_at(START_BESIDE+long))
+		"tunnel": clock = float(t0.time_at(LINE_TUNNEL))-START_BEFORE
+		"bridge": clock = float(line_meet(t0,tables[1],float(line.length())).get("time",LINE_MEET))-START_BEFORE
+		_:
+			push_warning("--rail-start=%s: beside, tunnel or bridge" % which)
+			return {}
+	var s: float = t0.s_of(float(t0.at(clock).d)-long-RailTrain.START_BACK)
+	var x: Transform3D = line.pose(s,0)
+	var at := x.origin-x.basis.x*0.5*float(line.track_gap())+Vector3.UP*START_UP
+	var f := -x.basis.z
+	return {"at":Vector2(at.x,at.z),"heading":atan2(-f.x,-f.z),"y":at.y,"clock":clock,"s":s}
 
 ## The line's trains on `line` (RailLine) by `on_clock` (seconds): train 0,
 ## and with --trains=2 (the default) train 1.

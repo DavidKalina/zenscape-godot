@@ -63,6 +63,11 @@ extends Node3D
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
 ## one of kind K (slot, winding, gorge, grand) where it fits, --split-slot=X
 ## the slot kind's toy width (6: 12 m).
+## The railroad (seed 1; scripts/endless/rail_trains.gd): --rail-start=beside
+## (behind train 0's van on the farm plain), =tunnel (at the west tunnel's farm
+## mouth as the trains are about to meet in it), =bridge (at the bay bridge's
+## west end, the same); --no-railroad, --trains=0|1|2, --train-speed=,
+## --rail-clock=S.
 ## The pirate ships (scripts/endless/pirate_ship.gd): --ship-start starts in the
 ## air off the first's beam, --full-meter with the meter full, and again each time
 ## a ship's plates come back or the plane leaves a sinking one; --ship-return=S the
@@ -347,6 +352,8 @@ var trains: Node3D
 var rail_clock_at := 0.0
 ## The menu's seconds, which the trains' clock doesn't count (`rail_clock`).
 var rail_held := 0.0
+## The clock a --rail-start= quick start set (RailTrains `line_start`), or NAN.
+var _rail_start_clock := NAN
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -613,6 +620,19 @@ func _ready() -> void:
 		if not _alt_given:
 			_alt = float(ship_pose.alt)
 			_alt_given = true
+	# --rail-start=beside|tunnel|bridge: in the gap behind train 0's van, the
+	# trains' clock to match (RailTrains `line_start`).
+	if RailTrains.start_flag() != "" and RailTrack.wanted(field) and RailTrains.count_flag() > 0 and not RailTrain.test_wanted():
+		var rail_pose: Dictionary = RailTrains.line_start(RailLine.shared(),RailTrains.start_flag(),RailTrain.speed_flag())
+		if not rail_pose.is_empty():
+			_start = rail_pose.at
+			_heading = float(rail_pose.heading)
+			_heading_given = true
+			if not _alt_given:
+				_alt = float(rail_pose.y)-maxf(field.height(_start.x,_start.y),Field.SEA_Y)
+				_alt_given = true
+			_rail_start_clock = float(rail_pose.clock)
+			print("rail start %s: s %.0f, clock %.1f" % [RailTrains.start_flag(),float(rail_pose.s),_rail_start_clock])
 	# --train-test: a box train on a test loop on the sea, the plane by its last car.
 	var rail_test: RefCounted = RailTrain.test_path(field) if RailTrain.test_wanted() else null
 	if rail_test != null:
@@ -646,7 +666,7 @@ func _ready() -> void:
 	# The Peak (scripts/endless/peak_massif.gd): the start faces its summit,
 	# unless a heading was named or a start flag set its own; the menu's
 	# meadow takes the clear heading nearest that.
-	var own_start := SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty()
+	var own_start := SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty() or not is_nan(_rail_start_clock)
 	var peak: RefCounted = field.peak()
 	var face_peak := peak != null and not _heading_given and not own_start
 	if face_peak:
@@ -874,7 +894,7 @@ func _ready() -> void:
 		add_child(trains)
 		trains.setup(self,rail_test)
 	elif rails != null and RailTrains.count_flag() > 0:
-		rail_clock_at = RailTrains.clock_flag()
+		rail_clock_at = RailTrains.clock_flag(0.0 if is_nan(_rail_start_clock) else _rail_start_clock)
 		trains = RailTrains.new()
 		add_child(trains)
 		trains.on_line(self,RailLine.shared(),Callable(self,"rail_clock"))
