@@ -1,0 +1,411 @@
+extends RefCounted
+## The railroad's bed in the land (spec-railroad.md, lane line): the line
+## (rail_line.gd) cut and banked into the heightfield, a stamp over either
+## field like the Peak's massif and the coast's isles, so the ground, its
+## paint, collision, the grass and the landing all come with it. LandField
+## calls it last.
+##
+## Across the line, `d` m from its centre: a flat top at the bed's height out
+## to HALF (both tracks and their shoulders), then the ground held between a
+## cut's wall rising at CUT_SLOPE and a bank falling at FILL_SLOPE, so the
+## land is only moved where it stood above or below the bed; faded out by
+## REACH, where a sidehill too steep for the wall to meet is left as it was.
+## Along it, the stamp is off where the line runs in a tunnel, on a trestle
+## or on a bridge (rivers keep their channels under the bridges), eased over
+## the first TUNNEL_EASE / SPAN_EASE m inside: a portal face, an abutment.
+##
+## The GDScript is the only copy: the C++ kernels never see the bed
+## (LandField `native_impl_in` is null where it meets a box, as for the
+## Peak). A point finds its nearest s through a grid of CELL m squares, each
+## listing the runs of the line's 4 m segments within REACH of it, and a
+## short walk along the run from the square's own nearest one.
+##
+## Seed 1's wilderness only (the line was laid on it); `--no-railroad` takes
+## it off, and the land is main's exactly.
+
+const RailLine = preload("res://scripts/endless/rail_line.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+
+## LandField.SEA_Y (land_field.gd preloads this file).
+const SEA_Y := -40.0
+## Half the bed's flat top (m): two tracks 16 m apart, a car's half-width
+## past each and a shoulder (tools/rail_line.py's EDGE).
+const HALF := 14.0
+## A cut's walls (rise per m out) and a bank's fall (drop per m out).
+const CUT_SLOPE := 1.2
+const FILL_SLOPE := 0.7
+## How far out the stamp reaches (m from the centre), and the band it fades
+## over at the end.
+const REACH := 60.0
+const REACH_FADE := 20.0
+## How far into a tunnel / a trestle or bridge the stamp eases off (m of s).
+const TUNNEL_EASE := 10.0
+const SPAN_EASE := 4.0
+## The grid's squares (m).
+const CELL := 32.0
+## Trees keep this far off the centre line (m), and off any ground it moved.
+const TREE_CLEAR := 36.0
+## The bed's ballast, over the field's paint on its flat top.
+const BALLAST := Color(0.40,0.37,0.33)
+
+static var _lock := Mutex.new()
+static var _built := false
+static var _ok := false
+static var _n := 0
+static var _step := 4.0
+static var _x := PackedFloat64Array()
+static var _z := PackedFloat64Array()
+static var _y := PackedFloat64Array()
+## Each sample's stamp weight along the line (0 in tunnels and on spans).
+static var _w := PackedFloat32Array()
+## Each segment's (x, z) run to the next sample and 1/its length squared.
+static var _dx := PackedFloat64Array()
+static var _dz := PackedFloat64Array()
+static var _inv := PackedFloat64Array()
+## The grid: origin, width and height in squares; per square its first run
+## in `_runs` and how many; runs as (first segment, count, walk start), the
+## segments unwrapped (index n.. is 0.. again).
+static var _gx := 0.0
+static var _gz := 0.0
+static var _gw := 0
+static var _gh := 0
+static var _cell_at := PackedInt32Array()
+static var _cell_n := PackedInt32Array()
+static var _runs := PackedInt32Array()
+
+## How the stamp is weighted for the pass at hand (a coarse chunk: less).
+var level := 1.0
+## What the last `apply` found and did: the distance from the centre line,
+## the s there, the bed's height, the rise it made (negative: a cut), and
+## whether trees keep off.
+var last_d := INF
+var last_s := 0.0
+var last_bed := 0.0
+var last_lift := 0.0
+var last_clear := false
+var _i := 0
+var _t := 0.0
+
+## The bed for this land, or null: seed 1's wilderness, no `--no-railroad`.
+static func make(land_seed: int, world_id: String) -> RefCounted:
+	if land_seed != 1 or not world_id in ["wilderness","doors"]: return null
+	if "--no-railroad" in LaunchArgs.user_args(): return null
+	_ensure()
+	return new() if _ok else null
+
+## The line's samples and the grid, built once for every field (they are
+## read-only after, so the workers' fields share them).
+static func _ensure() -> void:
+	_lock.lock()
+	if not _built:
+		_build()
+		_built = true
+	_lock.unlock()
+
+static func _build() -> void:
+	var line: RefCounted = RailLine.new()
+	if not bool(line.ok): return
+	_step = float(line.step)
+	_x = line._x
+	_z = line._z
+	_y = line._y
+	_n = _x.size()
+	_dx.resize(_n)
+	_dz.resize(_n)
+	_inv.resize(_n)
+	for i in _n:
+		var j := (i+1)%_n
+		_dx[i] = _x[j]-_x[i]
+		_dz[i] = _z[j]-_z[i]
+		_inv[i] = 1.0/maxf(_dx[i]*_dx[i]+_dz[i]*_dz[i],1e-6)
+	# The weight along the line: 1 on the bed, eased to 0 inside each tunnel,
+	# trestle and bridge from both its ends.
+	_w.resize(_n)
+	_w.fill(1.0)
+	for kind: String in ["tunnel","trestle","bridge"]:
+		var ease := TUNNEL_EASE if kind == "tunnel" else SPAN_EASE
+		for st: Array in line.stretches(kind):
+			var s0 := float(st[0])
+			var s1 := float(st[1])
+			for i in range(ceili(s0/_step),floori(s1/_step)+1):
+				var s := i*_step
+				var into := minf(s-s0,s1-s)
+				_w[posmod(i,_n)] = minf(_w[posmod(i,_n)],1.0-smoothstep(0.0,ease,into))
+	# The grid over the line's box and REACH round it.
+	var x0 := INF
+	var z0 := INF
+	var x1 := -INF
+	var z1 := -INF
+	for i in _n:
+		x0 = minf(x0,_x[i])
+		z0 = minf(z0,_z[i])
+		x1 = maxf(x1,_x[i])
+		z1 = maxf(z1,_z[i])
+	_gx = x0-REACH-CELL
+	_gz = z0-REACH-CELL
+	_gw = int(ceil((x1-x0+2.0*(REACH+CELL))/CELL))+1
+	_gh = int(ceil((z1-z0+2.0*(REACH+CELL))/CELL))+1
+	var lists := {}
+	for i in _n:
+		var j := (i+1)%_n
+		var c0 := Vector2i(floori((minf(_x[i],_x[j])-REACH-_gx)/CELL),floori((minf(_z[i],_z[j])-REACH-_gz)/CELL))
+		var c1 := Vector2i(floori((maxf(_x[i],_x[j])+REACH-_gx)/CELL),floori((maxf(_z[i],_z[j])+REACH-_gz)/CELL))
+		for cj in range(c0.y,c1.y+1):
+			for ci in range(c0.x,c1.x+1):
+				# Only squares the segment's reach truly meets.
+				var cx := _gx+(ci+0.5)*CELL
+				var cz := _gz+(cj+0.5)*CELL
+				if _seg_d2(i,cx,cz) > (REACH+CELL*0.75)*(REACH+CELL*0.75): continue
+				var k := cj*_gw+ci
+				if not lists.has(k): lists[k] = PackedInt32Array()
+				var l: PackedInt32Array = lists[k]
+				l.append(i)
+				lists[k] = l
+	_cell_at.resize(_gw*_gh)
+	_cell_n.resize(_gw*_gh)
+	_cell_n.fill(0)
+	for k: int in lists:
+		var l: PackedInt32Array = lists[k]
+		# Runs of consecutive segments; one through the lap's end joined.
+		var starts := PackedInt32Array([l[0]])
+		var counts := PackedInt32Array([1])
+		for q in range(1,l.size()):
+			if l[q] == l[q-1]+1: counts[counts.size()-1] += 1
+			else:
+				starts.append(l[q])
+				counts.append(1)
+		if starts.size() > 1 and starts[0] == 0 and starts[-1]+counts[-1] == _n:
+			counts[-1] += counts[0]
+			starts.remove_at(0)
+			counts.remove_at(0)
+		var cx := _gx+(k%_gw+0.5)*CELL
+		var cz := _gz+(k/_gw+0.5)*CELL
+		_cell_at[k] = _runs.size()/3
+		_cell_n[k] = starts.size()
+		for r in starts.size():
+			var best := INF
+			var at := starts[r]
+			for q in counts[r]:
+				var d2 := _seg_d2((starts[r]+q)%_n,cx,cz)
+				if d2 < best:
+					best = d2
+					at = starts[r]+q
+			_runs.append_array([starts[r],counts[r],at])
+	_ok = true
+
+## The squared distance from (x, z) to segment i.
+static func _seg_d2(i: int, x: float, z: float) -> float:
+	var t := clampf(((x-_x[i])*_dx[i]+(z-_z[i])*_dz[i])*_inv[i],0.0,1.0)
+	var ox := x-_x[i]-_dx[i]*t
+	var oz := z-_z[i]-_dz[i]*t
+	return ox*ox+oz*oz
+
+## Whether the grid's square at (x, z) lists any of the line.
+func reaches(x: float, z: float) -> bool:
+	var ci := floori((x-_gx)/CELL)
+	var cj := floori((z-_gz)/CELL)
+	if ci < 0 or cj < 0 or ci >= _gw or cj >= _gh: return false
+	return _cell_n[cj*_gw+ci] > 0
+
+## Whether the box (x0, z0)..(x1, z1) meets a square that lists the line.
+func meets(x0: float, z0: float, x1: float, z1: float) -> bool:
+	var c0 := Vector2i(maxi(floori((x0-_gx)/CELL),0),maxi(floori((z0-_gz)/CELL),0))
+	var c1 := Vector2i(mini(floori((x1-_gx)/CELL),_gw-1),mini(floori((z1-_gz)/CELL),_gh-1))
+	for cj in range(c0.y,c1.y+1):
+		for ci in range(c0.x,c1.x+1):
+			if _cell_n[cj*_gw+ci] > 0: return true
+	return false
+
+## The nearest point of the line to (x, z) through its square's runs:
+## `last_d`, `last_s`, `_i`, `_t`; false off the grid's listed squares.
+func _near(x: float, z: float) -> bool:
+	var ci := floori((x-_gx)/CELL)
+	var cj := floori((z-_gz)/CELL)
+	if ci < 0 or cj < 0 or ci >= _gw or cj >= _gh: return false
+	var c := cj*_gw+ci
+	var runs := _cell_n[c]
+	if runs == 0: return false
+	var best := INF
+	for r in runs:
+		var q := (_cell_at[c]+r)*3
+		var a := _runs[q]
+		var b := a+_runs[q+1]-1
+		var i := _runs[q+2]
+		var t := 0.0
+		var j := 0
+		for _k in 64:
+			j = i if i < _n else i-_n
+			t = ((x-_x[j])*_dx[j]+(z-_z[j])*_dz[j])*_inv[j]
+			if t < 0.0 and i > a: i -= 1
+			elif t > 1.0 and i < b: i += 1
+			else: break
+		t = clampf(t,0.0,1.0)
+		var ox := x-_x[j]-_dx[j]*t
+		var oz := z-_z[j]-_dz[j]*t
+		var d2 := ox*ox+oz*oz
+		if d2 < best:
+			best = d2
+			_i = j
+			_t = t
+	last_d = sqrt(best)
+	last_s = (_i+_t)*_step
+	return true
+
+## Vector2(world height, meadow) `got` with the bed on it at (x, z).
+func apply(got: Vector2, x: float, z: float) -> Vector2:
+	last_lift = 0.0
+	last_clear = false
+	last_d = INF
+	if not _near(x,z) or last_d >= REACH: return got
+	var j := _i+1 if _i+1 < _n else 0
+	var bed := lerpf(_y[_i],_y[j],_t)
+	last_bed = bed
+	var w := lerpf(_w[_i],_w[j],_t)*(1.0-smoothstep(REACH-REACH_FADE,REACH,last_d))*level
+	last_clear = last_d < TREE_CLEAR and w > 0.0
+	if w <= 0.0: return got
+	var out := last_d-HALF
+	var to := bed if out <= 0.0 else clampf(got.x,bed-out*FILL_SLOPE,bed+out*CUT_SLOPE)
+	var y := lerpf(got.x,to,w)
+	last_lift = y-got.x
+	if absf(last_lift) > 0.5: last_clear = true
+	# The bed isn't turf, nor a bank the line moved.
+	var m := got.y*(1.0-w*(1.0-smoothstep(HALF-2.0,HALF+4.0,last_d)))
+	m *= 1.0-w*clampf(absf(last_lift)/3.0,0.0,1.0)
+	return Vector2(y,m)
+
+## How much of the ballast's paint shows at the last `apply`'s point.
+func ballast() -> float:
+	if last_d >= REACH: return 0.0
+	var j := _i+1 if _i+1 < _n else 0
+	return lerpf(_w[_i],_w[j],_t)*level*(1.0-smoothstep(HALF-3.0,HALF+1.0,last_d))
+
+# --- The land's arrays ------------------------------------------------------------
+
+## The weight of a pass at `step` m a sample: full to 8 m, none past 32 (a
+## coarse chunk would catch the 28 m bed as dents).
+static func level_of(step: float) -> float:
+	return 1.0-smoothstep(8.0,32.0,step)
+
+## The bed's pass over a chunk's arrays (LandField.build_chunk's): heights,
+## then the normals and colours round what moved, the skirt's copies. `under`
+## gives the land's height without the bed (for the rim outside the chunk).
+func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0: float, step: float, cells: int, skirt_drop: float) -> void:
+	level = level_of(step)
+	if level <= 0.0:
+		level = 1.0
+		return
+	var n := cells+1
+	var w := n+2
+	var heights: PackedFloat32Array = made.heights
+	var colours: PackedColorArray = made.colours
+	var hs := PackedFloat32Array()
+	var ms := PackedFloat32Array()
+	var bs := PackedFloat32Array()
+	var mv := PackedByteArray()
+	hs.resize(w*w)
+	ms.resize(w*w)
+	bs.resize(w*w)
+	mv.resize(w*w)
+	var any := false
+	for j in w:
+		for i in w:
+			var x := x0+(i-1)*step
+			var z := z0+(j-1)*step
+			var k := j*w+i
+			var inner := i >= 1 and i <= n and j >= 1 and j <= n
+			if not reaches(x,z):
+				hs[k] = heights[(j-1)*n+i-1] if inner else float(under.call(x,z))
+				continue
+			var base := heights[(j-1)*n+i-1] if inner else float(under.call(x,z))
+			var meadow := colours[(j-1)*n+i-1].a if inner else 0.0
+			var got := apply(Vector2(base,meadow),x,z)
+			hs[k] = got.x
+			ms[k] = got.y
+			bs[k] = ballast()
+			if absf(last_lift) > 0.001 or bs[k] > 0.0 or got.y != meadow:
+				mv[k] = 1
+				any = any or inner
+	level = 1.0
+	if not any: return
+	var verts: PackedVector3Array = made.verts
+	var normals: PackedVector3Array = made.normals
+	var carved: PackedByteArray = made.carved
+	var river: PackedFloat32Array = made.river
+	var xs := PackedFloat64Array()
+	var zs := PackedFloat64Array()
+	var ys := PackedFloat32Array()
+	var ups := PackedFloat32Array()
+	var mds := PackedFloat32Array()
+	var ids := PackedInt32Array()
+	var bal := PackedFloat32Array()
+	for j in n:
+		for i in n:
+			var k := (j+1)*w+i+1
+			if mv[k]+mv[k-1]+mv[k+1]+mv[k-w]+mv[k+w] == 0: continue
+			var v := j*n+i
+			var y := hs[k]
+			var nrm := Vector3(hs[k-1]-hs[k+1],2.0*step,hs[k-w]-hs[k+w]).normalized()
+			normals[v] = nrm
+			xs.append(x0+i*step)
+			zs.append(z0+j*step)
+			ys.append(y)
+			ups.append(nrm.y)
+			mds.append(ms[k] if mv[k] == 1 else colours[v].a)
+			ids.append(v)
+			bal.append(bs[k])
+			if mv[k] == 0: continue
+			heights[v] = y
+			verts[v] = Vector3(i*step,y,j*step)
+			# No river on the bed or the banks; no rock's groove on them.
+			river[v*3] = 1000.0
+			river[v*3+1] = 0.0
+			river[v*3+2] = SEA_Y-100.0
+			carved[v*4] = 0
+			carved[v*4+1] = 0
+	if not ids.is_empty():
+		var cs: PackedColorArray = field.colours(xs,zs,ys,ups,mds)
+		for q in ids.size():
+			var c := cs[q].lerp(BALLAST,bal[q])
+			c.a = mds[q]
+			colours[ids[q]] = c
+	for e in 4:
+		for t in n:
+			var from: int = t if e == 0 else (t*n+cells if e == 1 else (cells*n+t if e == 2 else t*n))
+			var k := ((from/n)+1)*w+(from%n)+1
+			if mv[k]+mv[k-1]+mv[k+1]+mv[k-w]+mv[k+w] == 0: continue
+			var sv := n*n+e*n+t
+			verts[sv] = verts[from]-Vector3(0.0,skirt_drop,0.0)
+			normals[sv] = normals[from]
+			colours[sv] = colours[from]
+			for q in 4: carved[sv*4+q] = carved[from*4+q]
+			river[sv*3] = river[from*3]
+			river[sv*3+1] = -river[from*3+1]
+			river[sv*3+2] = river[from*3+2]
+	made.heights = heights
+	made.verts = verts
+	made.normals = normals
+	made.colours = colours
+	made.carved = carved
+	made.river = river
+
+## The bed's pass over LandField.grid's arrays (the grass's).
+func apply_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:
+	var hs: PackedFloat32Array = got.heights
+	var ms: PackedFloat32Array = got.get("meadows",PackedFloat32Array())
+	var rs: PackedFloat32Array = got.get("river",PackedFloat32Array())
+	level = level_of(step)
+	for j in nz:
+		for i in nx:
+			var x := x0+(i-pad)*step
+			var z := z0+(j-pad)*step
+			if not reaches(x,z): continue
+			var k := j*nx+i
+			var y := apply(Vector2(hs[k],ms[k] if not ms.is_empty() else 0.0),x,z)
+			if absf(last_lift) <= 0.001 and (ms.is_empty() or y.y == ms[k]): continue
+			hs[k] = y.x
+			if not ms.is_empty(): ms[k] = y.y
+			if not rs.is_empty() and absf(last_lift) > 0.25: rs[k] = 1000.0
+	level = 1.0
+	got.heights = hs
+	if not ms.is_empty(): got.meadows = ms
+	if not rs.is_empty(): got.river = rs
