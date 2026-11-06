@@ -681,37 +681,48 @@ ec.reset(rig)
 
 
 def _slide_report(clip, hz=240):
-    """A moving loop's foot slide: each planted toe, posed by the rig, in
-    the ground's frame (the root moving at the clip's own speed). It should
-    hold still: the worst drift along and the worst lift over any one
-    stance (span), and how long the foot is down."""
+    """A moving clip's foot slide: each planted toe, posed by the rig, in
+    the ground's frame (the root moving at the clip's own speed, or by its
+    ground curve for a one-shot). It should hold still: the worst drift
+    along and the worst lift over any one stance (span), and how long the
+    foot is down."""
     speed = clip.ground * ec.BL / clip.length
     n = round(clip.length * hz)
+    if clip.loop:
+        travel, steps = (lambda t: speed * t), 2 * n      # two cycles, so a stance across the seam is whole
+    else:
+        travel, steps = (lambda t: clip.ground * ec.BL * clip.ground_curve(t / clip.length)), n + 1
+        speed = (travel(clip.length) - travel(clip.length - 1e-3)) / 1e-3    # the pace it ends at
     worst = {}
     for leg, (fh, s) in ec.LEGS.items():
         bone, toe = (f"hoof_{s}", JOINT[f"f_toe_{s}"]) if fh == "f" else (f"hhoof_{s}", JOINT[f"h_toe_{s}"])
         runs, cur = [], []
-        for i in range(2 * n):              # two cycles, so a stance across the seam is whole
+        for i in range(steps):
             t = i / hz
             if clip.values(t)[f"fz.{leg}"] <= 1e-6:
                 p = KRIG.moves(clip, t)[bone] @ toe
-                cur.append((p.y + speed * t, p.z))
+                cur.append((p.y + travel(t), p.z, t))
             elif cur:
                 runs.append(cur)
                 cur = []
+        if cur:
+            runs.append(cur)
         runs = [r for r in runs if len(r) > 1]
-        drift = max((max(a for a, _ in r) - min(a for a, _ in r)) for r in runs) if runs else 0.0
-        lift = max((max(abs(z) for _, z in r)) for r in runs) if runs else 0.0
-        r0 = runs[0] if runs else [(0.0, 0.0)]
+
+        def bad(r):
+            return max(q[0] for q in r) - min(q[0] for q in r), max(abs(q[1]) for q in r)
+        r0 = max(runs, key=lambda r: sum(bad(r))) if runs else [(0.0, 0.0, 0.0)]
+        drift = max(bad(r)[0] for r in runs) if runs else 0.0
+        lift = max(bad(r)[1] for r in runs) if runs else 0.0
         ends = f"{r0[0][1]:.3f}/{r0[len(r0) // 2][1]:.3f}/{r0[-1][1]:.3f}"
-        worst[leg] = (drift, lift, len(r0) / hz, ends)
+        worst[leg] = (drift, lift, len(r0) / hz, f"{ends} from t={r0[0][2]:.3f}")
     print("ELK_SLIDE", clip.name, f"speed={speed:.3f} span/s",
-          " ".join(f"{k}: drift={a:.4f} lift={b:.4f} down={c:.3f}s z(td/mid/lo)={e}"
+          " ".join(f"{k}: drift={a:.4f} lift={b:.4f} down={c:.3f}s worst z(td/mid/lo)={e}"
                    for k, (a, b, c, e) in worst.items()))
 
 
 for c in CLIPS:
-    if c.loop and c.ground > 0:
+    if c.ground > 0 and (c.loop or c.ground_curve):
         _slide_report(c)
 
 if EXPORT:
@@ -864,11 +875,15 @@ if STILLS or STRIPS:
         for pb in rig.pose.bones:
             pb.rotation_mode = "QUATERNION"
         views = [((-1.75, 0.05, 0.5), (0, 0.05, 0.5), 42), ((-1.3, 1.3, 0.8), (0, 0.04, 0.45), 42)]
+        STRIP_UP = {"leap": 0.18}
         for c in CLIPS:
             if ONLY and c.name not in ONLY:
                 continue
             rows = []
+            up = STRIP_UP.get(c.name, 0.0)    # a clip that rises (the leap's hang) framed higher and wider
             for eye, at_, lens in views:
+                eye = V(eye) * (1.0 + up) + V((0, 0, up))
+                at_ = V(at_) + V((0, 0, up))
                 row = []
                 for t in c.shots:
                     KRIG.apply(c, t)

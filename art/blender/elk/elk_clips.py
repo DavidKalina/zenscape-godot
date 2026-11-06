@@ -730,5 +730,247 @@ def sprint():
         post=g, scap=GAIT_SCAP, shots=[0.0, 0.035, 0.065, 0.1, 0.155, 0.2, 0.25, 0.32, 0.38, 0.44])
 
 
+# ------------------------------------------------------------------ the one-shots that travel
+class Ground:
+    """A one-shot's travel: speed keys [(t, relative speed[, hold])], eased as
+    a spline and scaled so the clip covers `span` in all. g(t) is the ground
+    covered by t (span), speed(t) its rate, curve(u) the fraction by u = t / length."""
+
+    def __init__(self, length, span, keys, n=2000):
+        self.T, self.n = length, n
+        raw = [max(0.0, _spline(i / n, [(k[0] / length, k[1], *k[2:]) for k in keys])) for i in range(n + 1)]
+        acc, cum = 0.0, [0.0]
+        for i in range(n):
+            acc += 0.5 * (raw[i] + raw[i + 1]) * length / n
+            cum.append(acc)
+        self.k = span / acc
+        self.cum = [c * self.k for c in cum]
+        self.raw = raw
+
+    def g(self, t):
+        f = min(max(t / self.T, 0.0), 1.0) * self.n
+        i = min(int(f), self.n - 1)
+        return self.cum[i] + (self.cum[i + 1] - self.cum[i]) * (f - i)
+
+    def speed(self, t):
+        f = min(max(t / self.T, 0.0), 1.0) * self.n
+        i = min(int(f), self.n - 1)
+        return self.k * (self.raw[i] + (self.raw[i + 1] - self.raw[i]) * (f - i))
+
+    def curve(self, u):
+        return self.g(u * self.T) / self.cum[-1]
+
+
+FOOT_CH = ("fy", "fz", "kf", "fp")
+
+
+def _leg_of(v, leg):
+    return {c: v[f"{c}.{leg}"] for c in FOOT_CH}
+
+
+def _body_of(v):
+    return {k: x for k, x in v.items() if k.split(".")[0] not in LEG_CH}
+
+
+def entry(clip, t=0.0, h=1.0 / 240.0):
+    """A clip's keyed values at t and their rates (per s), to hand over into it."""
+    a, b = clip.keyed(t), clip.keyed(t + h)
+    return a, {k: (b[k] - a[k]) / h for k in a}
+
+
+class Steps:
+    """A one-shot's feet (a clip's post), as Gait for a loop but on ground
+    that moves by ground.g(t): a foot down holds still, its toe's fy falling
+    by exactly the ground covered since it planted; up, each channel follows
+    keys inside its swing (w 0..1 from liftoff to touchdown, or from the
+    clip's start, or to its end, for a foot in the air there).
+
+    feet {leg: {plants [(td, lo, fy)] (td <= 0: down from the start, fy its
+    toe at t 0; lo >= length: down to the end); start, end: {fy fz kf fp}
+    for a foot in the air at the clip's start or end, start_d, end_d their
+    rates; swings [{fy_keys fz_keys kf_keys fp_keys: [(w, value[, hold])],
+    ret}] one per swing in order; roll (fp at liftoff), heel (at touchdown)}}.
+    carry: a lifted foot rises with the body's bob over the ground (a leap)."""
+
+    def __init__(self, length, ground, feet, carry=0.0):
+        self.T, self.G, self.carry = length, ground, carry
+        self.segs = {}
+        for leg, f in feet.items():
+            segs, sw = [], iter(f.get("swings", []))
+            pl = f["plants"]
+            if pl[0][0] > 0.0:
+                segs.append(("air", 0.0, pl[0][0], ("start",), ("down", 0), next(sw, {})))
+            for i, (td, lo, fy) in enumerate(pl):
+                segs.append(("down", max(td, 0.0), min(lo, length), i))
+                if lo < length:
+                    nxt = ("down", i + 1) if i + 1 < len(pl) else ("end",)
+                    segs.append(("air", lo, pl[i + 1][0] if i + 1 < len(pl) else length, ("up", i), nxt,
+                                 next(sw, {})))
+            self.segs[leg] = segs
+        self.feet = feet
+
+    def _plant_fy(self, f, i, t):
+        td, _, fy = f["plants"][i]
+        return fy - (self.G.g(t) - self.G.g(max(td, 0.0)))
+
+    def _end(self, f, e, at, D, lift):
+        """An end of a swing: (values, rates per unit w)."""
+        if e[0] == "start" or e[0] == "end":
+            vals = f[e[0]]
+            d = f.get(e[0] + "_d", {})
+            return vals, {c: d.get(c, 0.0) * D for c in FOOT_CH}
+        ret = lift.get("ret", 0.12)
+        sp = -ret * self.G.speed(at) * D
+        if e[0] == "up":
+            return {"fy": self._plant_fy(f, e[1], at), "fz": 0.0, "kf": 0.0, "fp": f.get("roll", 0.0)}, {"fy": sp}
+        return {"fy": f["plants"][e[1]][2], "fz": 0.0, "kf": 0.0, "fp": f.get("heel", 0.0)}, {"fy": sp}
+
+    def __call__(self, t, v):
+        bob = v["bob"]
+        for leg, segs in self.segs.items():
+            f = self.feet[leg]
+            seg = next((s for s in segs if s[1] <= t <= s[2]), segs[-1])
+            if seg[0] == "down":
+                i, t0, t1 = seg[3], seg[1], seg[2]
+                td, lo, _ = f["plants"][i]
+                into, left = t - t0, t1 - t
+                fp = 0.0
+                if td > 0.0:
+                    fp += f.get("heel", 0.0) * (1 - _smooth(0.0, min(0.4 * (lo - td), 0.03), into))
+                if lo < self.T:
+                    rw = f.get("roll_win", min(0.6 * (lo - max(td, 0.0)), 0.05))
+                    fp += f.get("roll", 0.0) * (1 - _smooth(0.0, rw, left))
+                v[f"fy.{leg}"] = self._plant_fy(f, i, t)
+                v[f"fz.{leg}"] = 0.0
+                v[f"kf.{leg}"] = 0.0
+                v[f"fp.{leg}"] = fp
+                continue
+            _, t0, t1, ea, eb, shape = seg
+            D = max(t1 - t0, 1e-6)
+            w = (t - t0) / D
+            a, da = self._end(f, ea, t0, D, shape)
+            b, db = self._end(f, eb, t1, D, shape)
+            for c in FOOT_CH:
+                k = shape.get(f"{c}_keys", [])
+                m0, m1 = da.get(c, 0.0), db.get(c, 0.0)
+                if c == "fz" and k:
+                    if ea[0] in ("up", "down"):
+                        m0 = 1.5 * k[0][1] / k[0][0]
+                    if eb[0] in ("up", "down"):
+                        m1 = -1.5 * k[-1][1] / (1 - k[-1][0])
+                x = _spline(w, [(0.0, a[c]), *k, (1.0, b[c])], m0, m1)
+                if c == "fz":
+                    x = max(0.0, x) + self.carry * max(0.0, bob) * _smooth(0.0, 0.15, w) * _smooth(0.0, 0.15, 1 - w)
+                v[f"{c}.{leg}"] = x
+
+
+BOLT_T, BOLT_BL = 0.5, 1.2
+## The bolt's travel: still through the crouch, the hinds' drive, the fores'
+## first stride; it ends near the gallop's pace at a rate of 0.7.
+BOLT_GO = [(0.0, 0.0), (0.12, 0.0, True), (0.2, 1.0), (0.3, 3.4), (0.4, 3.9), (0.47, 4.4), (0.5, 4.5)]
+
+
+def bolt_start():
+    """From the alert's held pose (head up, a fore foot raised): the raised
+    foot stamps down, the body flinches and sinks back over the hinds into
+    the crouch (bolt_start.crouch), the head thrown up, ears going back, tail
+    up; the fores push the front up and tuck, the hinds drive it out
+    (bolt_start.launch), the back opening flat out; over the air the fores
+    reach and the near one takes the first stride, and it hands over to
+    the gallop's start (the off fore reaching for gallop.plant)."""
+    T = BOLT_T
+    ground = Ground(T, BOLT_BL * BL, BOLT_GO)
+    A = alert().keyed(0.6)
+    G0, G0d = entry(gallop())
+    fore_up = dict(fy_keys=[(0.32, -0.06), (0.75, 0.30, True)], fz_keys=[(0.32, 0.17), (0.78, 0.08)],
+                   kf_keys=[(0.3, 120.0), (0.72, 0.0, True)], fp_keys=[(0.3, 130.0), (0.72, -6.0)], ret=0.12)
+    feet = {
+        "fl": {"plants": [(0.07, 0.17, 0.03), (0.40, 0.47, 0.18)], "start": _leg_of(A, "fl"),
+               "end": _leg_of(G0, "fl"), "end_d": _leg_of(G0d, "fl"), "roll": 50.0, "heel": -10.0,
+               "swings": [{}, fore_up, {}]},
+        "fr": {"plants": [(0.0, 0.185, 0.0)], "end": _leg_of(G0, "fr"), "end_d": _leg_of(G0d, "fr"),
+               "roll": 50.0, "roll_win": 0.06,
+               "swings": [dict(fy_keys=[(0.3, -0.06), (0.75, 0.28)], fz_keys=[(0.3, 0.17), (0.75, 0.10)],
+                               kf_keys=[(0.28, 120.0), (0.8, 20.0)], fp_keys=[(0.28, 130.0), (0.8, 10.0)])]},
+        "hl": {"plants": [(0.0, 0.28, 0.0)], "end": _leg_of(G0, "hl"), "end_d": _leg_of(G0d, "hl"),
+               "roll": 50.0, "roll_win": 0.08,
+               "swings": [dict(fy_keys=[(0.35, -0.36)], fz_keys=[(0.35, 0.08)], kf_keys=[(0.45, 15.0)],
+                               fp_keys=[(0.35, 80.0)])]},
+        "hr": {"plants": [(0.0, 0.30, 0.0)], "end": _leg_of(G0, "hr"), "end_d": _leg_of(G0d, "hr"),
+               "roll": 50.0, "roll_win": 0.08,
+               "swings": [dict(fy_keys=[(0.4, -0.36)], fz_keys=[(0.4, 0.07)], kf_keys=[(0.5, 10.0)],
+                               fp_keys=[(0.4, 75.0)])]},
+    }
+    return Clip("bolt_start", T, [
+        (0.0, _body_of(A)),
+        (0.06, {"bob": -0.014, "surge": -0.016, "pitch": 1.0, "neck": 27.0, "nod": 2.0, **ears(ear=28.0)}),  # the flinch
+        (0.15, {"bob": -0.085, "surge": -0.05, "pitch": 6.0, "flex": 22.0, "neck": 32.0, "nod": -2.0,
+                **ears(ear=-10.0, et=12.0), "tail": 40.0}, True),                     # bolt_start.crouch
+        (0.22, {"bob": -0.05, "surge": -0.015, "pitch": 15.0, "flex": 10.0, "neck": 24.0, "nod": -4.0,
+                **ears(ear=-30.0, et=0.0)}),                                          # the front up
+        (0.3, {"bob": -0.025, "surge": 0.022, "pitch": 10.0, "flex": -14.0, "neck": 10.0, "nod": -6.0,
+               "tail": 30.0}),                                                        # bolt_start.launch
+        (0.4, {"bob": -0.024, "surge": 0.01, "pitch": -3.0, "flex": -4.0, "neck": 0.0}),   # the first stride
+        (0.5, _body_of(G0)),
+    ], loop=False, ground=BOLT_BL, ground_curve=ground.curve, post=Steps(T, ground, feet), scap=GAIT_SCAP,
+        beats={"bolt_start.crouch": [0.15], "bolt_start.launch": [0.3]},
+        shots=[0.0, 0.07, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5])
+
+
+LEAP_T = 0.9
+LEAP_BL = 12.6              # the sprint's pace (7 BL a 0.5 s cycle) over the leap: it is taken from the run beside
+
+
+def leap():
+    """From the sprint's hang: the fores plant, the body vaults over them and
+    the back rounds deep to bring the hinds far under (a lower gather than
+    the sprint's: the anticipation), the hinds drive and the front lifts
+    (leap.takeoff); up over the top with every leg tucked tight, the back
+    rounded, the head stretched; the fores open and reach down, land
+    (leap.land) and give, the head dropping, the hinds come through under,
+    drive again, and it hands back to the sprint's hang."""
+    T = LEAP_T
+    ground = Ground(T, LEAP_BL * BL, [(0.0, 1.0), (T, 1.0)])
+    S0, S0d = entry(sprint())
+    fore_hang = dict(fy_keys=[(0.12, -0.10), (0.3, 0.0), (0.55, 0.04, True), (0.8, 0.34), (0.93, 0.31)],
+                     fz_keys=[(0.12, 0.14), (0.3, 0.24), (0.55, 0.25), (0.8, 0.14), (0.93, 0.05)],
+                     kf_keys=[(0.15, 120.0), (0.3, 140.0, True), (0.55, 135.0, True), (0.78, 8.0), (0.9, 0.0)],
+                     fp_keys=[(0.15, 130.0), (0.3, 150.0), (0.55, 145.0), (0.78, 0.0), (0.93, -10.0)], ret=0.10)
+    hind_hang = dict(fy_keys=[(0.15, -0.45), (0.3, -0.36), (0.48, -0.12), (0.85, 0.26)],
+                     fz_keys=[(0.15, 0.09), (0.3, 0.16), (0.48, 0.24), (0.85, 0.06)],
+                     kf_keys=[(0.15, -5.0), (0.28, 10.0), (0.44, 70.0, True), (0.62, 50.0), (0.9, 0.0)],
+                     fp_keys=[(0.15, 75.0), (0.3, 95.0), (0.45, 135.0), (0.65, 95.0), (0.88, 0.0)], ret=0.10)
+
+    def foot(leg, plants, hang, roll, heel=0.0):
+        return {"plants": plants, "start": _leg_of(S0, leg), "start_d": _leg_of(S0d, leg),
+                "end": _leg_of(S0, leg), "end_d": _leg_of(S0d, leg), "roll": roll, "heel": heel,
+                "swings": [{}, hang, {}]}
+
+    feet = {
+        "fl": foot("fl", [(0.035, 0.08, 0.25), (0.70, 0.745, 0.25)], fore_hang, 60.0, -14.0),
+        "fr": foot("fr", [(0.05, 0.095, 0.25), (0.715, 0.76, 0.25)], fore_hang, 60.0, -14.0),
+        "hl": foot("hl", [(0.14, 0.19, 0.32), (0.77, 0.82, 0.30)], hind_hang, 55.0),
+        "hr": foot("hr", [(0.15, 0.20, 0.32), (0.785, 0.835, 0.30)], hind_hang, 55.0),
+    }
+    return Clip("leap", T, [
+        (0.0, _body_of(S0)),
+        (0.04, {"bob": -0.045, "pitch": -6.0, "flex": -6.0, "neck": -8.0, "surge": 0.0}),       # the fores plant
+        (0.1, {"bob": -0.055, "pitch": 2.0, "flex": 16.0, "neck": -6.0, "surge": -0.02}),
+        (0.16, {"bob": -0.062, "pitch": 7.0, "flex": 28.0, "neck": -2.0, "surge": -0.02}, True),  # the deep gather
+        (0.2, {"bob": -0.01, "pitch": 16.0, "flex": 8.0, "neck": 10.0, "surge": 0.0}),          # leap.takeoff
+        (0.3, {"bob": 0.17, "pitch": 12.0, "flex": -4.0, "neck": 6.0, **ears(ear=-20.0), "tail": 30.0}),
+        (0.45, {"bob": 0.28, "pitch": 0.0, "flex": 8.0, "neck": -8.0}, True),                  # over the top
+        (0.6, {"bob": 0.17, "pitch": -11.0, "flex": -6.0, "neck": 4.0}),                        # the reach down
+        (0.7, {"bob": -0.03, "pitch": -12.0, "flex": -10.0, "neck": 6.0}),                        # leap.land
+        (0.76, {"bob": -0.075, "pitch": -5.0, "flex": 6.0, "neck": -12.0, **ears(ear=-35.0), "tail": 20.0},
+         True),                                                                                  # the give
+        (0.82, {"bob": -0.045, "pitch": 5.0, "flex": 18.0, "neck": -4.0, "surge": -0.01}),     # the hinds under
+        (0.86, {"bob": -0.02, "pitch": 6.0, "flex": 0.0, "neck": 2.0, "surge": 0.0}),          # the drive
+        (0.9, _body_of(S0)),
+    ], loop=False, ground=LEAP_BL, ground_curve=ground.curve, post=Steps(T, ground, feet, carry=1.0),
+        scap=GAIT_SCAP, beats={"leap.takeoff": [0.2], "leap.land": [0.7]},
+        shots=[0.0, 0.04, 0.1, 0.16, 0.2, 0.3, 0.45, 0.6, 0.7, 0.76, 0.82, 0.9])
+
+
 def clips():
-    return [graze(), alert(), stop_look(), trot(), gallop(), sprint()]
+    return [graze(), alert(), stop_look(), trot(), gallop(), sprint(), bolt_start(), leap()]
