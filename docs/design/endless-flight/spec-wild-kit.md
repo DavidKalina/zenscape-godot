@@ -132,6 +132,18 @@ order. Signal COMPLETE when the last is committed and checked.
    and the director's moments forced along it (`--happen=`). A launch line
    per piece. The smoke check, and each lane's main driver once more on this
    branch.
+   Done (the driver is `scratch/tour/tour.gd`, uncommitted). The launch
+   lines, each after `python3 tools/play.py --no-pull -- --no-title
+   --pilot-file=/tmp/wild-kit-pilot.json`:
+   - the wreck's channel, stern to bow (hold Boost, keep low):
+     `--at=103,211 --heading=-47 --alt=4`
+   - the ring, in under gap 0's lintel: `--at=579,69 --heading=90 --alt=12`
+   - the herd, a run beside at cruise (it is 600 m ahead, keep it on your
+     right): `--at=60,145 --heading=90 --alt=40`
+   - the falls, in through the sheet: `--at=2350,30 --heading=-82 --alt=40`
+   - the waterfowl: drop `--no-title`, add `--happen=waterfowl`, press Start
+   - the cloud punch: `--happen=cloud_punch --hour=16.5`, climb out of a
+     tall cloud's top with the sun behind
 5. **The handoff**, `wild-kit-handoff.md` beside this spec, from the trail
    and the lanes' handoffs: what's built, where to play each piece (launch
    lines), what's stood in, what's open (each lane's open list, plus the
