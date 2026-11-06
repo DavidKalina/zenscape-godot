@@ -1212,11 +1212,13 @@ func bore_keep(p: Vector3) -> Vector3:
 	return p if ice == null else ice.keep(p)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
+## (A tree's test has no foot: in a railroad bore, the trees on the hill
+## over it don't count.)
 func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	var m := _stone_near(p)
-	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p))
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or (trees.inside(p) and (rail_bore == null or rail_bore.tube(p) != 0)) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or (rail_bore != null and rail_bore.inside(p)) or (rail_span != null and rail_span.inside(p)) or (rail_stops != null and rail_stops.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).

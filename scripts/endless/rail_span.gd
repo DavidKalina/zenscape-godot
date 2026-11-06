@@ -374,7 +374,11 @@ func _collide(i: int) -> void:
 # --- The flight -------------------------------------------------------------------
 
 ## The stretches of stone at `p` grown by `pad`, as Vector2(bottom, top),
-## sorted and joined.
+## sorted and joined. The deck's and the abutments' tops grow by the pad
+## only past their sides (`_up`; at their ends the bed carries on at their
+## height): over them the plane rides them as land, so its wheels can touch
+## down on the deck (wings level, the pad is the plane's reach sideways,
+## not down).
 func _stretches(p: Vector3, pad: float) -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	var cell: Variant = _cells.get(Vector2i(floori(p.x/CELL),floori(p.z/CELL)))
@@ -389,12 +393,13 @@ func _stretches(p: Vector3, pad: float) -> Array[Vector2]:
 		if s < _s0[k]-ABUT_BACK-pad or s > _s1[k]+ABUT_BACK+pad: continue
 		# The deck.
 		if s >= _s0[k]-pad and s <= _s1[k]+pad and ad <= _deck_half+pad:
-			out.append(Vector2(bed+_top_up-DECK_DEPTH-pad,bed+_top_up+pad))
+			out.append(Vector2(bed+_top_up-DECK_DEPTH-pad,bed+_top_up+_up(ad-_deck_half,pad)))
 		# The abutments.
 		var ah := _half+ABUT_PAST+pad
 		if ad <= ah:
-			if s >= _s0[k]-ABUT_BACK-pad and s <= _s0[k]+ABUT_IN+pad: out.append(Vector2(_abut_foot[k].x,bed+pad))
-			if s >= _s1[k]-ABUT_IN-pad and s <= _s1[k]+ABUT_BACK+pad: out.append(Vector2(_abut_foot[k].y,bed+pad))
+			var side := ad-_half-ABUT_PAST
+			if s >= _s0[k]-ABUT_BACK-pad and s <= _s0[k]+ABUT_IN+pad: out.append(Vector2(_abut_foot[k].x,bed+_up(side,pad)))
+			if s >= _s1[k]-ABUT_IN-pad and s <= _s1[k]+ABUT_BACK+pad: out.append(Vector2(_abut_foot[k].y,bed+_up(side,pad)))
 		# The supports within reach along s.
 		var ss: PackedFloat32Array = _sup_s[k]
 		if ss.is_empty(): continue
@@ -416,6 +421,11 @@ func _stretches(p: Vector3, pad: float) -> Array[Vector2]:
 		if out[i].x <= last.y+0.05: joined[joined.size()-1] = Vector2(last.x,maxf(last.y,out[i].y))
 		else: joined.append(out[i])
 	return joined
+
+## A top's growth `past` m beyond its edge (<= 0 over it): none over it,
+## the pad's share past it.
+static func _up(past: float, pad: float) -> float:
+	return clampf(past,0.0,pad)
 
 ## SkyGlide's `ground` at `p` over `h` (as LandArches `ground`): a float
 ## (the land, raised by a support or an abutment, or the deck's top over

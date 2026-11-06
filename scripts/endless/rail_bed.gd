@@ -54,6 +54,14 @@ const REACH_FADE := 20.0
 const SPILL_SLOPE := 1.0
 const SPAN_REACH := 40.0
 const SPAN_FADE := 10.0
+## The station yards: at each station (RailLine's station and town
+## pieces) the flat runs out to YARD_HALF m (the platforms, RailStops
+## PLATFORM_OUT 16 m out, and the station house and water tower past them,
+## 14 m deep) over YARD_ALONG m either side of its s (RailStops
+## PLATFORM_HALF 80 m, and 2), eased back over YARD_EASE m; never on a span.
+const YARD_HALF := 31.0
+const YARD_ALONG := 82.0
+const YARD_EASE := 12.0
 ## The grid's squares (m).
 const CELL := 32.0
 ## Trees keep this far off the centre line (m), and off any ground it moved.
@@ -185,6 +193,18 @@ static func _build() -> void:
 				var widen := 1.0-smoothstep(BoreShape.MOUTH_FLAT,reach,-into)
 				_hw[k] = maxf(_hw[k],lerpf(HALF,mouth_half,widen))
 		if s1 > len: push_warning("rail bed: a tunnel over the lap's end")
+	# The station yards: wide enough that the land never stands through a
+	# platform, nor up the house's or the tower's back.
+	var yard := maxf(YARD_HALF,HALF)
+	for piece: Dictionary in line.pieces():
+		if not str(piece.kind) in ["station","town"]: continue
+		var sc := float(piece.s0)
+		for i in range(floori((sc-YARD_ALONG-YARD_EASE)/_step),ceili((sc+YARD_ALONG+YARD_EASE)/_step)+1):
+			var k := posmod(i,_n)
+			# Not on a span, nor before a tunnel's mouth (its own widening).
+			if _sin[k] > 0.0 or _into[k] >= -(BoreShape.MOUTH_FLAT+BoreShape.MOUTH_EASE): continue
+			var widen := 1.0-smoothstep(0.0,YARD_EASE,absf(i*_step-sc)-YARD_ALONG)
+			_hw[k] = maxf(_hw[k],lerpf(HALF,yard,widen))
 	# The grid over the line's box and REACH round it.
 	var x0 := INF
 	var z0 := INF
@@ -494,7 +514,7 @@ func clear_grass(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz
 		for i in nx:
 			var x := x0+(i-pad)*step
 			var z := z0+(j-pad)*step
-			if not _near(x,z) or last_d >= _face_half: continue
+			if not _near(x,z) or last_d >= maxf(_face_half,YARD_HALF): continue
 			var k := _i+1 if _i+1 < _n else 0
 			last_into = lerpf(_into[_i],_into[k],_t)
 			var w := lerpf(_w[_i],_w[k],_t)*(1.0 if lerpf(_sin[_i],_sin[k],_t) < 0.5 else 0.0)

@@ -86,6 +86,9 @@ const TIMBER_C := Color(0.55,0.42,0.30)
 const ROOF_C := Color(0.38,0.30,0.26)
 const TANK_C := Color(0.50,0.38,0.28)
 const FRONTS := [Color(0.72,0.40,0.30),Color(0.80,0.66,0.42),Color(0.55,0.60,0.62),Color(0.85,0.80,0.70),Color(0.60,0.46,0.34),Color(0.50,0.56,0.44)]
+## Tops within this of the one under a point count as one (a platform's
+## boxes step with the grade): none of them grows by the pad there.
+const TOP_SAME := 0.3
 ## The shelter (vertex alpha) of an underside, so it reads in shade.
 const UNDER_SHELTER := 0.35
 
@@ -429,6 +432,11 @@ func _stretches(p: Vector3, pad: float) -> Array[Vector2]:
 	var cell: Variant = _cells.get(Vector2i(floori(p.x/CELL),floori(p.z/CELL)))
 	if cell == null: return out
 	pad = minf(pad,_grow)
+	# Each box within reach, how far p is past its footprint's edge (<= 0
+	# over it), and the highest top p stands over.
+	var near := PackedInt32Array()
+	var past := PackedFloat32Array()
+	var over := -INF
 	for i: int in cell:
 		var at := i*B
 		var ox := p.x-_b[at]
@@ -436,7 +444,17 @@ func _stretches(p: Vector3, pad: float) -> Array[Vector2]:
 		var lx := ox*_b[at+2]+oz*_b[at+3]
 		var lz := -ox*_b[at+3]+oz*_b[at+2]
 		if absf(lx) > _b[at+4]+pad or absf(lz) > _b[at+5]+pad: continue
-		out.append(Vector2(_b[at+6]-pad,_b[at+7]+pad))
+		var e := maxf(absf(lx)-_b[at+4],absf(lz)-_b[at+5])
+		near.append(at)
+		past.append(e)
+		if e <= 0.0: over = maxf(over,_b[at+7])
+	for q in near.size():
+		var at := near[q]
+		# Its top grows only past its edges, and not where p is over a top as
+		# high (the next box of a platform): over a platform or a roof the
+		# plane rides it as land, its wheels can touch down (RailSpan `_up`).
+		var up := 0.0 if _b[at+7] <= over+TOP_SAME else clampf(past[q],0.0,pad)
+		out.append(Vector2(_b[at+6]-pad,_b[at+7]+up))
 	if out.size() < 2: return out
 	out.sort()
 	var joined: Array[Vector2] = [out[0]]
