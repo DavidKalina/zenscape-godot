@@ -53,6 +53,12 @@ The moving parts are their own nodes, each with its origin where code turns it:
           and CrackPlug_F, CrackPlug_B (F the front, Godot -Z): each holds its
           plug's shards Shard_F01.. (a board or less, each its origin at its
           middle) and Cover_F (the glow behind, facing out: hide it on a burst).
+  every   Far (the far look): the whole car at rest, simpler (FAR_SEGS, plain
+          wheels), one mesh; the smash car's plugs in FarPlugs. On import
+          (assets/models/train/train_import.gd) Far and FarPlugs show from
+          their range out, and every other node that draws only nearer
+          (visibility_parent: Far), so a car switches whole. Hide Far
+          (visible = false) and the parts show at every range.
 """
 import json
 import math
@@ -206,6 +212,16 @@ PLUG_GAP = 0.1            # a crack's width between two shards
 LOW_WHEEL_R = 0.24        # the smash car's trucks: under its corridor's floor (FLOOR), flanges
 LOW_BASE = 1.1            # and all, since the corridor runs its whole length
 
+# The far look: every kind also carries Far, the whole car built again at rest
+# with its lathes FAR_SEGS of their segments (at least FAR_LEAST) and its wheels
+# plain (FAR_WHEEL segments, no spokes, flanges or counterweights), joined into
+# one mesh (the smash car's plugs into FarPlugs, so its corridor's proof can set
+# them aside). The ranges are set on import: assets/models/train/train_import.gd.
+FAR_SEGS = 0.4
+FAR_LEAST = 6
+FAR_WHEEL = 12
+FAR = False               # set while the far look builds
+
 # Colours (sRGB): paint, then the grime pulls them down low on the car.
 COL = {
 	"black": "2a2c31", "cab": "93301f", "wheel": "9b3322", "brass": "c9a24c", "steel": "7a7d82",
@@ -358,9 +374,12 @@ class Geo:
 		self.poly([c0[3], c0[2], c0[1], c0[0]], mat, col)
 		self.poly([c1[0], c1[1], c1[2], c1[3]], mat, col)
 
-	def lathe(self, o, axis, prof, mat, col, n=24, ref=None, a0=0.0, a1=math.tau, tile=None):
+	def lathe(self, o, axis, prof, mat, col, n=24, ref=None, a0=0.0, a1=math.tau, tile=None, far_n=None):
 		"""Revolve prof [(r, h)] (h along the axis, from the bottom up; None for a
-		hard crease) round the axis through o, a ring of n. Faces outward."""
+		hard crease) round the axis through o, a ring of n. Faces outward. For
+		the far look (FAR) a ring of far_n, else FAR_SEGS of n."""
+		if FAR:
+			n = far_n or max(FAR_LEAST, int(round(n * FAR_SEGS)))
 		o, d = Vector(o), Vector(axis).normalized()
 		ref = Vector(ref) if ref else (Vector((0.0, 0.0, 1.0)) if abs(d.z) < 0.9 else Vector((1.0, 0.0, 0.0)))
 		s = (ref - d * ref.dot(d)).normalized()
@@ -498,6 +517,12 @@ def spoked_wheel(g, cx, y, z, r, side, spokes, crank=None, pin_out=0.0, counter=
 	hw = tyre_w * 0.5
 	o = Vector((cx, y, z))
 	ri = r * 0.82
+	if FAR:
+		# The far look: the steel tyre round a plain painted centre.
+		g.lathe(o, ax, [(ri, -hw), (r, -hw), None, (r, hw), None, (ri, hw)], "iron", PAINT["steel"], far_n=FAR_WHEEL)
+		g.lathe(o, ax, [(0.0, -hw * 0.6), (ri, -hw * 0.6)], "metal", PAINT["wheel"], far_n=FAR_WHEEL)
+		g.lathe(o, ax, [(ri, hw * 0.6), (0.0, hw * 0.6)], "metal", PAINT["wheel"], far_n=FAR_WHEEL)
+		return
 	# Tyre: profile from the inboard face to the outboard face, measured along +x.
 	lo, hi = -hw, hw
 	if side > 0:
@@ -554,6 +579,12 @@ def disc_wheel(g, cx, y, z, r, side, tyre_w=0.28):
 	o = Vector((cx, y, z))
 	lo, hi = -hw, hw
 	ri = r * 0.84
+	if FAR:
+		# The far look: a plain disc, its tread steel.
+		g.lathe(o, ax, [(r, lo), (r, hi)], "iron", PAINT["steel"], far_n=FAR_WHEEL)
+		g.lathe(o, ax, [(0.0, lo * 0.4), (r, lo * 0.4)], "iron", PAINT["iron"], far_n=FAR_WHEEL)
+		g.lathe(o, ax, [(r, hi * 0.4), (0.0, hi * 0.4)], "iron", PAINT["iron"], far_n=FAR_WHEEL)
+		return
 	if side > 0:
 		prof = [(ri, lo), (r + 0.07, lo), None, (r + 0.07, lo + 0.04), None, (r, lo + 0.06), (r, hi), None, (ri, hi)]
 	else:
@@ -1990,7 +2021,7 @@ animation/fps=30
 animation/trimming=false
 animation/remove_immutable_tracks=true
 animation/import_rest_as_RESET=false
-import_script/path=""
+import_script/path="res://assets/models/train/train_import.gd"
 materials/extract=0
 materials/extract_format=0
 materials/extract_path=""
@@ -2025,6 +2056,62 @@ def select_tree(root):
 		ob = stack.pop()
 		ob.select_set(True)
 		stack.extend(ob.children)
+
+
+def far_lod(kind, fn, mats, root):
+	"""The far look: the car built again (FAR) and joined into one mesh, Far, under
+	root, in the car's frame; the smash car's plugs into FarPlugs."""
+	global FAR
+	keep = dict(STATS)
+	FAR = True
+	try:
+		far_root = fn(mats)
+	finally:
+		FAR = False
+	STATS.clear()
+	STATS.update(keep)
+	bpy.context.view_layer.update()
+	tree, stack = [], [far_root]
+	while stack:
+		ob = stack.pop()
+		tree.append(ob)
+		stack.extend(ob.children)
+	names = [ob.name for ob in tree]
+	parts = {"Far": [], "FarPlugs": []}
+	for ob in tree:
+		if ob.type == "MESH":
+			parts["FarPlugs" if ob.name.startswith(("Shard_", "Cover_")) else "Far"].append(ob)
+	made = []
+	for name, obs in parts.items():
+		if not obs:
+			continue
+		target = bpy.data.objects.new(name, bpy.data.meshes.new(name))
+		bpy.context.scene.collection.objects.link(target)
+		bpy.ops.object.select_all(action="DESELECT")
+		for ob in obs:
+			ob.select_set(True)
+		target.select_set(True)
+		bpy.context.view_layer.objects.active = target
+		bpy.ops.object.join()
+		target.parent = root
+		# The joined mesh keeps the parts' colours and uvs but not which is active
+		# (the glb takes the active colour only).
+		me = target.data
+		col = me.color_attributes.get("Col")
+		if col is not None:
+			me.color_attributes.active_color = col
+			me.color_attributes.render_color_index = list(me.color_attributes).index(col)
+		if "UVMap" in me.uv_layers:
+			me.uv_layers.active = me.uv_layers["UVMap"]
+			me.uv_layers["UVMap"].active_render = True
+		target.data.calc_loop_triangles()
+		STATS[f"{kind} {name}"] = len(target.data.loop_triangles)
+		made.append(target.name)
+	for n in names:
+		ob = bpy.data.objects.get(n)
+		if ob is not None and n not in made:
+			bpy.data.objects.remove(ob)
+	bpy.context.view_layer.update()
 
 
 def export(kind, root):
@@ -2126,7 +2213,7 @@ OPENINGS = {"doors": {"doorway": DOORWAY}, "stock": {"doorway": DOORWAY},
 		"gap behind": (-W2, COACH_RAIL, COACH_WALL, W2, COACH_TOP - HOOD, COACH_LONG * 0.5 + GAP * 0.5)},
 	"smash": {"corridor": (-SMASH_WIDE * 0.5, FLOOR, -SMASH_H, SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH, SMASH_H)}}
 # Nodes an opening doesn't count: the smash car's plugs fill its corridor's ends.
-OPEN_SKIP = {"smash": ("Shard_", "Cover_")}
+OPEN_SKIP = {"smash": ("Shard_", "Cover_", "FarPlugs")}
 # Nodes that must lie inside a box (Godot frame): each plug in its plate (rail_train.gd
 # plates: the corridor's mouth, SMASH_PLATE deep), F the front.
 PLATE_F = (-SMASH_WIDE * 0.5, FLOOR, -SMASH_H, SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH, -SMASH_H + SMASH_PLATE)
@@ -2142,7 +2229,8 @@ WANT = {"engine": ("Body", "Driver_1", "Driver_2", "Lead_1", "Lead_2", "LeadTruc
 	"open": ("Body", "Coal") + TRUCK_NODES, "van": ("Body",) + TRUCK_NODES,
 	"logs": ("Body", "Load") + TRUCK_NODES, "truss": ("Body", "Load") + TRUCK_NODES,
 	"crane": ("Body", "House", "Boom") + TRUCK_NODES, "coach": ("Body",) + TRUCK_NODES,
-	"smash": ("Body", "CrackPlug_F", "CrackPlug_B", "Cover_F", "Cover_B", "Shard_F01", "Shard_B01") + DOOR_NODES + TRUCK_NODES}
+	"smash": ("Body", "CrackPlug_F", "CrackPlug_B", "Cover_F", "Cover_B", "Shard_F01", "Shard_B01") + DOOR_NODES + TRUCK_NODES + ("FarPlugs",)}
+WANT = {k: v + ("Far",) for k, v in WANT.items()}
 
 
 def node_tris(doc, bin_):
@@ -2276,6 +2364,9 @@ def render(kinds):
 		before = set(bpy.data.objects)
 		bpy.ops.import_scene.gltf(filepath=str(OUT / f"{kind}.glb"))
 		new = set(bpy.data.objects) - before
+		for ob in [o for o in new if o.name.startswith("Far")]:
+			new.discard(ob)
+			bpy.data.objects.remove(ob)
 		if prev is not None:
 			at -= LONG[prev] * 0.5 + GAP + LONG[kind] * 0.5
 		for ob in new:
@@ -2440,6 +2531,7 @@ def main():
 		print(f"building {kind}...")
 		mats = fresh_mats()
 		root = fn(mats)
+		far_lod(kind, fn, mats, root)
 		bpy.context.view_layer.update()
 		export(kind, root)
 		bad |= prove(kind)

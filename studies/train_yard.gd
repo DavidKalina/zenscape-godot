@@ -16,7 +16,11 @@ extends Node3D
 ## Flags (after --):
 ##   --train          every car of RailTrain.CARS, not just those with models
 ##   --line=a,b,...   these kinds in this order instead (sizes from RailTrain.CARS,
-##                    else the spec's table: SIZES), e.g. --line=box,doors,stock,flat,open,van
+##                    else the spec's table: SIZES), e.g. --line=box,doors,stock,flat,open,van;
+##                    --line=24 the cars lane's 24-car train (TRAIN_24)
+##   --lod=near|far   the parts at every range (each Far hidden), or the far look
+##                    at every range (train_import.gd sets where it starts)
+##   --stats          print what the frame drew (draw calls, primitives, objects)
 ##   --solids         each car's colliders (RailTrain._parts) drawn over it, see-through
 ##   --view=NAME      three (default), side, front, back, top, close, gear, cab, coal
 ##   --car=N          frame car N (1 the engine) instead of the whole train
@@ -34,6 +38,9 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const MODELS := "res://assets/models/train/%s.glb"
 ## The spec's sizes (length, top) for the kinds RailTrain.CARS doesn't have yet
 ## (lane `cars` adds them: spec-steam-train.md "The cars").
+## The cars lane's 24-car train (lane/train-cars, rail_train.gd CARS once it merges).
+const TRAIN_24 := ["engine","tender","box","logs","doors","open","stock","flat","box","truss","flat","doors",
+	"crane","flat","stock","logs","box","flat","flat","smash","flat","coach","coach","van"]
 const SIZES := {"stock":[24.0,9.0],"logs":[20.0,6.5],"truss":[24.0,8.5],"crane":[20.0,9.0],"coach":[24.0,8.5]}
 ## The hours (scripts/shared/celestial.gd phase), as the gallery's: a late
 ## morning, and midnight.
@@ -81,6 +88,14 @@ var _yaw := 2.25
 var _pitch := 0.28
 var _distance := 60.0
 var _dragging := false
+var _stats_at := -1
+var _stats_cpu := 0.0
+var _stats_gpu := 0.0
+var _stats_n := 0
+## --stats: frames to settle, then frames whose render times are averaged.
+const STATS_SETTLE := 40
+const STATS_FRAMES := 60
+var _stats_tag := ""
 
 func _ready() -> void:
 	var whole := false
@@ -90,10 +105,16 @@ func _ready() -> void:
 	var car := 0
 	var manual := {}
 	var line: Array = []
+	var lod := ""
 	for arg in LaunchArgs.user_args():
 		if arg == "--train": whole = true
+		elif arg == "--line=24": line = TRAIN_24.duplicate()
 		elif arg.begins_with("--line="): line = Array(arg.get_slice("=",1).split(","))
 		elif arg == "--solids": solids = true
+		elif arg.begins_with("--lod="): lod = arg.get_slice("=",1)
+		elif arg == "--stats":
+			_stats_at = STATS_SETTLE+STATS_FRAMES
+			RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 		elif arg == "--night": night = true
 		elif arg.begins_with("--view="): view = arg.get_slice("=",1)
 		elif arg.begins_with("--car="): car = int(arg.get_slice("=",1))
@@ -109,6 +130,8 @@ func _ready() -> void:
 	_yard.name = "Yard"
 	add_child(_yard)
 	_build_train(whole,solids,line)
+	if not lod.is_empty(): _force_lod(lod)
+	_stats_tag = "view %s car %d lod %s, %d cars" % [view,car,lod if not lod.is_empty() else "auto",_cars.size()]
 	_build_ground()
 	_face_sun()
 	_frame(car,view)
@@ -180,6 +203,16 @@ func _build_train(whole: bool, solids: bool, line: Array) -> void:
 		_yard.add_child(node)
 		if solids: node.add_child(_solid_boxes(kind,long,tall))
 		_cars.append({"kind":kind,"long":long,"tall":tall,"z":z,"node":node})
+
+## Every car's far look (Far, FarPlugs) hidden ("near": the parts at every
+## range) or shown at every range ("far": its parts never).
+func _force_lod(lod: String) -> void:
+	for c: Dictionary in _cars:
+		for name: String in ["Far","FarPlugs"]:
+			var far := (c.node as Node).find_child(name,true,false) as GeometryInstance3D
+			if far == null: continue
+			if lod == "near": far.visible = false
+			elif lod == "far": far.visibility_range_begin = 0.0
 
 func _greybox(kind: String, long: float, tall: float) -> Node3D:
 	var root := Node3D.new()
@@ -361,6 +394,19 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	_motion_time += delta
+	if _stats_at > 0:
+		_stats_at -= 1
+		if _stats_at < STATS_FRAMES:
+			var vp := get_viewport().get_viewport_rid()
+			_stats_cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp)
+			_stats_gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+			_stats_n += 1
+		if _stats_at == 0:
+			print("| yard stats (%s): draw calls %d, primitives %d, objects %d; render cpu %.2f ms, gpu %.2f ms (mean of %d frames); camera %.0f m from the focus" % [_stats_tag,
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+				Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+				_stats_cpu/maxf(_stats_n,1),_stats_gpu/maxf(_stats_n,1),_stats_n,_distance])
 	_celestial.advance(delta,true)
 	_place_camera()
 	RenderingServer.global_shader_parameter_set("zs_camera_position",_camera.global_position)
