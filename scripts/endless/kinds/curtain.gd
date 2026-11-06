@@ -41,12 +41,18 @@ static func build(site: Dictionary) -> Node3D:
 ## The sheet in the piece's own frame (origin the foot, -Z its heading): {lip
 ## (the lip's middle, at the water), out (the way it falls away from the
 ## face), drop (lip to the pool's water), half (its half-width at the lip),
-## throw, pool (the pool's middle on its water), pool_r, back}.
+## throw, pool (the pool's middle on its water), pool_r, back, open (how high
+## over the pool's water the space behind reaches: the cave mouth's top; 0
+## with no cave), open_half (that space's half-width)}. A skin thins its
+## sheet over `open` so the space behind shows through.
 static func sheet_of(site: Dictionary) -> Dictionary:
 	var c := Land.shape_of(site,site.xform)
 	var foot_y := c[Land.I_Y]
 	var back := c[Land.I_BACK]
 	var lip := Vector3(0.0,c[Land.I_LIP]-foot_y,back)
 	var pool := Vector3(0.0,c[Land.I_POOL_Y]-foot_y,-c[Land.I_POOL_F])
+	var open := 0.0
+	if Land.has_cave(c): open = c[Land.I_CAVE_FLOOR]+c[Land.I_CAVE_TALL]-c[Land.I_POOL_Y]
 	return {"lip":lip,"out":Vector3.FORWARD,"drop":c[Land.I_LIP]-c[Land.I_POOL_Y],"half":c[Land.I_LIP_HALF]*0.85,
-		"throw":float((site.params as Dictionary).get("throw",THROW)),"pool":pool,"pool_r":c[Land.I_POOL_R],"back":back}
+		"throw":float((site.params as Dictionary).get("throw",THROW)),"pool":pool,"pool_r":c[Land.I_POOL_R],"back":back,
+		"open":open,"open_half":c[Land.I_CAVE_HALF]}

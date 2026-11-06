@@ -1,33 +1,49 @@
 extends RefCounted
 ## The wilderness's skin of the curtain kind (scripts/endless/kinds/
-## curtain.gd): a waterfall. White water off the lip in the falls' sheet (the
-## flow_fall shader on the shared ring mesh, the sky islets' curtain shape:
-## scripts/sky_islets.gd `curtain`), churning foam where it lands in the pool
-## and mist rising off it (the islets' plunge pieces: cluster_falls_dress.gd),
-## readable from the valley.
+## curtain.gd): a waterfall. Water off the lip in the falls' sheet (the shared
+## ring mesh in the sky islets' curtain shape, scripts/sky_islets.gd
+## `curtain`, painted by shaders/curtain_fall.gdshader in the world's water
+## colours: clear teal glass at the lip whitening down the fall in streaks,
+## thinning over the cave mouth so it shows dark through it), churning foam
+## where it lands in the pool and mist rising off it (the islets' plunge
+## pieces: cluster_falls_dress.gd), readable from the valley.
 
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const FlowFalls = preload("res://scripts/flow_falls.gd")
 
 ## The sheet: STRANDS falls side by side across the lip, overlapping (each
-## STRAND_HALF of the sheet's half-width; the shader's streaks are drawn
-## across one fall, so a wide sheet in one reads as a slab), each its own
-## whiteness, veil (0 whole, 1 torn to streaks), air (strength) and throw.
-## TAIL: how far it runs on under the pool's water (m).
+## its own share of the sheet's half-width), each its own share of white
+## streaks at the foot, glass alpha, air (strength) and throw, so the sheet
+## has a shape across it.
 const STRANDS := [
-	# [across (share of the half-width), half (share), white, veil, strength, throw x, seed]
-	[-0.62,0.42,0.18,0.42,0.35,0.92,11],
-	[0.0,0.48,0.3,0.22,0.45,1.06,23],
-	[0.6,0.44,0.14,0.5,0.3,0.97,37],
+	# [across (share of the half-width), half (share), white at the foot, glass alpha, strength, throw x, seed]
+	[-0.62,0.42,0.46,0.5,0.35,0.92,11],
+	[0.0,0.48,0.56,0.58,0.45,1.06,23],
+	[0.6,0.44,0.4,0.46,0.3,0.97,37],
 ]
+## The share of white streaks just under the lip; the white crest at the lip
+## (m of fall); the broad streak bands' width (m).
+const WHITE_TOP := 0.1
+const CREST := 2.0
+const BAND := 2.6
+## The thinning over the space behind (curtain.gd `open`): it starts THIN_OVER
+## m over the mouth's top and takes THIN_LENGTH m; the streaks keep
+## THIN_COVER of their cover there, the glass THIN_GLASS of its alpha.
+const THIN_OVER := 3.0
+const THIN_LENGTH := 7.0
+const THIN_COVER := 0.3
+const THIN_GLASS := 0.4
+## TAIL: how far it runs on under the pool's water (m).
 const TAIL := 1.5
-## The mist off the plunge: sprites, their radius (m), rise (m) and life (s),
-## and how far it is drawn.
+## The mist off the plunge: sprites, their radius (m), rise (m), life (s)
+## and strength, and how far it is drawn. Low and faint enough that the
+## cave mouth behind the sheet still shows over it.
 const MIST := 22
-const MIST_SIZE := Vector2(5.0,11.0)
-const MIST_RISE := Vector2(6.0,18.0)
+const MIST_SIZE := Vector2(4.0,9.0)
+const MIST_RISE := Vector2(3.0,10.0)
 const MIST_LIFE := Vector2(4.0,7.0)
 const MIST_RANGE := 2600.0
+const MIST_STRENGTH := 0.38
 
 static var _fall_mesh: Mesh = null
 static var _quad: QuadMesh = null
@@ -50,22 +66,32 @@ static func dress(root: Node3D, sheet: Dictionary, site: Dictionary) -> void:
 		fall.name = "Sheet%d" % k
 		fall.mesh = _fall_mesh
 		var m := ShaderMaterial.new()
-		m.shader = preload("res://shaders/flow_fall.gdshader")
+		m.shader = preload("res://shaders/curtain_fall.gdshader")
 		m.render_priority = FlowFalls.CURTAIN_PRIORITY
 		var sv := seed_value+int(st[6])
 		m.set_shader_parameter("fall_seed",float(sv%997)*0.37+3.0)
-		var white := PackedFloat32Array()
-		for s in range(12): white.append(fposmod(sin(float(s*23+sv%1000)*12.9898)*43758.5453,1.0))
-		m.set_shader_parameter("section_white",white)
 		m.set_shader_parameter("ring_count",SkyIslets.FALL_RINGS)
 		m.set_shader_parameter("centers_tau",rings.centers)
 		m.set_shader_parameter("axis_a_width",rings.across)
 		m.set_shader_parameter("axis_b_thick",rings.outward)
 		m.set_shader_parameter("aer_steep",rings.aer_steep)
 		m.set_shader_parameter("ring_travel",rings.travel)
-		m.set_shader_parameter("body_white",float(st[2]))
-		m.set_shader_parameter("veil",float(st[3]))
+		var face := float(rings.break_from)
+		m.set_shader_parameter("face_travel",face)
+		m.set_shader_parameter("white_top",WHITE_TOP)
+		m.set_shader_parameter("white_low",float(st[2]))
+		m.set_shader_parameter("glass_alpha",float(st[3]))
+		m.set_shader_parameter("crest",CREST)
+		m.set_shader_parameter("band_width",BAND)
 		m.set_shader_parameter("streak_speed",clampf(0.6*sqrt(2.0*9.81*drop),2.5,9.0))
+		# Thin over the space behind: from THIN_OVER over its top (the sheet
+		# falls near enough plumb that a metre of fall is a metre of travel).
+		var open := float(sheet.get("open",0.0))
+		if open > 0.0:
+			m.set_shader_parameter("thin_from",face-open-THIN_OVER)
+			m.set_shader_parameter("thin_length",THIN_LENGTH)
+			m.set_shader_parameter("thin_cover",THIN_COVER)
+			m.set_shader_parameter("thin_glass",THIN_GLASS)
 		fall.material_override = m
 		fall.custom_aabb = rings.bounds
 		fall.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -94,7 +120,7 @@ static func _plunge(root: Node3D, at: Vector3, half: float, seed_value: int) -> 
 	mist_m.shader = preload("res://shaders/sky_tepui_mist.gdshader")
 	mist_m.render_priority = 3
 	mist_m.set_shader_parameter("soft_depth",4.0)
-	mist_m.set_shader_parameter("strength",0.8)
+	mist_m.set_shader_parameter("strength",MIST_STRENGTH)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var mm := MultiMesh.new()
@@ -103,7 +129,8 @@ static func _plunge(root: Node3D, at: Vector3, half: float, seed_value: int) -> 
 	mm.mesh = _quad
 	mm.instance_count = MIST
 	for k in MIST:
-		var across := rng.randf_range(-half,half)
+		# Thicker toward the sheet's sides, so its middle (the cave mouth) shows.
+		var across := half*(0.25+0.85*sqrt(rng.randf()))*(1.0 if k%2 == 0 else -1.0)
 		var spot := at+Vector3(across,0.0,rng.randf_range(-4.0,-1.0))
 		var r := rng.randf_range(MIST_SIZE.x,MIST_SIZE.y)
 		var rise := Vector3.UP*rng.randf_range(MIST_RISE.x,MIST_RISE.y)+Vector3(rng.randf_range(-1.0,1.0),0.0,-rng.randf_range(1.0,4.0))
