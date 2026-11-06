@@ -20,6 +20,10 @@ extends Node3D
 
 const RailLine = preload("res://scripts/endless/rail_line.gd")
 const RailBed = preload("res://scripts/endless/rail_bed.gd")
+## In a tunnel, past its first DAY_IN m, a piece is on the bore's inside
+## layer (RailBore: the sun leaves it out).
+const UNDER_LAYER := 1 << 14
+const DAY_IN := 14.0
 
 ## Metres of the line in a piece, and between the frames it is built on.
 const PIECE := 64.0
@@ -67,6 +71,7 @@ var _far: Array = []
 var _near: Array = []
 var _body: Array = []
 var _faces: Array = []
+var _under := PackedByteArray()
 var _earth: StandardMaterial3D
 var _steel: StandardMaterial3D
 ## Pieces built so far (a driver's count).
@@ -91,6 +96,11 @@ func setup(_field: RefCounted) -> void:
 		_radius[i] = (s1-s0)*0.5+_gap*0.5+BALLAST_FOOT
 	for a: Array in [_far,_near,_body,_faces]:
 		a.resize(_n)
+	_under.resize(_n)
+	_under.fill(0)
+	for st: Array in line.stretches("tunnel"):
+		for i in _n:
+			if i*PIECE >= float(st[0])+DAY_IN and minf(i*PIECE+PIECE,length) <= float(st[1])-DAY_IN: _under[i] = 1
 	_earth = StandardMaterial3D.new()
 	_earth.vertex_color_use_as_albedo = true
 	_earth.roughness = 0.95
@@ -204,6 +214,7 @@ func _build_far(i: int) -> void:
 			m.quad(la1,lb1,rb1,ra1,ua,BALLAST_C)
 			m.quad(ra1,rb1,rb0,ra0,ra+ua,BALLAST_SIDE_C)
 	var mi := m.instance(_earth)
+	if _under[i] == 1: mi.layers = UNDER_LAYER
 	add_child(mi)
 	_far[i] = mi
 	built += 1
@@ -248,6 +259,7 @@ func _build_near(i: int) -> void:
 				steel.quad(a+ra+a1,b+rb+b1,b+rb+b0,a+ra+a0,rs[q],STEEL_C)
 	var mi := earth.instance(_earth)
 	steel.add_to(mi.mesh as ArrayMesh,_steel)
+	if _under[i] == 1: mi.layers = UNDER_LAYER
 	add_child(mi)
 	_near[i] = mi
 	_faces[i] = steel.verts

@@ -10,9 +10,14 @@ extends RefCounted
 ## cut's wall rising at CUT_SLOPE and a bank falling at FILL_SLOPE, so the
 ## land is only moved where it stood above or below the bed; faded out by
 ## REACH, where a sidehill too steep for the wall to meet is left as it was.
-## Along it, the stamp is off where the line runs in a tunnel, on a trestle
-## or on a bridge (rivers keep their channels under the bridges), eased over
-## the first TUNNEL_EASE / SPAN_EASE m inside: a portal face, an abutment.
+## Along it, the stamp is off where the line runs on a trestle or on a
+## bridge (rivers keep their channels under the bridges), eased over the
+## first SPAN_EASE m on: an abutment. In a tunnel it turns to a cover: the
+## land raised where it lies under the bore's crown and COVER m over it
+## (rail_bore_shape.gd), never lowered, so the bore (rail_bore.gd) is
+## always in the rock; at each mouth the cut runs wider than the bed, to
+## the portal block's face, and the land under the block is holed
+## (`hole_mask`, land_stream.gd) for the bore to open through.
 ##
 ## The GDScript is the only copy: the C++ kernels never see the bed
 ## (LandField `native_impl_in` is null where it meets a box, as for the
@@ -24,6 +29,7 @@ extends RefCounted
 ## it off, and the land is main's exactly.
 
 const RailLine = preload("res://scripts/endless/rail_line.gd")
+const BoreShape = preload("res://scripts/endless/rail_bore_shape.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## LandField.SEA_Y (land_field.gd preloads this file).
@@ -41,8 +47,7 @@ const FILL_SLOPE := 0.7
 ## over at the end.
 const REACH := 60.0
 const REACH_FADE := 20.0
-## How far into a tunnel / a trestle or bridge the stamp eases off (m of s).
-const TUNNEL_EASE := 10.0
+## How far onto a trestle or bridge the stamp eases off (m of s).
 const SPAN_EASE := 4.0
 ## The grid's squares (m).
 const CELL := 32.0
@@ -59,8 +64,19 @@ static var _step := 4.0
 static var _x := PackedFloat64Array()
 static var _z := PackedFloat64Array()
 static var _y := PackedFloat64Array()
-## Each sample's stamp weight along the line (0 in tunnels and on spans).
+## Each sample's stamp weight along the line (0 on spans).
 static var _w := PackedFloat32Array()
+## Each sample's distance into a tunnel from its nearer mouth (m; negative
+## outside one: how far to the nearest mouth, down to -INTO_FAR), and the
+## bed's flat half width there (wider before a mouth).
+static var _into := PackedFloat32Array()
+static var _hw := PackedFloat32Array()
+## The tunnels: [s0, s1] each, along s.
+static var _tunnels: Array = []
+const INTO_FAR := 400.0
+## The bore's sizes (rail_bore_shape.gd), read once.
+static var _bore_half := 16.5
+static var _face_half := 24.5
 ## Each segment's (x, z) run to the next sample and 1/its length squared.
 static var _dx := PackedFloat64Array()
 static var _dz := PackedFloat64Array()
@@ -86,6 +102,8 @@ var last_s := 0.0
 var last_bed := 0.0
 var last_lift := 0.0
 var last_clear := false
+## How far into a tunnel the last point's s is (see `_into`).
+var last_into := -INF
 var _i := 0
 var _t := 0.0
 
@@ -122,12 +140,12 @@ static func _build() -> void:
 		_dx[i] = _x[j]-_x[i]
 		_dz[i] = _z[j]-_z[i]
 		_inv[i] = 1.0/maxf(_dx[i]*_dx[i]+_dz[i]*_dz[i],1e-6)
-	# The weight along the line: 1 on the bed, eased to 0 inside each tunnel,
-	# trestle and bridge from both its ends.
+	# The weight along the line: 1 on the bed and in tunnels, eased to 0
+	# inside each trestle and bridge from both its ends.
 	_w.resize(_n)
 	_w.fill(1.0)
-	for kind: String in ["tunnel","trestle","bridge"]:
-		var ease := TUNNEL_EASE if kind == "tunnel" else SPAN_EASE
+	for kind: String in ["trestle","bridge"]:
+		var ease := SPAN_EASE
 		for st: Array in line.stretches(kind):
 			var s0 := float(st[0])
 			var s1 := float(st[1])
@@ -135,6 +153,30 @@ static func _build() -> void:
 				var s := i*_step
 				var into := minf(s-s0,s1-s)
 				_w[posmod(i,_n)] = minf(_w[posmod(i,_n)],1.0-smoothstep(0.0,ease,into))
+	# Into the tunnels, and the cut widened before each mouth.
+	_bore_half = BoreShape.half()
+	_face_half = BoreShape.face_half()
+	_tunnels = line.stretches("tunnel")
+	_into.resize(_n)
+	_into.fill(-INTO_FAR)
+	_hw.resize(_n)
+	_hw.fill(HALF)
+	var mouth_half := maxf(_bore_half+BoreShape.MOUTH_PAST,HALF)
+	var len := _n*_step
+	for st: Array in _tunnels:
+		var s0 := float(st[0])
+		var s1 := float(st[1])
+		var reach := BoreShape.MOUTH_FLAT+BoreShape.MOUTH_EASE
+		for i in range(floori((s0-INTO_FAR)/_step),ceili((s1+INTO_FAR)/_step)+1):
+			var s := i*_step
+			var k := posmod(i,_n)
+			var into := minf(s-s0,s1-s)
+			if into < 0.0 and _into[k] >= 0.0: continue
+			if into >= 0.0 or into > _into[k]: _into[k] = maxf(into,-INTO_FAR)
+			if into < BoreShape.COVER_FROM and -into < reach:
+				var widen := 1.0-smoothstep(BoreShape.MOUTH_FLAT,reach,-into)
+				_hw[k] = maxf(_hw[k],lerpf(HALF,mouth_half,widen))
+		if s1 > len: push_warning("rail bed: a tunnel over the lap's end")
 	# The grid over the line's box and REACH round it.
 	var x0 := INF
 	var z0 := INF
@@ -273,22 +315,49 @@ func apply(got: Vector2, x: float, z: float) -> Vector2:
 	var j := _i+1 if _i+1 < _n else 0
 	var bed := lerpf(_y[_i],_y[j],_t)
 	last_bed = bed
-	var w := lerpf(_w[_i],_w[j],_t)*(1.0-smoothstep(REACH-REACH_FADE,REACH,last_d))*level
-	last_clear = last_d < TREE_CLEAR and w > 0.0
+	last_into = lerpf(_into[_i],_into[j],_t)
+	var fade := (1.0-smoothstep(REACH-REACH_FADE,REACH,last_d))*level
+	if last_into >= BoreShape.COVER_FROM or (last_into >= -BoreShape.FACE_OUT and last_d >= _face_half): return _cover(got,bed,fade)
+	var w := lerpf(_w[_i],_w[j],_t)*fade
+	last_clear = (last_d < TREE_CLEAR and w > 0.0) or in_block()
 	if w <= 0.0: return got
-	var out := last_d-HALF
+	var half := lerpf(_hw[_i],_hw[j],_t)
+	var out := last_d-half
 	var to := bed if out <= 0.0 else clampf(got.x,bed-out*FILL_SLOPE,bed+out*CUT_SLOPE)
 	var y := lerpf(got.x,to,w)
 	last_lift = y-got.x
 	if absf(last_lift) > 0.5: last_clear = true
 	# The bed isn't turf, nor a bank the line moved.
-	var m := got.y*(1.0-w*(1.0-smoothstep(HALF-2.0,HALF+4.0,last_d)))
+	var m := got.y*(1.0-w*(1.0-smoothstep(half-2.0,half+4.0,last_d)))
 	m *= 1.0-w*clampf(absf(last_lift)/3.0,0.0,1.0)
 	return Vector2(y,m)
 
+## In a tunnel: the land raised to the bore's cover where it lies under it
+## (BoreShape `cover_over`), never lowered, but on a portal block's
+## footprint, where it is the cover exactly, under the block's top: the
+## hill's face rises behind the block, and the hole under the block drops
+## nothing that stands over it.
+func _cover(got: Vector2, bed: float, fade: float) -> Vector2:
+	var to := bed+BoreShape.cover_over(last_d)
+	var cap := last_into <= BoreShape.BLOCK_IN and last_d < _face_half
+	var y := got.x if to <= got.x and not cap else lerpf(got.x,to,fade)
+	last_lift = y-got.x
+	last_clear = last_lift > 0.5 or in_block()
+	var m := got.y*(1.0-fade*clampf(last_lift/3.0,0.0,1.0))
+	return Vector2(y,m)
+
+## Whether the last point is on a portal block's footprint (no trees, no
+## grass: rail_bore.gd stands the block there).
+func in_block() -> bool:
+	return last_into >= -BoreShape.FACE_OUT and last_into <= BoreShape.BLOCK_IN and last_d < _face_half
+
+## Whether the last point is on a portal's hole: the land there is dropped.
+func in_hole() -> bool:
+	return last_into >= BoreShape.HOLE_FROM and last_into <= BoreShape.HOLE_IN and last_d < _bore_half+BoreShape.HOLE_PAST
+
 ## How much of the ballast's paint shows at the last `apply`'s point.
 func ballast() -> float:
-	if last_d >= REACH: return 0.0
+	if last_d >= REACH or last_into >= -BoreShape.FACE_OUT: return 0.0
 	var j := _i+1 if _i+1 < _n else 0
 	return lerpf(_w[_i],_w[j],_t)*level*(1.0-smoothstep(HALF-3.0,HALF+1.0,last_d))
 
@@ -412,10 +481,42 @@ func clear_grass(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz
 		for i in nx:
 			var x := x0+(i-pad)*step
 			var z := z0+(j-pad)*step
-			if not _near(x,z) or last_d >= HALF: continue
-			var w := lerpf(_w[_i],_w[_i+1 if _i+1 < _n else 0],_t)
-			if w > 0.5: rs[j*nx+i] = -1.0
+			if not _near(x,z) or last_d >= _face_half: continue
+			var k := _i+1 if _i+1 < _n else 0
+			last_into = lerpf(_into[_i],_into[k],_t)
+			var w := lerpf(_w[_i],_w[k],_t)
+			if in_block() or (last_into < BoreShape.COVER_FROM and w > 0.5 and last_d < lerpf(_hw[_i],_hw[k],_t)): rs[j*nx+i] = -1.0
 	got.river = rs
+
+## The land holed at each portal (land_stream.gd `_portal_holes`): a
+## chunk's vertices (cells + 1 a side, `step` m apart from (x0, z0)) on a
+## hole set to 1; empty where the chunk meets none.
+func hole_mask(x0: float, z0: float, step: float, cells: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	if _tunnels.is_empty(): return out
+	var r := _face_half+step
+	var x1 := x0+cells*step
+	var z1 := z0+cells*step
+	var near_any := false
+	for st: Array in _tunnels:
+		for s: float in [float(st[0]),float(st[1])]:
+			var i := clampi(int(round(s/_step)),0,_n-1)
+			if _x[i] > x0-r-BoreShape.BLOCK_IN and _x[i] < x1+r+BoreShape.BLOCK_IN and _z[i] > z0-r-BoreShape.BLOCK_IN and _z[i] < z1+r+BoreShape.BLOCK_IN:
+				near_any = true
+	if not near_any: return out
+	var n := cells+1
+	var any := false
+	for j in n:
+		for i in n:
+			if not _near(x0+i*step,z0+j*step): continue
+			var k := _i+1 if _i+1 < _n else 0
+			last_into = lerpf(_into[_i],_into[k],_t)
+			if not in_hole(): continue
+			if not any:
+				out.resize(n*n)
+				any = true
+			out[j*n+i] = 1
+	return out
 
 ## The bed's pass over LandField.grid's arrays (the grass's).
 func apply_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:

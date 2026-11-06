@@ -516,6 +516,13 @@ static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: fl
 		if mask.is_empty(): mask = got
 		elif not got.is_empty():
 			for i in mask.size(): mask[i] = mask[i] | got[i]
+	# The railroad's portals (RailBed `hole_mask`).
+	var rail: Variant = f.get("_rail")
+	if rail != null:
+		var got: PackedByteArray = rail.hole_mask(x0,z0,step,CELLS)
+		if mask.is_empty(): mask = got
+		elif not got.is_empty():
+			for i in mask.size(): mask[i] = mask[i] | got[i]
 	if mask.is_empty(): return
 	var pk: Object = ChunkNative.pass_kernel()
 	if pk != null:
