@@ -34,6 +34,9 @@ treeline: one or two bulls with antlers, the rest cows.
   slow, halt and look back.
 - **Fly straight at them low:** they bolt, scatter and break back into the
   treeline.
+- **Afterwards:** once the plane is well away, the herd drifts home to its
+  spot at a trot and grazes there again (the user, 2026-11-05), so every pass
+  finds it where it lives.
 
 They run on the land (height from the ground), keep to the meadow and the
 wood's edge (no cliffs, no water), and keep off each other. The plane passes
