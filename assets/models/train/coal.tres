@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://assets/models/train/train_surface.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/models/train/train_coal.jpg" id="2"]
+[ext_resource type="Texture2D" path="res://assets/models/train/train_coal_n.jpg" id="3"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/albedo_tex = ExtResource("2")
+shader_parameter/normal_tex = ExtResource("3")
+shader_parameter/normal_depth = 1.4
+shader_parameter/roughness_value = 0.55
+shader_parameter/metallic_value = 0.1
+shader_parameter/fill = 3.0
+shader_parameter/rim = 0.2
