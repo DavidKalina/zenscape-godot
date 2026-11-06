@@ -165,6 +165,8 @@ const SurgeSpray = preload("res://scripts/endless/surge_spray.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
+## The happenings director: rare moments by place and hour (--happen=off none).
+const Happenings = preload("res://scripts/endless/happenings.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
@@ -332,6 +334,8 @@ var coast: Node3D
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
 var lines: Node
+## The happenings director (scripts/endless/happenings.gd), or null with --happen=off.
+var happen: Node
 ## The Peak's ruined stair up the couloir (scripts/endless/peak_stair.gd), or
 ## null with no Peak or --stair=0.
 var stair: Node3D
@@ -785,6 +789,10 @@ func _ready() -> void:
 		lines = PlaceLines.new()
 		add_child(lines)
 		lines.setup(seed,self)
+	if Happenings.wanted():
+		happen = Happenings.new()
+		add_child(happen)
+		happen.setup(seed,self)
 	# The Peak's lift up the rock gorge (scripts/endless/peak_routes.gd).
 	if peak != null and air_lift != null:
 		var lift := PeakRoutes.lift(peak,Callable(field,"height"))
@@ -1367,6 +1375,8 @@ func tick(delta: float) -> void:
 	_events = events
 	tallies.step(delta,self,events)
 	FrameLog.mark(&"tallies")
+	if happen != null: happen.step(delta,self,events)
+	FrameLog.mark(&"happen")
 	summary.step(delta)
 	FrameLog.mark(&"summary")
 	_feel_sink(events)
