@@ -24,18 +24,36 @@ extends Node3D
 ## (the way the train runs), x to the right, y up. Cars sit between two bogies
 ## BOGIE m in from each end, each on the path, so a car on a curve cuts its chord.
 ##
+## The cars (CARS) alternate tall and low, so flying the length is a rhythm: pop
+## over a boxcar, dip over a flatcar or an open wagon. Two are flown through:
+## - the doors car, a boxcar with both doors slid open, its doorway an opening
+##   (`door_wide` x `door_high`, WorldScale.opening of TOY_DOOR, TOY_DOOR_HIGH): a
+##   slot across the car under its roof, flown side to side. Pace the train
+##   (cruise, angled across it) and it is a straight slide through; across it
+##   flat out the car moves `speed`/your speed of its width along while you pass.
+## - the smash car, in the pirate ship's manner: a hollow car, its corridor an
+##   opening (`smash_wide` x `smash_high`), shut at each end by a cracked plate,
+##   each its own record in `loose` with a `strike` (SurgeSmash `_hit`). A surge
+##   roll breaks the plate it meets; while the plane is in the corridor the surge
+##   is held hot (`_smash_step`), so the far plate breaks on the way out. In
+##   there a touch of the walls, roof or floor glances (`way_off`, read by
+##   FlightContact), but by a plate still shut it is graded as anywhere. The
+##   plates come back once the plane is RESEAL_FAR m off (`_reseal`).
+##
 ## Its place is a pure function of time: the engine's nose at `s0` + `way`*`speed`
 ## *`t` along the path (`head`), `t` the seconds it has run (for now its own; the
 ## world clock's in the trunk).
 ##
 ## Knobs: --train-speed=<m/s> (SPEED), --train-keep=0 (no keep-out: the A/B of
-## what it fixes).
+## what it fixes), --full-meter (the meter filled again each time the smash car's
+## plates come back, as the pirate ship's).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const TestPath = preload("res://scripts/endless/rail_test_path.gd")
+const SkyPlane = preload("res://scripts/sky_plane.gd")
 
 ## A bit under the plane's cruise (36.75): at cruise it creeps up the train a car
 ## at a time, Boost runs it up to the engine.
@@ -51,11 +69,35 @@ const UNDER := 2.0
 ## from its car's end.
 const GAP := 1.6
 const BOGIE := 3.0
-## The train, front to back: [kind, length, height over the bed] (m).
+## The train, front to back: [kind, length, height over the bed] (m). The smash
+## car has low cars either side: in over the flat behind it, out over the two
+## ahead (a surge runs up the train at 40 m/s or more: one flat's length is half
+## a second to pull up over the boxcar past it, two give a second).
 const CARS := [
 	["engine",22.0,8.5],["tender",12.0,6.0],
-	["box",24.0,9.0],["flat",20.0,2.6],["box",24.0,9.0],["flat",20.0,2.6],
-	["box",24.0,9.0],["flat",20.0,2.6],["box",24.0,9.0],["van",14.0,7.5]]
+	["box",24.0,9.0],["flat",20.0,2.6],["doors",24.0,9.0],["open",20.0,4.2],
+	["box",24.0,9.0],["flat",20.0,2.6],["flat",20.0,2.6],["smash",24.0,9.0],["flat",20.0,2.6],["van",14.0,7.5]]
+## The open wagon's load heaped over its sides (m), inset from them by HEAP_IN of
+## its width and length.
+const HEAP := 0.8
+const HEAP_IN := 0.7
+## The doors car's doorway: toy widths (WorldScale.opening; 10 m along the car
+## and 6 m high at the defaults), and the least of the car's wall either side and
+## of its roof over the doorway (m).
+const TOY_DOOR := 5.0
+const TOY_DOOR_HIGH := 3.0
+const JAMB_LEAST := 2.0
+const HEAD_LEAST := 0.6
+## The smash car's corridor: toy widths (5.2 m wide, 7 m high at the defaults),
+## the least of its walls (m), its plates' thickness (m), how near a plate still
+## shut a touch is the plate's (graded, not glanced; m), and how far off the plane
+## is when the plates come back (m).
+const TOY_SMASH_WIDE := 2.6
+const TOY_SMASH_HIGH := 3.5
+const WALL_LEAST := 0.2
+const PLATE := 0.6
+const END_ROOM := 2.0
+const RESEAL_FAR := 150.0
 ## The keep-out: a car is asked only with the plane within its half length plus
 ## NEAR m of its middle; a plane already inside (its roll grew its reach by a
 ## car's side) is put out the nearest way if that is under KEEP_MOST m, else left
@@ -68,8 +110,11 @@ const EASE := 0.02
 ## at most CATCH_MOST m/s (more is a crash anyway).
 const CATCH_ALONG := 0.25
 const CATCH_MOST := 12.0
-## A touch is a car's if its point is within this of the car's solid (m).
-const TOUCH := 1.0
+## A touch (of stone) is a car's if its point is within this of the car's solid
+## (m): FlightContact's point for a face it turned the plane off is 0.8 m in from
+## the plane's middle, which a move the face blocked leaves up to the wingtip's
+## reach and a frame's step at the speed relative to the car (0.7 m at 43) off it.
+const TOUCH := 1.8
 ## The test: where the plane starts by the train (--train-test): this far behind
 ## the last car's end, this far out from the train's side, this high over the bed.
 const START_BACK := 30.0
@@ -83,7 +128,11 @@ const FILL := 0.35
 const LOOKS := {
 	"under":Color(0.12,0.12,0.13), "iron":Color(0.17,0.18,0.2), "cab":Color(0.3,0.12,0.1),
 	"box":Color(0.55,0.25,0.17), "flat":Color(0.45,0.37,0.28), "van":Color(0.62,0.2,0.14),
-	"load":Color(0.36,0.4,0.3)}
+	"load":Color(0.2,0.19,0.18), "open":Color(0.35,0.3,0.24), "door":Color(0.42,0.18,0.12),
+	"inside":Color(0.1,0.07,0.05), "smash":Color(0.6,0.52,0.4), "plate":Color(0.72,0.67,0.56),
+	"crack":Color(1.0,0.45,0.1)}
+## The looks that glow (their emission, over FILL's): the cracks, as the ship's.
+const GLOW := {"crack":2.5}
 
 var game: Node3D
 var path: RefCounted
@@ -97,8 +146,15 @@ var head := 0.0
 var label := "rail/train"
 var keep := true
 ## Each car: {kind, long, tall, front (m from the nose to its front), node, body,
-## record, boxes, xf, inv, was (last frame's xf), was_inv}.
+## record, records (its own and its plates'), boxes (its solid but its plates),
+## all (and its plates still shut), plates ([{box, record, shape, look, open}]),
+## inner (the smash car's corridor: Vector3(half width, floor, roof), else
+## absent), xf, inv, was (last frame's xf), was_inv}.
 var cars: Array[Dictionary] = []
+## The smash car's plates broken and put back (counted, for the drivers).
+var bursts := 0
+var reseals := 0
+var refill := false
 ## The touch a car made running into the plane this frame: {normal, at, car}, or {}.
 var rammed := {}
 ## How many frames a car has run into the plane, and the most it moved it (m).
@@ -148,6 +204,7 @@ func setup(g: Node3D, rail_path: RefCounted, on_track := 0, nose := TEST_HEAD, h
 	name = "RailTrain"
 	speed = speed_flag()
 	keep = not ("--train-keep=0" in LaunchArgs.user_args())
+	refill = "--full-meter" in LaunchArgs.user_args()
 	var front := 0.0
 	for i in range(CARS.size()):
 		var spec: Array = CARS[i]
@@ -171,6 +228,7 @@ func before(delta: float) -> void:
 		car.was_inv = car.inv
 	_pose()
 	if keep: keep_out()
+	_smash_step()
 
 ## One frame, after the plane's move and before FlightContact: a car that ran
 ## into the plane gives it the speed it came at it by, along the face (so the
@@ -189,11 +247,111 @@ func after(_delta: float) -> void:
 	if not (plane.contact as Dictionary).is_empty(): return
 	plane.contact = {"kind":"brush","velocity":v,"normal":n}
 
+# --- The smash car ----------------------------------------------------------
+
+## The surge held hot while the plane is in a smash car's corridor with a plate
+## broken (so the far plate breaks on the way out); the plates back once it is
+## RESEAL_FAR m off.
+func _smash_step() -> void:
+	var p: Vector3 = game.plane.position
+	var smash = game.get("smash")
+	for car: Dictionary in cars:
+		if (car.plates as Array).is_empty(): continue
+		var broken := false
+		for plate: Dictionary in car.plates: broken = broken or bool(plate.open)
+		if not broken: continue
+		var xf: Transform3D = car.xf
+		if xf.origin.distance_to(p) > RESEAL_FAR:
+			_reseal(car)
+			continue
+		if smash != null and bool(smash.hot) and _in_corridor(car,(car.inv as Transform3D)*p,12.0): smash.keep_hot(0.3)
+
+## The way off a smash car's nearest wall, roof or floor at world `p` (the plane's
+## middle), for FlightContact: a touch in its corridor is glanced off, never a
+## crash. ZERO outside every corridor, or within END_ROOM of a plate still shut.
+func way_off(p: Vector3, _what := "") -> Vector3:
+	var pad := float(game.solid_pad)
+	for car: Dictionary in cars:
+		if not car.has("inner"): continue
+		if (car.xf as Transform3D).origin.distance_to(p) > float(car.long)*0.5+NEAR: continue
+		var l: Vector3 = (car.inv as Transform3D)*p
+		# Past its ends as far as a face there stops the plane: the wingtip's reach
+		# (the arches' pad, `_blocked`) and a frame's step.
+		if not _in_corridor(car,l,maxf(pad,WorldScale.span*0.5)+1.0) or _by_shut_plate(car,l): continue
+		var c: Vector3 = car.inner
+		var best := Vector4(l.x+c.x,1.0,0.0,0.0)
+		for g: Vector4 in [Vector4(c.x-l.x,-1.0,0.0,0.0),Vector4(c.z-l.y,0.0,-1.0,0.0),Vector4(l.y-c.y,0.0,1.0,0.0)]:
+			if g.x < best.x: best = g
+		return ((car.xf as Transform3D).basis*Vector3(best.y,best.z,best.w)).normalized()
+	return Vector3.ZERO
+
+## Local `l` in smash car `car`'s corridor: between its walls, over its floor and
+## under the middle of its roof, and between its ends or `pad` m past them.
+static func _in_corridor(car: Dictionary, l: Vector3, pad: float) -> bool:
+	var c: Vector3 = car.inner
+	return absf(l.x) < c.x and l.y > c.y-0.5 and l.y < (c.z+float(car.tall))*0.5 and absf(l.z) < float(car.long)*0.5+pad
+
+## Within END_ROOM of a plate of `car` still shut (local `l`): a touch there is
+## the plate's, graded as anywhere.
+static func _by_shut_plate(car: Dictionary, l: Vector3) -> bool:
+	for plate: Dictionary in car.plates:
+		if bool(plate.open): continue
+		if absf(l.z-(plate.box as AABB).get_center().z) < END_ROOM+PLATE*0.5: return true
+	return false
+
+## The plane's breaking plate record `r` (SurgeSmash `_hit`, its `strike`): gone
+## till the plates come back, and the surge held hot to the far end.
+func _strike(r: Dictionary, _q: Vector3) -> void:
+	var car: Dictionary = cars[int(r.car_i)]
+	var plate: Dictionary = car.plates[int(r.plate_i)]
+	if bool(plate.open): return
+	plate.open = true
+	game.arches.loose.erase(r)
+	GroundNative.bump_loose()
+	(plate.shape as CollisionShape3D).disabled = true
+	(plate.look as Node3D).visible = false
+	_refresh(car)
+	var smash = game.get("smash")
+	if smash != null: smash.keep_hot(float(car.long)/maxf((game.plane.velocity as Vector3).length()-speed,10.0)+0.5)
+	bursts += 1
+
+## Smash car `car`'s plates put back.
+func _reseal(car: Dictionary) -> void:
+	for plate: Dictionary in car.plates:
+		if not bool(plate.open): continue
+		plate.open = false
+		game.arches.loose.push_front(plate.record)
+		(plate.shape as CollisionShape3D).disabled = false
+		(plate.look as Node3D).visible = true
+	GroundNative.bump_loose()
+	_refresh(car)
+	reseals += 1
+	if refill: game.near.meter = 1.0
+
 ## `v` (a touch's velocity at world `at`) less the velocity of the car `at` is
 ## on, if any: what FlightContact grades a touch of a car by.
 func relative(at: Vector3, v: Vector3) -> Vector3:
 	var m: Variant = motion_at(at,TOUCH)
 	return v if m == null else v-(m as Vector3)
+
+## A scrape off a car (FlightContact, after grading it by `relative`), done in
+## the car's frame: the plane's speed into the face taken off relative to the car,
+## not the world, then `keep` of what's left and a `kick` off it (SkyPlane
+## `scrape`). Creeping up into a car's back end at cruise it drops back behind
+## it on its own heading; in the world's frame the scrape would turn its path
+## round off a face it was only 5 m/s into. False if `at` is on no car.
+func scrape(plane: RefCounted, n: Vector3, at: Vector3, keep: float, kick: float) -> bool:
+	var m: Variant = motion_at(at,TOUCH)
+	if m == null: return false
+	var vc: Vector3 = m
+	var path: Vector3 = plane.path_now()
+	var rel := path*float(plane.speed)-vc
+	var into := -rel.dot(n)
+	if into > 0.0: rel += n*into
+	var w := vc+rel
+	if w.length() < 0.1: return false
+	plane.scrape(n,w.length()*keep/maxf(float(plane.speed),0.1),kick,w.normalized().dot(n)+SkyPlane.SCRAPE_OUT)
+	return true
 
 ## The velocity (m/s) of the car whose solid is nearest world `at`, within
 ## `reach` m of it, or null: what a near miss by a car is scored relative to
@@ -204,7 +362,7 @@ func motion_at(at: Vector3, reach: float) -> Variant:
 	for car: Dictionary in cars:
 		if (car.xf as Transform3D).origin.distance_to(at) > float(car.long)*0.5+NEAR+reach: continue
 		var l: Vector3 = (car.inv as Transform3D)*at
-		for b: AABB in car.boxes:
+		for b: AABB in car.all:
 			var d := Vector3(maxf(0.0,maxf(b.position.x-l.x,l.x-b.end.x)),maxf(0.0,maxf(b.position.y-l.y,l.y-b.end.y)),
 				maxf(0.0,maxf(b.position.z-l.z,l.z-b.end.z))).length()
 			if d <= reach and d < best:
@@ -229,7 +387,7 @@ func keep_out() -> void:
 		var lw: Vector3 = (car.was_inv as Transform3D)*p
 		var out := l
 		for _again in range(2):
-			for b: AABB in car.boxes:
+			for b: AABB in car.all:
 				var r := _out_of(b,out,lw,pad)
 				if r.is_empty(): continue
 				out = r.at
@@ -312,16 +470,18 @@ func _pose() -> void:
 		# The body told now, not at the tree's next flush: the wing rays this
 		# frame (NearMiss) meet the car where it is, not 0.53 m back.
 		if is_inside_tree(): (car.body as Node3D).force_update_transform()
-		var r: Dictionary = car.record
-		r.pos = xf.origin
 		var yaw := atan2(-f.x,-f.z)
-		r.cos = cos(yaw)
-		r.sin = sin(yaw)
-		r.xf = xf
-		r.inv = car.inv
+		for r: Dictionary in car.records:
+			r.pos = xf.origin
+			r.cos = cos(yaw)
+			r.sin = sin(yaw)
+			r.xf = xf
+			r.inv = car.inv
 	GroundNative.bump_loose()
 
-## Car `car` (number `i`): its blocks, its StaticBody, its record in `loose`.
+## Car `car` (number `i`): its blocks drawn as one mesh, its StaticBody, its
+## record in `loose`; the smash car's plates each a record of their own, first in
+## `loose` (so a strike near a jamb finds the plate), a shape and a look.
 func _build(car: Dictionary, i: int) -> void:
 	var node := Node3D.new()
 	node.name = "Car%d" % i
@@ -329,43 +489,96 @@ func _build(car: Dictionary, i: int) -> void:
 	car.node = node
 	var parts := _parts(str(car.kind),float(car.long),float(car.tall))
 	var boxes: Array[AABB] = []
-	for part: Array in parts:
-		var box: AABB = part[0]
-		boxes.append(box)
-		var mi := MeshInstance3D.new()
-		var mesh := BoxMesh.new()
-		mesh.size = box.size
-		mi.mesh = mesh
-		mi.position = box.get_center()
-		mi.material_override = _mat(str(part[1]))
-		node.add_child(mi)
+	var looks: Array = []
+	for part: Array in parts.solid:
+		boxes.append(part[0])
+		if str(part[1]) != "": looks.append(part)
+	looks.append_array(parts.dress)
 	car.boxes = boxes
+	var mi := MeshInstance3D.new()
+	mi.name = "Look"
+	mi.mesh = _merged(looks)
+	node.add_child(mi)
 	var body := StaticBody3D.new()
 	body.name = "Body"
 	body.collision_layer = game.arches.LAYER
 	body.collision_mask = 0
-	for box: AABB in boxes:
-		var cs := CollisionShape3D.new()
-		var shape := BoxShape3D.new()
-		shape.size = box.size
-		cs.shape = shape
-		cs.position = box.get_center()
-		body.add_child(cs)
+	for box: AABB in boxes: body.add_child(_shape(box))
 	node.add_child(body)
 	car.body = body
+	var reach := float(car.long)*0.5+BoxSolid.grow_most()+2.0
 	var record := {"name":"%s/car%d" % [label,i],"kind":"train","node":node,"pos":Vector3.ZERO,"cos":1.0,"sin":0.0,
 		"xf":Transform3D.IDENTITY,"inv":Transform3D.IDENTITY,"solid":BoxSolid.build(boxes),
-		"reach":float(car.long)*0.5+BoxSolid.grow_most()+2.0,"spec":{},"no_break":true,"adopted":0}
+		"reach":reach,"spec":{},"no_break":true,"adopted":0}
 	car.record = record
+	car.records = [record]
 	game.arches.loose.append(record)
+	var plates: Array[Dictionary] = []
+	var ends: Array = parts.plates
+	for k in range(ends.size()):
+		var box: AABB = ends[k]
+		var cs := _shape(box)
+		body.add_child(cs)
+		var look := MeshInstance3D.new()
+		look.name = "Plate%d" % k
+		look.mesh = _merged(_plate_look(box))
+		node.add_child(look)
+		var pr := {"name":"%s/car%d/plate%d" % [label,i,k],"kind":"train","node":node,"pos":Vector3.ZERO,"cos":1.0,"sin":0.0,
+			"xf":Transform3D.IDENTITY,"inv":Transform3D.IDENTITY,"solid":BoxSolid.build([box]),
+			"reach":reach,"spec":{},"no_break":true,"adopted":0,
+			"strike":Callable(self,"_strike"),"car_i":i,"plate_i":k}
+		car.records.append(pr)
+		game.arches.loose.push_front(pr)
+		plates.append({"box":box,"record":pr,"shape":cs,"look":look,"open":false})
+	car.plates = plates
+	if str(car.kind) == "smash": car.inner = Vector3(smash_wide()*0.5,FLOOR,FLOOR+smash_high(float(car.tall)))
+	_refresh(car)
 	GroundNative.bump_loose()
 
-## A car's blocks in its frame: [AABB, look] each. Every car has its underframe
-## from UNDER under the bed to its floor; on it the kind's body.
-static func _parts(kind: String, long: float, tall: float) -> Array:
+static func _shape(box: AABB) -> CollisionShape3D:
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = box.size
+	cs.shape = shape
+	cs.position = box.get_center()
+	return cs
+
+## `car.all`: its solid and its plates still shut.
+func _refresh(car: Dictionary) -> void:
+	var all: Array[AABB] = []
+	all.append_array(car.boxes)
+	for plate: Dictionary in car.plates:
+		if not bool(plate.open): all.append(plate.box)
+	car.all = all
+
+## The doors car's doorway (m): along the car, and up from its floor.
+static func door_wide(long := 24.0) -> float:
+	return minf(WorldScale.opening(TOY_DOOR),long-2.0*JAMB_LEAST)
+
+static func door_high(tall := 9.0) -> float:
+	return minf(WorldScale.opening(TOY_DOOR_HIGH),tall-FLOOR-HEAD_LEAST)
+
+## The smash car's corridor (m): across, and up from its floor.
+static func smash_wide() -> float:
+	return minf(WorldScale.opening(TOY_SMASH_WIDE),WIDE-2.0*WALL_LEAST)
+
+static func smash_high(tall := 9.0) -> float:
+	return minf(WorldScale.opening(TOY_SMASH_HIGH),tall-FLOOR-HEAD_LEAST)
+
+## A car's blocks in its frame: {solid: [[AABB, look ("" not drawn)]], dress:
+## [[AABB or Transform3D of a unit box, look]] drawn only, plates: [AABB] (the
+## smash car's, front then back)}. Every car has its underframe from UNDER under
+## the bed to its floor; on it the kind's body. The underframe is drawn narrower
+## than the car but is solid its whole width: a body standing out over it would be
+## an overhang, and a plane flying low beside the car (its middle under the floor,
+## skimming the sea by the causeway) would be under it, lifted onto the roof (a
+## pop of 8 m) the moment a curve swung the car in.
+static func _parts(kind: String, long: float, tall: float) -> Dictionary:
 	var h := long*0.5
 	var w := WIDE*0.5
-	var out: Array = [[_box(-w*0.9,-UNDER,-h,w*0.9,FLOOR,h),"under"]]
+	var out: Array = [[_box(-w,-UNDER,-h,w,FLOOR,h),""]]
+	var dress: Array = [[_box(-w*0.9,-UNDER,-h,w*0.9,FLOOR,h),"under"]]
+	var plates: Array = []
 	match kind:
 		"engine":
 			var cab := 7.0
@@ -380,10 +593,92 @@ static func _parts(kind: String, long: float, tall: float) -> Array:
 			out.append([_box(-w,FLOOR,-h,w,tall,h),"box"])
 		"flat":
 			out.append([_box(-w,FLOOR,-h,w,tall,h),"flat"])
+		"open":
+			out.append([_box(-w,FLOOR,-h,w,tall,h),"open"])
+			out.append([_box(-w*HEAP_IN,tall,-h*HEAP_IN,w*HEAP_IN,tall+HEAP,h*HEAP_IN),"load"])
 		"van":
 			out.append([_box(-w*0.9,FLOOR,-h,w*0.9,tall-1.8,h),"van"])
 			out.append([_box(-w*0.55,tall-1.8,-2.0,w*0.55,tall,2.0),"van"])
+		"doors":
+			# A slot across the car under its roof: its walls fore and aft of the
+			# doorway, its roof over it, the floor its underframe's top.
+			var d := door_wide(long)*0.5
+			var top := FLOOR+door_high(tall)
+			out.append([_box(-w,FLOOR,-h,w,tall,-d),"box"])
+			out.append([_box(-w,FLOOR,d,w,tall,h),"box"])
+			out.append([_box(-w,top,-d,w,tall,d),"box"])
+			# Each side's doors slid open over the walls, a hair proud of them; the
+			# doorway's jambs and head lined dark, so it reads as the inside.
+			for sx: float in [-1.0,1.0]:
+				var x0 := w-0.1 if sx > 0.0 else -w-0.04
+				var x1 := w+0.04 if sx > 0.0 else -w+0.1
+				dress.append([_box(x0,FLOOR,-d-minf(d,h-d-0.5),x1,top+0.3,-d),"door"])
+				dress.append([_box(x0,FLOOR,d,x1,top+0.3,d+minf(d,h-d-0.5)),"door"])
+			dress.append([_box(-w,FLOOR,-d,w,top,-d+0.03),"inside"])
+			dress.append([_box(-w,FLOOR,d-0.03,w,top,d),"inside"])
+			dress.append([_box(-w,top-0.03,-d,w,top,d),"inside"])
+		"smash":
+			# A corridor down its length: its walls and roof, the floor its
+			# underframe's top, a plate at each end (records of their own).
+			var iw := smash_wide()*0.5
+			var lid := FLOOR+smash_high(tall)
+			out.append([_box(-w,FLOOR,-h,-iw,tall,h),"smash"])
+			out.append([_box(iw,FLOOR,-h,w,tall,h),"smash"])
+			out.append([_box(-iw,lid,-h,iw,tall,h),"smash"])
+			plates.append(_box(-iw,FLOOR,-h,iw,lid,-h+PLATE))
+			plates.append(_box(-iw,FLOOR,h-PLATE,iw,lid,h))
+			dress.append([_box(-iw,FLOOR,-h+PLATE,-iw+0.03,lid,h-PLATE),"inside"])
+			dress.append([_box(iw-0.03,FLOOR,-h+PLATE,iw,lid,h-PLATE),"inside"])
+			dress.append([_box(-iw,lid-0.03,-h+PLATE,iw,lid,h-PLATE),"inside"])
+			# Cracks down each side, so it is told from the boxcars beside it.
+			for sx: float in [-1.0,1.0]:
+				for c: Array in SIDE_CRACKS:
+					var at := Vector3(sx*(w+0.04),FLOOR+(tall-FLOOR)*(0.5+float(c[1])),float(c[0])*h)
+					dress.append([Transform3D(Basis(Vector3.RIGHT,float(c[3]))*Basis.from_scale(Vector3(0.12,float(c[2])*(tall-FLOOR),0.35)),at),"crack"])
+	return {"solid":out,"dress":dress,"plates":plates}
+
+## A crack's strokes: [across (share of the half width or length), up (share of
+## the height, off the middle), long (share of the height), turn (rad)].
+const CRACKS := [[0.0,0.0,0.9,0.25],[-0.05,0.3,0.45,-0.6],[0.06,-0.28,0.5,0.7],[-0.2,-0.12,0.45,1.15],
+	[0.22,0.12,0.5,-1.2],[0.12,0.34,0.3,0.9],[-0.14,-0.36,0.3,-0.9]]
+const SIDE_CRACKS := [[0.0,0.0,0.7,0.35],[-0.12,0.22,0.35,-0.7],[0.1,-0.2,0.4,0.8],[-0.25,-0.1,0.3,1.2],[0.28,0.1,0.35,-1.1]]
+
+## A plate's look: the plate, its cracks on both faces.
+static func _plate_look(box: AABB) -> Array:
+	var out: Array = [[box,"plate"]]
+	var c := box.get_center()
+	var w := box.size.x
+	var hh := box.size.y
+	for z: float in [box.position.z-0.05,box.end.z+0.05]:
+		for s: Array in CRACKS:
+			var xf := Transform3D(Basis(Vector3.BACK,float(s[3]))*Basis.from_scale(Vector3(0.35,float(s[2])*hh,0.1)),
+				Vector3(c.x+float(s[0])*w,c.y+float(s[1])*hh,z))
+			out.append([xf,"crack"])
 	return out
+
+## Blocks as one mesh, a surface a look: each [AABB, look] or [Transform3D of a
+## unit box, look].
+func _merged(parts: Array) -> ArrayMesh:
+	if _unit == null: _unit = BoxMesh.new()
+	var by := {}
+	for part: Array in parts:
+		var key := str(part[1])
+		if not by.has(key): by[key] = []
+		var xf: Transform3D
+		if part[0] is AABB:
+			var b: AABB = part[0]
+			xf = Transform3D(Basis.from_scale(b.size),b.get_center())
+		else: xf = part[0]
+		(by[key] as Array).append(xf)
+	var mesh := ArrayMesh.new()
+	for key: String in by:
+		var st := SurfaceTool.new()
+		for xf: Transform3D in by[key]: st.append_from(_unit,0,xf)
+		st.commit(mesh)
+		mesh.surface_set_material(mesh.get_surface_count()-1,_mat(key))
+	return mesh
+
+static var _unit: BoxMesh
 
 static func _box(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float) -> AABB:
 	return AABB(Vector3(x0,y0,z0),Vector3(x1-x0,y1-y0,z1-z0))
@@ -398,10 +693,14 @@ func _mat(key: String) -> StandardMaterial3D:
 	# none, and a car's shaded side went black.
 	m.emission_enabled = true
 	m.emission = c*FILL
+	if GLOW.has(key):
+		m.emission = c
+		m.emission_energy_multiplier = float(GLOW[key])
 	_mats[key] = m
 	return m
 
 func _exit_tree() -> void:
 	if game == null or not is_instance_valid(game.arches): return
-	for car: Dictionary in cars: game.arches.loose.erase(car.record)
+	for car: Dictionary in cars:
+		for r: Dictionary in car.records: game.arches.loose.erase(r)
 	GroundNative.bump_loose()

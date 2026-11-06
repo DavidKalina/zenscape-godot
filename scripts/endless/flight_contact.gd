@@ -23,7 +23,7 @@ extends RefCounted
 ##
 ## In the pirate ship's gun deck (PirateShip `deck_way_off`) no touch crashes:
 ## it is glanced off the wall, roof or floor it met. So too anywhere on her as
-## she sinks.
+## she sinks, and in a train's smash car (RailTrain `way_off`).
 ##
 ## In a forgiving knife slot (scripts/endless/knife_glance.gd, the study's
 ## `glance` `zone`) a touch of a jamb's side never crashes: it is glanced off
@@ -121,7 +121,8 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if face != Vector3.ZERO: hit.normal = face
 	var v: Vector3 = hit.velocity
 	# A train's car: graded by the speed into it relative to the car (rail_train.gd).
-	if game.get("trains") != null: v = game.trains.relative(hit.at,v)
+	var by_car: bool = game.get("trains") != null and str(hit.what) == "stone"
+	if by_car: v = game.trains.relative(hit.at,v)
 	var n: Vector3 = hit.normal
 	var speed := v.length()
 	if speed < 0.1: return {}
@@ -133,6 +134,10 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if coast != null:
 		var off: Vector3 = coast.deck_way_off(plane.position,str(hit.what))
 		if off != Vector3.ZERO: return glance(game,off,hit.at)
+	# A train's smash car corridor: likewise (rail_train.gd `way_off`).
+	if game.get("trains") != null:
+		var off_car: Vector3 = game.trains.way_off(plane.position,str(hit.what))
+		if off_car != Vector3.ZERO: return glance(game,off_car,hit.at)
 	# A forgiving knife slot's jamb (a side touch of its stone, not its sill
 	# or head): glanced off toward its middle, never kicked across the slot.
 	var slot: Dictionary = game.glance.zone if game.get("glance") != null else {}
@@ -146,7 +151,9 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 		return {"crash":out}
 	if _grace > 0.0: return {}
 	var keep := clampf(SCRAPE_KEEP-SCRAPE_COST*maxf(into,0.0),SCRAPE_LEAST,1.0)
-	plane.scrape(n,keep,KICK.x+KICK.y*maxf(into,0.0))
+	var kick := KICK.x+KICK.y*maxf(into,0.0)
+	# A train's car: turned off it in the car's own frame (rail_train.gd `scrape`).
+	if not by_car or not game.trains.scrape(plane,n,hit.at,keep,kick): plane.scrape(n,keep,kick)
 	_grace = GRACE
 	scrapes += 1
 	out["keep"] = keep
