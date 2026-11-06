@@ -70,9 +70,13 @@ const SPAN_FADE := 10.0
 ## pieces) the flat runs out to YARD_HALF m (the platforms, RailStops
 ## PLATFORM_OUT 16 m out, and the station house and water tower past them,
 ## 14 m deep) over YARD_ALONG m either side of its s (RailStops
-## PLATFORM_HALF 80 m, and 2), eased back over YARD_EASE m; never on a span.
+## PLATFORM_HALF 80 m, and 2), and out to YARD_PLATFORM m along the rest of
+## its platforms (RailStops `platform`) and YARD_PAST m past their ends,
+## eased back over YARD_EASE m; never on a span.
 const YARD_HALF := 31.0
 const YARD_ALONG := 82.0
+const YARD_PLATFORM := 18.0
+const YARD_PAST := 2.0
 const YARD_EASE := 12.0
 ## The grid's squares (m).
 const CELL := 32.0
@@ -208,15 +212,18 @@ static func _build() -> void:
 	# The station yards: wide enough that the land never stands through a
 	# platform, nor up the house's or the tower's back.
 	var yard := maxf(YARD_HALF,HALF)
+	var stops: GDScript = load(STOPS_PATH)
 	for piece: Dictionary in line.pieces():
 		if not str(piece.kind) in ["station","town"]: continue
 		var sc := float(piece.s0)
-		for i in range(floori((sc-YARD_ALONG-YARD_EASE)/_step),ceili((sc+YARD_ALONG+YARD_EASE)/_step)+1):
-			var k := posmod(i,_n)
-			# Not on a span, nor before a tunnel's mouth (its own widening).
-			if _sin[k] > 0.0 or _into[k] >= -(BoreShape.MOUTH_FLAT+BoreShape.MOUTH_EASE): continue
-			var widen := 1.0-smoothstep(0.0,YARD_EASE,absf(i*_step-sc)-YARD_ALONG)
-			_hw[k] = maxf(_hw[k],lerpf(HALF,yard,widen))
+		var pl: Vector2 = stops.platform(line,sc)
+		for zone: Vector3 in [Vector3(sc-YARD_ALONG,sc+YARD_ALONG,yard),Vector3(pl.x-YARD_PAST,pl.y+YARD_PAST,maxf(YARD_PLATFORM,HALF))]:
+			for i in range(floori((zone.x-YARD_EASE)/_step),ceili((zone.y+YARD_EASE)/_step)+1):
+				var k := posmod(i,_n)
+				# Not on a span, nor before a tunnel's mouth (its own widening).
+				if _sin[k] > 0.0 or _into[k] >= -(BoreShape.MOUTH_FLAT+BoreShape.MOUTH_EASE): continue
+				var widen := 1.0-smoothstep(0.0,YARD_EASE,maxf(zone.x-i*_step,i*_step-zone.y))
+				_hw[k] = maxf(_hw[k],lerpf(HALF,zone.z,widen))
 	# The grid over the line's box and REACH round it.
 	var x0 := INF
 	var z0 := INF
