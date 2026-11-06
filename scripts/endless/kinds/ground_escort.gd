@@ -109,6 +109,17 @@ const KNOBS := {
 	"sprint_at": 25.0, "gallop_at": 10.5, "gait_hyst": 1.0,
 	# The look while running: a glance at the plane, at this weight.
 	"run_look": 0.35,
+	# The leap, a flourish in the run beside (nothing to clear): now and then
+	# one runner holding its station (within `leap_station` m of it, at the
+	# plane's speed, sprinting, `leap_left` s of its stretch left, at most
+	# `leap_max` leaps a run) bounds high, from the sprint's hang and back into
+	# it. The first `leap_first_min`-`leap_first_max` s after the first bolt,
+	# then every `leap_every_min`-`leap_every_max` s; the land ahead must hold
+	# for the leap and `leap_clear` m past it (its ground asked every
+	# `leap_ground_step` m), else asked again in `leap_retry` s.
+	"leap_first_min": 1.0, "leap_first_max": 2.0, "leap_every_min": 1.0, "leap_every_max": 2.2,
+	"leap_station": 8.0, "leap_left": 1.5, "leap_max": 1, "leap_clear": 6.0, "leap_retry": 0.4,
+	"leap_ground_step": 8.0,
 	# Straight at them: the plane's line within `straight` m of the herd's
 	# middle when the first one goes. Each bolts `scatter_at` s before the
 	# plane reaches it, then scatters out from the line on its own side,
@@ -134,7 +145,7 @@ const KNOBS := {
 }
 
 ## The states in which an animal moves (placed, kept apart, its land probed).
-const MOVING := ["bolt","run","peel","halt","scatter","cover"]
+const MOVING := ["bolt","run","leap","peel","halt","scatter","cover"]
 
 ## The contract's ground per cycle (body lengths), so a clip plays at the
 ## rate its feet keep to the ground.
@@ -147,7 +158,12 @@ const GROUND_CURVE := {
 	"bolt_start": [[0.0,0.0],[0.125,0.0],[0.1667,0.0064],[0.2083,0.0371],[0.25,0.1042],[0.2917,0.215],
 		[0.3333,0.355],[0.375,0.5043],[0.4167,0.6586],[0.4583,0.824],[0.5,1.0]],
 	"stop_look": [[0.0,0.0],[0.1,0.4898],[0.2,0.8163],[0.3,0.9796],[0.4,1.0],[1.2,1.0]],
+	"leap": [[0.0,0.0],[0.9,1.0]],
 }
+## The contract's `sprint.air` beat (s): the sprint's hang begins. The leap
+## starts and ends at the sprint's time 0 (the hang's end), so it is played
+## the rest of that cycle after this beat.
+const SPRINT_AIR := 0.25
 const SEA_Y := -40.0
 const TreePlan = preload("res://scripts/endless/tree_plan.gd")
 
@@ -166,7 +182,9 @@ var bl: float = BODY_SPANS*WorldScale.span
 ## in the wood), best and since (its nearest to it yet, and how long ago)}. States: `graze`; `alert` (head
 ## up, tracking the plane); `settle` (the look easing out, then grazing);
 ## `bolt` (the bolt_start clip, turning to run; `mode` beside or scatter);
-## `run` (beside the plane); `peel` (turned out, slowing); `scatter` (out
+## `run` (beside the plane; `leap` "wait" for the sprint's hang, then "hang"
+## and `leap_in` s to its end); `leap` (the leap, a flourish mid-run, at
+## `leap_rate`); `peel` (turned out, slowing); `scatter` (out
 ## from the plane's line, `peel` its way); `cover` (to `goal` in the wood's
 ## edge); `halt` (stop_look, then `alert`).
 var herd: Array = []
@@ -179,7 +197,8 @@ var _rng := RandomNumberGenerator.new()
 var _study: Node = null
 var stats := {"count":0,"bulls":0,"awake_frames":0,"sensing_frames":0,"alerts":0,"settles":0,
 	"bolts":0,"peels":0,"halts":0,"beside_s":0.0,"top_speed":0.0,"probes":0,"dodges":0,"peel_why":{},
-	"scatters":0,"covers":0,"cover_sweeps":0,"cover_top_at":0,"cover_ground":0,"cover_fail":{}}
+	"scatters":0,"covers":0,"cover_sweeps":0,"cover_top_at":0,"cover_ground":0,"cover_fail":{},
+	"leaps":0,"leap_land_no":0,"leap_missed":0}
 ## The herd's answer to this pass, set when the first one goes: "beside" or
 ## "straight" (the plane's line through the herd); "" once all are calm.
 var _verdict := ""
@@ -200,6 +219,8 @@ var _cruise := 36.75
 var _low := INF
 ## The next runner whose land ahead is probed (one a frame).
 var _probe_next := 0
+## Seconds until the herd's next leap is asked for (the run beside).
+var _leap_wait := 0.0
 
 static func build(s: Dictionary) -> Node3D:
 	if LaunchArgs.user_args().has("--elk=off"): return Marker.build(s)
@@ -245,10 +266,13 @@ func _spawn(s: Dictionary) -> void:
 		var rate := rng.randf_range(float(KNOBS.graze_rate_min),float(KNOBS.graze_rate_max))
 		body.call("play","graze",rate,0.0)
 		var nerve := rng.randf_range(float(KNOBS.nerve_min),float(KNOBS.nerve_max))
-		herd.append({"body":body,"pos":world,"heading":yaw,"variant":variant,"rate":rate,"state":"graze",
+		var a := {"body":body,"pos":world,"heading":yaw,"variant":variant,"rate":rate,"state":"graze",
 			"nerve":nerve,"wait":-1.0,"calm":0.0,"look":0.0,"gaze":Vector2.ZERO,"clip":"graze","t":0.0,
 			"flee":-1.0,"speed":0.0,"side":0.0,"lead":0.0,"stretch":0.0,"peel":0.0,
-			"bad":false,"hard":false,"dodge":0.0,"dodge_t":0.0,"why":"","mode":"","goal":Vector3.ZERO,"best":INF,"since":0.0})
+			"bad":false,"hard":false,"dodge":0.0,"dodge_t":0.0,"why":"","mode":"","goal":Vector3.ZERO,"best":INF,"since":0.0,
+			"clip_rate":1.0,"gap":0.0,"leap":"","leap_in":0.0,"leap_rate":1.0,"leaps":0}
+		herd.append(a)
+		body.connect("beat_reached",_on_beat.bind(a))
 	stats.count = herd.size()
 	stats.bulls = mini(bulls,herd.size())
 	_rng.seed = rng.seed+1
@@ -336,6 +360,8 @@ func _sense(delta: float) -> void:
 			"run":
 				if at == Vector3.INF: _peel(a,"lost")
 				else: _run_step(a,at,delta)
+			"leap":
+				_leap_step(a,at,delta)
 			"peel":
 				_peel_step(a,delta)
 			"scatter":
@@ -348,6 +374,7 @@ func _sense(delta: float) -> void:
 		if a.state != "graze" and at != Vector3.INF: _track(a,at+vel*float(KNOBS.look_lead),delta)
 	if moving:
 		_probe()
+		_leap_pick(delta)
 		_apart(delta)
 		for a: Dictionary in herd:
 			if a.state in MOVING: _place(a)
@@ -423,7 +450,9 @@ func _flee_step(a: Dictionary, at: Vector3, delta: float) -> bool:
 			if o.x > _v*float(KNOBS.scatter_at): return false
 		elif o.x-_lead_of(side,o.x,at) > _trigger(v): return false
 		a.flee = _rng.randf_range(0.0,float(KNOBS.flee_react))
-		if _verdict == "": _verdict = "straight" if straight else "beside"
+		if _verdict == "":
+			_verdict = "straight" if straight else "beside"
+			if not straight: _leap_wait = _rng.randf_range(float(KNOBS.leap_first_min),float(KNOBS.leap_first_max))
 	a.flee = float(a.flee)-delta
 	if float(a.flee) <= 0.0:
 		_bolt(a,side,_lead_of(side,o.x,at))
@@ -446,6 +475,8 @@ func _bolt(a: Dictionary, side: float, lead: float) -> void:
 	a.dodge = 0.0
 	a.dodge_t = 0.0
 	a.mode = "beside"
+	a.leap = ""
+	a.leaps = 0
 	var body: Node = a.body
 	body.call("play","bolt_start",1.0,0.1)
 	body.call("set_effect","dust",true)
@@ -497,7 +528,11 @@ func _run_step(a: Dictionary, at: Vector3, delta: float) -> void:
 	elif absf(o.y) > float(KNOBS.side_max)*float(KNOBS.gone_side): why = "drawn off"
 	elif bool(a.bad): why = str(a.why)
 	elif Vector2(a.pos.x-site_home().x,a.pos.z-site_home().z).length() > float(KNOBS.leash): why = "leash"
-	if why != "": _peel(a,why)
+	a.gap = g
+	if why != "":
+		_peel(a,why)
+		return
+	_leap_wait_step(a,delta)
 
 ## The way it wants to run: the plane's way, steered toward its side
 ## station (and round a tree it is stepping round).
@@ -506,6 +541,106 @@ func _run_way(a: Dictionary, at: Vector3) -> Vector3:
 	var side := float(a.side)+float(a.dodge)
 	var across := clampf(float(KNOBS.side_steer)*(side-o.y),-float(KNOBS.side_most),float(KNOBS.side_most))
 	return (_f*maxf(float(a.speed),4.0)+_r*across).normalized()
+
+# --- The leap, a flourish in the run beside ---------------------------------
+
+## Now and then in the run beside, when the herd's wait is up: one runner
+## holding its station (at random) is asked to leap, if the land ahead holds
+## (the ground every `leap_ground_step` m, trees along it) for up to a sprint
+## cycle and a half (the wait for the hang's end), the leap's ground and
+## `leap_clear` m. It leaps at the end of the sprint's next hang. One land
+## check a pick.
+func _leap_pick(delta: float) -> void:
+	if _verdict != "beside": return
+	_leap_wait -= delta
+	if _leap_wait > 0.0: return
+	var ready: Array = []
+	var v := minf(_v,_top())
+	for a: Dictionary in herd:
+		if a.state == "run" and a.clip == "sprint" and str(a.leap) == "" and int(a.leaps) < int(KNOBS.leap_max) \
+				and absf(float(a.gap)) < float(KNOBS.leap_station) and float(a.speed) > 0.9*v \
+				and float(a.stretch) > float(KNOBS.leap_left) and not bool(a.bad) and float(a.dodge_t) <= 0.0:
+			ready.append(a)
+	if ready.is_empty(): return
+	var a: Dictionary = ready[_rng.randi()%ready.size()]
+	var body: Node = a.body
+	var cycle := float(body.call("clip_length","sprint"))/float(a.clip_rate)
+	var reach := float(a.speed)*cycle*1.5+float(GROUND_BL.leap)*bl+float(KNOBS.leap_clear)
+	var way := _dir(float(a.heading))
+	var why := _land_why(a.pos,way,reach)
+	var step := float(KNOBS.leap_ground_step)
+	var d := step
+	while why == "" and d < reach:
+		why = _ground_why(a.pos,a.pos+way*d)
+		d += step
+	if why != "":
+		stats.leap_land_no += 1
+		_leap_wait = float(KNOBS.leap_retry)
+		return
+	a.leap = "wait"
+	a.leap_in = 2.0*cycle
+	_leap_wait = _rng.randf_range(float(KNOBS.leap_every_min),float(KNOBS.leap_every_max))
+
+## The body's beats: on the sprint's hang (`sprint.air`), a runner asked to
+## leap counts down the rest of the cycle, so the leap starts where the
+## sprint's cycle ends (its time 0, the leap's first pose).
+func _on_beat(name: String, a: Dictionary) -> void:
+	if name == "sprint.air" and str(a.leap) == "wait":
+		a.leap = "hang"
+		var body: Node = a.body
+		a.leap_in = (float(body.call("clip_length","sprint"))-SPRINT_AIR)/maxf(float(a.clip_rate),0.1)
+
+## A runner asked to leap: waiting for the sprint's hang (given up after two
+## cycles, or once off the sprint), then the rest of the cycle, then the leap.
+func _leap_wait_step(a: Dictionary, delta: float) -> void:
+	if str(a.leap) == "": return
+	if a.clip != "sprint":
+		a.leap = ""
+		stats.leap_missed += 1
+		return
+	a.leap_in = float(a.leap_in)-delta
+	if float(a.leap_in) > 0.0: return
+	if a.leap == "hang": _leap(a)
+	else:
+		a.leap = ""
+		stats.leap_missed += 1
+
+## Off the ground: the leap, played at the rate that keeps the sprint's pace
+## (its ground is 12.6 BL whatever the rate; the rate sets its time).
+func _leap(a: Dictionary) -> void:
+	var body: Node = a.body
+	var length := float(body.call("clip_length","leap"))
+	a.leap_rate = clampf(float(a.speed)/(float(GROUND_BL.leap)*bl/length),0.7,1.3)
+	a.state = "leap"
+	a.t = 0.0
+	a.leap = ""
+	a.leaps = int(a.leaps)+1
+	body.call("play","leap",float(a.leap_rate),0.05)
+	a.clip = "leap"
+	stats.leaps += 1
+
+## The leap: the root carried on by the clip's ground curve (straight on, at
+## the sprint's pace), its heading held (no turning in the air), its stretch
+## running down; at the clip's end, back into the sprint (its time 0, the
+## leap's last pose). The run's ends wait until it lands.
+func _leap_step(a: Dictionary, at: Vector3, delta: float) -> void:
+	var body: Node = a.body
+	var r := float(a.leap_rate)
+	var length := float(body.call("clip_length","leap"))
+	var ct := minf(float(a.t)*r,length)
+	a.speed = _clip_speed("leap",ct,delta*r)*r
+	a.stretch = float(a.stretch)-delta
+	if at != Vector3.INF:
+		a.gap = _off(a,at).x-float(a.lead)
+		if absf(float(a.gap)) < 12.0 and float(a.speed) > 0.8*_v: stats.beside_s = float(stats.beside_s)+delta
+	_step(a,delta)
+	if float(a.t)*r >= length:
+		a.state = "run"
+		a.t = 0.0
+		var pace := float(GROUND_BL.sprint)*bl/float(body.call("clip_length","sprint"))
+		a.clip_rate = clampf(float(a.speed)/pace,0.4,2.0)
+		body.call("play","sprint",float(a.clip_rate),0.05)
+		a.clip = "sprint"
 
 ## Straight at them: the bolt turns out from the plane's line on its own side
 ## (one on the line takes a side at random), wide off the plane's way when on
@@ -673,7 +808,7 @@ func _taken(a: Dictionary, p: Vector3) -> bool:
 	for b: Dictionary in herd:
 		if is_same(b,a): continue
 		var q: Vector3 = b.goal if b.state == "cover" else b.pos
-		if b.state in ["bolt","run","scatter","peel"]: continue
+		if b.state in ["bolt","run","leap","scatter","peel"]: continue
 		if Vector2(q.x-p.x,q.z-p.z).length() < room: return true
 	return false
 
@@ -732,6 +867,7 @@ func _peel(a: Dictionary, why: String) -> void:
 	a.state = "peel"
 	a.t = 0.0
 	a.why = why
+	a.leap = ""
 	a.bad = false
 	a.hard = false
 	a.dodge = 0.0
@@ -854,7 +990,8 @@ func _gait(a: Dictionary) -> void:
 		_: clip = "sprint" if v >= hi else ("gallop" if v >= lo else "trot")
 	var body: Node = a.body
 	var rate := v/(float(GROUND_BL[clip])*bl/float(body.call("clip_length",clip)))
-	body.call("play",clip,clampf(rate,0.4,2.0),0.2)
+	a.clip_rate = clampf(rate,0.4,2.0)
+	body.call("play",clip,float(a.clip_rate),0.2)
 	a.clip = clip
 
 ## The heading's way on the ground.
@@ -886,7 +1023,8 @@ func _probe() -> void:
 	var n := herd.size()
 	for k in range(n):
 		var a: Dictionary = herd[(_probe_next+k)%n]
-		if not (a.state in ["run","peel","scatter"]): continue
+		# A leaper too: the way ahead sweeps on while it is in the air.
+		if not (a.state in ["run","leap","peel","scatter"]): continue
 		_probe_next = (_probe_next+k+1)%n
 		stats.probes += 1
 		var way := _dir(float(a.heading))
@@ -900,6 +1038,13 @@ func _probe() -> void:
 			a.bad = not _arc_ok(a,float(a.peel),dist)
 			return
 		var why := _land_why(a.pos,way,dist)
+		if a.state == "leap":
+			# Held until it lands (the way ahead may sweep past a narrow band
+			# of water meanwhile); the run peels from it then.
+			if why != "":
+				a.bad = true
+				a.why = why
+			return
 		if why == "":
 			a.bad = why != ""
 			a.why = why if why != "" else str(a.why)

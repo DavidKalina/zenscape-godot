@@ -32,7 +32,7 @@ const CLIPS := {
 	"trot": {"length":0.8,"loop":true,"ground":2.0,"beats":[["trot.plant",0.0],["trot.plant",0.4]]},
 	"gallop": {"length":0.55,"loop":true,"ground":4.0,"beats":[["gallop.plant",0.05],["gallop.air",0.35]]},
 	"sprint": {"length":0.5,"loop":true,"ground":7.0,"beats":[["sprint.plant",0.05],["sprint.push",0.2],["sprint.air",0.25]]},
-	"leap": {"length":0.9,"loop":false,"ground":3.0,"beats":[["leap.takeoff",0.2],["leap.land",0.7]]},
+	"leap": {"length":0.9,"loop":false,"ground":12.6,"beats":[["leap.takeoff",0.2],["leap.land",0.7]]},
 	"stop_look": {"length":1.2,"loop":false,"ground":0.5,"beats":[["stop_look.halt",0.35],["stop_look.hold",0.6]]},
 }
 
@@ -204,8 +204,9 @@ func _on_beat(name: String) -> void:
 		_puff(socket("foot_fl").global_position,1.5)
 		_puff(socket("foot_fr").global_position,1.2)
 	elif name == "leap.land":
-		_puff(socket("foot_fl").global_position)
-		_puff(socket("foot_fr").global_position)
+		# Down from high: the biggest puffs.
+		_puff(socket("foot_fl").global_position,1.8)
+		_puff(socket("foot_fr").global_position,1.5)
 
 # --- The clips' poses ------------------------------------------------------
 # A pose: torso y, z (spans, off its rest), pitch (deg, front up), neck and
@@ -371,35 +372,69 @@ func _sprint(t: float) -> Dictionary:
 		p.feet[i] = Vector3(at.x,y,at.z+z)
 	return p
 
-## Takeoff (0.2): the hinds drive and the fores tuck; over the top; land
-## (0.7) on the fores reaching down, the give, the hinds come through.
+## The leap, a flourish mid-sprint: 12.6 BL at the sprint's pace (the root
+## goes straight on at 12.6 spans/s), from the sprint's late hang (its time 0)
+## and back into it, so the sprint starts again where the leap ends. The fores
+## strike and the front drops onto them; the hinds swing through and plant
+## under a deep gather, then drive (leap.takeoff 0.2), the front thrown up;
+## high over the top (0.45), the fores folded tight and the hinds trailing,
+## then folding through; nose down, the fores reach and strike (leap.land
+## 0.7), the give, the hinds come through and push, into the hang. Each
+## stance is the sprint's (0.0375 s), its foot still on the ground; in the
+## air the feet are keyed off the hips, so the legs fold with the body.
 func _leap(t: float) -> Dictionary:
+	var s0 := _sprint(0.0)
 	var p := _base()
-	p.y = _key(t,[[0.0,-0.02],[0.15,-0.05,"io"],[0.2,-0.02],[0.45,0.30,"out"],[0.7,0.02,"in"],[0.78,-0.06,"out"],[0.9,-0.01]])
-	p.pitch = _key(t,[[0.0,2.0],[0.18,14.0,"io"],[0.45,0.0],[0.68,-12.0,"in"],[0.78,-4.0],[0.9,2.0]])
-	p.neck = _key(t,[[0.0,20.0],[0.2,5.0],[0.45,15.0],[0.7,30.0],[0.8,20.0],[0.9,20.0]])
-	p.head = _key(t,[[0.0,6.0],[0.45,-4.0],[0.7,10.0],[0.9,6.0]])
-	p.ear = 50.0
-	p.tail = _key(t,[[0.0,40.0],[0.45,60.0],[0.9,40.0]])
-	var go := func(at: float) -> float: return CLIPS.leap.ground*BODY_LENGTH*at/0.9
+	p.y = _key(t,[[0.0,s0.y],[0.08,-0.05],[0.17,-0.1],[0.21,-0.03,"out"],[0.45,0.5,"out"],[0.68,0.05,"in"],
+		[0.72,-0.02],[0.77,-0.09,"out"],[0.84,0.0],[0.9,s0.y]])
+	p.pitch = _key(t,[[0.0,s0.pitch],[0.08,-9.0],[0.16,-3.0],[0.22,18.0,"out"],[0.45,2.0],[0.67,-14.0,"in"],
+		[0.74,-9.0],[0.82,6.0],[0.9,s0.pitch]])
+	p.neck = _key(t,[[0.0,s0.neck],[0.1,46.0,"out"],[0.22,16.0],[0.45,12.0],[0.66,30.0],[0.76,44.0,"out"],[0.9,s0.neck]])
+	p.head = _key(t,[[0.0,s0.head],[0.2,0.0],[0.45,-6.0],[0.7,12.0],[0.9,s0.head]])
+	p.ear = _key(t,[[0.0,s0.ear],[0.3,75.0],[0.7,55.0],[0.9,s0.ear]])
+	p.tail = _key(t,[[0.0,s0.tail],[0.2,40.0],[0.45,72.0,"out"],[0.76,42.0],[0.9,s0.tail]])
+	# The sprint's stance and the ground a planted foot slides back by in it.
+	var stance := 0.0375
+	var reach: float = CLIPS.leap.ground*BODY_LENGTH/0.9*stance
+	# Off the ground from the sprint's own plants (0.05, 0.065, 0.15, 0.165),
+	# and down again on the landing.
+	var lift := [0.0875,0.1025,0.1875,0.2025]
+	var land := [0.7,0.715,0.78,0.795]
+	var early: Array = _sprint(t).feet if t <= 0.21 else []
+	var tx := _torso_xform(p)
 	var feet: Array = p.feet
 	for i in range(4):
-		var leg: String = LEGS[i]
-		var rest: Vector3 = feet[i]
-		var fore := leg[0] == "f"
-		var lift := 0.1+0.02*float(i) if fore else 0.2+0.015*float(i-2)
-		var land := 0.7 if fore else 0.78
-		if t <= lift:
-			feet[i] = rest+Vector3(0.0,0.0,go.call(t)-0.04)
-		elif t >= land:
-			feet[i] = rest+Vector3(0.0,0.0,go.call(t)-go.call(land)-(0.14 if fore else 0.04))
+		var at: Vector3 = LEG_AT[LEGS[i]]
+		var fore := i < 2
+		var shift := 0.015*float(i%2)
+		var t1: float = lift[i]
+		var t2: float = land[i]
+		var down := Vector3(at.x,0.0,at.z-reach*0.5)
+		var up := Vector3(at.x,0.0,at.z+reach*0.5)
+		if t <= t1:
+			feet[i] = early[i]
+		elif t < t2:
+			# In the air: off the hip (torso frame), blended in from the
+			# lift-off and out to the strike.
+			var off: Vector3
+			var u := t-shift
+			if fore:
+				off = Vector3(0.0,_key(u,[[0.09,-0.36],[0.3,-0.17],[0.45,-0.16],[0.6,-0.3],[0.7,-0.36]]),
+					_key(u,[[0.09,0.15],[0.3,0.02],[0.45,0.0],[0.6,-0.2],[0.7,-0.22]]))
+			else:
+				off = Vector3(0.0,_key(u,[[0.19,-0.36],[0.3,-0.3],[0.48,-0.2],[0.65,-0.26],[0.78,-0.34]]),
+					_key(u,[[0.19,0.2],[0.3,0.3],[0.48,0.1],[0.65,-0.1],[0.78,-0.2]]))
+			var air := tx*(at+off)
+			var s := (t-t1)/(t2-t1)
+			var low := up.lerp(down,s)+Vector3(0.0,0.15*sin(PI*s),0.0)
+			var w := _smooth((t-t1)/0.08)*_smooth((t2-t)/0.08)
+			feet[i] = low.lerp(air,w)
+		elif t <= t2+stance:
+			feet[i] = down+Vector3(0.0,0.0,reach*(t-t2)/stance)
 		else:
-			var s := (t-lift)/(land-lift)
-			var from := rest+Vector3(0.0,0.0,go.call(lift)-0.04)
-			var to := rest+Vector3(0.0,0.0,-(0.14 if fore else 0.04))
-			feet[i] = from.lerp(to,_smooth(s))+Vector3(0.0,(0.28 if fore else 0.22)*sin(PI*s),0.0)
-			# The tuck: fores folded tight, hinds trailing then folded.
-			_tuck(p,i,(0.85 if fore else 0.7)*sin(PI*s))
+			# Up again and through to the hang's pose.
+			var s := clampf((t-t2-stance)/(0.9-t2-stance),0.0,1.0)
+			feet[i] = up.lerp(s0.feet[i],_smooth(s))+Vector3(0.0,(0.2 if fore else 0.08)*sin(PI*s),0.0)
 	return p
 
 ## The halt's slide (0.35): fores braced ahead, haunches under, the front
