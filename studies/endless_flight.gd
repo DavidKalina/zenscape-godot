@@ -345,6 +345,8 @@ var coast: Node3D
 var trains: Node3D
 ## The trains' clock at the start (s, --rail-clock=; `rail_clock`).
 var rail_clock_at := 0.0
+## The menu's seconds, which the trains' clock doesn't count (`rail_clock`).
+var rail_held := 0.0
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -1332,8 +1334,11 @@ func sea_height(p: Vector3, land := NAN) -> float:
 ## holds it as it holds the world) from --rail-clock=. Not the day cycle's
 ## time, which T skips, ] and [ speed up and --day=0 stops: this one is
 ## steady, so the same clock time puts a train in the same place everywhere.
+## Held in the menu (`rail_held`, as the day cycle is), so a fresh start's
+## trains are where their timetable has them at takeoff, however long the
+## menu stood.
 func rail_clock() -> float:
-	return rail_clock_at+flown
+	return rail_clock_at+flown-rail_held
 
 ## GlideCamera `sight`: the land's (`_sight_land`) and the trains' cars' (exact,
 ## RailTrains `sight`: the march steps over a roof as thin as a car's).
@@ -1398,6 +1403,7 @@ func tick(delta: float) -> void:
 	FrameLog.start()
 	var tick_from := Time.get_ticks_usec()
 	flown += delta
+	if stage != null and stage.holding(): rail_held += delta
 	var input := _fly_input(delta)
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)

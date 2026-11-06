@@ -47,6 +47,9 @@ extends RefCounted
 ## scores by the speed relative to it (`by`): along a train at cruise, the few
 ## m/s the plane creeps up it; head on, both speeds. Whether it scores at all
 ## (FAST_FROM) is still the plane's own speed: a pass flown, not a braked one.
+## In a bore a car passed scores its own graze, as a burrower's spur does (the
+## bore's thread still comes as the plane flies out): the two trains' meeting
+## in the west tunnel, head on in the dark.
 ## Farming: each scored moment within FARM_RADIUS m and FARM_TIME s of this
 ## one cuts it by FARM_EACH more, and the same tree, ruin or patch of land
 ## again by FARM_SAME. A ball's pass neither takes the cut nor adds to it.
@@ -232,6 +235,8 @@ var _near_body: Object
 ## (INF: nothing): the points a moment by them asks the moving things about.
 var _near_at := Vector3.INF
 var _over_at := Vector3.INF
+## The last `_by`'s point was on something moving (a train's car).
+var _by_moved := false
 ## A moment by something moving is measured this near it (m): its face or top.
 const MOVER_REACH := 2.0
 
@@ -251,7 +256,8 @@ class Tracker:
 	var closing := 0.0
 	var sides := 0
 	var over := false
-	## It came near a burrower's spur: a graze though the bore is overhead.
+	## It came near a burrower's spur or a train's car: a graze though the bore
+	## is overhead.
 	var spur := false
 	## The roll at the least (radians), and each wing's least (a gap's sides).
 	var roll := 0.0
@@ -277,9 +283,11 @@ class Tracker:
 func _by(game: Node3D, at: Vector3) -> float:
 	var plane = game.plane
 	var movers = game.get("trains")
+	_by_moved = false
 	if movers == null or at == Vector3.INF: return float(plane.speed)
 	var m: Variant = movers.motion_at(at,MOVER_REACH)
 	if m == null: return float(plane.speed)
+	_by_moved = true
 	return ((plane.velocity as Vector3)-(m as Vector3)).length()
 
 ## The multiplier the chain has now.
@@ -492,6 +500,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	# The speed each channel scores by: relative to a moving thing it is by.
 	var by_ground := _by(game,ground_at+Vector3.DOWN*maxf(ground_clear,0.0)) if ground_surface == "stone" and ground_clear < INF else speed
 	var by_stone := _by(game,_near_at)
+	var stone_moves := _by_moved
 	var by_over := _by(game,_over_at)
 	# The ground's moment.
 	if _track(_ground,ground_clear,reach,speed,by_ground,game):
@@ -514,7 +523,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		_stone.wl = minf(_stone.wl,left_clear)
 		_stone.wr = minf(_stone.wr,right_clear)
 		if overhead: _stone.over = true
-		if _near_spur and stone_clear < stone_reach: _stone.spur = true
+		if (_near_spur or stone_moves) and stone_clear < stone_reach: _stone.spur = true
 		if stone_clear <= _stone.least:
 			_stone.at = plane.position
 			_stone.id = _near_id

@@ -28,16 +28,24 @@ extends Node3D
 ## (RailTrain `test_start`); track 1's meets the plane TEST_MEET s in (the plane
 ## at cruise).
 ##
-## The line (`on_line`, seed 1's railroad, RailLine): train 0 on track 0 (+s)
-## stops at the four stops (LINE_STOPS, its middle on the station's s) and
-## waits each one's dwell. At clock 0 it is rolling into the start station, to
-## pull out at LINE_PULL s, so it is seen from the start in the first minute.
+## The line (`on_line`, seed 1's railroad, RailLine; the timetables
+## `line_tables`): train 0 on track 0 (+s) and train 1 on track 1 (-s) stop at
+## the four stops (LINE_STOPS, a train's middle on the station's s) and wait
+## each one's dwell, their laps held to one period, so they pass each other in
+## the same two places every lap: their noses meet mid west tunnel (LINE_TUNNEL,
+## head on in the dark) and, by the dwells (long at the mine and cattle towns,
+## short at the start and the farm: `line_split`), mid bay bridge (LINE_BRIDGE),
+## at any --train-speed=. The lap's start is set so the bridge meeting falls
+## LINE_MEET s into the clock: a fresh start takes off (the clock held in the
+## menu) with train 1 pulling out of the start station and both trains coming
+## onto the bridge a kilometre off on its left, in sight of the meadow.
 ##
 ## The clock on the line is the study's `rail_clock` (endless_flight.gd): the
 ## world's seconds since it was built, the frames' deltas the flight ticks
-## (`flown`), plus --rail-clock=S (the clock's time at the start). Steady: the
-## day cycle's skips (T), speeds (] and [) and holds don't touch it, so the
-## same seed and clock time put a train in the same place on every machine.
+## (`flown`) less the menu's (`rail_held`), plus --rail-clock=S (the clock's
+## time at the start). Steady: the day cycle's skips (T), speeds (] and [) and
+## holds don't touch it, so the same seed and clock time put a train in the
+## same place on every machine.
 ##
 ## Knobs: --trains=0|1|2 (TRAINS: how many run; one is track 0's), and
 ## RailTrain's --train-speed=, --rail-clock=S.
@@ -60,16 +68,27 @@ const TEST_STOP := 3550.0
 const DWELL := 20.0
 const TEST_MEET := 8.0
 const CRUISE := 36.75
-## The line's stops in the order track 0 meets them: [piece, dwell (s)]. The
-## dwells are the train lane's (start and farm short, mine and cattle long):
-## with one period for both trains and the first meeting mid west tunnel they
-## put the second on the bay bridge.
-const LINE_STOPS := [["rail/start-station",30.0],["rail/farm-town",30.0],["rail/mine-town",90.0],["rail/cattle-town",90.0]]
-## Train 0 pulls out of the start station at this clock time (s); with the
-## station's 30 s dwell it is braking in at clock 0. The station is 1.4 km
-## behind the plane's start (which faces the Peak): a pilot who turns and flies
-## to it gets there as it pulls out.
-const LINE_PULL := 40.0
+## The line's stops in the order track 0 meets them: [piece, the sign of its
+## share of the split], both trains'. With one period for both and the first
+## meeting mid west tunnel, the second falls where the dwells after the tunnel
+## (mine, cattle) outweigh the ones before it (start, farm): each waits
+## DWELL_MID s, less the split at the start and farm, plus it at the mine and
+## cattle towns. `line_split` finds the split that puts it mid bay bridge at
+## the trains' speed (30.3 s at 32 m/s, the waits about 30/30/90/90; each
+## second of it moves the meeting about 64 m along).
+const DWELL_MID := 60.0
+const LINE_STOPS := [["rail/start-station",-1.0],["rail/farm-town",-1.0],["rail/mine-town",1.0],["rail/cattle-town",1.0]]
+## Where the noses meet (s): mid west tunnel and mid bay bridge.
+const LINE_TUNNEL := 10020.0
+const LINE_BRIDGE := 17316.0
+## The clock time (s) the noses meet on the bay bridge. The start faces the
+## Peak and no stretch of the line is in view ahead of it in the first minute
+## (the land hides it all within 50 degrees of the nose, flown straight at 45
+## or 100 m), so the first minute's trains are the bridge's: on the plane's
+## left, 0.8-1.1 km off, train 0 coming over from the cattle plain, train 1
+## out of the start station; both on the bridge from about 10 s to 70 s, the
+## pass itself (noses to tails) 35-43 s.
+const LINE_MEET := 35.0
 
 var game: Node3D
 var path: RefCounted
@@ -111,28 +130,94 @@ static func clock_flag() -> float:
 		if a.begins_with("--rail-clock="): return a.trim_prefix("--rail-clock=").to_float()
 	return 0.0
 
-## The line's trains on `line` (RailLine) by `on_clock` (seconds).
+## The line's trains on `line` (RailLine) by `on_clock` (seconds): train 0,
+## and with --trains=2 (the default) train 1.
 func on_line(g: Node3D, line: RefCounted, on_clock: Callable) -> void:
 	start(g,line,on_clock)
-	var n := mini(count_flag(),1)
-	var top := RailTrain.speed_flag()
+	var n := count_flag()
+	var tables := line_tables(line,RailTrain.speed_flag())
+	if tables.is_empty(): return
+	if n >= 1: add(0,tables[0],"rail/train0")
+	if n >= 2: add(1,tables[1],"rail/train1")
+	refresh()
+
+## The line's two timetables, [track 0's, track 1's], at `top` m/s: the
+## stops (each train's middle on the station's s: track 0's nose half a train
+## past it, track 1's half a train short), DWELL_MID -/+ `split` s at each
+## (LINE_STOPS' signs; NAN: `line_split`'s), one period for both, the noses
+## meeting at LINE_TUNNEL and the second meeting (`line_meet`) at clock `meet`
+## (mod the period). Empty if the line lacks a stop.
+static func line_tables(line: RefCounted, top := RailTrain.SPEED, meet := LINE_MEET, split := NAN) -> Array:
+	if is_nan(split): split = line_split(line,top)
 	var half := RailTrain.length_of()*0.5
-	var stops: Array = []
+	var by_track := [[],[]]
 	var waits: Array = []
 	for st: Array in LINE_STOPS:
 		var p: Dictionary = line.piece(str(st[0]))
 		if p.is_empty():
 			push_warning("rail trains: no stop %s on the line" % str(st[0]))
-			continue
-		# Its nose half a train past the station's s, its way (+s).
-		stops.append(float(p.s0)+half)
-		waits.append(float(st[1]))
-	if stops.is_empty(): return
-	var t0: RefCounted = Timetable.new(line,0,stops,waits,top)
-	# Its wait at the start station ends at LINE_PULL.
-	t0.aim(float(stops[0]),LINE_PULL-float(t0.wait(0)))
-	if n >= 1: add(0,t0,"rail/train0")
-	refresh()
+			return []
+		by_track[0].append(float(p.s0)+half)
+		by_track[1].append(float(p.s0)-half)
+		waits.append(maxf(DWELL_MID+float(st[1])*split,0.0))
+	var t0: RefCounted = Timetable.new(line,0,by_track[0],waits,top)
+	var t1: RefCounted = Timetable.new(line,1,by_track[1],waits,top)
+	var lap := maxf(float(t0.natural()),float(t1.natural()))
+	t0.period = lap
+	t1.period = lap
+	if t0.still() or t1.still(): return [t0,t1]
+	t0.aim(LINE_TUNNEL,0.0)
+	t1.aim(LINE_TUNNEL,0.0)
+	# Both moved on together till the second meeting is at `meet`.
+	var m: Dictionary = line_meet(t0,t1,float(line.length()))
+	var shift := meet-float(m.get("time",0.0))
+	t0.phase += shift
+	t1.phase += shift
+	return [t0,t1]
+
+## The split (s, in [0, DWELL_MID]) that puts the second meeting at
+## LINE_BRIDGE at `top` m/s, by halving: the meeting comes down s as the split
+## grows.
+static func line_split(line: RefCounted, top := RailTrain.SPEED) -> float:
+	var n := float(line.length())
+	var lo := 0.0
+	var hi := DWELL_MID
+	for i in range(10):
+		var mid := (lo+hi)*0.5
+		var tables := line_tables(line,top,0.0,mid)
+		if tables.size() < 2 or (tables[0] as RefCounted).still(): return mid
+		var m := line_meet(tables[0],tables[1],n)
+		if m.is_empty(): return mid
+		if wrapf(float(m.s)-LINE_BRIDGE,-n*0.5,n*0.5) > 0.0: lo = mid
+		else: hi = mid
+	return (lo+hi)*0.5
+
+## Where and when the noses of `t0` (track 0) and `t1` (track 1) on a path of
+## `n` m meet other than at LINE_TUNNEL: {s, time} (time in [0, period)), by
+## stepping one period a second at a time, then halving to 1/256 s.
+static func line_meet(t0: RefCounted, t1: RefCounted, n: float) -> Dictionary:
+	var P := float(t0.period)
+	var tunnel_t := float(t0.time_at(LINE_TUNNEL))
+	var gap := func(t: float) -> float: return fposmod(float(t1.at(t).s)-float(t0.at(t).s),n)
+	var was := float(gap.call(0.0))
+	var t := 1.0
+	while t <= P+1.0:
+		var g := float(gap.call(t))
+		# Track 1's nose comes down s, track 0's up: the gap shrinks to 0 and
+		# wraps to n at a meeting.
+		if g > was+n*0.5:
+			var a := t-1.0
+			var b := t
+			for i in range(8):
+				var c := (a+b)*0.5
+				if float(gap.call(c)) > n*0.5: b = c
+				else: a = c
+			var when := fposmod(b,P)
+			var dt := absf(when-tunnel_t)
+			if minf(dt,P-dt) > 5.0: return {"s":float(t0.at(b).s),"time":when}
+		was = g
+		t += 1.0
+	return {}
 
 ## The holder on `rail_path`, with no trains yet.
 func start(g: Node3D, rail_path: RefCounted, on_clock := Callable()) -> void:
