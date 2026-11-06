@@ -38,6 +38,20 @@ extends RefCounted
 ## - **The quick start** --rail-start=ride (`line_start`, by RailTrains'): sat on
 ##   train 0's flatcar with the lowest cars either side, at RIDE_STOP, RIDE_SIT
 ##   s before it pulls out (the study parks the plane on the deck: `ground`).
+##   --ride-car=<kind> sits on another kind with a top (box: the tallest roof,
+##   9 m), --ride-at=<s> that many seconds further on, wherever the train is then
+##   moving or not. The ride start's lap (s, period 1038): it pulls out at 3,
+##   farm town 243, the west tunnel 415-451 (the meeting about 430), the mine
+##   trestle 453-507, mine town 520, cattle town 726, the bay bridge 927-979 (the
+##   meeting about 950), the start station again 1011.
+## - **On the line** it rides the whole lap with nothing in its way: the bores'
+##   vault is the least room over it, 6.9 m over the plane's top sat on the
+##   tallest roof (a boxcar, 9 m: RailBoreShape sizes the vault on it); the spans
+##   are decks and the stops stand beside the track.
+## - **The wheels' size.** The plane's ground scale (plane_ground_scale.gd) reads
+##   its speed over the car, so sat on a moving car it is drawn as parked.
+## - **Getting out.** Nothing in the game asks Exit (walking was cut); if it were,
+##   the plane would be carried on through EXIT and OUT as while sat.
 ##
 ## The engine's top is never a floor (the spec: weave round it, don't land).
 ## Only a train's solid is ridden (built within RailTrains' SOLID_NEAR).
@@ -66,6 +80,7 @@ const ROOM := 0.5
 const RIDE_STOP := "rail/start-station"
 const RIDE_SIT := 3.0
 const RIDE_KIND := "flat"
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 var game: Node3D
 var trains: Node3D
@@ -96,7 +111,7 @@ func before(_delta: float) -> void:
 	var landing = game.get("hand_landing")
 	var plane = game.get("plane")
 	if landing == null or plane == null: return
-	if riding() and (not landing.on_ground() or not _held()): _leave()
+	if riding() and (not _down(landing) or not _held()): _leave()
 	if riding():
 		var xf: Transform3D = car.xf
 		landing.carried(xf*_local,angle_difference(float(plane.heading),_yaw(xf)+_turn))
@@ -110,11 +125,11 @@ func after(_delta: float) -> void:
 	var landing = game.get("hand_landing")
 	var plane = game.get("plane")
 	if landing == null or plane == null: return
-	var on := {} if not landing.on_ground() else _over(plane.position,0.0)
+	var on := {} if not _down(landing) else _over(plane.position,0.0)
 	if on.is_empty():
 		_leave()
 		return
-	var still := riding() and is_same(on.car,car) and int(landing.phase) == ManualLanding.STOPPED
+	var still := riding() and is_same(on.car,car) and int(landing.phase) in [ManualLanding.STOPPED,ManualLanding.EXIT,ManualLanding.OUT]
 	if not is_same(on.car,car):
 		if riding(): _leave()
 		rides += 1
@@ -162,6 +177,10 @@ func blocked(p: Vector3) -> bool:
 			var dz := maxf(0.0,maxf(b.position.z-l.z,l.z-b.end.z))
 			if dx*dx+dz*dz <= pad*pad: return true
 	return false
+
+## On its wheels: rolling, stood still, or the pilot getting out or out.
+static func _down(landing: Variant) -> bool:
+	return landing.on_ground() or landing.done()
 
 ## The car ridden still there: its train built and solid.
 func _held() -> bool:
@@ -225,16 +244,17 @@ static func _yaw(xf: Transform3D) -> float:
 
 ## The quick start --rail-start=ride on `line` (RailLine) with the line's
 ## timetables `tables` (RailTrains `line_tables`): sat on train 0's car of kind
-## RIDE_KIND with the lowest cars either side (`_ride_car`), its nose at
-## RIDE_STOP, RIDE_SIT s before it pulls out. {at (Vector2, x z: the deck's
-## middle), heading (the car's way), y (the deck's top, world), clock (s), s
-## (the car's middle), car (its number), ground (Callable(Vector2) -> float: the
-## deck's height at a world x z, for PlaneStrip `rest`)}; {} if the line lacks
-## the stop or the train the kind.
+## RIDE_KIND (--ride-car=) with the lowest cars either side (`_ride_car`), its
+## nose at RIDE_STOP, RIDE_SIT s before it pulls out (or --ride-at= s on from
+## that). {at (Vector2, x z: the deck's middle), heading (the car's way), y (the
+## deck's top, world), clock (s), s (the car's middle), car (its number), ground
+## (Callable(Vector2) -> float: the deck's height at a world x z, for PlaneStrip
+## `rest`)}; {} if the line lacks the stop or the train the kind.
 static func line_start(line: RefCounted, tables: Array) -> Dictionary:
 	var t0: RefCounted = tables[0]
 	var st: Dictionary = line.piece(RIDE_STOP)
-	var pick := _ride_car()
+	var pick := _ride_car(kind_flag())
+	if pick.is_empty(): push_warning("--ride-car=%s: no car of that kind with a top between two others" % kind_flag())
 	if st.is_empty() or pick.is_empty(): return {}
 	# Track 0's nose halts half a train past the station's s (RailTrains `line_tables`).
 	var nose := float(st.s0)+RailTrain.length_of()*0.5
@@ -244,8 +264,7 @@ static func line_start(line: RefCounted, tables: Array) -> Dictionary:
 		var off := absf(wrapf(float(t0.stop_s[k])-nose,-n*0.5,n*0.5))
 		if i < 0 or off < absf(wrapf(float(t0.stop_s[i])-nose,-n*0.5,n*0.5)): i = k
 	if i < 0: return {}
-	var clock := float(t0.time_at(float(t0.stop_s[i])))+float(t0.wait(i))-RIDE_SIT
-	if clock < 0.0: clock += float(t0.period)
+	var clock := fposmod(float(t0.time_at(float(t0.stop_s[i])))+float(t0.wait(i))-RIDE_SIT+at_flag(),float(t0.period))
 	var xf := car_xf(line,t0,0,float(t0.at(clock).d),float(pick.front),float(pick.long))
 	var top := float(pick.top)
 	var deck := xf*Vector3(0.0,top,0.0)
@@ -255,17 +274,29 @@ static func line_start(line: RefCounted, tables: Array) -> Dictionary:
 		"s":float(t0.s_of(float(t0.at(clock).d)-float(pick.front)-float(pick.long)*0.5)),"car":int(pick.i),
 		"ground":func(p: Vector2) -> float: return deck.y-(up.x*(p.x-deck.x)+up.z*(p.y-deck.z))/up.y}
 
-## Train 0's car to sit on for the quick start: of kind RIDE_KIND, the one with
+## --ride-car=<kind>: the kind of car the ride start sits on, else RIDE_KIND.
+static func kind_flag() -> String:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--ride-car="): return a.trim_prefix("--ride-car=")
+	return RIDE_KIND
+
+## --ride-at=<s>: the ride start that many seconds on from its sit (0).
+static func at_flag() -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--ride-at="): return a.trim_prefix("--ride-at=").to_float()
+	return 0.0
+
+## Train 0's car to sit on for the quick start: of kind `kind`, the one with
 ## the lowest cars either side (the first of those), so the view isn't walled
 ## in: {i, front (m from the nose), long, top (its deck, local y)}, or {}.
-static func _ride_car() -> Dictionary:
+static func _ride_car(kind := RIDE_KIND) -> Dictionary:
 	var cars: Array = RailTrain.CARS
 	var best := {}
 	var low := INF
 	var front := 0.0
 	for i in range(cars.size()):
 		var c: Array = cars[i]
-		if str(c[0]) == RIDE_KIND and i > 0 and i < cars.size()-1:
+		if str(c[0]) == kind and i > 0 and i < cars.size()-1:
 			var by := float(cars[i-1][2])+float(cars[i+1][2])
 			if by < low:
 				var boxes: Array = []

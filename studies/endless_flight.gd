@@ -1502,7 +1502,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"rumble")
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
 	FrameLog.mark(&"sound")
-	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
+	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane,hand_landing.under)
 	ground_scale.apply(plane_figure)
 	ground_scale.hold_spin(plane_figure,plane)
 	if water != null: water.shake_figure(plane_figure)
