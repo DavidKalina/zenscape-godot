@@ -37,6 +37,19 @@ const LOOK_YAW_MAX := 2.0
 const LOOK_UP_MAX := 0.75
 const LOOK_DOWN_MAX := 0.6
 
+## The feet on the real land (the clips plant on a flat floor): the legs,
+## each [upper, middle, lower] (the lower and the hoof keep their turn; the
+## upper two bend so the lower's top moves by the ground's offset at the
+## hoof), fore left, fore right, hind left, hind right.
+const LEGS := [["upper_l","fore_l","cannon_l","hoof_l"],["upper_r","fore_r","cannon_r","hoof_r"],
+	["thigh_l","shin_l","hcannon_l","hhoof_l"],["thigh_r","shin_r","hcannon_r","hhoof_r"]]
+## The body pitched to the land's fall from hind hooves to fore at most this
+## (rad), eased in at PITCH_RATE (1/s); each foot moved at most FOOT_REACH
+## (spans) off the pitched floor.
+const PITCH_MAX := 0.45
+const PITCH_RATE := 10.0
+const FOOT_REACH := 0.3
+
 ## Detail by the camera's distance, in spans (the elk scales with the span,
 ## so each cut falls at the same size on screen; at 1440x900 and the flight's
 ## field of view an elk is about 9 px tall at NEAR, 3.5 at MID, 2 at FINE,
@@ -85,6 +98,8 @@ static var _view_frame := -1
 static var _view_cam := 0
 ## Spreads the far elk's posing over the frames.
 static var _count := 0
+## The land asked for under the feet, every elk, since start (for drivers).
+static var ground_asks := 0
 
 var variant := "cow"
 var clip := ""
@@ -120,6 +135,12 @@ var _owed_play := 0.0
 ## The look is laid on the bones now; past FINE (no shadow, no dust).
 var _looked := false
 var _fine := true
+## The land (anything with height(x, z)), or null: the clips' flat floor.
+var _ground: Object
+var _pitch := 0.0
+var _pitch_set := false
+## Each leg's bone indices, and its two upper bones' lengths (skeleton units).
+var _legs: Array = []
 
 func _init() -> void:
 	_load_shared()
@@ -152,6 +173,13 @@ func _init() -> void:
 	_gaze_local = (head_rest.basis.inverse()*Vector3.FORWARD).normalized()
 	var eye := _sockets.get("head") as Node3D
 	if eye != null: _eye_local = eye.position
+	for names: Array in LEGS:
+		var idx: Array[int] = []
+		for n: String in names: idx.append(_skel.find_bone(n))
+		if -1 in idx: continue
+		var r: Array[Transform3D] = []
+		for i in idx: r.append(_skel.get_bone_global_rest(i))
+		_legs.append({"idx":idx,"l1":r[0].origin.distance_to(r[1].origin),"l2":r[1].origin.distance_to(r[2].origin)})
 	set_variant(variant)
 
 func _ready() -> void:
@@ -209,6 +237,12 @@ func set_variant(name: String) -> void:
 func set_effect(name: String, on: bool) -> void:
 	_effects[name] = on
 
+## The land the feet stand on (asks `height(x, z)`); the mind hands it over
+## at spawn. Without it the elk stands on the clips' flat floor.
+func set_ground(field: Object) -> void:
+	_ground = field
+	_pitch_set = false
+
 ## Turns the neck and head toward `target` (world) by `weight` (0 to 1),
 ## laid over the clip.
 func look_at_world(target: Vector3, weight: float) -> void:
@@ -258,6 +292,7 @@ func _due() -> bool:
 ## ran at over it), the clip's neck and head kept, and the look laid over
 ## them.
 func _advance() -> void:
+	var dt := _owed
 	if _owed > 0.0:
 		_ap.speed_scale = _owed_play/_owed
 		_ap.advance(_owed)
@@ -266,6 +301,7 @@ func _advance() -> void:
 		_ap.advance(0.0)
 	_owed = 0.0
 	_owed_play = 0.0
+	_fit_ground(dt)
 	for k in range(_look_idx.size()):
 		_look_rot[k] = _skel.get_bone_pose_rotation(_look_idx[k])
 	_looked = false
@@ -336,7 +372,10 @@ func _pose_look() -> void:
 	var gaze := head.basis*_gaze_local
 	var want_yaw := clampf(atan2(-to.x,-to.z),-LOOK_YAW_MAX,LOOK_YAW_MAX)
 	var want_pitch := clampf(atan2(to.y,maxf(Vector2(to.x,to.z).length(),1e-4)),-LOOK_DOWN_MAX,LOOK_UP_MAX)
-	var gaze_yaw := atan2(-gaze.x,-gaze.z)
+	# A gaze near straight down (the graze, the alert's lift) has no yaw to
+	# speak of: read as the body's, so the turn can't swing with its noise.
+	var level := Vector2(gaze.x,gaze.z).length()
+	var gaze_yaw := atan2(-gaze.x,-gaze.z)*smoothstep(0.2,0.55,level)
 	var gaze_pitch := atan2(gaze.y,maxf(Vector2(gaze.x,gaze.z).length(),1e-4))
 	var turn := wrapf(want_yaw-gaze_yaw,-PI,PI)*_look_weight
 	var nod := (want_pitch-gaze_pitch)*_look_weight
@@ -349,6 +388,76 @@ func _pose_look() -> void:
 		var right := Vector3(cos(yaw),0.0,-sin(yaw))
 		var b := Basis(right,nod*float(LOOK_PITCH_SHARE[k]))*Basis(Vector3.UP,turn*float(LOOK_YAW_SHARE[k]))*own.basis
 		_skel.set_bone_pose_rotation(i,(parent.basis.inverse()*b).get_rotation_quaternion())
+
+# --- The feet on the land -------------------------------------------------
+
+## The clip's pose stood on the land: the land under each hoof asked once;
+## the body pitched to the fall from the hind pair to the fore (eased in);
+## then each leg bent so its hoof keeps the clip's height over the land
+## there, not over the pitched floor (a side slope, a hump, a dip).
+func _fit_ground(dt: float) -> void:
+	if _ground == null or _legs.is_empty() or not is_inside_tree(): return
+	var me := global_transform
+	var fwd := -me.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 1e-6: return
+	fwd = fwd.normalized()
+	var skel_x := _skel.global_transform
+	var land: Array[float] = []
+	var along: Array[float] = []
+	for leg: Dictionary in _legs:
+		var hoof := skel_x*_skel.get_bone_global_pose(int(leg.idx[3])).origin
+		ground_asks += 1
+		land.append(float(_ground.call("height",hoof.x,hoof.z))-me.origin.y)
+		along.append((hoof-me.origin).dot(fwd))
+	var fore := (along[0]+along[1])*0.5
+	var hind := (along[2]+along[3])*0.5
+	var want := 0.0
+	if fore-hind > 0.01:
+		want = clampf(atan2((land[0]+land[1])*0.5-(land[2]+land[3])*0.5,fore-hind),-PITCH_MAX,PITCH_MAX)
+	_pitch = want if not _pitch_set else lerpf(_pitch,want,1.0-exp(-PITCH_RATE*maxf(dt,0.0)))
+	_pitch_set = true
+	var s := WorldScale.span
+	_model.transform = Transform3D(Basis(Vector3.RIGHT,_pitch).scaled(Vector3.ONE*s),Vector3.ZERO)
+	skel_x = _skel.global_transform
+	var to_skel := skel_x.basis.inverse()
+	var slope := tan(_pitch)
+	for k in range(_legs.size()):
+		var off := clampf(land[k]-along[k]*slope,-FOOT_REACH*s,FOOT_REACH*s)
+		if absf(off) < 0.005: continue
+		_bend_leg(_legs[k],to_skel*Vector3(0.0,off,0.0))
+
+## One leg bent (two-bone, in its own bend plane) so the top of its lower
+## bone moves by `shift` (skeleton space); the lower bone keeps its turn.
+func _bend_leg(leg: Dictionary, shift: Vector3) -> void:
+	var idx: Array[int] = leg.idx
+	var g0 := _skel.get_bone_global_pose(idx[0])
+	var g1 := _skel.get_bone_global_pose(idx[1])
+	var g2 := _skel.get_bone_global_pose(idx[2])
+	var a := g0.origin
+	var b := g1.origin
+	var c := g2.origin
+	var l1 := float(leg.l1)
+	var l2 := float(leg.l2)
+	var t := c+shift
+	var reach := t-a
+	var d := clampf(reach.length(),absf(l1-l2)+1e-4,(l1+l2)*0.999)
+	var dir := reach.normalized()
+	# The bend's side: where the middle joint stands off the reach now.
+	var side := (b-a)-dir*(b-a).dot(dir)
+	if side.length_squared() < 1e-10: side = g0.basis.z
+	side = side.normalized()
+	var x := (d*d+l1*l1-l2*l2)/(2.0*d)
+	var b2 := a+dir*x+side*sqrt(maxf(l1*l1-x*x,0.0))
+	var t2 := a+dir*d
+	var r0 := Quaternion(((b-a).normalized()),(b2-a).normalized())
+	var n0 := Basis(r0)*g0.basis
+	var r1 := Quaternion(((c-b).normalized()),(t2-b2).normalized())
+	var n1 := Basis(r1)*g1.basis
+	var p0 := _skel.get_bone_global_pose(_skel.get_bone_parent(idx[0]))
+	_skel.set_bone_pose_rotation(idx[0],(p0.basis.inverse()*n0).get_rotation_quaternion())
+	_skel.set_bone_pose_rotation(idx[1],(n0.inverse()*n1).get_rotation_quaternion())
+	_skel.set_bone_pose_rotation(idx[2],(n1.inverse()*g2.basis).get_rotation_quaternion())
 
 # --- Dust ----------------------------------------------------------------
 
@@ -436,6 +545,10 @@ static func _load_shared() -> void:
 	_coat.vertex_color_use_as_albedo = true
 	_coat.roughness = 0.9
 	_coat.metallic_specular = 0.3
+	# Against the sun the coat would go near black (the flight's shade is
+	# dim for a plain material): a warm glow through the fur's edge.
+	_coat.backlight_enabled = true
+	_coat.backlight = Color(0.42,0.3,0.2)
 	_puff_mesh = QuadMesh.new()
 	_puff_mesh.size = Vector2.ONE
 	_puff_mat = ShaderMaterial.new()
@@ -498,6 +611,9 @@ void fragment() {
 	fleck *= step(-0.3, d) * (1.0 - smoothstep(0.25, 0.7, age)) * (1.0 - body);
 	NORMAL = normalize(n / max(wsum, 1e-4) + vec3(0.0, 0.0, 0.35));
 	ALBEDO = mix(dust, grass, fleck);
+	// Dust lets the sun through: against the light it glows, not goes black.
+	BACKLIGHT = ALBEDO * 0.9;
+	EMISSION = ALBEDO * 0.12;
 	ROUGHNESS = 1.0;
 	ALPHA = max(body * 0.88, fleck) * (1.0 - smoothstep(0.5, 1.0, age));
 }

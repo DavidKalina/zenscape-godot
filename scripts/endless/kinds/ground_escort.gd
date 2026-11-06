@@ -7,7 +7,8 @@ extends Node3D
 ## The herd is this node, placed at the site's foot by the placed sites
 ## (scripts/endless/placed_sites.gd), -Z its heading (down the meadow); the
 ## animals are its children, each a body behind the contract's API
-## (scripts/endless/kinds/escort_standin.gd, the stand-in), standing in the
+## (scripts/endless/world/wilderness/elk_body.gd, the elk; its stand-in
+## scripts/endless/kinds/escort_standin.gd), standing in the
 ## world's frame (top_level) on the land under them.
 ##
 ## The plane flown over high or slow: the near ones lift their heads and
@@ -29,8 +30,8 @@ const Marker = preload("res://scripts/endless/kinds/marker.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SELF := "res://scripts/endless/kinds/ground_escort.gd"
-## The bodies by skin; the stand-in until the real elk is in.
-const BODIES := {"elk": "res://scripts/endless/kinds/escort_standin.gd"}
+## The bodies by skin. --elk-body=standin: the stand-in for every skin.
+const BODIES := {"elk": "res://scripts/endless/world/wilderness/elk_body.gd"}
 const STANDIN := "res://scripts/endless/kinds/escort_standin.gd"
 
 ## The herd's knobs. Lengths in metres unless named in body lengths (BL).
@@ -286,7 +287,9 @@ func _spawn(s: Dictionary) -> void:
 	var bulls := rng.randi_range(int(KNOBS.bulls_min),int(KNOBS.bulls_max))
 	var skin := str(s.get("skin",""))
 	if not BODIES.has(skin): push_warning("ground_escort %s: no body for skin '%s', the stand-in" % [s.get("handle","?"),skin])
-	var body_script: GDScript = load(BODIES.get(skin,STANDIN))
+	var body_path: String = BODIES.get(skin,STANDIN)
+	if LaunchArgs.user_args().has("--elk-body=standin"): body_path = STANDIN
+	var body_script: GDScript = load(body_path)
 	var spots: Array[Vector3] = []
 	var apart := float(KNOBS.apart_bl)*bl
 	var tries := 0
@@ -308,6 +311,8 @@ func _spawn(s: Dictionary) -> void:
 		body.top_level = true
 		var variant := "bull" if i < bulls else "cow"
 		body.call("set_variant",variant)
+		# A body that stands its feet on the land asks it (the real elk).
+		if field != null and body.has_method("set_ground"): body.call("set_ground",field)
 		body.transform = Transform3D(Basis(Vector3.UP,yaw),world)
 		add_child(body)
 		var rate := rng.randf_range(float(KNOBS.graze_rate_min),float(KNOBS.graze_rate_max))
