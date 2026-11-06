@@ -8,7 +8,9 @@ extends Node3D
 ## about.
 ##
 ## The towns stand where the stations are (tools/rail_line.py put each
-## station on the nearest 160 m of plain bed to its map place): each street
+## station on the nearest 160 m of plain bed to its map place); the
+## platforms grow from there along the plain bed to the train's length
+## (`platform`), and the trains stop along them: each street
 ## is placed by hand in the station's frame (STOPS: `head` along s and
 ## across, `turn` off the line), on the flattest dry ground beside it. Mine
 ## town's street runs along the bench of the hill over its station, 10 m
@@ -43,12 +45,20 @@ const RailTrack = preload("res://scripts/endless/rail_track.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const RailTrain = preload("res://scripts/endless/rail_train.gd")
 
 const LAYER := 1
 const VISIBLE := 6000.0
-## The platforms: s either side of the station (the tool's PLATFORM, the
-## plain bed it found), their top over the bed (a car's floor is 1.4), the
-## room left to a car's side, how far out they reach, the boxes' length.
+## The platforms (`platform`): as long as the train and PLATFORM_PAST m
+## past each end, as near centred on the station as the plain bed allows
+## (no tunnel, trestle or bridge within PLATFORM_CLEAR m: clear of a
+## span's abutment and a portal's face); their top over the bed (a car's
+## floor is 1.4), the room left to a car's side, how far out they reach,
+## the boxes' length (at most). PLATFORM_HALF: s either side of the
+## station the tool found plain (its PLATFORM), where the cattle pens stand
+## back from.
+const PLATFORM_PAST := 6.0
+const PLATFORM_CLEAR := 6.0
 const PLATFORM_HALF := 80.0
 const PLATFORM_TOP := 1.1
 const PLATFORM_ROOM := 0.4
@@ -258,18 +268,42 @@ static func _faced(p: Dictionary, n: Vector2, storeys: int, door := true) -> Dic
 static func _trim(col: Color) -> Color:
 	return TRIM_LIGHT if col.get_luminance() < 0.6 else TRIM_DARK
 
-## The platforms (either side, along the curve in PLATFORM_STEP boxes), the
-## house on the town side, the water tower on the other.
+## A stop's platforms along s at the station's `s`: Vector2(from, to), s
+## unwrapped round `s`. As long as the train (RailTrain.length_of()) and
+## PLATFORM_PAST m past each end, centred on the station where the plain
+## bed reaches that far each side, else slid along it, else the whole of
+## the plain bed round the station (no span or tunnel within
+## PLATFORM_CLEAR m of an end). The trains stop centred on it
+## (rail_trains.gd `line_tables`).
+static func platform(ln: RefCounted, s: float) -> Vector2:
+	var want := RailTrain.length_of()+2.0*PLATFORM_PAST
+	var n := float(ln.length())
+	var lo := s-want
+	var hi := s+want
+	for st: Array in ln.spans()+ln.stretches("tunnel"):
+		for wrap: float in [-n,0.0,n]:
+			var a := float(st[0])+wrap
+			var b := float(st[1])+wrap
+			if b <= s: lo = maxf(lo,b+PLATFORM_CLEAR)
+			elif a >= s: hi = minf(hi,a-PLATFORM_CLEAR)
+	var long := minf(want,hi-lo)
+	var mid := clampf(s,lo+long*0.5,hi-long*0.5)
+	return Vector2(mid-long*0.5,mid+long*0.5)
+
+## The platforms (either side, along the curve in boxes of at most
+## PLATFORM_STEP), the house on the town side, the water tower on the other.
 static func _station(ln: RefCounted, s: float, side: float, parts: Array) -> void:
 	var inner := float(ln.track_gap())*0.5+RailLine.CAR_WIDTH*0.5+PLATFORM_ROOM
-	var n := ceili(PLATFORM_HALF*2.0/PLATFORM_STEP)
+	var span := platform(ln,s)
+	var n := ceili((span.y-span.x)/PLATFORM_STEP)
+	var step := (span.y-span.x)/n
 	for k in n:
-		var sm := s-PLATFORM_HALF+(k+0.5)*PLATFORM_STEP
+		var sm := span.x+(k+0.5)*step
 		var fr := _frame(ln,sm)
 		# On a curve the outer edge runs longer than s: each box reaches its
 		# neighbours there (the inner side overlaps a little).
-		var bend := absf(_frame(ln,sm-PLATFORM_STEP*0.5)[1].angle_to(_frame(ln,sm+PLATFORM_STEP*0.5)[1]))
-		var along := PLATFORM_STEP*0.5+PLATFORM_OUT*bend*0.5+0.05
+		var bend := absf(_frame(ln,sm-step*0.5)[1].angle_to(_frame(ln,sm+step*0.5)[1]))
+		var along := step*0.5+PLATFORM_OUT*bend*0.5+0.05
 		for sd: float in [-1.0,1.0]:
 			var c: Vector2 = fr[0]+fr[2]*sd*(inner+PLATFORM_OUT)*0.5
 			parts.append(_part(c,fr[2],(PLATFORM_OUT-inner)*0.5,along,BED,sm,-INF,PLATFORM_TOP,PLATFORM_C))
@@ -358,8 +392,9 @@ static func _elevator(ln: RefCounted, s: float, fr: Array, side: float, parts: A
 	parts.append(_faced(_part(b,sf[2],7.0,6.0,BED,s+a,-INF,12.0,ELEVATOR_C,false,true),-away,1))
 	parts.append(_part(b,sf[2],7.5,6.5,BED,s+a,12.0,12.6,ROOF_C,true))
 
-## The cattle pens along the line short of the platform's start on the town
-## side (past its end a creek crosses): a grid of low rail fences.
+## The cattle pens along the line on the town side, PLATFORM_HALF m and
+## more back from the station (past the platform's far end a creek
+## crosses): a grid of low rail fences, out past the platform.
 static func _pens(ln: RefCounted, s: float, fr: Array, side: float, parts: Array) -> void:
 	const PEN := 20.0
 	const ROWS := 2
@@ -377,10 +412,11 @@ static func _pens(ln: RefCounted, s: float, fr: Array, side: float, parts: Array
 	for k in COLS+1:
 		var c := o+along*k*PEN+away*PEN*ROWS*0.5
 		parts.append(_part(c,sf[2],PEN*ROWS*0.5,RAIL*0.5,GROUND,0.0,-INF,HIGH,TIMBER_C))
-	# The loading chute up to a car's floor by the platform's start.
+	# The loading chute up to a car's floor at the pens' near end, beside the
+	# platform's outer edge.
 	var cs := s-PLATFORM_HALF-4.0
 	var cf := _frame(ln,cs)
-	var ch: Vector2 = cf[0]+cf[2]*side*(PLATFORM_OUT-1.0)
+	var ch: Vector2 = cf[0]+cf[2]*side*(PLATFORM_OUT+3.0)
 	parts.append(_part(ch,cf[2],3.0,3.0,BED,cs,-INF,PLATFORM_TOP+0.3,TIMBER_C.darkened(0.1)))
 
 ## The mine's headframe up the hill behind the town: four legs a bay

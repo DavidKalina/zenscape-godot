@@ -30,7 +30,8 @@ extends Node3D
 ##
 ## The line (`on_line`, seed 1's railroad, RailLine; the timetables
 ## `line_tables`): train 0 on track 0 (+s) and train 1 on track 1 (-s) stop at
-## the four stops (LINE_STOPS, a train's middle on the station's s) and wait
+## the four stops (LINE_STOPS, a train's middle on the middle of the
+## station's platforms, RailStops `platform`) and wait
 ## each one's dwell, their laps held to one period, so they pass each other in
 ## the same two places every lap: their noses meet mid west tunnel (LINE_TUNNEL,
 ## head on in the dark) and, by the dwells (long at the mine and cattle towns,
@@ -53,6 +54,7 @@ extends Node3D
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
+const RailStops = preload("res://scripts/endless/rail_stops.gd")
 
 const TRAINS := 2
 ## Built within LOOK_NEAR m of the plane, freed past LOOK_FAR; solid within
@@ -87,26 +89,32 @@ const LINE_BRIDGE := 17316.0
 ## (the land hides it all within 50 degrees of the nose, flown straight at 45
 ## or 100 m), so the first minute's trains are the bridge's: on the plane's
 ## left, 0.8-1.1 km off, train 0 coming over from the cattle plain, train 1
-## out of the start station; both on the bridge from about 10 s to 70 s, the
-## pass itself (noses to tails) 35-43 s.
+## out of the start station (its tail still along the platform at the
+## takeoff); both on the bridge from about 10 s to 77 s, the pass itself
+## (noses meet to tails clear, the 24 cars) 35-52 s.
 const LINE_MEET := 35.0
 ## The quick starts on the line (--rail-start=beside|tunnel|bridge,
 ## `line_start`): the plane RailTrain START_BACK m behind train 0's van, in
 ## the gap between the tracks, START_UP m over the rails (over the low zone,
 ## FlightWeight `low_spans`, so hands off it holds its height; at the test's
 ## 4 m it settles onto the deck in 2.5 s), flying its way at cruise, the clock
-## set to match (so they hold at any --train-speed=):
+## set to match: each puts the van in one place, so the plane starts there
+## at any --train-speed= and any train length:
 ## - beside: the van at START_BESIDE, where the farm plain's 2 km run to the
 ##   farm town starts, at full speed, train 1 far off on the cattle side: creep
 ##   up the train at cruise (about a minute to the engine, as it brakes into
 ##   the farm town), Boost to it;
-## - tunnel: START_BEFORE s before the noses meet mid west tunnel, at the farm
-##   mouth's trestle, 7 s short of the bore: train 0 goes in ahead on the
-##   right and train 1 comes at the plane head on in the dark;
-## - bridge: START_BEFORE s before the bay bridge's meeting, at its west end:
-##   between both trains on the deck.
+## - tunnel: the van START_MOUTH m short of the west tunnel's mouth, at the
+##   farm mouth's trestle, the plane 6 s short of the bore: train 0 goes in
+##   ahead on the right and train 1 comes at the plane head on in the dark
+##   (the noses meet mid tunnel 7 s in, train 1's meets the plane 15 s in, at
+##   32 m/s with the 24 cars);
+## - bridge: the van START_DECK m onto the bay bridge's west end: between both
+##   trains on the deck (the noses meet 7 s in, train 1's meets the plane 15
+##   s in).
 const START_BESIDE := 3800.0
-const START_BEFORE := 16.0
+const START_MOUTH := 194.0
+const START_DECK := 26.0
 const START_UP := 6.5
 
 var game: Node3D
@@ -163,14 +171,15 @@ static func line_start(line: RefCounted, which: String, top := RailTrain.SPEED) 
 	if tables.size() < 2 or (tables[0] as RefCounted).still(): return {}
 	var t0: RefCounted = tables[0]
 	var long := RailTrain.length_of()
-	var clock := 0.0
+	var van := 0.0
 	match which:
-		"beside": clock = float(t0.time_at(START_BESIDE+long))
-		"tunnel": clock = float(t0.time_at(LINE_TUNNEL))-START_BEFORE
-		"bridge": clock = float(line_meet(t0,tables[1],float(line.length())).get("time",LINE_MEET))-START_BEFORE
+		"beside": van = START_BESIDE
+		"tunnel": van = float(line.piece("rail/west-tunnel").get("s0",LINE_TUNNEL))-START_MOUTH
+		"bridge": van = float(line.piece("rail/bay-bridge").get("s0",LINE_BRIDGE))+START_DECK
 		_:
 			push_warning("--rail-start=%s: beside, tunnel or bridge" % which)
 			return {}
+	var clock := float(t0.time_at(van+long))
 	var s: float = t0.s_of(float(t0.at(clock).d)-long-RailTrain.START_BACK)
 	var x: Transform3D = line.pose(s,0)
 	var at := x.origin-x.basis.x*0.5*float(line.track_gap())+Vector3.UP*START_UP
@@ -189,8 +198,9 @@ func on_line(g: Node3D, line: RefCounted, on_clock: Callable) -> void:
 	refresh()
 
 ## The line's two timetables, [track 0's, track 1's], at `top` m/s: the
-## stops (each train's middle on the station's s: track 0's nose half a train
-## past it, track 1's half a train short), DWELL_MID -/+ `split` s at each
+## stops (each train's middle on the middle of the station's platforms,
+## RailStops `platform`: track 0's nose half a train past it, track 1's half
+## a train short), DWELL_MID -/+ `split` s at each
 ## (LINE_STOPS' signs; NAN: `line_split`'s), one period for both, the noses
 ## meeting at LINE_TUNNEL and the second meeting (`line_meet`) at clock `meet`
 ## (mod the period). Empty if the line lacks a stop.
@@ -204,8 +214,10 @@ static func line_tables(line: RefCounted, top := RailTrain.SPEED, meet := LINE_M
 		if p.is_empty():
 			push_warning("rail trains: no stop %s on the line" % str(st[0]))
 			return []
-		by_track[0].append(float(p.s0)+half)
-		by_track[1].append(float(p.s0)-half)
+		var pl: Vector2 = RailStops.platform(line,float(p.s0))
+		var mid := (pl.x+pl.y)*0.5
+		by_track[0].append(mid+half)
+		by_track[1].append(mid-half)
 		waits.append(maxf(DWELL_MID+float(st[1])*split,0.0))
 	var t0: RefCounted = Timetable.new(line,0,by_track[0],waits,top)
 	var t1: RefCounted = Timetable.new(line,1,by_track[1],waits,top)

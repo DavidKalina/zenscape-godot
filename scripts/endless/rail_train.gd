@@ -28,13 +28,25 @@ extends Node3D
 ## (the way the train runs), x to the right, y up. Cars sit between two bogies
 ## BOGIE m in from each end, each on the path, so a car on a curve cuts its chord.
 ##
-## The cars (CARS) alternate tall and low, so flying the length is a rhythm: pop
-## over a boxcar, dip over a flatcar or an open wagon. Two are flown through:
+## The cars (CARS: a mixed train, spec-steam-train.md's table, 24 cars) alternate
+## tall and low, so flying the length is a rhythm: pop over a boxcar, dip over a
+## flatcar or an open wagon. Most of the specials are flown across, each an
+## opening in the car's frame (`holes`, for the camera and the drivers):
 ## - the doors car, a boxcar with both doors slid open, its doorway an opening
 ##   (`door_wide` x `door_high`, WorldScale.opening of TOY_DOOR, TOY_DOOR_HIGH): a
 ##   slot across the car under its roof, flown side to side. Pace the train
 ##   (cruise, angled across it) and it is a straight slide through; across it
 ##   flat out the car moves `speed`/your speed of its width along while you pass.
+## - the stock car: the doors car's doorway in a slatted cattle car.
+## - the log car: two bundles on a flat, the gap between them (`log_gap`, of
+##   TOY_THREAD) open above, slotted across.
+## - the truss: a bridge truss section on a flat, the middle panel of either side
+##   truss open (`door_wide` x `truss_high`), flown across; the end panels closed.
+## - the crane's idler: the crane car's boom slung back over the flat behind it,
+##   `boom_low` over the bed, flown under across.
+## - the coaches' gap: each coach's ends open platforms under its roof's hoods,
+##   so two coaches coupled leave a doorway between their end walls (`platform`
+##   each, door_wide in all), over the railings, under the hoods (`door_high`).
 ## - the smash car, in the pirate ship's manner: a hollow car, its corridor an
 ##   opening (`smash_wide` x `smash_high`), shut at each end by a cracked plate,
 ##   each its own record in `loose` with a `strike` (SurgeSmash `_hit`). A surge
@@ -75,14 +87,24 @@ const UNDER := 2.0
 ## from its car's end.
 const GAP := 1.6
 const BOGIE := 3.0
-## The train, front to back: [kind, length, height over the bed] (m). The smash
+## The train, front to back: [kind, length, height over the bed] (m): a mixed
+## train, freight, then two coaches and the caboose (spec-steam-train.md's
+## table). The crane's idler (the flat behind it) is under its boom. The smash
 ## car has low cars either side: in over the flat behind it, out over the two
 ## ahead (a surge runs up the train at 40 m/s or more: one flat's length is half
-## a second to pull up over the boxcar past it, two give a second).
+## a second to pull up over the boxcar past it, two give a second); the two
+## ahead are a dip that works on Boost too.
 const CARS := [
 	["engine",22.0,8.5],["tender",12.0,6.0],
-	["box",24.0,9.0],["flat",20.0,2.6],["doors",24.0,9.0],["open",20.0,4.2],
-	["box",24.0,9.0],["flat",20.0,2.6],["flat",20.0,2.6],["smash",24.0,9.0],["flat",20.0,2.6],["van",14.0,7.5]]
+	["box",24.0,9.0],["logs",20.0,6.5],["doors",24.0,9.0],["open",20.0,4.2],
+	["stock",24.0,9.0],["flat",20.0,2.6],["box",24.0,9.0],["truss",24.0,8.5],
+	["flat",20.0,2.6],["doors",24.0,9.0],["crane",20.0,9.0],["flat",20.0,2.6],
+	["stock",24.0,9.0],["logs",20.0,6.5],["box",24.0,9.0],["flat",20.0,2.6],
+	["flat",20.0,2.6],["smash",24.0,9.0],["flat",20.0,2.6],["coach",24.0,8.5],
+	["coach",24.0,8.5],["van",14.0,7.5]]
+## A flatcar's deck (m over the bed): its height, and what the log bundles and
+## the crane stand on.
+const DECK := 2.6
 ## The open wagon's load heaped over its sides (m), inset from them by HEAP_IN of
 ## its width and length.
 const HEAP := 0.8
@@ -94,6 +116,37 @@ const TOY_DOOR := 5.0
 const TOY_DOOR_HIGH := 3.0
 const JAMB_LEAST := 2.0
 const HEAD_LEAST := 0.6
+## The stock car's slats: the dark gaps between them, every SLAT m up its walls
+## (drawn only: the walls are solid, not flown between the slats).
+const SLAT := 0.75
+## The log car's gap between its two bundles, along the car: the thread's toy
+## width (WorldScale.opening: 7 m at the defaults), each bundle at least
+## BUNDLE_LEAST m long and LOG_IN m in from the car's ends.
+const TOY_THREAD := 3.5
+const BUNDLE_LEAST := 3.0
+const LOG_IN := 0.3
+## The truss on its flat: each side truss TRUSS_SIDE m thick in from the car's
+## side and TRUSS_IN m in from its ends, its chords CHORD m deep. Its middle panel
+## (door_wide along, `truss_high` up from the deck to the top chord) is open
+## either side; the end panels are closed (a lattice too fine to fly, drawn as a
+## plate with its braces). Its flat's deck is lowered to fit the opening under
+## the car's top (`truss_floor`), at least TRUSS_DECK_LEAST over the floor.
+const TRUSS_SIDE := 0.5
+const TRUSS_IN := 0.6
+const CHORD := 0.4
+const TRUSS_DECK_LEAST := 0.3
+## The wrecking crane: its boom BOOM_WIDE across, slung back from its gantry over
+## the car behind (its idler) BOOM_OVER m past the crane's end, under the car's
+## top; under it over the idler's deck at least the door's height clear
+## (`boom_low`), and at least BOOM_LEAST m of boom.
+const BOOM_WIDE := 1.6
+const BOOM_OVER := 14.0
+const BOOM_LEAST := 0.3
+## The coaches: each end an open platform (`platform` m, so two coupled leave
+## door_wide between their end walls), under a hood of the roof HOOD m deep; its
+## railings RAIL_BAR m thick, their top the opening's floor (`coach_rail`).
+const HOOD := 0.4
+const RAIL_BAR := 0.15
 ## The smash car's corridor: toy widths (5.2 m wide, 7 m high at the defaults),
 ## the least of its walls (m), its plates' thickness (m), how near a plate still
 ## shut a touch is the plate's (graded, not glanced; m), and how far off the plane
@@ -136,7 +189,11 @@ const LOOKS := {
 	"box":Color(0.55,0.25,0.17), "flat":Color(0.45,0.37,0.28), "van":Color(0.62,0.2,0.14),
 	"load":Color(0.2,0.19,0.18), "open":Color(0.35,0.3,0.24), "door":Color(0.42,0.18,0.12),
 	"inside":Color(0.22,0.16,0.11), "smash":Color(0.6,0.52,0.4), "plate":Color(0.72,0.67,0.56),
-	"crack":Color(1.0,0.45,0.1)}
+	"crack":Color(1.0,0.45,0.1), "stock":Color(0.5,0.27,0.16), "slat":Color(0.12,0.08,0.06),
+	"logs":Color(0.58,0.42,0.26), "bark":Color(0.3,0.2,0.12), "stake":Color(0.36,0.28,0.2),
+	"truss":Color(0.3,0.33,0.34), "brace":Color(0.18,0.2,0.21), "crane":Color(0.24,0.2,0.18),
+	"boom":Color(0.62,0.5,0.22), "coach":Color(0.13,0.34,0.2), "gold":Color(0.85,0.65,0.22),
+	"roof":Color(0.17,0.16,0.16), "window":Color(0.08,0.09,0.1)}
 ## The looks that glow (their emission, over FILL's): the cracks, as the ship's.
 const GLOW := {"crack":2.5}
 
@@ -163,7 +220,10 @@ var jumps := 0
 ## record, records (its own and its plates'), boxes (its solid but its plates),
 ## all (and its plates still shut), plates ([{box, record, shape, look, open}]),
 ## inner (the smash car's corridor: Vector3(half width, floor, roof), else
-## absent), xf, inv, was (last frame's xf), was_inv}.
+## absent), holes (its openings flown across: [{box (local AABB), roofed (a
+## roof or boom over it)}]), half (the most its solid reaches from its middle
+## along it: the crane's boom reaches over the car behind), xf, inv, was (last
+## frame's xf), was_inv}.
 var cars: Array[Dictionary] = []
 ## The smash car's plates broken and put back (counted, for the drivers).
 var bursts := 0
@@ -403,7 +463,7 @@ func face(p: Vector3, reach: float) -> Vector3:
 	var got := Vector3.ZERO
 	for car: Dictionary in cars:
 		var xf: Transform3D = car.xf
-		if xf.origin.distance_to(p) > float(car.long)*0.5+NEAR+reach: continue
+		if xf.origin.distance_to(p) > float(car.half)+NEAR+reach: continue
 		var l: Vector3 = (car.inv as Transform3D)*p
 		for b: AABB in car.all:
 			var c := l.clamp(b.position,b.end)
@@ -435,7 +495,7 @@ func nearest(at: Vector3, reach: float) -> Dictionary:
 	var best := INF
 	var got := {}
 	for car: Dictionary in cars:
-		if (car.xf as Transform3D).origin.distance_to(at) > float(car.long)*0.5+NEAR+reach: continue
+		if (car.xf as Transform3D).origin.distance_to(at) > float(car.half)+NEAR+reach: continue
 		var l: Vector3 = (car.inv as Transform3D)*at
 		for b: AABB in car.all:
 			var d := Vector3(maxf(0.0,maxf(b.position.x-l.x,l.x-b.end.x)),maxf(0.0,maxf(b.position.y-l.y,l.y-b.end.y)),
@@ -461,7 +521,7 @@ func sight(from: Vector3, to: Vector3, pad := 0.0) -> float:
 	var mid := (from+to)*0.5
 	var half := from.distance_to(to)*0.5
 	for car: Dictionary in cars:
-		if (car.xf as Transform3D).origin.distance_to(mid) > float(car.long)*0.5+NEAR+half+pad: continue
+		if (car.xf as Transform3D).origin.distance_to(mid) > float(car.half)+NEAR+half+pad: continue
 		var inv: Transform3D = car.inv
 		var a := inv*from
 		var b := inv*to
@@ -490,21 +550,25 @@ static func _entry(a: Vector3, b: Vector3, box: AABB) -> float:
 	return t0
 
 ## The plane at world `p` in a car's hollow: the smash car's corridor (out to NEAR m
-## past its ends) or the doors car's doorway (out to NEAR m past its sides). The
-## chase camera is `tight` there, as in a bore (GlideCamera: it checks the way it
-## is easing round too, and may draw in to TIGHT_NEAR of `near`): a hollow's roof
-## and walls are nearer than `near`, the least it otherwise draws in to, so with
-## no clear way round it sat in them (the smash car's roof lip, climbing out of the
-## corridor 2.2 m off its middle).
+## past its ends) or an opening across with something over it (a doorway, the
+## coaches' gap, under the crane's boom: `holes` roofed, out to NEAR m past the
+## car's sides). The chase camera is `tight` there, as in a bore (GlideCamera: it
+## checks the way it is easing round too, and may draw in to TIGHT_NEAR of
+## `near`): a hollow's roof and walls are nearer than `near`, the least it
+## otherwise draws in to, so with no clear way round it sat in them (the smash
+## car's roof lip, climbing out of the corridor 2.2 m off its middle).
 func tight(p: Vector3) -> bool:
 	for car: Dictionary in cars:
 		var kind := str(car.kind)
-		if kind != "smash" and kind != "doors": continue
-		if (car.xf as Transform3D).origin.distance_to(p) > float(car.long)*0.5+NEAR*2.0: continue
+		if kind != "smash" and (car.holes as Array).is_empty(): continue
+		if (car.xf as Transform3D).origin.distance_to(p) > float(car.half)+NEAR*2.0: continue
 		var l: Vector3 = (car.inv as Transform3D)*p
 		if kind == "smash" and _in_corridor(car,l,NEAR): return true
-		if kind == "doors" and absf(l.z) < door_wide(float(car.long))*0.5 and l.y > FLOOR-0.5 \
-			and l.y < FLOOR+door_high(float(car.tall)) and absf(l.x) < WIDE*0.5+NEAR: return true
+		for hole: Dictionary in car.holes:
+			if not bool(hole.roofed): continue
+			var b: AABB = hole.box
+			if l.z > b.position.z and l.z < b.end.z and l.y > b.position.y-0.5 and l.y < b.end.y \
+				and absf(l.x) < WIDE*0.5+NEAR: return true
 	return false
 
 ## The velocity (m/s) of the point of `car` now at world `at`.
@@ -519,7 +583,7 @@ func keep_out() -> void:
 	var pad := float(game.solid_pad)
 	for car: Dictionary in cars:
 		var xf: Transform3D = car.xf
-		if xf.origin.distance_to(p) > float(car.long)*0.5+NEAR: continue
+		if xf.origin.distance_to(p) > float(car.half)+NEAR: continue
 		var l: Vector3 = (car.inv as Transform3D)*p
 		var lw: Vector3 = (car.was_inv as Transform3D)*p
 		var out := l
@@ -645,8 +709,14 @@ func _build(car: Dictionary, i: int) -> void:
 	var kind := str(car.kind)
 	var parts := _parts(kind,float(car.long),float(car.tall))
 	var boxes: Array[AABB] = []
-	for part: Array in parts.solid: boxes.append(part[0])
+	var half := float(car.long)*0.5
+	for part: Array in parts.solid:
+		var b: AABB = part[0]
+		boxes.append(b)
+		half = maxf(half,maxf(-b.position.z,b.end.z))
 	car.boxes = boxes
+	car.half = half
+	car.holes = parts.holes
 	var mi := MeshInstance3D.new()
 	mi.name = "Look"
 	mi.mesh = _look_of(car,parts)
@@ -696,7 +766,7 @@ func _solidify(car: Dictionary, i: int) -> void:
 	for box: AABB in car.boxes: body.add_child(_shape(box))
 	(car.node as Node3D).add_child(body)
 	car.body = body
-	var reach := float(car.long)*0.5+BoxSolid.grow_most()+2.0
+	var reach := float(car.half)+BoxSolid.grow_most()+2.0
 	var record := {"name":"%s/car%d" % [label,i],"kind":"train","node":car.node,"pos":Vector3.ZERO,"cos":1.0,"sin":0.0,
 		"xf":Transform3D.IDENTITY,"inv":Transform3D.IDENTITY,"solid":_solid_of(car.boxes),
 		"reach":reach,"spec":{},"no_break":true,"adopted":0}
@@ -778,9 +848,36 @@ static func smash_wide() -> float:
 static func smash_high(tall := 9.0) -> float:
 	return minf(WorldScale.opening(TOY_SMASH_HIGH),tall-FLOOR-HEAD_LEAST)
 
+## The log car's gap between its bundles (m, along the car).
+static func log_gap(long := 20.0) -> float:
+	return minf(WorldScale.opening(TOY_THREAD),long-2.0*(BUNDLE_LEAST+LOG_IN))
+
+## The truss car's deck (m over the bed: its opening's floor), and the opening's
+## height up to the top chord.
+static func truss_floor(tall := 8.5) -> float:
+	return maxf(FLOOR+TRUSS_DECK_LEAST,tall-CHORD-WorldScale.opening(TOY_DOOR_HIGH))
+
+static func truss_high(tall := 8.5) -> float:
+	return tall-CHORD-truss_floor(tall)
+
+## The crane's boom's underside (m over the bed): the door's height over the
+## idler's deck, under the car's top.
+static func boom_low(tall := 9.0) -> float:
+	return minf(DECK+WorldScale.opening(TOY_DOOR_HIGH),tall-BOOM_LEAST)
+
+## A coach's end platform (m along it), and its railings' top (m over the bed):
+## two coaches' platforms and the gap between them are the door's width, the
+## railings' top the door's height under the hoods.
+static func platform(long := 24.0) -> float:
+	return clampf((WorldScale.opening(TOY_DOOR)-GAP)*0.5,1.0,long*0.3)
+
+static func coach_rail(tall := 8.5) -> float:
+	return maxf(FLOOR+TRUSS_DECK_LEAST,tall-HOOD-WorldScale.opening(TOY_DOOR_HIGH))
+
 ## A car's blocks in its frame: {solid: [[AABB, look ("" not drawn)]], dress:
 ## [[AABB or Transform3D of a unit box, look]] drawn only, plates: [AABB] (the
-## smash car's, front then back)}. Every car has its underframe from UNDER under
+## smash car's, front then back), holes: [{box, roofed}] (its openings flown
+## across, as the car's `holes`)}. Every car has its underframe from UNDER under
 ## the bed to its floor; on it the kind's body. The underframe is drawn narrower
 ## than the car but is solid its whole width: a body standing out over it would be
 ## an overhang, and a plane flying low beside the car (its middle under the floor,
@@ -792,6 +889,7 @@ static func _parts(kind: String, long: float, tall: float) -> Dictionary:
 	var out: Array = [[_box(-w,-UNDER,-h,w,FLOOR,h),""]]
 	var dress: Array = [[_box(-w*0.9,-UNDER,-h,w*0.9,FLOOR,h),"under"]]
 	var plates: Array = []
+	var holes: Array = []
 	match kind:
 		"engine":
 			var cab := 7.0
@@ -813,23 +911,143 @@ static func _parts(kind: String, long: float, tall: float) -> Dictionary:
 			out.append([_box(-w*0.9,FLOOR,-h,w*0.9,tall-1.8,h),"van"])
 			out.append([_box(-w*0.55,tall-1.8,-2.0,w*0.55,tall,2.0),"van"])
 		"doors":
-			# A slot across the car under its roof: its walls fore and aft of the
-			# doorway, its roof over it, the floor its underframe's top.
+			holes.append(_doorway(out,dress,long,tall,"box"))
+		"stock":
+			# The doors car's doorway in a slatted car: the gaps between the slats
+			# drawn dark down both sides, over the doors slid open too.
+			holes.append(_doorway(out,dress,long,tall,"stock"))
 			var d := door_wide(long)*0.5
-			var top := FLOOR+door_high(tall)
-			out.append([_box(-w,FLOOR,-h,w,tall,-d),"box"])
-			out.append([_box(-w,FLOOR,d,w,tall,h),"box"])
-			out.append([_box(-w,top,-d,w,tall,d),"box"])
-			# Each side's doors slid open over the walls, a hair proud of them; the
-			# doorway's jambs and head lined dark, so it reads as the inside.
+			var y := FLOOR+SLAT
+			while y < tall-0.5:
+				for sx: float in [-1.0,1.0]:
+					var x0 := minf(sx*(w+0.04),sx*(w+0.07))
+					var x1 := maxf(sx*(w+0.04),sx*(w+0.07))
+					dress.append([_box(x0,y,-h,x1,y+0.14,-d),"slat"])
+					dress.append([_box(x0,y,d,x1,y+0.14,h),"slat"])
+				for sz: float in [-1.0,1.0]:
+					dress.append([_box(-w,y,sz*(h+0.02)-0.01,w,y+0.14,sz*(h+0.02)+0.01),"slat"])
+				y += SLAT
+		"logs":
+			# Two bundles chained on a flat, the gap between them open above: each
+			# solid its whole width (the stakes at its corners), the logs drawn
+			# inset, their rows lined dark, their ends pale on dark, chains over the top.
+			var g := log_gap(long)*0.5
+			out.append([_box(-w,FLOOR,-h,w,DECK,h),"flat"])
+			for zs: Vector2 in [Vector2(-h+LOG_IN,-g),Vector2(g,h-LOG_IN)]:
+				out.append([_box(-w,DECK,zs.x,w,tall,zs.y),""])
+				var lw := w*0.92
+				dress.append([_box(-lw,DECK,zs.x,lw,tall-0.12,zs.y),"logs"])
+				var rows := 3
+				for k in range(1,rows):
+					var ry := DECK+(tall-0.12-DECK)*float(k)/float(rows)
+					dress.append([_box(-lw-0.03,ry-0.07,zs.x,lw+0.03,ry+0.07,zs.y),"bark"])
+				# Each end dark, the logs' ends on it pale, four across, three up.
+				for ends: Vector2 in [Vector2(zs.x,-1.0),Vector2(zs.y,1.0)]:
+					var ez := ends.x+ends.y*0.02
+					dress.append([_box(-lw,DECK,ez-0.01,lw,tall-0.12,ez+0.01),"bark"])
+					var cell := Vector2(2.0*lw/4.0,(tall-0.12-DECK)/float(rows))
+					for kx in range(4):
+						for ky in range(rows):
+							var at := Vector2(-lw+cell.x*(float(kx)+0.5),DECK+cell.y*(float(ky)+0.5))
+							var off := 0.0 if ky % 2 == 0 else cell.x*0.12
+							var ez2 := ez+ends.y*0.02
+							dress.append([_box(at.x+off-cell.x*0.38,at.y-cell.y*0.38,ez2-0.01,at.x+off+cell.x*0.38,at.y+cell.y*0.38,ez2+0.01),"logs"])
+				for sx: float in [-1.0,1.0]:
+					for sz: float in [zs.x+0.35,zs.y-0.35]:
+						dress.append([_box(minf(sx*(w-0.26),sx*(w+0.02)),DECK,sz-0.18,maxf(sx*(w-0.26),sx*(w+0.02)),tall,sz+0.18),"stake"])
+				for t: float in [0.3,0.7]:
+					var cz := lerpf(zs.x,zs.y,t)
+					dress.append([_box(-lw,tall-0.14,cz-0.08,lw,tall,cz+0.08),"slat"])
+			holes.append({"box":_box(-w,DECK,-g,w,tall,g),"roofed":false})
+		"truss":
+			# A bridge truss section on a heavy flat (its deck lowered to fit the
+			# opening under the car's top): two side trusses, each a top chord over
+			# its end panels, closed, and its middle panel open; struts across the
+			# top over the middle panel's ends and the truss's ends.
+			var y0 := truss_floor(tall)
+			var top := tall-CHORD
+			var d := door_wide(long)*0.5
+			var tl := h-TRUSS_IN
+			out.append([_box(-w,FLOOR,-h,w,y0,h),"flat"])
 			for sx: float in [-1.0,1.0]:
-				var x0 := w-0.1 if sx > 0.0 else -w-0.04
-				var x1 := w+0.04 if sx > 0.0 else -w+0.1
-				dress.append([_box(x0,FLOOR,-d-minf(d,h-d-0.5),x1,top+0.3,-d),"door"])
-				dress.append([_box(x0,FLOOR,d,x1,top+0.3,d+minf(d,h-d-0.5)),"door"])
-			dress.append([_box(-w,FLOOR,-d,w,top,-d+0.03),"inside"])
-			dress.append([_box(-w,FLOOR,d-0.03,w,top,d),"inside"])
-			dress.append([_box(-w,top-0.03,-d,w,top,d),"inside"])
+				var x0 := w-TRUSS_SIDE if sx > 0.0 else -w
+				var x1 := w if sx > 0.0 else -w+TRUSS_SIDE
+				out.append([_box(x0,top,-tl,x1,tall,tl),"truss"])
+				out.append([_box(x0,y0,-tl,x1,top,-d),"truss"])
+				out.append([_box(x0,y0,d,x1,top,tl),"truss"])
+				# Its bottom chord along the deck's edge, and each end panel's posts
+				# and braces on both faces.
+				var fx := sx*(w+0.03)
+				dress.append([_box(minf(fx,sx*(w-TRUSS_SIDE-0.03)),y0-0.35,-tl,maxf(fx,sx*(w-TRUSS_SIDE-0.03)),y0+0.02,tl),"brace"])
+				for face: float in [sx*(w+0.03),sx*(w-TRUSS_SIDE-0.03)]:
+					for zs: Vector2 in [Vector2(-tl,-d),Vector2(d,tl)]:
+						for pz: float in [zs.x,zs.y]:
+							dress.append([_box(face-0.02,y0,clampf(pz-0.2,zs.x,zs.y-0.4),face+0.02,top,clampf(pz+0.2,zs.x+0.4,zs.y)),"brace"])
+						var mid := Vector3(face,(y0+top)*0.5,(zs.x+zs.y)*0.5)
+						for up: float in [-1.0,1.0]:
+							var run := Vector3(0.0,(top-y0)*up,zs.y-zs.x)
+							var along := run.normalized()
+							var across := Vector3(0.0,along.z,-along.y)
+							dress.append([Transform3D(Basis(Vector3(0.04,0.0,0.0),across*0.35,along*run.length()),mid),"brace"])
+			for zs: Vector2 in [Vector2(-d-0.4,-d),Vector2(d,d+0.4),Vector2(-tl,-tl+0.4),Vector2(tl-0.4,tl)]:
+				out.append([_box(-w+TRUSS_SIDE,top,zs.x,w-TRUSS_SIDE,tall,zs.y),"truss"])
+			holes.append({"box":_box(-w,y0,-d,w,top,d),"roofed":false})
+		"crane":
+			# A wrecking crane on a flat: its house, its stack, and over the house's
+			# back its gantry, the boom's foot between its posts, the boom slung
+			# back over the car behind (its idler), under the car's top.
+			var low := boom_low(tall)
+			var house := 7.2
+			var tip := h+GAP*0.5+BOOM_OVER
+			var bw := BOOM_WIDE*0.5
+			out.append([_box(-w,FLOOR,-h,w,DECK,h),"flat"])
+			out.append([_box(-w*0.85,DECK,-h+1.0,w*0.85,house,h-3.2),"crane"])
+			out.append([_box(-0.4,house,-h+2.2,0.4,house+1.2,-h+3.0),"iron"])
+			out.append([_box(-bw-0.7,house,h-4.2,-bw,tall,h-3.4),"iron"])
+			out.append([_box(bw,house,h-4.2,bw+0.7,tall,h-3.4),"iron"])
+			out.append([_box(-bw,house,h-4.2,bw,low,h-3.4),"iron"])
+			out.append([_box(-bw,low,h-4.2,bw,tall,tip),"boom"])
+			# The boom's lattice drawn dark along its sides, the house's windows.
+			var z := h-3.0
+			while z < tip-0.6:
+				for sx: float in [-1.0,1.0]:
+					dress.append([_box(sx*bw-0.02,low+0.06,z,sx*bw+0.02,tall-0.06,z+0.25),"brace"])
+				z += 1.4
+			for sx: float in [-1.0,1.0]:
+				dress.append([_box(sx*w*0.85-0.02,house-2.4,-h+2.0,sx*w*0.85+0.02,house-0.8,-h+4.5),"window"])
+				dress.append([_box(sx*w*0.85-0.02,house-2.4,h-6.6,sx*w*0.85+0.02,house-0.8,h-4.6),"window"])
+				dress.append([_box(sx*w*0.85-0.02,DECK,-1.2,sx*w*0.85+0.02,house-1.0,1.2),"inside"])
+			holes.append({"box":_box(-w,DECK,h-3.2,w,low,tip),"roofed":true})
+		"coach":
+			# A passenger coach, its ends open platforms under the hoods of its roof,
+			# railed round to the railings' top (the opening's floor); its belt line
+			# gold, its windows and end doors dark.
+			var pl := platform(long)
+			var rail := coach_rail(tall)
+			var eave := tall-HOOD
+			out.append([_box(-w,FLOOR,-h+pl,w,tall,h-pl),"coach"])
+			for e: float in [-1.0,1.0]:
+				var za := -h if e < 0.0 else h-pl
+				var zb := -h+pl if e < 0.0 else h
+				out.append([_box(-w,eave,za,w,tall,zb),"roof"])
+				out.append([_box(-w,FLOOR,za,-w+RAIL_BAR,rail,zb),"iron"])
+				out.append([_box(w-RAIL_BAR,FLOOR,za,w,rail,zb),"iron"])
+				var ze := -h if e < 0.0 else h-RAIL_BAR
+				out.append([_box(-w+RAIL_BAR,FLOOR,ze,w-RAIL_BAR,rail,ze+RAIL_BAR),"iron"])
+				dress.append([_box(-w,FLOOR-0.2,za,w,FLOOR+0.01,zb),"flat"])
+				var wall := -h+pl if e < 0.0 else h-pl
+				dress.append([_box(-0.9,FLOOR,wall-0.03,0.9,FLOOR+5.0,wall+0.03),"inside"])
+				var coupled := -h-GAP*0.5 if e < 0.0 else h+GAP*0.5
+				holes.append({"box":_box(-w,rail,minf(za,coupled),w,eave,maxf(zb,coupled)),"roofed":true})
+			dress.append([_box(-w-0.02,eave,-h+pl,w+0.02,tall+0.02,h-pl),"roof"])
+			dress.append([_box(-w-0.03,3.3,-h+pl,w+0.03,3.5,h-pl),"gold"])
+			dress.append([_box(-w-0.03,7.1,-h+pl,w+0.03,7.2,h-pl),"gold"])
+			var n := 6
+			var run := long-2.0*pl
+			for sx: float in [-1.0,1.0]:
+				for k in range(n):
+					var cz := -run*0.5+run*(float(k)+0.5)/float(n)
+					dress.append([_box(sx*w-0.03,4.3,cz-0.65,sx*w+0.03,6.6,cz+0.65),"window"])
 		"smash":
 			# A corridor down its length: its walls and roof, the floor its
 			# underframe's top, a plate at each end (records of their own).
@@ -848,7 +1066,31 @@ static func _parts(kind: String, long: float, tall: float) -> Dictionary:
 				for c: Array in SIDE_CRACKS:
 					var at := Vector3(sx*(w+0.04),FLOOR+(tall-FLOOR)*(0.5+float(c[1])),float(c[0])*h)
 					dress.append([Transform3D(Basis(Vector3.RIGHT,float(c[3]))*Basis.from_scale(Vector3(0.12,float(c[2])*(tall-FLOOR),0.35)),at),"crack"])
-	return {"solid":out,"dress":dress,"plates":plates}
+	return {"solid":out,"dress":dress,"plates":plates,"holes":holes}
+
+## A boxcar with both side doors slid open (the doors car, the stock car), its
+## walls in `look`, into `out` and `dress` (`_parts`): a slot across the car
+## under its roof, its walls fore and aft of the doorway, its roof over it, the
+## floor its underframe's top. Its hole, roofed.
+static func _doorway(out: Array, dress: Array, long: float, tall: float, look: String) -> Dictionary:
+	var h := long*0.5
+	var w := WIDE*0.5
+	var d := door_wide(long)*0.5
+	var top := FLOOR+door_high(tall)
+	out.append([_box(-w,FLOOR,-h,w,tall,-d),look])
+	out.append([_box(-w,FLOOR,d,w,tall,h),look])
+	out.append([_box(-w,top,-d,w,tall,d),look])
+	# Each side's doors slid open over the walls, a hair proud of them; the
+	# doorway's jambs and head lined dark, so it reads as the inside.
+	for sx: float in [-1.0,1.0]:
+		var x0 := w-0.1 if sx > 0.0 else -w-0.04
+		var x1 := w+0.04 if sx > 0.0 else -w+0.1
+		dress.append([_box(x0,FLOOR,-d-minf(d,h-d-0.5),x1,top+0.3,-d),"door"])
+		dress.append([_box(x0,FLOOR,d,x1,top+0.3,d+minf(d,h-d-0.5)),"door"])
+	dress.append([_box(-w,FLOOR,-d,w,top,-d+0.03),"inside"])
+	dress.append([_box(-w,FLOOR,d-0.03,w,top,d),"inside"])
+	dress.append([_box(-w,top-0.03,-d,w,top,d),"inside"])
+	return {"box":_box(-w,FLOOR,-d,w,top,d),"roofed":true}
 
 ## A crack's strokes: [across (share of the half width or length), up (share of
 ## the height, off the middle), long (share of the height), turn (rad)].
