@@ -36,7 +36,7 @@ the cost is plain.
 | Happenings director | Fires rare moments keyed to place, hour and weather, one at a time, with a cooldown per area; moments register with it | M | placed sites (to key on a place) | **now** |
 | Life reacts | Shared reactions to the plane passing: flush, bolt, look up, follow; a creature declares which it does | M | director | **now (with the director)** |
 | Stillness | When the plane has landed and stops, nearby life comes closer (creatures approach, birds land on the wing, sound swells) | S | life reacts | next |
-| Weather states | Clear, overcast, rain, storm front, snow; re-colours the look, the water and the sound; the storm is the one place wind acts on the plane | L | — | next |
+| Weather states | Clear, overcast, rain, storm front, snow; re-colours the look, the water and the sound; wind stays a look and never acts on the plane (shelved 2026-11-03) | L | — | next |
 | Lightning | Strikes in a storm count as near misses; feeds the unused lightning input of `cloud_volume.gd` | S | weather | later |
 | Seasons | Drive the 28-day year in `world_clock.gd`; grass, ground and trees shift | L | weather | parked (a snow day gets most of the effect) |
 | Night moments | Make the night part of the day cycle a stage: lit things, night creatures | S | director | next |
@@ -73,15 +73,23 @@ the cost is plain.
 | Mountain goats on cliff ledges, knocking pebbles loose | pass by | the butte at m09 | L (body) | life reacts | later |
 | Hawk circling, dives when you graze | follow | over the meadows | M | life reacts | later |
 | Fox past the landed plane | stillness | landing meadows | M | stillness | later |
-| Fallen statue: a head in a meadow, a hand out of a hill | carve, thread | a meadow away from the route | M | placed sites; the stone look | later |
-| Cliff-hanging monastery with bells | pass by | butte or Peak walls | L | the stone look | later |
+| Fallen statue: a head in a meadow, a hand out of a hill | carve, thread | a meadow away from the route | M | placed sites; the ruin look on main (`iter/wilderness-secrets`) | later |
+| Cliff-hanging monastery with bells | pass by | butte or Peak walls | L | the ruin look on main (`iter/wilderness-secrets`) | later |
 | Tower above the clouds | climb to | where the cloud punch was (m07, ~1640,165) | M | — | later |
 | Lighthouse on the coast isles | pass by, night | coast isles south of the start | M | night moments | later |
 | Fireflies over ponds at dusk | stillness | ponds | S | night moments | next |
-| Rail trestle and a tunnel | thread | a valley | L | people or ruins? (below) | open question |
-| Old airfield: windsock, strip, open hangar | fly through, land | the fast meadow | M | people or ruins? | open question |
-| Radio mast with guy-wires | knife edge | a ridge | S | people or ruins? | open question |
-| Fire lookout on stilts | thread its legs | a hill | S | people or ruins? | open question |
+| Rail trestle and a tunnel | thread | a valley | L | — | later |
+| Airfield: windsock, grass strip, open hangar | fly through, land | the fast meadow | M | — | later |
+| Radio mast with guy-wires | knife edge | a ridge | S | — | later |
+| Fire lookout on stilts | thread its legs | a hill | S | — | later |
+
+## Secrets
+
+| Item | Verb | Spot | Size | Depends on | Status |
+|---|---|---|---|---|---|
+| Flame puzzle: carry a flame to light two braziers, or roll over a flame to snuff it; a sealed door opens on a small room with a find | carry, roll | two spots on seed 1 (`secret-kit-handoff.md` on its branch) | — | placed sites: its spots move onto the list once both land | built in greybox and flown; on `iter/wilderness-secrets`, not merged |
+
+The secret area behind a door is a place of its own and gets its own list.
 
 ## Happenings (director moments)
 
@@ -96,19 +104,21 @@ the cost is plain.
 | Storm front rolling in | anywhere | weather | — | with weather states |
 | Collapsing ruin you outrun | a ruin | after a surge roll breaks it | M | later |
 
-## Open questions
+## Settled (2026-11-05)
 
-1. **People now, or only old traces?** The airfield, mill, balloons, train,
-   mast and lookout mean someone lives here now. The stones, wreck, drowned
-   village and statue keep it a world of old traces. The rows marked "open
-   question" wait on this.
-2. **The ruin stone look** was judged bad in every version (2026-10-28).
-   Built structures inherit it. Pieces from the rock shape kit (standing
-   stones, the window, overhangs) don't.
+1. **People: lived-in, nobody seen.** People's things are here and kept up:
+   the airfield, mills and windmills, the lighthouse, the lookout, the mast,
+   the trestle, balloons. No one is ever seen; there are no human figures.
+   The old traces (stones, wreck, drowned village, statue, ruins) stay
+   alongside them.
+2. **The ruin look is the aqueduct isle's look**: the 2026-11-04 restyle on
+   `iter/wilderness-secrets` (cool charcoal stone, no amber lift, more ivy;
+   `ruin-look-handoff.md` on that branch). Built structures use it, and it
+   reaches main when that branch merges. Pieces from the rock shape kit
+   (standing stones, the window, overhangs) don't use it.
 3. **Kinds folder.** Arches, splits, stacks and tunnels are kinds already but
-   live as wilderness plans. Moving them under `kinds/` with skins is a
-   refactor of its own; new kinds start there, old ones move when a second
-   region needs them.
+   live as wilderness plans. New kinds start under `scripts/endless/kinds/`;
+   the old ones move there when a second region needs them.
 
 ## Now
 
