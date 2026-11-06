@@ -19,7 +19,9 @@ extends Node3D
 ## Flown low and fast straight at them (the plane's line through the herd):
 ## they bolt, scatter out from its line, each to its own side, and once it
 ## has passed break back for the trees, into the wood's edge, halt and look
-## back.
+## back. Once all are calm and the plane is beyond the herd's reach, they
+## drift home at a trot, each to its own spot, and graze there; a herd put
+## to sleep away from home is set back on its spots (no one sees it).
 ##
 ## --elk=off: the site's marker instead.
 
@@ -139,13 +141,28 @@ const KNOBS := {
 	# each tree's seen crown by `body_half` BL, and `trunk_clear` m at
 	# least), at up to `cover_speed`, turning at `turn_cover` (rad/s). No
 	# wood in reach: a peel in the open.
-	"cover_ways": 24, "cover_reach": 160.0, "cover_tries": 12, "cover_back": 1.5, "trunk_clear": 1.5,
+	"cover_ways": 24, "cover_reach": 160.0, "cover_tries": 24, "cover_back": 1.5, "trunk_clear": 1.5,
 	"body_half": 0.2,
 	"cover_speed": 20.0, "turn_cover": 3.0, "stuck": 2.0,
+	# Home: all calm, the plane beyond the herd's reach for `home_wait_min`
+	# to `home_wait_max` s, each farther than `home_off` m from its spot sets
+	# off within `home_stagger` s: it turns round stepping (the trot at
+	# `home_pivot` rate, turning at `turn_pivot` rad/s, until within
+	# `home_face` degrees), then trots home at `home_rate` x the trot's pace,
+	# turning at `turn_home`, slowing in, and grazes on its spot. The land
+	# `home_probe` m ahead (water, a climb, a steep face, trees) that won't
+	# do: a detour held `home_detour` s. No nearer home in `home_give_up` s:
+	# it grazes where it stands. The plane must be `home_far` m off the
+	# herd's middle (and beyond its reach) all the while.
+	"home_far": 300.0,
+	"home_off": 4.0, "home_wait_min": 2.0, "home_wait_max": 5.0, "home_stagger": 1.5,
+	"home_pivot": 0.45, "turn_pivot": 1.6, "home_face": 45.0,
+	"home_rate": 0.75, "turn_home": 2.0, "home_accel": 2.5,
+	"home_probe": 6.0, "home_detour": 1.5, "home_give_up": 6.0,
 }
 
 ## The states in which an animal moves (placed, kept apart, its land probed).
-const MOVING := ["bolt","run","leap","peel","halt","scatter","cover"]
+const MOVING := ["bolt","run","leap","peel","halt","scatter","cover","home"]
 
 ## The contract's ground per cycle (body lengths), so a clip plays at the
 ## rate its feet keep to the ground.
@@ -198,7 +215,8 @@ var _study: Node = null
 var stats := {"count":0,"bulls":0,"awake_frames":0,"sensing_frames":0,"alerts":0,"settles":0,
 	"bolts":0,"peels":0,"halts":0,"beside_s":0.0,"top_speed":0.0,"probes":0,"dodges":0,"peel_why":{},
 	"scatters":0,"covers":0,"cover_sweeps":0,"cover_top_at":0,"cover_ground":0,"cover_fail":{},
-	"leaps":0,"leap_land_no":0,"leap_missed":0,"tucked":0}
+	"leaps":0,"leap_land_no":0,"leap_missed":0,"tucked":0,
+	"cover_retries":0,"homes":0,"home_arrived":0,"home_gave_up":0,"home_detours":0,"home_snaps":0}
 ## The herd's answer to this pass, set when the first one goes: "beside" or
 ## "straight" (the plane's line through the herd); "" once all are calm.
 var _verdict := ""
@@ -223,6 +241,12 @@ var _at := Vector3.INF
 var _probe_next := 0
 ## Seconds until the herd's next leap is asked for (the run beside).
 var _leap_wait := 0.0
+## Some of the herd may be off their spots (set at a bolt); the countdown to
+## the drift home (-1: not started).
+var _home_check := false
+## Why the last cover goal search passed each over (for drivers).
+var _last_fail := {}
+var _home_wait := -1.0
 
 static func build(s: Dictionary) -> Node3D:
 	if LaunchArgs.user_args().has("--elk=off"): return Marker.build(s)
@@ -272,7 +296,8 @@ func _spawn(s: Dictionary) -> void:
 			"nerve":nerve,"wait":-1.0,"calm":0.0,"look":0.0,"gaze":Vector2.ZERO,"clip":"graze","t":0.0,
 			"flee":-1.0,"speed":0.0,"side":0.0,"lead":0.0,"stretch":0.0,"peel":0.0,
 			"bad":false,"hard":false,"dodge":0.0,"dodge_t":0.0,"why":"","mode":"","out":1.0,"goal":Vector3.ZERO,"best":INF,"since":0.0,
-			"clip_rate":1.0,"gap":0.0,"leap":"","leap_in":0.0,"leap_rate":1.0,"leaps":0}
+			"clip_rate":1.0,"gap":0.0,"leap":"","leap_in":0.0,"leap_rate":1.0,"leaps":0,
+			"retried":false,"home":world,"home_yaw":yaw,"detour":NAN,"detour_t":0.0,"gave_up":false}
 		herd.append(a)
 		body.connect("beat_reached",_on_beat.bind(a))
 	stats.count = herd.size()
@@ -325,7 +350,11 @@ func _sense(delta: float) -> void:
 	if not busy:
 		_verdict = ""
 		_cover = []
+		if _home_check:
+			if at == Vector3.INF or Vector2(at.x-center.x,at.z-center.z).length() > float(KNOBS.home_far): _home_due(delta)
+			else: _home_wait = -1.0
 		return
+	_home_wait = -1.0
 	stats.sensing_frames += 1
 	_read_plane(plane,at,vel)
 	var moving := false
@@ -372,6 +401,9 @@ func _sense(delta: float) -> void:
 				_cover_step(a,delta)
 			"halt":
 				_halt_step(a,delta)
+			"home":
+				if d < reach: _alert(a)
+				else: _home_step(a,delta)
 		if a.state in MOVING: moving = true
 		if a.state != "graze" and at != Vector3.INF: _track(a,at+vel*float(KNOBS.look_lead),delta)
 	if moving:
@@ -502,6 +534,9 @@ func _bolt(a: Dictionary, side: float, lead: float) -> void:
 	a.mode = "beside"
 	a.leap = ""
 	a.leaps = 0
+	a.gave_up = false
+	a.retried = false
+	_home_check = true
 	var body: Node = a.body
 	body.call("play","bolt_start",1.0,0.1)
 	body.call("set_effect","dust",true)
@@ -711,11 +746,19 @@ func _scatter_step(a: Dictionary, at: Vector3, delta: float) -> void:
 ## wood in reach will do.
 func _to_cover(a: Dictionary) -> void:
 	a.bad = false
-	if _cover.is_empty(): _cover_sweep()
-	var goal := _cover_goal(a)
+	if _cover.is_empty(): _cover = _cover_sweep(center)
+	var goal := _cover_goal(a,_cover,center)
+	if goal == Vector3.INF:
+		# None from the herd's middle (its rays stopped by a bank, or its
+		# edges taken): the wood's edge swept from where it stands.
+		goal = _cover_goal(a,_cover_sweep(a.pos),a.pos)
 	if goal == Vector3.INF:
 		_peel(a,"no cover")
 		return
+	_cover_go(a,goal)
+
+## Off for its goal in the wood.
+func _cover_go(a: Dictionary, goal: Vector3) -> void:
 	a.state = "cover"
 	a.t = 0.0
 	a.goal = goal
@@ -723,13 +766,14 @@ func _to_cover(a: Dictionary) -> void:
 	a.since = 0.0
 	stats.covers += 1
 
-## The wood's edge round the herd's middle: in each of `cover_ways` ways, the
-## metres to the first tree's solid, when the land on the way there and
+## The wood's edge round `from` (the herd's middle, or one animal): in each
+## of `cover_ways` ways, [the way, the
+## metres to the first tree's solid], when the land on the way there and
 ## under it holds (INF: none in `cover_reach`, or water, a climb or a steep
 ## face first: a wood on a steep bank is no cover).
-func _cover_sweep() -> void:
+func _cover_sweep(from: Vector3) -> Array:
 	stats.cover_sweeps += 1
-	_cover = []
+	var edges: Array = []
 	var trees: Node = _study.get("trees") if _study != null else null
 	var n := int(KNOBS.cover_ways)
 	var step := float(KNOBS.tree_step)
@@ -739,9 +783,9 @@ func _cover_sweep() -> void:
 		var edge := INF
 		if trees != null:
 			var d := step
-			var last := center
+			var last := from
 			while d <= float(KNOBS.cover_reach):
-				var p := center+way*d
+				var p := from+way*d
 				stats.cover_top_at += 1
 				var hit := float(trees.call("top_at",p)) > -INF
 				if hit or int(d/step)%3 == 0:
@@ -753,26 +797,29 @@ func _cover_sweep() -> void:
 					edge = d
 					break
 				d += step
-		_cover.append([way,edge])
+		edges.append([way,edge])
+	return edges
 
-## Its goal in the wood: the edge the sweep found in each way, shifted along
+## Its goal in the wood: the edge a sweep from `origin` found in each way
+## (`edges`), shifted along
 ## the treeline by half its own place across that way (so the herd keeps
 ## spread), and the edge itself (a lone tree a shifted aim would miss),
 ## nearest the animal first (a turn back costing a little); run from where it
 ## stands toward it to its own first crown; the first whose land holds (no
 ## water, climb or steep face on the way, no trunk at the goal, none of the
 ## herd standing or bound within the apart distance). INF: none.
-func _cover_goal(a: Dictionary) -> Vector3:
+func _cover_goal(a: Dictionary, edges: Array, origin: Vector3) -> Vector3:
+	_last_fail = {}
 	var fwd := _dir(float(a.heading))
 	var ranked: Array = []
-	for c: Array in _cover:
+	for c: Array in edges:
 		if float(c[1]) == INF: continue
 		var out: Vector3 = c[0]
 		var across := Vector3(-out.z,0.0,out.x)
 		# A step in past the crown's rim, so a way in from aslant meets it.
-		var edge: Vector3 = center+out*(float(c[1])+float(KNOBS.tree_step))
+		var edge: Vector3 = origin+out*(float(c[1])+float(KNOBS.tree_step))
 		for shift: float in [0.5,0.0]:
-			var aim: Vector3 = edge+across*shift*(a.pos-center).dot(across)
+			var aim: Vector3 = edge+across*shift*(a.pos-origin).dot(across)
 			var to := Vector3(aim.x-a.pos.x,0.0,aim.z-a.pos.z)
 			var l := maxf(to.length(),0.01)
 			ranked.append([l+(1.0-fwd.dot(to/l))*6.0+(0.0 if shift > 0.0 else 8.0),to/l,l])
@@ -835,6 +882,7 @@ func _cover_goal(a: Dictionary) -> Vector3:
 func _tally(why: String) -> void:
 	var t: Dictionary = stats.cover_fail
 	t[why] = int(t.get(why,0))+1
+	_last_fail[why] = int(_last_fail.get(why,0))+1
 
 ## A tree's solid within a step of `p` (the wood's edge).
 func _wood_by(p: Vector3, trees: Node) -> bool:
@@ -1036,6 +1084,16 @@ func _peel_stop(a: Dictionary) -> float:
 ## The peel: braking to the stop_look's slide speed, turning out, then the
 ## halt. Land ahead that won't do: a new way round (or braking hard).
 func _peel_step(a: Dictionary, delta: float) -> void:
+	if a.why == "no cover" and not bool(a.retried) and (_at == Vector3.INF or not _threat or _off(a,_at).x < -float(KNOBS.behind)):
+		# No cover while the plane was coming (the spots near taken, the wood
+		# across its line): once it has passed, the trees again.
+		a.retried = true
+		var goal := _cover_goal(a,_cover,center) if not _cover.is_empty() else Vector3.INF
+		if goal == Vector3.INF: goal = _cover_goal(a,_cover_sweep(a.pos),a.pos)
+		if goal != Vector3.INF:
+			stats.cover_retries += 1
+			_cover_go(a,goal)
+			return
 	var halt := _halt_speed()
 	var brake := float(KNOBS.peel_brake)*(2.5 if bool(a.hard) else 1.0)
 	a.speed = move_toward(float(a.speed),halt,brake*delta)
@@ -1145,9 +1203,18 @@ func _probe() -> void:
 	for k in range(n):
 		var a: Dictionary = herd[(_probe_next+k)%n]
 		# A leaper too: the way ahead sweeps on while it is in the air.
-		if not (a.state in ["run","leap","peel","scatter"]): continue
+		if not (a.state in ["run","leap","peel","scatter","home"]): continue
+		if a.state == "home" and (float(a.t) < 0.0 or float(a.speed) <= 0.0): continue
 		_probe_next = (_probe_next+k+1)%n
 		stats.probes += 1
+		if a.state == "home":
+			# The way it wants home (or its detour), up to its spot.
+			var to: Vector3 = a.home-a.pos
+			to.y = 0.0
+			var hw: Vector3 = _dir(float(a.detour)) if not is_nan(float(a.detour)) else to.normalized()
+			var look := minf(float(KNOBS.home_probe),to.length())
+			a.bad = look >= 1.0 and _land_why(a.pos,hw,look) != ""
+			return
 		var way := _dir(float(a.heading))
 		var dist := maxf(float(a.speed)*float(KNOBS.probe),float(KNOBS.probe_min))
 		if a.state == "scatter":
@@ -1322,9 +1389,128 @@ func _track(a: Dictionary, target: Vector3, delta: float) -> void:
 	var dir := Vector3(-sin(yaw)*cos(gaze.y),sin(gaze.y),-cos(yaw)*cos(gaze.y))
 	body.call("look_at_world",eye+dir*60.0,smoothstep(0.0,1.0,float(a.look)))
 
+# --- Home -------------------------------------------------------------------
+
+## All calm and the plane beyond the herd's reach: after the wait, each off
+## its spot (and not given up) sets off home, staggered (a.t below 0: still
+## grazing). None off: the herd is home.
+func _home_due(delta: float) -> void:
+	if _home_wait < 0.0: _home_wait = _rng.randf_range(float(KNOBS.home_wait_min),float(KNOBS.home_wait_max))
+	_home_wait -= delta
+	if _home_wait > 0.0: return
+	_home_wait = -1.0
+	var any := false
+	for a: Dictionary in herd:
+		if bool(a.gave_up) or _home_dist(a) <= float(KNOBS.home_off): continue
+		a.state = "home"
+		a.t = -_rng.randf_range(0.0,float(KNOBS.home_stagger))
+		a.speed = 0.0
+		a.detour = NAN
+		a.detour_t = 0.0
+		a.best = INF
+		a.since = 0.0
+		a.bad = false
+		any = true
+		stats.homes += 1
+	if not any: _home_check = false
+
+## How far `a` stands from its spot (m, flat).
+func _home_dist(a: Dictionary) -> float:
+	return Vector2(a.home.x-a.pos.x,a.home.z-a.pos.z).length()
+
+## The trot's pace at rate 1 (m/s).
+func _trot_pace(a: Dictionary) -> float:
+	return float(GROUND_BL.trot)*bl/float((a.body as Node).call("clip_length","trot"))
+
+## On the way home: turned round stepping, then the trot (slowing in), round
+## land that won't do by a held detour, grazing on its spot (or where it
+## stands, when it gets no nearer).
+func _home_step(a: Dictionary, delta: float) -> void:
+	if float(a.t) < 0.0: return
+	var to: Vector3 = a.home-a.pos
+	to.y = 0.0
+	var dist := to.length()
+	var passed := dist < 2.0 and to.dot(_dir(float(a.heading))) < 0.0
+	if dist <= 0.6 or passed:
+		stats.home_arrived += 1
+		_home_end(a)
+		return
+	if bool(a.bad):
+		a.bad = false
+		_home_detour(a,to)
+	var way: Vector3 = _dir(float(a.detour)) if not is_nan(float(a.detour)) else to/dist
+	a.detour_t = float(a.detour_t)-delta
+	if float(a.detour_t) <= 0.0: a.detour = NAN
+	var body: Node = a.body
+	var pace := _trot_pace(a)
+	var off := absf(wrapf(atan2(-way.x,-way.z)-float(a.heading),-PI,PI))
+	if float(a.speed) <= 0.0 and off > deg_to_rad(float(KNOBS.home_face)):
+		# Facing away: it steps round where it stands first.
+		_turn(a,way,float(KNOBS.turn_pivot),delta)
+		body.call("play","trot",float(KNOBS.home_pivot),0.3)
+		a.clip = "trot"
+		return
+	var want := clampf(dist*1.2,pace*0.4,pace*float(KNOBS.home_rate))
+	a.speed = move_toward(maxf(float(a.speed),pace*0.4),want,float(KNOBS.home_accel)*delta)
+	_turn(a,way,float(KNOBS.turn_home),delta)
+	_step(a,delta)
+	_gait(a)
+	if dist < float(a.best)-0.5:
+		a.best = dist
+		a.since = 0.0
+	a.since = float(a.since)+delta
+	if float(a.since) > float(KNOBS.home_give_up):
+		a.gave_up = true
+		stats.home_gave_up += 1
+		_home_end(a)
+
+## Grazing again, where it stands.
+func _home_end(a: Dictionary) -> void:
+	a.speed = 0.0
+	a.detour = NAN
+	_graze(a)
+
+## The land toward home won't do: the nearest way round it whose land holds
+## for `home_probe` m, held a while; none: back the way it faces.
+func _home_detour(a: Dictionary, to: Vector3) -> void:
+	stats.home_detours += 1
+	var toward := atan2(-to.x,-to.z)
+	var first := signf(wrapf(float(a.heading)-toward,-PI,PI)+0.001)
+	for k: float in [30.0,60.0,90.0,120.0,150.0]:
+		for s: float in [first,-first]:
+			var y := toward+deg_to_rad(k)*s
+			if _land_why(a.pos,_dir(y),float(KNOBS.home_probe)) == "":
+				a.detour = y
+				a.detour_t = float(KNOBS.home_detour)
+				return
+	a.detour = float(a.heading)+PI
+	a.detour_t = float(KNOBS.home_detour)
+
+## Each set back on its spot, grazing (the herd asleep away from home: no
+## one sees it).
+func _home_snap() -> void:
+	stats.home_snaps += 1
+	for a: Dictionary in herd:
+		a.pos = a.home
+		a.heading = a.home_yaw
+		a.speed = 0.0
+		a.detour = NAN
+		a.gave_up = false
+		a.flee = -1.0
+		a.wait = -1.0
+		if a.state != "graze" or a.clip != "graze": _graze(a)
+		(a.body as Node).call("set_effect","dust",false)
+		_place(a)
+	_home_check = false
+	_home_wait = -1.0
+	_verdict = ""
+	_cover = []
+	_recenter()
+
 ## Stops (or starts) every body's clip: a sleeping herd costs one distance
 ## a frame.
 func _sleep(on: bool) -> void:
+	if on and _home_check: _home_snap()
 	asleep = on
 	for a: Dictionary in herd:
 		(a.body as Node).process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
