@@ -10,9 +10,11 @@ extends RefCounted
 ## cut's wall rising at CUT_SLOPE and a bank falling at FILL_SLOPE, so the
 ## land is only moved where it stood above or below the bed; faded out by
 ## REACH, where a sidehill too steep for the wall to meet is left as it was.
-## Along it, the stamp is off where the line runs on a trestle or on a
-## bridge (rivers keep their channels under the bridges), eased over the
-## first SPAN_EASE m on: an abutment. In a tunnel it turns to a cover: the
+## Along it, the flat top ends where the line runs onto a span (trestles
+## and bridges end to end, RailLine.spans(); rail_span.gd stands them), and
+## the bank falls on into it as a spill cone (SPILL_SLOPE along, FILL_SLOPE
+## across) round the abutment, out to SPAN_REACH m in; past that the stamp
+## is off (rivers keep their channels under the bridges). In a tunnel it turns to a cover: the
 ## land raised where it lies under the bore's crown and COVER m over it
 ## (rail_bore_shape.gd), never lowered, so the bore (rail_bore.gd) is
 ## always in the rock; at each mouth the cut runs wider than the bed, to
@@ -47,8 +49,11 @@ const FILL_SLOPE := 0.7
 ## over at the end.
 const REACH := 60.0
 const REACH_FADE := 20.0
-## How far onto a trestle or bridge the stamp eases off (m of s).
-const SPAN_EASE := 4.0
+## A span's end: the bank's fall along the line into it (drop per m), and
+## how far in the stamp reaches (eased off over the last SPAN_FADE m).
+const SPILL_SLOPE := 1.0
+const SPAN_REACH := 40.0
+const SPAN_FADE := 10.0
 ## The grid's squares (m).
 const CELL := 32.0
 ## Trees keep this far off the centre line (m), and off any ground it moved.
@@ -66,6 +71,8 @@ static var _z := PackedFloat64Array()
 static var _y := PackedFloat64Array()
 ## Each sample's stamp weight along the line (0 on spans).
 static var _w := PackedFloat32Array()
+## Each sample's metres into a span from its nearer end (0 off the spans).
+static var _sin := PackedFloat32Array()
 ## Each sample's distance into a tunnel from its nearer mouth (m; negative
 ## outside one: how far to the nearest mouth, down to -INTO_FAR), and the
 ## bed's flat half width there (wider before a mouth).
@@ -140,19 +147,20 @@ static func _build() -> void:
 		_dx[i] = _x[j]-_x[i]
 		_dz[i] = _z[j]-_z[i]
 		_inv[i] = 1.0/maxf(_dx[i]*_dx[i]+_dz[i]*_dz[i],1e-6)
-	# The weight along the line: 1 on the bed and in tunnels, eased to 0
-	# inside each trestle and bridge from both its ends.
+	# The weight along the line: 1 on the bed and in tunnels, and into each
+	# span (its spill cones) out to SPAN_REACH, eased to 0 past that.
 	_w.resize(_n)
 	_w.fill(1.0)
-	for kind: String in ["trestle","bridge"]:
-		var ease := SPAN_EASE
-		for st: Array in line.stretches(kind):
-			var s0 := float(st[0])
-			var s1 := float(st[1])
-			for i in range(ceili(s0/_step),floori(s1/_step)+1):
-				var s := i*_step
-				var into := minf(s-s0,s1-s)
-				_w[posmod(i,_n)] = minf(_w[posmod(i,_n)],1.0-smoothstep(0.0,ease,into))
+	_sin.resize(_n)
+	_sin.fill(0.0)
+	for st: Array in line.spans():
+		var s0 := float(st[0])
+		var s1 := float(st[1])
+		for i in range(ceili(s0/_step),floori(s1/_step)+1):
+			var into := minf(i*_step-s0,s1-i*_step)
+			var k := posmod(i,_n)
+			_sin[k] = maxf(into,0.0)
+			_w[k] = minf(_w[k],1.0-smoothstep(SPAN_REACH-SPAN_FADE,SPAN_REACH,into))
 	# Into the tunnels, and the cut widened before each mouth.
 	_bore_half = BoreShape.half()
 	_face_half = BoreShape.face_half()
@@ -323,7 +331,12 @@ func apply(got: Vector2, x: float, z: float) -> Vector2:
 	if w <= 0.0: return got
 	var half := lerpf(_hw[_i],_hw[j],_t)
 	var out := last_d-half
+	var span_in := lerpf(_sin[_i],_sin[j],_t)
 	var to := bed if out <= 0.0 else clampf(got.x,bed-out*FILL_SLOPE,bed+out*CUT_SLOPE)
+	if span_in > 0.0:
+		# On a span: the bank's spill cone round its end, no flat top.
+		var o := maxf(out,0.0)
+		to = clampf(got.x,bed-Vector2(o*FILL_SLOPE,span_in*SPILL_SLOPE).length(),bed+Vector2(o,span_in).length()*CUT_SLOPE)
 	var y := lerpf(got.x,to,w)
 	last_lift = y-got.x
 	if absf(last_lift) > 0.5: last_clear = true
@@ -359,7 +372,7 @@ func in_hole() -> bool:
 func ballast() -> float:
 	if last_d >= REACH or last_into >= -BoreShape.FACE_OUT: return 0.0
 	var j := _i+1 if _i+1 < _n else 0
-	return lerpf(_w[_i],_w[j],_t)*level*(1.0-smoothstep(HALF-3.0,HALF+1.0,last_d))
+	return lerpf(_w[_i],_w[j],_t)*level*(1.0-smoothstep(HALF-3.0,HALF+1.0,last_d))*(1.0-clampf(lerpf(_sin[_i],_sin[j],_t),0.0,1.0))
 
 # --- The land's arrays ------------------------------------------------------------
 
@@ -484,7 +497,7 @@ func clear_grass(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz
 			if not _near(x,z) or last_d >= _face_half: continue
 			var k := _i+1 if _i+1 < _n else 0
 			last_into = lerpf(_into[_i],_into[k],_t)
-			var w := lerpf(_w[_i],_w[k],_t)
+			var w := lerpf(_w[_i],_w[k],_t)*(1.0 if lerpf(_sin[_i],_sin[k],_t) < 0.5 else 0.0)
 			if in_block() or (last_into < BoreShape.COVER_FROM and w > 0.5 and last_d < lerpf(_hw[_i],_hw[k],_t)): rs[j*nx+i] = -1.0
 	got.river = rs
 

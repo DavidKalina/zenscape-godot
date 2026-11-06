@@ -152,6 +152,19 @@ func stretches(of_kind: String) -> Array:
 		out.append([_kind_s[i], s1])
 	return out
 
+## The spans: trestles and bridges end to end joined, [[s0, s1], ...] in
+## order of s (one span is one structure, as the pieces name them).
+func spans() -> Array:
+	var out: Array = []
+	for i in _kind.size():
+		if _kind[i] != "trestle" and _kind[i] != "bridge": continue
+		var s1 := _kind_s[i + 1] if i + 1 < _kind.size() else _length
+		if not out.is_empty() and absf(float(out[-1][1]) - _kind_s[i]) < 0.01:
+			out[-1][1] = s1
+		else:
+			out.append([_kind_s[i], s1])
+	return out
+
 ## The named pieces: {name ("rail/<piece>"), kind (station, town, tunnel,
 ## trestle, bridge), s0, s1, xform (the handle's: the centre pose at the
 ## piece's middle, -z along +s, unless the layout moved it)}; a town's place

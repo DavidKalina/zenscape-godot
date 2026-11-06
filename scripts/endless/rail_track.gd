@@ -145,14 +145,17 @@ func step(eye: Vector3, plane_at: Vector3) -> void:
 
 ## Over a track (grown by `pad`), at or over its sleepers' foot: the rails'
 ## tops, if over `h`. As the other stone's `ground` (LandArches): `h` the
-## height so far, or what it already is if not a height.
+## height so far, or what it already is if not a height; on a span's deck
+## (rail_span.gd: Vector2(top, underside), the plane over it) its top.
 func ground(p: Vector3, h: Variant, pad := 0.0) -> Variant:
-	if not h is float or _n == 0: return h
+	if _n == 0 or not (h is float or h is Vector2): return h
+	if h is Vector2 and p.y < (h as Vector2).y: return h
 	var a: Vector3 = _bed.across(p.x,p.z)
 	if is_nan(a.x): return h
 	var reach := BALLAST_HALF+maxf(pad,0.0)
 	if absf(absf(a.y)-_gap*0.5) > reach: return h
 	if p.y < a.z-SLAB_UNDER: return h
+	if h is Vector2: return Vector2(maxf((h as Vector2).x,a.z+RAIL_TOP),(h as Vector2).y)
 	return maxf(h,a.z+RAIL_TOP)
 
 func _free(i: int) -> void:

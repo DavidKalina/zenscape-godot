@@ -44,6 +44,8 @@ GRADE = 0.0345     # laid a little under 3.5% so the curve between samples stays
 SEA_UP = 6.0       # the bed's least height over the sea
 WATER_UP = 12.0    # over open water (trestles stand clear of the swell)
 BAY_UP = 40.0      # the bay bridge's deck over the sea
+RIVER_UP = 5.0     # the bed's least height over a river's water it crosses: a bridge, never a dam
+RIVER_PAD = 8.0    # a river's bridge runs this far past its water each way (the channel's banks)
 BAY = (148.0, 836.0, 700.0)   # the bay bridge's zone: x, z, radius
 TUNNEL, CUT, FILL, TRESTLE = 22.0, 4.0, 4.0, 12.0
 SHORT = 60.0       # tunnels, trestles and bridges shorter than this become cut or fill
@@ -191,8 +193,27 @@ def clamp_grade(bed, floor=None):
     return b
 
 
-def lay_bed(pts, ground, sea):
+def river_under(river_all, n):
+    """Where a river crosses the bed (water under the centre or either edge),
+    grown by RIVER_PAD each way, and its water's level there (NAN elsewhere)."""
+    r = np.stack([river_all[:n], river_all[n:2 * n], river_all[2 * n:]])
+    wet = ~np.isnan(r).all(axis=0)
+    level = np.where(wet, np.nanmax(np.where(np.isnan(r), -np.inf, r), axis=0), np.nan)
+    pad = int(round(RIVER_PAD / STEP))
+    grown = wet.copy()
+    lv = level.copy()
+    for d in range(1, pad + 1):
+        for sh in (d, -d):
+            w = np.roll(wet, sh)
+            grown |= w
+            lv = np.where(np.isnan(lv) & w, np.roll(level, sh), lv)
+    return grown, lv
+
+
+def lay_bed(pts, ground, sea, water=None):
     floor = np.full(len(pts), sea + SEA_UP)
+    if water is not None:
+        floor = np.where(np.isnan(water), floor, np.maximum(floor, water + RIVER_UP))
     floor = np.where(ground < sea, sea + WATER_UP, floor)
     bay = np.hypot(pts[:, 0] - BAY[0], pts[:, 1] - BAY[1]) < BAY[2]
     floor = np.where(bay & (ground < sea), sea + BAY_UP, floor)
@@ -235,17 +256,19 @@ def runs_of(kinds, seam=True):
     return runs
 
 
-def classify(ground, bed, sea, river):
+def classify(ground, bed, sea, water):
     dv = ground - bed
     kinds = np.where(dv > TUNNEL, "tunnel", np.where(dv > CUT, "cut", np.where(
         -dv > TRESTLE, np.where(ground < sea, "bridge", "trestle"), np.where(-dv > FILL, "fill", "grade")))).astype(object)
-    wet = ~np.isnan(river)
+    wet = ~np.isnan(water)
     low = np.isin(kinds, ["grade", "cut", "fill"])
-    kinds[wet & low & (bed - river > 3.0)] = "bridge"  # a river crossed on the bed: a span, never a dam
+    kinds[wet & low] = "bridge"  # a river crossed on the bed (lifted RIVER_UP over it): a span, never a dam
+    # Trestles and bridges end to end are one span (as pieces_of joins them):
+    # a short span becomes fill, but never over a river.
     for _ in range(2):
-        for k, i, j in runs_of(list(kinds)):
-            if k in ("tunnel", "trestle", "bridge") and (j - i + 1) * STEP < SHORT:
-                if k == "bridge" and wet[[t % len(kinds) for t in range(i, j + 1)]].any():
+        for k, i, j in runs_of(["span" if k in ("trestle", "bridge") else k for k in kinds]):
+            if k in ("tunnel", "span") and (j - i + 1) * STEP < SHORT:
+                if k == "span" and wet[[t % len(kinds) for t in range(i, j + 1)]].any():
                     continue
                 for t in range(i, j + 1):
                     kinds[t % len(kinds)] = "cut" if k == "tunnel" else "fill"
@@ -417,8 +440,9 @@ def main():
     n = len(pts)
     ground, g_r, g_l = g_all[:n], g_all[n:2 * n], g_all[2 * n:]
     river = river_all[:n]
-    bed, floor = lay_bed(pts, ground, sea)
-    kinds = classify(ground, bed, sea, river)
+    water = river_under(river_all, n)[1]
+    bed, floor = lay_bed(pts, ground, sea, water)
+    kinds = classify(ground, bed, sea, water)
     pieces = pieces_of(pts, L, kinds, bed, ground)
 
     sites = {s["name"]: s for s in grid["sites"]}
@@ -447,6 +471,10 @@ def main():
             print("  %-8s %2d stretches, %5.2f km" % (kk, len(tot[kk]), sum(tot[kk]) / 1000))
     wet = np.where(~np.isnan(river))[0]
     print("river water under the line at %d samples%s" % (len(wet), (": s=" + ", ".join("%.0f" % (i * STEP) for i in wet[::5])) if len(wet) else ""))
+    for kk, i, j in runs_of(list(~np.isnan(water)), False):
+        if kk:
+            lo = np.nanmin(bed[i:j + 1] - water[i:j + 1])
+            print("  river crossing s %5.0f..%5.0f: %-7s the bed %.1f m over its water at least" % (i * STEP, (j + 1) * STEP, kinds[i], lo))
     for p in pieces:
         print("  %-28s %-8s s %7.1f..%7.1f  %s" % (p["name"], p["kind"], p["s0"], p["s1"],
                                                   ("%.0f m long, %.0f m deep/high" % (p["s1"] - p["s0"], p["depth"])) if "depth" in p else ""))
