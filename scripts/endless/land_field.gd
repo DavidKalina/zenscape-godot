@@ -537,6 +537,12 @@ const CoastIsles = preload("res://scripts/endless/coast_isles.gd")
 ## placed_list.gd): no slot hall's cut, split mountain's slot or tunnel's
 ## box in one.
 const PlacedList = preload("res://scripts/endless/placed_list.gd")
+## The placed curtains' land (scripts/endless/kinds/curtain_land.gd): the
+## alcove, lip, stream and pool cut under each, after the splits. Their
+## shapes are kept per world and layout file (`_curtain_list`).
+const Curtains = preload("res://scripts/endless/kinds/curtain_land.gd")
+var _curtains: Array = []
+var _curtains_of: Array = [null,null]
 var _isles: RefCounted = null
 ## The world's edge line (centre x, z, half side, corner radius), or half 0.
 var _edge := Vector4.ZERO
@@ -766,7 +772,7 @@ func sample(x: float, z: float) -> Vector2:
 	_p_on = false
 	_t_on = false
 	_m_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0 and not _curtain_near(x,z):
 		return _isle(_impl.sample(x,z) if _massif == null else _peak(_impl.sample(x,z),x,z),x,z)
 	# (The square's pond, tunnel, hall and split first: finding them samples
 	# the field.)
@@ -779,6 +785,7 @@ func sample(x: float, z: float) -> Vector2:
 	if not ts.is_empty(): got = _tunnel(ts,got,x,z)
 	if not s.is_empty(): got.x = Sites.carve(s,got.x,x,z)
 	if not sp.is_empty(): got.x = Splits.carve(sp,got.x,x,z)
+	got.x = _curtain(x,z,got.x)
 	if _massif != null: got = _peak(got,x,z)
 	return _isle(got,x,z)
 
@@ -1060,6 +1067,39 @@ func _pond(p: PackedFloat32Array, x: float, z: float, base: float, river: float)
 		_p_y = p[3]
 	return Ponds.carve(p,base,e) if e.x < Ponds.LIP.y else base
 
+## The placed curtains' shapes in this world (curtain_land.gd `shapes`), kept
+## until the world or the layout file changes.
+func _curtain_list() -> Array:
+	if not is_same(_curtains_of[0],world) or not is_same(_curtains_of[1],Curtains.LayoutOverrides.data):
+		_curtains = Curtains.shapes(world)
+		_curtains_of = [world,Curtains.LayoutOverrides.data]
+	return _curtains
+
+## Whether a placed curtain's land reaches (x, z).
+func _curtain_near(x: float, z: float) -> bool:
+	for c: PackedFloat32Array in _curtain_list():
+		if Curtains.reaches(c,x,z): return true
+	return false
+
+## The placed curtains whose land meets the box (x0, z0)..(x1, z1).
+func _curtains_in(x0: float, z0: float, x1: float, z1: float) -> Array:
+	return _curtain_list().filter(func(c: PackedFloat32Array) -> bool: return Curtains.meets(c,x0,z0,x1,z1))
+
+## Height `h` at (x, z) with the placed curtains' land cut in; their water's
+## reads set (`_p_*`) where it is nearer than the river.
+func _curtain(x: float, z: float, h: float) -> float:
+	for c: PackedFloat32Array in _curtain_list():
+		if not Curtains.reaches(c,x,z): continue
+		var e := Curtains.at(c,h,x,z)
+		h = e[0]
+		if e[1] < Curtains.REACH and e[1] < last_river:
+			_p_on = true
+			_p_out = e[1]
+			_p_r = e[2]
+			_p_w = e[3]
+			_p_y = e[4]
+	return h
+
 ## The ponds whose reach meets the box (x0, z0)..(x1, z1) (land_ponds.gd's
 ## arrays), for the fish (EndlessFish).
 func ponds_in(x0: float, z0: float, x1: float, z1: float) -> Array:
@@ -1074,7 +1114,7 @@ func shape(x: float, z: float) -> Dictionary:
 	_p_on = false
 	_t_on = false
 	_m_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0 and not _curtain_near(x,z):
 		return _isle_shape(_impl.shape(x,z) if _massif == null else _peak_shape(_impl.shape(x,z),x,z),x,z)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
@@ -1097,6 +1137,13 @@ func shape(x: float, z: float) -> Dictionary:
 			s.river_r = 1000.0
 	if not h.is_empty(): s.height = Sites.carve(h,float(s.height),x,z)
 	if not sp.is_empty(): s.height = Splits.carve(sp,float(s.height),x,z)
+	if _curtain_near(x,z):
+		s.height = _curtain(x,z,float(s.height))
+		if _p_on:
+			s.river = _p_out
+			s.river_r = _p_r
+			s.river_w = _p_w
+			s.river_y = _p_y
 	if _massif != null: s = _peak_shape(s,x,z)
 	return _isle_shape(s,x,z)
 
@@ -1148,7 +1195,7 @@ func river_y(x: float, z: float) -> float:
 	if tunnels > 0.0:
 		sample(x,z)
 		if _t_on: return NAN
-	if ponds > 0.0:
+	if ponds > 0.0 or _curtain_near(x,z):
 		sample(x,z)
 		if _p_on: return _p_y if _p_out < 0.0 else NAN
 	return _impl.river_y(x,z)
@@ -1169,7 +1216,7 @@ func sea_calm(x: float, z: float) -> float:
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
 	if GroundTally.on: GroundTally.tick(&"field.height")
-	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
+	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0 or _curtain_near(x,z): return sample(x,z).x
 	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	if _isles != null and _isles.reaches(x,z): return sample(x,z).x
 	return _impl.height(x,z)
@@ -1207,6 +1254,8 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	if not ts.is_empty(): _tunnel_chunk(made,ts,x0,z0,step,cells,skirt_drop)
 	if not hs.is_empty(): Sites.apply_chunk(self,_impl,made,hs,x0,z0,step,cells,skirt_drop)
 	if not sps.is_empty(): Splits.apply_chunk(self,_impl,made,sps,x0,z0,step,cells,skirt_drop)
+	var cs := _curtains_in(x0,z0,x0+cells*step,z0+cells*step)
+	if not cs.is_empty(): Curtains.apply_chunk(self,_impl,made,cs,x0,z0,step,cells,skirt_drop)
 	if _massif != null and _massif.meets(x0,z0,x0+cells*step,z0+cells*step):
 		# Its colours off the region's own native field where the chunk (and its
 		# rim) lies in one: the same colours as the blend's, read in C++.
@@ -1353,6 +1402,8 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 	if not ts.is_empty(): Tunnels.apply_grid(got,ts,x0,z0,step,nx,nz,pad)
 	if not hs.is_empty(): Sites.apply_grid(got,hs,x0,z0,step,nx,nz,pad)
 	if not sps.is_empty(): Splits.apply_grid(got,sps,x0,z0,step,nx,nz,pad)
+	var cs := _curtains_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
+	if not cs.is_empty(): Curtains.apply_grid(got,cs,x0,z0,step,nx,nz,pad)
 	peak_grid(got,x0,z0,step,nx,nz,pad)
 	return got
 
