@@ -1268,10 +1268,17 @@ func sea_height(p: Vector3, land := NAN) -> float:
 	# Up a river's mouth the sea lies still, as the sea shader draws it.
 	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
 
+## GlideCamera `sight`: the land's (`_sight_land`) and the trains' cars' (exact,
+## RailTrains `sight`: the march steps over a roof as thin as a car's).
+func _sight(from: Vector3, to: Vector3) -> float:
+	var got := _sight_land(from,to)
+	if trains != null and got > 0.0: got = minf(got,trains.sight(from,to,EYE_CLEAR*0.5))
+	return got
+
 ## The share of the way from `from` to `to` clear of the land and the water
 ## by EYE_CLEAR's half, as `_solid` (GlideCamera `sight`), marched over the
 ## field; in a bore, finer (LandTunnels `sight`).
-func _sight(from: Vector3, to: Vector3) -> float:
+func _sight_land(from: Vector3, to: Vector3) -> float:
 	if GroundTally.on: GroundTally.tick(&"_sight")
 	const STEPS := 10
 	if doors != null and doors.holds(from): return 1.0
@@ -1737,7 +1744,7 @@ func _frame(delta: float) -> void:
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	if coast != null: coast.watch(chase)
 	FrameLog.mark(&"c_look")
-	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (doors != null and doors.holds(plane.position))
+	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (doors != null and doors.holds(plane.position)) or (trains != null and trains.tight(plane.position))
 	FrameLog.mark(&"c_tight")
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye

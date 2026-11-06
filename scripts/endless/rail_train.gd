@@ -418,6 +418,67 @@ func nearest(at: Vector3, reach: float) -> Dictionary:
 	if got.is_empty(): return {}
 	return {"d":best,"velocity":velocity_at(got,at)}
 
+# --- The chase camera --------------------------------------------------------
+
+## The share of the way from `from` to `to` clear of the cars (their solid and the
+## plates still shut, grown by `pad` m; 1: clear all the way), for the chase
+## camera's `sight` (the study's `_sight`). Exact, the segment against each box in
+## its car's frame: the study's march looks at ten points along the way, a metre or
+## so apart, and steps over a part as thin as the roof over the smash car's
+## corridor (0.6 m; rail_sight: 70 of 1200 segments up through it seen clear), so
+## the eye could swing through it. A box the plane's end (`from`) is in already is
+## passed over: the eye can't help that.
+func sight(from: Vector3, to: Vector3, pad := 0.0) -> float:
+	var got := 1.0
+	var mid := (from+to)*0.5
+	var half := from.distance_to(to)*0.5
+	for car: Dictionary in cars:
+		if (car.xf as Transform3D).origin.distance_to(mid) > float(car.long)*0.5+NEAR+half+pad: continue
+		var inv: Transform3D = car.inv
+		var a := inv*from
+		var b := inv*to
+		for box: AABB in car.all:
+			got = minf(got,_entry(a,b,box.grow(pad)))
+	return got
+
+## Where the segment `a`..`b` first enters `box`, as a share of the way (0..1), or 1
+## if it never does or `a` is inside it already.
+static func _entry(a: Vector3, b: Vector3, box: AABB) -> float:
+	if box.has_point(a): return 1.0
+	var d := b-a
+	var t0 := 0.0
+	var t1 := 1.0
+	for k in range(3):
+		var lo := box.position[k]
+		var hi := box.end[k]
+		if absf(d[k]) < 0.000001:
+			if a[k] < lo or a[k] > hi: return 1.0
+			continue
+		var u := (lo-a[k])/d[k]
+		var v := (hi-a[k])/d[k]
+		t0 = maxf(t0,minf(u,v))
+		t1 = minf(t1,maxf(u,v))
+		if t0 > t1: return 1.0
+	return t0
+
+## The plane at world `p` in a car's hollow: the smash car's corridor (out to NEAR m
+## past its ends) or the doors car's doorway (out to NEAR m past its sides). The
+## chase camera is `tight` there, as in a bore (GlideCamera: it checks the way it
+## is easing round too, and may draw in to TIGHT_NEAR of `near`): a hollow's roof
+## and walls are nearer than `near`, the least it otherwise draws in to, so with
+## no clear way round it sat in them (the smash car's roof lip, climbing out of the
+## corridor 2.2 m off its middle).
+func tight(p: Vector3) -> bool:
+	for car: Dictionary in cars:
+		var kind := str(car.kind)
+		if kind != "smash" and kind != "doors": continue
+		if (car.xf as Transform3D).origin.distance_to(p) > float(car.long)*0.5+NEAR*2.0: continue
+		var l: Vector3 = (car.inv as Transform3D)*p
+		if kind == "smash" and _in_corridor(car,l,NEAR): return true
+		if kind == "doors" and absf(l.z) < door_wide(float(car.long))*0.5 and l.y > FLOOR-0.5 \
+			and l.y < FLOOR+door_high(float(car.tall)) and absf(l.x) < WIDE*0.5+NEAR: return true
+	return false
+
 ## The velocity (m/s) of the point of `car` now at world `at`.
 func velocity_at(car: Dictionary, at: Vector3) -> Vector3:
 	var then: Vector3 = (car.was as Transform3D)*((car.inv as Transform3D)*at)

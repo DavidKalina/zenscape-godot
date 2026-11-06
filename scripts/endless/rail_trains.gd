@@ -5,6 +5,8 @@ extends Node3D
 ## readers talk to this, not to a train: each frame's `before` and `after` go to
 ## every train, and a question about a point (FlightContact `relative`, `face`,
 ## `way_off`, `scrape`; NearMiss `motion_at`) is answered by the train whose car is nearest.
+## The chase camera's (the study's `_sight` and `chase.tight`) ask every train:
+## `sight` (exact, segment against the cars' boxes) and `tight` (in a car's hollow).
 ##
 ## The test (--train-test): the plane starts behind track 0's train in the middle
 ## of the gap between the tracks (RailTrain `test_start`), and track 1's train is
@@ -80,6 +82,18 @@ func scrape(plane: RefCounted, n: Vector3, at: Vector3, keep: float, kick: float
 func face(p: Vector3, reach: float) -> Vector3:
 	var tr := near_train(p,reach)
 	return Vector3.ZERO if tr == null else tr.face(p,reach)
+
+## The chase camera's: the share of the way clear of every train's cars (exact),
+## and whether the plane is in a car's hollow (the camera `tight`).
+func sight(from: Vector3, to: Vector3, pad := 0.0) -> float:
+	var got := 1.0
+	for tr: Node3D in list: got = minf(got,tr.sight(from,to,pad))
+	return got
+
+func tight(p: Vector3) -> bool:
+	for tr: Node3D in list:
+		if tr.tight(p): return true
+	return false
 
 func way_off(p: Vector3, what := "") -> Vector3:
 	for tr: Node3D in list:
