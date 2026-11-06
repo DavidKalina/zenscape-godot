@@ -100,7 +100,7 @@ the line truly hits one, say so in the commit; don't move a find silently.
 
 - `./run-endless-flight.command` (seed 1): the line is in the land. A double
   track on a graded bed, with cuts and banks, the west tunnel, trestles, the bay
-  bridge, and block stations and towns at the five places. Rails, trestles,
+  bridge, and block stations and towns at the four stops (start station, farm, mine and cattle towns). Rails, trestles,
   bridge and tunnel collide and score near misses like any arch or bore.
 - Two box trains run the loop in opposite directions on the world clock and
   pass each other in the tunnel and on the bridge.
@@ -133,7 +133,9 @@ offers at least:
 - `length() -> float` (m, one lap);
 - `pose(s: float, track: int) -> Transform3D`: the centre of track 0 or 1 at
   distance `s` along the loop (wrapping), with the basis's -z along the travel
-  direction for track 0 and y up off the bed;
+  direction for track 0, the opposite way for track 1 (the trains run opposite
+  ways, each on its right; track 0 is on the right of +s), y up off the bed.
+  The real one is the line lane's `scripts/endless/rail_line.gd` (`RailLine.shared()`);
 - `kind(s) -> String`: grade, cut, fill, tunnel, trestle or bridge.
 
 If a lane needs more, add it to both sides and say so in Notes for merge.
@@ -150,7 +152,7 @@ Everything in the land, no train. Suggested order:
 3. The west tunnel: a double-track bore in the tunnels' manner.
 4. Trestles and the bay bridge as greybox pieces (colliders on layer 1, near
    misses like arches).
-5. Station and town blocks at the five places; the flats scan; stills.
+5. Station and town blocks at the four stops; the flats scan; stills.
 
 ### Lane `train` (worktree `../zenscape-rail-train`, branch `lane/rail-train`)
 
