@@ -9,7 +9,7 @@ checks and stills. The master list is `wilderness-kit.md`.
 The build is step 0 (placed sites), five lanes merged in (director,
 uprights, falls, elk-body, elk-mind), and four trunk rounds (the real elk,
 the herd off the stones, headings agree, a flight past every piece). The
-user hasn't flown any of it yet.
+user flew it on 2026-11-06 and kept it ("pretty great effect").
 
 ## Play each piece
 
