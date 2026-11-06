@@ -73,7 +73,12 @@ the line truly hits one, say so in the commit; don't move a find silently.
   apart that the plane can thread between two trains side by side: the gap
   between the trains' sides is an opening, sized with
   `WorldScale.opening(<toy width>)` (pick and name the toy width, AGENTS.md
-  Sizes).
+  Sizes). **Settled 2026-11-05 (the lanes picked 3.5 and 5.0):** the gap is
+  `WorldScale.opening(3.5)`, the game's usual thread (7 m at the defaults), so
+  with 6 m cars the tracks sit 13 m apart, centre to centre. The rail path owns
+  it (`rail_line.gd`, `TOY_BETWEEN := 3.5`, `track_gap()`); trains read their
+  track's centre from `pose` and hold no spacing of their own. A knob,
+  `--track-gap-toy=`, lets the user try it wider.
 - **Speed.** The train runs a bit under cruise, default about 32 m/s (cruise is
   36.75). At cruise you creep up its length a car at a time, so the weave
   happens without braking; Boost runs you up to the engine. That keeps the
