@@ -27,6 +27,7 @@ extends Node
 
 const Moment = preload("res://scripts/endless/moments/moment.gd")
 const CloudPunch = preload("res://scripts/endless/moments/cloud_punch.gd")
+const WaterfowlTakeoff = preload("res://scripts/endless/moments/waterfowl_takeoff.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 
@@ -88,6 +89,7 @@ func setup(world_seed: int, _game: Node) -> void:
 	var f := flag()
 	if f != "" and f != "off": forced = f.split(",",false)
 	register(CloudPunch.new())
+	register(WaterfowlTakeoff.new())
 	for n: String in forced:
 		if moment_named(n) == null: push_warning("--happen=%s: no moment by that name (%s)" % [n,", ".join(names())])
 
