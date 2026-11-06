@@ -41,6 +41,10 @@ const SITES := [
 	["wild/inlet_wreck","uprights","ribs",15.0,128.0,47.0,{"clear":60.0}],
 	# The river (m08-m10) where its west bank rises steeply, 60-75 m in 50 m,
 	# with the water 30-50 m out from its foot; facing the river (east). The
-	# waterfall, a 40 m clear on the bank (lane 3 sizes it with its cliff).
-	["wild/river_falls","marker","",1940.0,-25.0,-100.0,{"clear":40.0}],
+	# waterfall (kinds/curtain.gd, its land curtain_land.gd): a face cut 48 m
+	# back into the bank, the lip 61.5 m over the foot, a tarn on the ridge
+	# behind; a cave from behind the sheet through the hill to a gully down
+	# its south flank. The clear takes the trees off the alcove, pool,
+	# stream and the cave's ground.
+	["wild/river_falls","curtain","waterfall",1940.0,-25.0,-100.0,{"clear":125.0,"y":-21.5}],
 ]

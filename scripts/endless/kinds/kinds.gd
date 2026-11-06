@@ -20,6 +20,7 @@ extends RefCounted
 const KINDS := {
 	"marker": preload("res://scripts/endless/kinds/marker.gd"),
 	"uprights": preload("res://scripts/endless/kinds/uprights.gd"),
+	"curtain": preload("res://scripts/endless/kinds/curtain.gd"),
 }
 
 ## Whether `kind` is in the table.
