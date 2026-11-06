@@ -25,8 +25,9 @@ extends RefCounted
 const SITES := [
 	# The fast meadow (m03): open and flat some 400 m east-west and 250 m
 	# north-south; a river runs past 120 m east. The standing-stone ring,
-	# its 80 m clear taking the few trees that stood 40-80 m out.
-	["wild/meadow_ring","marker","",770.0,70.0,0.0,{"clear":80.0}],
+	# its 80 m clear taking the few trees that stood 40-80 m out. Facing west,
+	# toward the start: its first lintel on the way in.
+	["wild/meadow_ring","uprights","stones",770.0,70.0,90.0,{"clear":80.0}],
 	# The same meadow's south edge, 40 m out from the treeline the herd bolts
 	# from; facing east, down the meadow's length. No clear: the treeline
 	# stays.
