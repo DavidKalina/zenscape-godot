@@ -297,8 +297,8 @@ start. They pass for `studies/train_yard.tscn` with `--train --solids` too.
 Seed 1's land hash with `--no-railroad` matches main (`9ceaddb3…fcb3c4e8`).
 No test references the train.
 - `tests/test_glide_camera.gd` covers `glide_camera.gd`, which the ride
-  changed (an `under` velocity, zero by default). It wasn't run.
-- The ride lane ran `test_world_scale_guard.gd`, and it passed.
+  changed (an `under` velocity, zero by default). It passes, as does
+  `test_world_scale_guard.gd` (run on the merged branch).
 
 ## Files
 
