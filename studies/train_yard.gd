@@ -15,6 +15,8 @@ extends Node3D
 ##
 ## Flags (after --):
 ##   --train          every car of RailTrain.CARS, not just those with models
+##   --line=a,b,...   these kinds in this order instead (sizes from RailTrain.CARS,
+##                    else the spec's table: SIZES), e.g. --line=box,doors,stock,flat,open,van
 ##   --solids         each car's colliders (RailTrain._parts) drawn over it, see-through
 ##   --view=NAME      three (default), side, front, back, top, close, gear, cab, coal
 ##   --car=N          frame car N (1 the engine) instead of the whole train
@@ -30,6 +32,9 @@ const LookPass = preload("res://scripts/look_pass.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const MODELS := "res://assets/models/train/%s.glb"
+## The spec's sizes (length, top) for the kinds RailTrain.CARS doesn't have yet
+## (lane `cars` adds them: spec-steam-train.md "The cars").
+const SIZES := {"stock":[24.0,9.0],"logs":[20.0,6.5],"truss":[24.0,8.5],"crane":[20.0,9.0],"coach":[24.0,8.5]}
 ## The hours (scripts/shared/celestial.gd phase), as the gallery's: a late
 ## morning, and midnight.
 const DAY := 0.45
@@ -84,8 +89,10 @@ func _ready() -> void:
 	var view := "three"
 	var car := 0
 	var manual := {}
+	var line: Array = []
 	for arg in LaunchArgs.user_args():
 		if arg == "--train": whole = true
+		elif arg.begins_with("--line="): line = Array(arg.get_slice("=",1).split(","))
 		elif arg == "--solids": solids = true
 		elif arg == "--night": night = true
 		elif arg.begins_with("--view="): view = arg.get_slice("=",1)
@@ -101,7 +108,7 @@ func _ready() -> void:
 	_yard = Node3D.new()
 	_yard.name = "Yard"
 	add_child(_yard)
-	_build_train(whole,solids)
+	_build_train(whole,solids,line)
 	_build_ground()
 	_face_sun()
 	_frame(car,view)
@@ -140,11 +147,20 @@ func _build_world() -> void:
 
 ## The cars nose to tail, the engine's middle at the origin: its models, or its
 ## greybox blocks.
-func _build_train(whole: bool, solids: bool) -> void:
+func _build_train(whole: bool, solids: bool, line: Array) -> void:
 	var z := 0.0
 	var prev := -1.0
 	var index := 0
-	for row: Array in RailTrain.CARS:
+	var rows: Array = RailTrain.CARS
+	if not line.is_empty():
+		rows = []
+		for kind: String in line:
+			var size: Array = SIZES.get(kind,[20.0,9.0])
+			for row: Array in RailTrain.CARS:
+				if String(row[0]) == kind: size = [row[1],row[2]]
+			rows.append([kind,size[0],size[1]])
+		whole = true
+	for row: Array in rows:
 		var kind := String(row[0])
 		var long := float(row[1])
 		var tall := float(row[2])
