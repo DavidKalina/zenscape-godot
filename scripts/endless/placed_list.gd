@@ -64,6 +64,12 @@ static func site_of(row: Array, region: String) -> Dictionary:
 	return {"handle":str(row[0]),"kind":str(row[1]),"skin":str(row[2]),"x":float(row[3]),"z":float(row[4]),
 		"heading":float(row[5]),"params":row[6],"region":region}
 
+## The turn of a site facing `heading` degrees: the launch flag's convention
+## (--heading=, the plane's own), clockwise from north seen from above: 0
+## faces north (-Z), 90 east (+X), -90 west.
+static func basis_of(heading: float) -> Basis:
+	return Basis(Vector3.UP,-deg_to_rad(heading))
+
 ## Where site `s` stands in XZ: its coded spot, unless the layout file moved it.
 static func spot(s: Dictionary) -> Vector2:
 	var p := LayoutOverrides.xform(str(s.handle),Transform3D(Basis(),Vector3(float(s.x),0.0,float(s.z)))).origin

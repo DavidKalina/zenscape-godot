@@ -70,7 +70,7 @@ static func coded_xform(s: Dictionary, land: RefCounted) -> Transform3D:
 	var x := float(s.x)
 	var z := float(s.z)
 	var y: float = float(p.y) if p.has("y") else float(land.height(x,z))+float(p.get("lift",0.0))
-	return Transform3D(Basis(Vector3.UP,deg_to_rad(float(s.heading))),Vector3(x,y,z))
+	return Transform3D(PlacedList.basis_of(float(s.heading)),Vector3(x,y,z))
 
 ## Where site `s` stands: its coded spot, unless the layout file moved it.
 static func xform_of(s: Dictionary, land: RefCounted) -> Transform3D:

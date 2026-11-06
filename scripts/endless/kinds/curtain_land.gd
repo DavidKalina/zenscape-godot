@@ -266,7 +266,7 @@ static var _lock := Mutex.new()
 ## heading, after the layout file's move.
 static func xform_of(s: Dictionary) -> Transform3D:
 	var p: Dictionary = s.params
-	var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(float(s.heading))),Vector3(float(s.x),float(p.get("y",0.0)),float(s.z)))
+	var coded := Transform3D(PlacedList.basis_of(float(s.heading)),Vector3(float(s.x),float(p.get("y",0.0)),float(s.z)))
 	return LayoutOverrides.xform(str(s.handle),coded)
 
 ## Whether shape `c` reaches (x, z).

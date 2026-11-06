@@ -14,7 +14,7 @@ user yet.
   ponds): an alcove cut 48 m back to a cliff face, the lip 61.5 m over the
   foot, a stream fanning from a spring tarn on the ridge to the lip, a
   plunge pool (r 14) and an outflow to the river. It only lowers the land.
-  Site `wild/river_falls` (1940, -25, heading -100, foot y -21.5),
+  Site `wild/river_falls` (1940, -25, heading 100 in the launch flag's turn, foot y -21.5),
   `clear` 125 m.
 - **The cave** (`curtain_cave.gd`): from behind the sheet through the hill
   on a 60 m bend to a gully down its south flank. Openings
