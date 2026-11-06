@@ -543,6 +543,8 @@ const PlacedList = preload("res://scripts/endless/placed_list.gd")
 const Curtains = preload("res://scripts/endless/kinds/curtain_land.gd")
 var _curtains: Array = []
 var _curtains_of: Array = [null,null]
+## Set by `surface` (main thread): the curtains' caves left out.
+var _cave_off := false
 var _isles: RefCounted = null
 ## The world's edge line (centre x, z, half side, corner radius), or half 0.
 var _edge := Vector4.ZERO
@@ -1090,7 +1092,7 @@ func _curtains_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 func _curtain(x: float, z: float, h: float) -> float:
 	for c: PackedFloat32Array in _curtain_list():
 		if not Curtains.reaches(c,x,z): continue
-		var e := Curtains.at(c,h,x,z)
+		var e := Curtains.at(c,h,x,z,not _cave_off)
 		h = e[0]
 		if e[1] < Curtains.REACH and e[1] < last_river:
 			_p_on = true
@@ -1099,6 +1101,22 @@ func _curtain(x: float, z: float, h: float) -> float:
 			_p_w = e[3]
 			_p_y = e[4]
 	return h
+
+## The land's height as its chunks draw it: `height`, but whole over a
+## placed curtain's cave (curtain_land.gd), which the flight's `height` has
+## as a trench. Main thread (the field's own state).
+func surface(x: float, z: float) -> float:
+	_cave_off = true
+	var h := height(x,z)
+	_cave_off = false
+	return h
+
+## A chunk's triangles on a placed curtain's cave faces dropped
+## (curtain_land.gd `cut_faces`), for land_stream.gd after the tunnels'
+## holes: `idx` its triangles now.
+func curtain_cut(made: Dictionary, x0: float, z0: float, step: float, cells: int, idx: PackedInt32Array, level0: bool) -> void:
+	var cs := _curtains_in(x0,z0,x0+cells*step,z0+cells*step)
+	if not cs.is_empty(): Curtains.cut_faces(cs,made,x0,z0,cells,idx,level0)
 
 ## The ponds whose reach meets the box (x0, z0)..(x1, z1) (land_ponds.gd's
 ## arrays), for the fish (EndlessFish).

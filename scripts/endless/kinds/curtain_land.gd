@@ -14,10 +14,21 @@ extends RefCounted
 ## tarn, the stream, the pool and the outflow: they read as a pond does
 ## (LandField `_p_*`: the river's reads, the ground shader's water).
 ##
+## Behind the face, a cave (`cave_at`): its mouth at the face's foot behind
+## the sheet, straight in CAVE_IN m, a bend of CAVE_R m turning CAVE_TURN to
+## the +s side, then CAVE_OUT m to its exit, a mouth in the back wall of a cut
+## (the exit's gully) that runs out and down the hill's flank. The land field
+## (the flight's crash test) has the cave as a trench down to its floor with
+## walls at its half-width; the chunks draw the hill whole over it (`cave`
+## false: LandField.surface), with holes in the two faces (`hole_mask`), and
+## the curtain's piece draws the cave's rock and holds its roof
+## (curtain.gd `cave`).
+##
 ## A shape is a PackedFloat32Array (see the I_ indices).
 
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const PlacedList = preload("res://scripts/endless/placed_list.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 
 const I_X := 0
 const I_Z := 1
@@ -42,7 +53,14 @@ const I_LIP_HALF := 19
 const I_OUT_F := 20
 const I_OUT_Y := 21
 const I_WET := 22
-const SIZE := 23
+const I_CAVE_HALF := 23
+const I_CAVE_TALL := 24
+const I_CAVE_FLOOR := 25
+const I_CAVE_IN := 26
+const I_CAVE_R := 27
+const I_CAVE_TURN := 28
+const I_CAVE_OUT := 29
+const SIZE := 30
 
 ## The defaults (m), each a param of the same name (lip: over the foot).
 const BACK := 48.0
@@ -56,6 +74,30 @@ const TARN_OVER_LIP := 4.0
 const LIP_HALF := 13.0
 const OUT_F := 36.0
 const OUT_Y_UNDER := 4.0
+
+## The cave: its width and height from their toy-era sizes (WorldScale
+## `opening`, AGENTS.md Sizes: 22 m by 16 m at plane 2), its walls upright to
+## WALL_SHARE of its height and an arch over them; its floor CAVE_OVER m over
+## the foot. Its path (m, degrees), each a param of the same name (cave_in,
+## cave_r, cave_turn, cave_out; cave false: none).
+const TOY_CAVE := 11.0
+const TOY_CAVE_TALL := 8.0
+const WALL_SHARE := 0.45
+const CAVE_OVER := 0.4
+const CAVE_IN := 10.0
+const CAVE_R := 60.0
+const CAVE_TURN := 50.0
+const CAVE_OUT := 6.0
+## The exit's gully: as wide as the cave and EXIT_PAD more where it leaves
+## the face, opening EXIT_SPREAD m a m out, its floor rising EXIT_RISE a m,
+## its banks EXIT_BANK (rise over run); it fades over FRONT past EXIT_LONG.
+const EXIT_PAD := 2.0
+const EXIT_SPREAD := 0.25
+const EXIT_RISE := 0.15
+const EXIT_BANK := 1.4
+const EXIT_LONG := 34.0
+## The faces' holes in the chunks reach HOLE_PAD m past the cave's sides.
+const HOLE_PAD := 1.0
 
 ## The face runs from its top edge to the floor over WALL m (a cliff); the
 ## alcove fades out over FRONT m past the foot.
@@ -112,7 +154,91 @@ static func shape_of(s: Dictionary, xform: Transform3D) -> PackedFloat32Array:
 	c[I_WET] = 1.0 if str(s.get("skin","")) == "waterfall" else 0.0
 	var tarn_far := Vector2(tarn.x,tarn.y).length()+tarn.z+REACH
 	c[I_REACH] = maxf(maxf(tarn_far,c[I_OUT_F]+OUT_HALF+REACH),c[I_BACK]+c[I_HALF_FRONT]+REACH)
+	if bool(p.get("cave",true)):
+		c[I_CAVE_HALF] = WorldScale.opening(TOY_CAVE)*0.5
+		c[I_CAVE_TALL] = WorldScale.opening(TOY_CAVE_TALL)
+		c[I_CAVE_FLOOR] = c[I_FLOOR]+CAVE_OVER
+		c[I_CAVE_IN] = float(p.get("cave_in",CAVE_IN))
+		c[I_CAVE_R] = float(p.get("cave_r",CAVE_R))
+		c[I_CAVE_TURN] = deg_to_rad(float(p.get("cave_turn",CAVE_TURN)))
+		c[I_CAVE_OUT] = float(p.get("cave_out",CAVE_OUT))
+		var gully := cave_length(c)+EXIT_LONG+FRONT
+		var end: Vector2 = cave_point(c,gully)[0]
+		c[I_REACH] = maxf(c[I_REACH],end.length()+c[I_CAVE_HALF]+EXIT_PAD+EXIT_SPREAD*gully+REACH)
 	return c
+
+## Whether shape `c` has a cave.
+static func has_cave(c: PackedFloat32Array) -> bool:
+	return c[I_CAVE_HALF] > 0.0
+
+## The cave's length (m) from its mouth at the face's foot to its exit's foot.
+static func cave_length(c: PackedFloat32Array) -> float:
+	return c[I_CAVE_IN]+c[I_CAVE_R]*c[I_CAVE_TURN]+c[I_CAVE_OUT]
+
+## The cave's path `t` m in (on past its exit along its last heading): [its
+## point (s, f), its heading (s, f), its +u side (s, f)].
+static func cave_point(c: PackedFloat32Array, t: float) -> Array:
+	var a := Vector2(0.0,-c[I_BACK]+WALL)
+	var r := c[I_CAVE_R]
+	var turn := c[I_CAVE_TURN]
+	if t <= c[I_CAVE_IN]: return [a+Vector2(0.0,-t),Vector2(0.0,-1.0),Vector2(1.0,0.0)]
+	var centre := a+Vector2(r,-c[I_CAVE_IN])
+	var th := minf((t-c[I_CAVE_IN])/r,turn)
+	var at := centre-Vector2(cos(th),sin(th))*r
+	var dir := Vector2(sin(th),-cos(th))
+	var side := Vector2(cos(th),sin(th))
+	var past := t-c[I_CAVE_IN]-r*turn
+	if past > 0.0: at += dir*past
+	return [at,dir,side]
+
+## Site-frame point `q` (s, f) on the cave's path: (t, u), t m along it (< 0
+## before the mouth, past cave_length beyond the exit), u m off it (+ toward
+## the bend's inside); (NAN, INF) where none of its pieces is beside q.
+static func cave_at(c: PackedFloat32Array, q: Vector2) -> Vector2:
+	var a := Vector2(0.0,-c[I_BACK]+WALL)
+	var r := c[I_CAVE_R]
+	var turn := c[I_CAVE_TURN]
+	var t_in := c[I_CAVE_IN]
+	var best := Vector2(NAN,INF)
+	# The run in (and before the mouth).
+	var t := a.y-q.y
+	if t <= t_in and absf(q.x) < absf(best.y): best = Vector2(t,q.x)
+	# The bend.
+	var centre := a+Vector2(r,-t_in)
+	var v := q-centre
+	var th := atan2(-v.y,-v.x)
+	if th >= 0.0 and th <= turn:
+		var u := r-v.length()
+		if absf(u) < absf(best.y): best = Vector2(t_in+th*r,u)
+	# The run out (and the gully past it).
+	var end := centre-Vector2(cos(turn),sin(turn))*r
+	var dir := Vector2(sin(turn),-cos(turn))
+	var along := (q-end).dot(dir)
+	if along >= 0.0:
+		var u := (q-end).dot(Vector2(cos(turn),sin(turn)))
+		if absf(u) < absf(best.y): best = Vector2(t_in+r*turn+along,u)
+	return best
+
+## The cave's roof `u` m off its path, over its floor (m): upright walls to
+## WALL_SHARE of its height, then a half ellipse to its crown.
+static func cave_roof(c: PackedFloat32Array, u: float) -> float:
+	var half := c[I_CAVE_HALF]
+	var tall := c[I_CAVE_TALL]
+	var wall := tall*WALL_SHARE
+	var k := clampf(absf(u)/half,0.0,1.0)
+	return wall+(tall-wall)*sqrt(1.0-k*k)
+
+## The exit's gully cut into the land `h` at path point (t, u): its floor
+## rising out from the exit's foot, its banks, the back wall over WALL m.
+static func _gully(c: PackedFloat32Array, h: float, t: float, u: float) -> float:
+	var foot := cave_length(c)
+	var out := t-foot
+	if out < -WALL or out > EXIT_LONG+FRONT: return h
+	var half := c[I_CAVE_HALF]+EXIT_PAD+maxf(out,0.0)*EXIT_SPREAD
+	var floor_y := c[I_CAVE_FLOOR]+maxf(out,0.0)*EXIT_RISE
+	var cut := floor_y+maxf(absf(u)-half,0.0)*EXIT_BANK
+	var a := clampf((out+WALL)/WALL,0.0,1.0)*clampf(1.0-(out-EXIT_LONG)/FRONT,0.0,1.0)
+	return lerpf(h,minf(h,cut),a)
 
 ## The curtains in play in world `profile`, as shapes: each in-play site of
 ## kind curtain at its spot after the layout file's move, none for a deleted
@@ -160,7 +286,9 @@ static func local(c: PackedFloat32Array, x: float, z: float) -> Vector2:
 ## Shape `c` cut into the land's height `base` at (x, z): [height, water's
 ## out (m past its edge, < 0 on it; INF dry), r, w, level] (the pond's reads:
 ## LandField `_pond`).
-static func at(c: PackedFloat32Array, base: float, x: float, z: float) -> PackedFloat32Array:
+## With `cave` the cave's trench too (the field's), else the hill whole over
+## it (the chunks').
+static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := true) -> PackedFloat32Array:
 	var q := local(c,x,z)
 	var s := q.x
 	var f := q.y
@@ -211,6 +339,14 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float) -> Packed
 		var out := absf(s)-OUT_HALF
 		h = minf(h,_bowl(lv,OUT_DEPTH,out,OUT_HALF,OUT_BANK,OUT_CAP))
 		waters.append(PackedFloat32Array([out,s,OUT_HALF,lv]))
+	if has_cave(c):
+		var tu := cave_at(c,q)
+		if not is_nan(tu.x):
+			h = _gully(c,h,tu.x,tu.y)
+			# In the trench the waters over the hill are not the flight's.
+			if cave and tu.x >= 0.0 and tu.x <= cave_length(c) and absf(tu.y) < c[I_CAVE_HALF]:
+				h = minf(h,c[I_CAVE_FLOOR])
+				waters.clear()
 	var got := PackedFloat32Array([h,INF,0.0,0.0,0.0])
 	if c[I_WET] <= 0.0: return got
 	for w: PackedFloat32Array in waters:
@@ -255,7 +391,7 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array
 		for j in range(j0,j1+1):
 			for i in range(i0,i1+1):
 				var v := j*n+i
-				var got := at(c,heights[v],x0+i*step,z0+j*step)
+				var got := at(c,heights[v],x0+i*step,z0+j*step,false)
 				var out_now := absf(river[v*3])-river[v*3+1]
 				if got[1] < REACH and got[1] < out_now:
 					# The distance takes the sign the river's had here, so
@@ -340,8 +476,62 @@ static func apply_grid(got: Dictionary, cs: Array, x0: float, z0: float, step: f
 		for j in range(j0,j1+1):
 			for i in range(i0,i1+1):
 				var k := j*nx+i
-				var e := at(c,hs[k],x0+(i-pad)*step,z0+(j-pad)*step)
+				var e := at(c,hs[k],x0+(i-pad)*step,z0+(j-pad)*step,false)
 				hs[k] = e[0]
 				if not rs.is_empty() and e[1] < rs[k]: rs[k] = e[1]
 	got.heights = hs
 	if not rs.is_empty(): got.river = rs
+
+## The chunk's triangles on the cave's two faces over its mouths dropped
+## (LandField.curtain_cut, from land_stream.gd after the tunnels' holes):
+## those whose middle is on a face (the WALL strip at either end, HOLE_PAD
+## past the cave's sides) that reach under the cave's crown and over its
+## floor, so the floor in front and the top over each face stay. `idx` the
+## chunk's triangles now (its grid's and skirts'); `made.indices` gets the
+## rest, and a level-0 chunk (`level0`) its collider's faces (chunk-local).
+## False where none dropped.
+static func cut_faces(cs: Array, made: Dictionary, x0: float, z0: float, cells: int, idx: PackedInt32Array, level0: bool) -> bool:
+	var verts: PackedVector3Array = made.verts
+	var n := cells+1
+	var mouths: Array = []
+	for c: PackedFloat32Array in cs:
+		if not has_cave(c): continue
+		var foot := cave_length(c)
+		for t: float in [WALL*0.5,foot-WALL*0.5]:
+			var q: Vector2 = cave_point(c,t)[0]
+			var fwd := Vector2(c[I_FX],c[I_FZ])
+			var w := Vector2(c[I_X],c[I_Z])+Vector2(-fwd.y,fwd.x)*q.x+fwd*q.y
+			mouths.append([c,w,c[I_CAVE_HALF]+HOLE_PAD+WALL+4.0])
+	if mouths.is_empty(): return false
+	var out := PackedInt32Array()
+	var faces := PackedVector3Array()
+	var dropped := false
+	for k in range(0,idx.size(),3):
+		var a := verts[idx[k]]
+		var b := verts[idx[k+1]]
+		var d := verts[idx[k+2]]
+		var mid := Vector2(x0+(a.x+b.x+d.x)/3.0,z0+(a.z+b.z+d.z)/3.0)
+		var drop := false
+		for m: Array in mouths:
+			if mid.distance_to(m[1]) > float(m[2]): continue
+			var c: PackedFloat32Array = m[0]
+			var tu := cave_at(c,local(c,mid.x,mid.y))
+			if is_nan(tu.x) or absf(tu.y) > c[I_CAVE_HALF]+HOLE_PAD: continue
+			var foot := cave_length(c)
+			if not ((tu.x > -1.0 and tu.x < WALL+2.5) or (tu.x > foot-WALL-2.5 and tu.x < foot+1.0)): continue
+			var lo := minf(a.y,minf(b.y,d.y))
+			var hi := maxf(a.y,maxf(b.y,d.y))
+			if lo < c[I_CAVE_FLOOR]+c[I_CAVE_TALL] and hi > c[I_CAVE_FLOOR]+1.5:
+				drop = true
+				break
+		if drop:
+			dropped = true
+			continue
+		out.append(idx[k])
+		out.append(idx[k+1])
+		out.append(idx[k+2])
+		if level0 and idx[k] < n*n and idx[k+1] < n*n and idx[k+2] < n*n: faces.append_array([a,b,d])
+	if not dropped: return false
+	made.indices = out
+	if level0: made.faces = faces
+	return true

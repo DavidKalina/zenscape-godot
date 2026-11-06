@@ -710,6 +710,7 @@ func _ready() -> void:
 	placed.name = "Placed"
 	add_child(placed)
 	placed.setup(field,world)
+	placed.ground_material = look.ground if look != null else null
 	trees = LandTrees.new()
 	trees.name = "Trees"
 	add_child(trees)
@@ -1174,6 +1175,8 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
+	# The placed sites' pieces (PlacedSites `ground`).
+	g = placed.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
 ## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
@@ -1191,7 +1194,7 @@ func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	var m := _stone_near(p)
-	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or placed.inside(p)
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1248,7 +1251,7 @@ func _solid(p: Vector3) -> bool:
 	var m := _stone_near(p)
 	# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
 	var land: float = field.height(p.x,p.z)
-	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or placed.inside(p)
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.

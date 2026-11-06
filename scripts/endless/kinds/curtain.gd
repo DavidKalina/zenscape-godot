@@ -12,12 +12,17 @@ extends RefCounted
 ## pool at its foot, a stream over the lip from a tarn behind. A curtain
 ## names its foot's height (params.y): the land under it is its own to cut.
 ##
+## Behind the sheet a cave runs through the hill to an exit in a gully down
+## its flank (curtain_land.gd lays it out, curtain_cave.gd builds its rock).
+##
 ## Params (m; curtain_land.gd has the defaults): y, back, lip, half_back,
 ## half_front, pool_r, pool_depth, tarn (Vector3: s, f, radius), tarn_over_lip,
 ## lip_half (the stream's half-width at the lip: the sheet's), out_f, out_under,
-## throw (the sheet's speed off the lip, m/s).
+## throw (the sheet's speed off the lip, m/s), cave (false: none), cave_in,
+## cave_r, cave_turn (degrees), cave_out.
 
 const Land = preload("res://scripts/endless/kinds/curtain_land.gd")
+const Cave = preload("res://scripts/endless/kinds/curtain_cave.gd")
 const SKINS := {
 	"waterfall": preload("res://scripts/endless/world/wilderness/waterfall.gd"),
 }
@@ -29,6 +34,8 @@ static func build(site: Dictionary) -> Node3D:
 	var sheet := sheet_of(site)
 	var skin := str(site.get("skin",""))
 	if SKINS.has(skin): (SKINS[skin] as GDScript).dress(root,sheet,site)
+	# The space behind: the cave through the hill (curtain_cave.gd).
+	Cave.build(root,site,Land.shape_of(site,site.xform))
 	return root
 
 ## The sheet in the piece's own frame (origin the foot, -Z its heading): {lip
