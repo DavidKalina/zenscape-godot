@@ -84,17 +84,27 @@ lanes.
 
 Times are seconds. Loops carry the ground they cover per cycle, in body
 lengths (BL), so the mind can match the clip to the ground speed with no
-foot sliding (play rate within about ±30%).
+foot sliding (play rate within about ±30%). One-shots that travel carry their
+ground over the whole clip and how it is spread in time: the body's table
+(`assets/models/elk/elk_clips.json`) gives each a `ground_curve`, the
+fraction covered by each time, so the mind moves the node by it and the
+planted feet hold still. `bolt_start` is still through the crouch and ends
+at about 4.6 span/s, the gallop's pace at rate 0.7, so it hands over to
+`gallop` with no slide. `leap` is taken from the run beside the plane: it
+holds the sprint's pace (7 BL a 0.5 s cycle) throughout, so it starts and
+ends in the sprint's hang (spec change 2026-11-05, body lane: at 3.0 BL the
+leap ran at a quarter of the sprint's pace, and at 0.8 BL the bolt ended at
+about 3 span/s, well under the gallop's slowest rate).
 
 | Clip | Length | Loop | Ground per cycle | Beats |
 |---|---|---|---|---|
 | `graze` | 3.0 | yes | 0 | `graze.lift` 2.2 (head comes up a little, ears turn) |
 | `alert` | 0.6 | no | 0 | `alert.up` 0.25 (head fully up, held from here) |
-| `bolt_start` | 0.5 | no | 0.8 BL | `bolt_start.crouch` 0.15, `bolt_start.launch` 0.3 |
+| `bolt_start` | 0.5 | no | 1.2 BL | `bolt_start.crouch` 0.15, `bolt_start.launch` 0.3 |
 | `trot` | 0.8 | yes | 2.0 BL | `trot.plant` 0.0, 0.4 |
 | `gallop` | 0.55 | yes | 4.0 BL | `gallop.plant` 0.05 (lead fore), `gallop.air` 0.35 (all feet off) |
 | `sprint` | 0.5 | yes | 7.0 BL | `sprint.plant` 0.05 (fores down), `sprint.push` 0.2 (hinds drive), `sprint.air` 0.25 (all feet off: the long hang) |
-| `leap` | 0.9 | no | 3.0 BL | `leap.takeoff` 0.2, `leap.land` 0.7 |
+| `leap` | 0.9 | no | 12.6 BL | `leap.takeoff` 0.2, `leap.land` 0.7 |
 | `stop_look` | 1.2 | no | 0.5 BL | `stop_look.halt` 0.35, `stop_look.hold` 0.6 (head turned back, held) |
 
 Each move reads at a glance, with anticipation, follow-through and holds
