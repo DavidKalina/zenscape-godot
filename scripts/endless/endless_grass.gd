@@ -1330,7 +1330,10 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	# The cell's 1 m grid in one call (LandField.grid; native when built):
 	# heights, meadows and how far outside a river's water each node is
 	# (land_field `last_river`): no tuft or flower on its bank.
-	if not got.has("heights"): got.merge(f.grid(x0,z0,1.0,n,n,PAD))
+	if not got.has("heights"):
+		got.merge(f.grid(x0,z0,1.0,n,n,PAD))
+		# None on the railroad's bed (rail_bed.gd `clear_grass`).
+		if f.get("_rail") != null: f._rail.clear_grass(got,x0,z0,1.0,n,n,PAD)
 	var hs: PackedFloat32Array = got.heights
 	var ms: PackedFloat32Array = got.meadows
 	var rs: PackedFloat32Array = got.river

@@ -13,7 +13,7 @@ extends RefCounted
 ##   trains run opposite ways, each on its right), y is up off the bed (tilted
 ##   by the grade only), x is the travel's right. s is the centre line's: on
 ##   a curve the outer track runs (1 + gap/2/r) m per m of s, the inner one
-##   less (5% either way on the tightest, r = 160 m).
+##   less (4% either way on the tightest, r = 160 m).
 ## - `kind(s)`: grade, cut, fill, tunnel, trestle or bridge.
 ## - `pieces()`: the named stations, towns, tunnels, trestles and bridges, each
 ##   with its handle (`rail/<piece>`) through LayoutOverrides (AGENTS.md
@@ -24,15 +24,19 @@ extends RefCounted
 
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const PATH := "res://assets/railroad/rail_line.json"
 ## The toy-era width of the gap between two trains side by side, car side to
-## car side: an opening to thread (WorldScale.opening; 10 m at the defaults).
-const TOY_BETWEEN := 5.0
+## car side: an opening to thread (WorldScale.opening; 7 m at the defaults,
+## the game's usual thread), so the tracks sit 13 m apart. `--track-gap-toy=`
+## tries another (spec-railroad.md, settled 2026-11-05).
+const TOY_BETWEEN := 3.5
 ## The widest car the line is laid for: the trains' cars are no wider.
 const CAR_WIDTH := 6.0
 
 static var _shared: RefCounted
+static var _toy_between := NAN
 
 var step := 4.0
 var _length := 0.0
@@ -78,7 +82,16 @@ func length() -> float:
 
 ## Track centre to track centre: a car's width and the opening between trains.
 func track_gap() -> float:
-	return CAR_WIDTH + WorldScale.opening(TOY_BETWEEN)
+	return CAR_WIDTH + WorldScale.opening(toy_between())
+
+## The gap's toy width: TOY_BETWEEN, or `--track-gap-toy=`.
+static func toy_between() -> float:
+	if is_nan(_toy_between):
+		_toy_between = TOY_BETWEEN
+		for a: String in LaunchArgs.user_args():
+			if a.begins_with("--track-gap-toy="):
+				_toy_between = maxf(a.get_slice("=",1).to_float(),0.0)
+	return _toy_between
 
 func wrap_s(s: float) -> float:
 	return fposmod(s, _length)

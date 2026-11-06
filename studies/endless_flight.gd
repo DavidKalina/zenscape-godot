@@ -144,6 +144,8 @@ const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const LandIceTunnel = preload("res://scripts/endless/land_ice_tunnel.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
+## The railroad's track on its bed (scripts/endless/rail_track.gd; seed 1, off under --no-railroad).
+const RailTrack = preload("res://scripts/endless/rail_track.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
@@ -313,6 +315,8 @@ var tunnels: Node3D
 var ice: Node3D
 ## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
 var trees: Node3D
+## The railroad's track, or null (RailTrack `wanted`).
+var rails: Node3D
 ## The birds flushed from the trees and the far flocks.
 var birds: Node3D
 var fish: Node3D
@@ -703,6 +707,11 @@ func _ready() -> void:
 	trees.name = "Trees"
 	add_child(trees)
 	trees.setup(seed)
+	if RailTrack.wanted(field):
+		rails = RailTrack.new()
+		rails.name = "Rails"
+		add_child(rails)
+		rails.setup(field)
 	if EndlessFish.wanted() and field.ponds > 0.0:
 		fish = EndlessFish.new()
 		fish.name = "Fish"
@@ -1162,6 +1171,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
+	if rails != null: g = rails.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
 ## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
@@ -1410,6 +1420,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"doors_late")
 	trees.step(camera.global_position,plane.position)
 	FrameLog.mark(&"trees")
+	if rails != null: rails.step(camera.global_position,plane.position)
+	FrameLog.mark(&"rails")
 	knock.step(delta,self)
 	FrameLog.mark(&"knock")
 	birds.step(delta,camera.global_position,plane)

@@ -28,9 +28,12 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## LandField.SEA_Y (land_field.gd preloads this file).
 const SEA_Y := -40.0
-## Half the bed's flat top (m): two tracks 16 m apart, a car's half-width
-## past each and a shoulder (tools/rail_line.py's EDGE).
-const HALF := 14.0
+## The bed's flat top runs a car's half-width and this shoulder past each
+## track's centre: HALF, half the top, is 12.5 m with the tracks 13 m apart
+## (RailLine.track_gap(); tools/rail_line.py's EDGE), more with a wider
+## `--track-gap-toy=`.
+const SHOULDER := 3.0
+static var HALF := 12.5
 ## A cut's walls (rise per m out) and a bank's fall (drop per m out).
 const CUT_SLOPE := 1.2
 const FILL_SLOPE := 0.7
@@ -106,6 +109,7 @@ static func _build() -> void:
 	var line: RefCounted = RailLine.new()
 	if not bool(line.ok): return
 	_step = float(line.step)
+	HALF = float(line.track_gap())*0.5+RailLine.CAR_WIDTH*0.5+SHOULDER
 	_x = line._x
 	_z = line._z
 	_y = line._y
@@ -251,6 +255,15 @@ func _near(x: float, z: float) -> bool:
 	last_s = (_i+_t)*_step
 	return true
 
+## Where (x, z) sits across the line: Vector3(s, the signed distance from the
+## centre line (+ on the right of +s, track 0's side), the bed's top there),
+## or a NAN s off the grid's listed squares (more than REACH or so away).
+func across(x: float, z: float) -> Vector3:
+	if not _near(x,z): return Vector3(NAN,NAN,NAN)
+	var j := _i+1 if _i+1 < _n else 0
+	var side := (x-_x[_i])*(-_dz[_i])+(z-_z[_i])*_dx[_i]
+	return Vector3(last_s,last_d if side >= 0.0 else -last_d,lerpf(_y[_i],_y[j],_t))
+
 ## Vector2(world height, meadow) `got` with the bed on it at (x, z).
 func apply(got: Vector2, x: float, z: float) -> Vector2:
 	last_lift = 0.0
@@ -282,7 +295,7 @@ func ballast() -> float:
 # --- The land's arrays ------------------------------------------------------------
 
 ## The weight of a pass at `step` m a sample: full to 8 m, none past 32 (a
-## coarse chunk would catch the 28 m bed as dents).
+## coarse chunk would catch the 25 m bed as dents).
 static func level_of(step: float) -> float:
 	return 1.0-smoothstep(8.0,32.0,step)
 
@@ -387,6 +400,22 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 	made.colours = colours
 	made.carved = carved
 	made.river = river
+
+## No grass on the bed's top (EndlessGrass `grow_cell`, both its paths): the
+## grid's river channel (LandField.grid's `river`, how far outside a river's
+## water a node is) set under the water where the bed is laid, d < HALF, so
+## the grass keeps off the track as off a river's bed.
+func clear_grass(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:
+	var rs: PackedFloat32Array = got.get("river",PackedFloat32Array())
+	if rs.is_empty() or not meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step): return
+	for j in nz:
+		for i in nx:
+			var x := x0+(i-pad)*step
+			var z := z0+(j-pad)*step
+			if not _near(x,z) or last_d >= HALF: continue
+			var w := lerpf(_w[_i],_w[_i+1 if _i+1 < _n else 0],_t)
+			if w > 0.5: rs[j*nx+i] = -1.0
+	got.river = rs
 
 ## The bed's pass over LandField.grid's arrays (the grass's).
 func apply_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:
