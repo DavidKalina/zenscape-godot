@@ -33,6 +33,7 @@ extends RefCounted
 const RailLine = preload("res://scripts/endless/rail_line.gd")
 const BoreShape = preload("res://scripts/endless/rail_bore_shape.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const STOPS_PATH := "res://scripts/endless/rail_stops.gd"
 
 ## LandField.SEA_Y (land_field.gd preloads this file).
 const SEA_Y := -40.0
@@ -51,6 +52,12 @@ const REACH := 60.0
 const REACH_FADE := 20.0
 ## A span's end: the bank's fall along the line into it (drop per m), and
 ## how far in the stamp reaches (eased off over the last SPAN_FADE m).
+## The walls' and banks' feet rounded over FOOT m (`_foot`); their rims
+## where they meet the land rounded over RIM m, RIM_GROW m a m out from
+## the flat (`_held`).
+const FOOT := 3.0
+const RIM := 6.0
+const RIM_GROW := 0.6
 const SPILL_SLOPE := 1.0
 const SPAN_REACH := 40.0
 const SPAN_FADE := 10.0
@@ -352,11 +359,12 @@ func apply(got: Vector2, x: float, z: float) -> Vector2:
 	var half := lerpf(_hw[_i],_hw[j],_t)
 	var out := last_d-half
 	var span_in := lerpf(_sin[_i],_sin[j],_t)
-	var to := bed if out <= 0.0 else clampf(got.x,bed-out*FILL_SLOPE,bed+out*CUT_SLOPE)
+	var to := bed if out <= 0.0 else _held(got.x,bed+_foot(out)*CUT_SLOPE,bed-_foot(out)*FILL_SLOPE,out)
 	if span_in > 0.0:
 		# On a span: the bank's spill cone round its end, no flat top.
 		var o := maxf(out,0.0)
-		to = clampf(got.x,bed-Vector2(o*FILL_SLOPE,span_in*SPILL_SLOPE).length(),bed+Vector2(o,span_in).length()*CUT_SLOPE)
+		var f := _foot(o)
+		to = _held(got.x,bed+Vector2(f,span_in).length()*CUT_SLOPE,bed-Vector2(f*FILL_SLOPE,span_in*SPILL_SLOPE).length(),o)
 	var y := lerpf(got.x,to,w)
 	last_lift = y-got.x
 	if absf(last_lift) > 0.5: last_clear = true
@@ -364,6 +372,29 @@ func apply(got: Vector2, x: float, z: float) -> Vector2:
 	var m := got.y*(1.0-w*(1.0-smoothstep(half-2.0,half+4.0,last_d)))
 	m *= 1.0-w*clampf(absf(last_lift)/3.0,0.0,1.0)
 	return Vector2(y,m)
+
+## How far out a wall or bank stands at `out` m past the flat: its foot
+## rounded over FOOT m each side of the edge (the line of the flat's edge
+## falls between the land's vertices, so a sharp one reads as a saw-tooth),
+## the wall then FOOT/2 m out from where a sharp one would be.
+static func _foot(out: float) -> float:
+	if out <= 0.0: return 0.0
+	return out*out/(FOOT*2.0) if out < FOOT else out-FOOT*0.5
+
+## The land `h` held under the cut's wall `hi` and over the bank `lo`, the
+## rim where either meets the land rounded over up to RIM m (a smooth min
+## and max), less near the flat's edge (`out` m past it).
+static func _held(h: float, hi: float, lo: float, out: float) -> float:
+	var k := minf(out*RIM_GROW,RIM)
+	return _smax(_smin(h,hi,k),lo,k)
+
+static func _smin(a: float, b: float, k: float) -> float:
+	if k <= 0.0: return minf(a,b)
+	var h := maxf(k-absf(a-b),0.0)/k
+	return minf(a,b)-h*h*k*0.25
+
+static func _smax(a: float, b: float, k: float) -> float:
+	return -_smin(-a,-b,k)
 
 ## In a tunnel: the land raised to the bore's cover where it lies under it
 ## (BoreShape `cover_over`), never lowered, but on a portal block's
@@ -507,9 +538,25 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 ## grid's river channel (LandField.grid's `river`, how far outside a river's
 ## water a node is) set under the water where the bed is laid, d < HALF, so
 ## the grass keeps off the track as off a river's bed.
+## None on the stops either (rail_stops.gd `on_stop`: the platforms, the
+## towns' streets and lots, the landmarks), loaded here, not preloaded (it
+## preloads this file through RailTrack).
 func clear_grass(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:
 	var rs: PackedFloat32Array = got.get("river",PackedFloat32Array())
-	if rs.is_empty() or not meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step): return
+	if rs.is_empty(): return
+	var bx0 := x0-pad*step
+	var bz0 := z0-pad*step
+	var bx1 := x0+(nx-pad)*step
+	var bz1 := z0+(nz-pad)*step
+	var stops: GDScript = load(STOPS_PATH)
+	var near: Array = stops.grass_near(bx0,bz0,bx1,bz1)
+	if not near.is_empty():
+		for j in nz:
+			for i in nx:
+				if stops.on_stop(near,x0+(i-pad)*step,z0+(j-pad)*step): rs[j*nx+i] = -1.0
+	if not meets(bx0,bz0,bx1,bz1):
+		got.river = rs
+		return
 	for j in nz:
 		for i in nx:
 			var x := x0+(i-pad)*step

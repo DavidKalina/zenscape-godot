@@ -20,6 +20,12 @@ extends Node3D
 ## layout's move wins over the coded spot. The station's parts follow the
 ## line (its piece's s).
 ##
+## The look is kept-up painted timber in flat colours (`paint`): each
+## building one paint, a darker roof cap, a cornice and an awning in its
+## trim, windows and a door painted on its street face; the railway's own
+## buildings in a depot ochre. No grass on a stop (`grass_near`, read by
+## RailBed.clear_grass).
+##
 ## Every part is a level box (a centre, its axes, a foot and a top). Built
 ## at setup (one mesh and one static body of boxes per stop, seen out to
 ## VISIBLE). The flight meets them as stone, as the spans
@@ -79,13 +85,47 @@ const SINK := 2.0
 const PLINTH := 0.5
 ## Trees keep this far round a stop's parts (and tree_plan's own margin).
 const TREE_PAD := 6.0
-## Colours over the ruins' stone (its vertex colour).
+## The paint: flat colours (the vertex colour) on the ruins' stone shader
+## with its cut stone and weathering off (`paint`), so the blocks read as
+## kept-up painted timber, greybox.
 const PLATFORM_C := Color(0.62,0.58,0.52)
-const STONE_C := Color(0.80,0.74,0.65)
+const STONE_C := Color(0.66,0.62,0.56)
 const TIMBER_C := Color(0.55,0.42,0.30)
-const ROOF_C := Color(0.38,0.30,0.26)
+const ROOF_C := Color(0.30,0.25,0.23)
 const TANK_C := Color(0.50,0.38,0.28)
-const FRONTS := [Color(0.72,0.40,0.30),Color(0.80,0.66,0.42),Color(0.55,0.60,0.62),Color(0.85,0.80,0.70),Color(0.60,0.46,0.34),Color(0.50,0.56,0.44)]
+## The railway's own paint (station house, freight shed): a depot ochre with
+## brown trim.
+const DEPOT_C := Color(0.82,0.66,0.36)
+const DEPOT_TRIM := Color(0.40,0.26,0.18)
+## The grain elevator's red, the engine house's brick.
+const ELEVATOR_C := Color(0.66,0.30,0.24)
+const BRICK_C := Color(0.56,0.33,0.26)
+## The town's paints, one a building (its false front, walls and trim).
+const FRONTS := [Color(0.68,0.30,0.24),Color(0.84,0.66,0.34),Color(0.44,0.54,0.62),Color(0.90,0.86,0.74),Color(0.52,0.62,0.44),Color(0.60,0.42,0.30),Color(0.93,0.92,0.88),Color(0.78,0.56,0.50)]
+## Trim on a dark paint, and on a light one.
+const TRIM_LIGHT := Color(0.94,0.90,0.80)
+const TRIM_DARK := Color(0.34,0.24,0.18)
+## Glass and doors, painted on the faces (no collider).
+const GLASS_C := Color(0.13,0.15,0.18)
+const DOOR_C := Color(0.24,0.16,0.11)
+## A lot's roof cap (over its walls, OVERHANG past them, CAP thick), the
+## cornice on its false front (CORNICE thick, proud by CORNICE_OUT), the
+## awning over the walk in front (AWNING_AT over the street, AWNING_OUT
+## deep, AWNING_THICK).
+const CAP := 0.6
+const OVERHANG := 0.5
+const CORNICE := 0.6
+const CORNICE_OUT := 0.35
+const AWNING_AT := 3.8
+const AWNING_OUT := 3.0
+const AWNING_THICK := 0.35
+## The storeys the windows are laid by (m), a window's size, a door's.
+const STOREY := 4.2
+const WINDOW := Vector2(1.5,2.0)
+const DOOR := Vector2(2.0,3.0)
+## Grass keeps this far round a stop's parts (EndlessGrass, through
+## RailBed.clear_grass).
+const GRASS_PAD := 3.0
 ## Tops within this of the one under a point count as one (a platform's
 ## boxes step with the grade): none of them grows by the pad there.
 const TOP_SAME := 0.3
@@ -128,11 +168,23 @@ var tris := 0
 var build_ms := 0.0
 var stops := 0
 
+## The stops' paint: the ruins' stone shader (its sky-lit faces, the
+## shelter in vertex alpha) with the cut stone and the weathering off, so a
+## face is its vertex colour, flat. Made once.
+static var _paint: ShaderMaterial = null
+
+static func paint() -> ShaderMaterial:
+	if _paint == null:
+		_paint = (RuinKit.materials().stone as ShaderMaterial).duplicate() as ShaderMaterial
+		_paint.set_shader_parameter("stone_tile",0.0)
+		_paint.set_shader_parameter("stone_weather",0.0)
+	return _paint
+
 func setup(land_field: RefCounted) -> void:
 	var t0 := Time.get_ticks_usec()
 	field = land_field
 	line = RailLine.shared()
-	_stone = RuinKit.materials().stone
+	_stone = paint()
 	_grow = WorldScale.span*0.5+1.0
 	for stop: Dictionary in plan():
 		_build_stop(stop)
@@ -188,6 +240,24 @@ static func _frame(ln: RefCounted, s: float) -> Array:
 static func _part(c: Vector2, u: Vector2, hx: float, hz: float, base: int, s: float, lo: float, hi: float, col: Color, under := false, plinth := false) -> Dictionary:
 	return {"c":c,"u":u,"hx":hx,"hz":hz,"base":base,"s":s,"lo":lo,"hi":hi,"col":col,"under":under,"plinth":plinth}
 
+## A GROUND part whose base is the ground at `at` (a lot's parts all stand
+## on its walls' base, so the cap, the front and its cornice line up).
+static func _on(p: Dictionary, at: Vector2) -> Dictionary:
+	p["at"] = at
+	return p
+
+## A part with windows (and a door) painted on its face toward `n` (XZ,
+## unit, one of its axes): `storeys` rows of windows over the ground floor.
+static func _faced(p: Dictionary, n: Vector2, storeys: int, door := true) -> Dictionary:
+	var faces: Array = p.get("faces",[])
+	faces.append([n,storeys,door])
+	p["faces"] = faces
+	return p
+
+## The trim for a paint: light on a dark one, dark on a light one.
+static func _trim(col: Color) -> Color:
+	return TRIM_LIGHT if col.get_luminance() < 0.6 else TRIM_DARK
+
 ## The platforms (either side, along the curve in PLATFORM_STEP boxes), the
 ## house on the town side, the water tower on the other.
 static func _station(ln: RefCounted, s: float, side: float, parts: Array) -> void:
@@ -206,8 +276,9 @@ static func _station(ln: RefCounted, s: float, side: float, parts: Array) -> voi
 	var fr := _frame(ln,s)
 	var right: Vector2 = fr[2]*side
 	var house: Vector2 = fr[0]+right*(PLATFORM_OUT+HOUSE.y*0.5)
-	parts.append(_part(house,fr[2],HOUSE.y*0.5,HOUSE.x*0.5,BED,s,-INF,HOUSE.z,TIMBER_C,false,true))
-	parts.append(_part(house,fr[2],HOUSE.y*0.5+1.2,HOUSE.x*0.5+1.2,BED,s,HOUSE.z,HOUSE.z+HOUSE_ROOF,ROOF_C,true))
+	parts.append(_faced(_faced(_part(house,fr[2],HOUSE.y*0.5,HOUSE.x*0.5,BED,s,-INF,HOUSE.z,DEPOT_C,false,true),-right,1),right,1))
+	parts.append(_part(house,fr[2],HOUSE.y*0.5+1.2,HOUSE.x*0.5+1.2,BED,s,HOUSE.z,HOUSE.z+0.5,DEPOT_TRIM,true))
+	parts.append(_part(house,fr[2],HOUSE.y*0.5+0.6,HOUSE.x*0.5+0.6,BED,s,HOUSE.z+0.5,HOUSE.z+HOUSE_ROOF,ROOF_C))
 	# The water tower past the platform's far end on the other side.
 	var ts := s+TOWER_AT*side
 	var tf := _frame(ln,ts)
@@ -246,12 +317,24 @@ static func _town(ln: RefCounted, s: float, spec: Dictionary, parts: Array, mark
 			var deep := rng.range(LOT_DEEP)
 			var tall := rng.range(LOT_TALL)
 			var col: Color = FRONTS[rng.pick(FRONTS.size())]
+			var awning := rng.next() < 0.7
 			var mid := o+u*(x+wide*0.5)+v*sd*(half+deep*0.5)
-			# The block, its roof (a shade darker) and its false front on the
-			# street, taller than the block.
-			parts.append(_part(mid,u,wide*0.5,deep*0.5,GROUND,0.0,-INF,tall,TIMBER_C.lerp(col,0.25),false,true))
+			var out := -v*sd
+			# The block in its paint on a stone plinth; its roof cap (dark,
+			# over the walls but behind the front); its false front on the
+			# street, taller than the block, its windows and door painted
+			# on, a cornice on top in the trim; an awning over the walk.
+			parts.append(_part(mid,u,wide*0.5,deep*0.5,GROUND,0.0,-INF,tall,col.darkened(0.06),false,true))
+			var cap := o+u*(x+wide*0.5)+v*sd*(half+FRONT_DEEP+(deep-FRONT_DEEP+OVERHANG)*0.5)
+			parts.append(_on(_part(cap,u,wide*0.5+OVERHANG,(deep-FRONT_DEEP+OVERHANG)*0.5,GROUND,0.0,tall,tall+CAP,ROOF_C.lerp(col,0.2),true),mid))
 			var front := o+u*(x+wide*0.5)+v*sd*(half+FRONT_DEEP*0.5)
-			parts.append(_part(front,u,wide*0.5,FRONT_DEEP*0.5,GROUND,0.0,0.0,tall+FRONT,col))
+			var storeys := clampi(int((tall+FRONT)/STOREY)-1,0,3)
+			parts.append(_faced(_on(_part(front,u,wide*0.5,FRONT_DEEP*0.5,GROUND,0.0,0.0,tall+FRONT,col),mid),out,storeys))
+			var cor := o+u*(x+wide*0.5)+v*sd*(half+FRONT_DEEP*0.5-CORNICE_OUT*0.5)
+			parts.append(_on(_part(cor,u,wide*0.5+0.15,FRONT_DEEP*0.5+CORNICE_OUT*0.5,GROUND,0.0,tall+FRONT,tall+FRONT+CORNICE,_trim(col),true),mid))
+			if awning:
+				var aw := o+u*(x+wide*0.5)+v*sd*(half-AWNING_OUT*0.5)
+				parts.append(_part(aw,u,wide*0.5-0.6,AWNING_OUT*0.5,GROUND,0.0,AWNING_AT,AWNING_AT+AWNING_THICK,_trim(col).lerp(col,0.3),true))
 			x += wide+(WorldScale.opening(TOY_ALLEY) if k%2 == 1 else TIGHT)
 		reach = maxf(reach,x)
 	var mark := str(spec.mark)
@@ -267,10 +350,13 @@ static func _elevator(ln: RefCounted, s: float, fr: Array, side: float, parts: A
 	var sf := _frame(ln,s+a)
 	var away: Vector2 = sf[2]*side
 	var c: Vector2 = sf[0]+away*(PLATFORM_OUT+11.0)
-	parts.append(_part(c,sf[2],9.0,8.0,BED,s+a,-INF,34.0,Color(0.70,0.62,0.50),false,true))
-	parts.append(_part(c,sf[2],4.0,4.0,BED,s+a,34.0,42.0,Color(0.66,0.56,0.44)))
+	parts.append(_part(c,sf[2],9.0,8.0,BED,s+a,-INF,34.0,ELEVATOR_C,false,true))
+	parts.append(_part(c,sf[2],9.4,8.4,BED,s+a,34.0,34.6,TRIM_LIGHT,true))
+	parts.append(_part(c,sf[2],4.0,4.0,BED,s+a,34.6,42.0,ELEVATOR_C.darkened(0.08)))
+	parts.append(_part(c,sf[2],4.5,4.5,BED,s+a,42.0,42.6,ROOF_C,true))
 	var b: Vector2 = c+sf[1]*14.0
-	parts.append(_part(b,sf[2],7.0,6.0,BED,s+a,-INF,12.0,TIMBER_C,false,true))
+	parts.append(_faced(_part(b,sf[2],7.0,6.0,BED,s+a,-INF,12.0,ELEVATOR_C,false,true),-away,1))
+	parts.append(_part(b,sf[2],7.5,6.5,BED,s+a,12.0,12.6,ROOF_C,true))
 
 ## The cattle pens along the line short of the platform's start on the town
 ## side (past its end a creek crosses): a grid of low rail fences.
@@ -309,14 +395,15 @@ static func _headframe(fr: Array, side: float, parts: Array) -> void:
 	parts.append(_part(c,fr[2],3.5,5.0,GROUND,0.0,TALL+2.0,TALL+7.0,ROOF_C))
 	# The engine house at its foot, downhill toward the line.
 	var h: Vector2 = c-fr[2]*side*(off+14.0)
-	parts.append(_part(h,fr[2],8.0,11.0,GROUND,0.0,-INF,10.0,STONE_C.darkened(0.15),false,true))
+	parts.append(_faced(_part(h,fr[2],8.0,11.0,GROUND,0.0,-INF,10.0,BRICK_C,false,true),-fr[2]*side,1))
+	parts.append(_on(_part(h,fr[2],8.6,11.6,GROUND,0.0,10.0,10.6,ROOF_C,true),h))
 
 ## The start's freight shed along the platform's far end on the town side.
 static func _shed(ln: RefCounted, s: float, fr: Array, side: float, parts: Array) -> void:
 	var a := -(HOUSE.x*0.5+26.0)
 	var sf := _frame(ln,s+a)
 	var c: Vector2 = sf[0]+sf[2]*side*(PLATFORM_OUT+9.0)
-	parts.append(_part(c,sf[2],9.0,16.0,BED,s+a,-INF,9.0,TIMBER_C.darkened(0.05),false,true))
+	parts.append(_faced(_part(c,sf[2],9.0,16.0,BED,s+a,-INF,9.0,DEPOT_C.darkened(0.1),false,true),-sf[2]*side,0))
 	parts.append(_part(c,sf[2],10.0,17.0,BED,s+a,9.0,10.0,ROOF_C,true))
 
 ## Trees keep off each stop: [pos XZ, cos, sin, half x, half z] as
@@ -325,6 +412,21 @@ static func _shed(ln: RefCounted, s: float, fr: Array, side: float, parts: Array
 ## approach along the street), one round the landmark. The caller asks
 ## only with the railroad on (RailTrack.wanted).
 static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
+	var out: Array = []
+	for r: Array in _rects(TREE_PAD):
+		var c: Vector2 = r[0]
+		var a: Vector2 = r[1]
+		var h := Vector2(float(r[2]),float(r[3]))
+		var reach := h.length()
+		if c.x+reach < x0-400.0 or c.x-reach > x1+400.0 or c.y+reach < z0-400.0 or c.y-reach > z1+400.0: continue
+		# tree_plan: lx = |ox cos - oz sin| along (cos, -sin) = a, lz
+		# along (sin, cos) = b (up to its sign).
+		out.append([c,a.x,-a.y,h.x,h.y])
+	return out
+
+## Each stop's groups as rectangles round their parts, grown by `pad`:
+## [centre XZ, axis a (unit), half along a, half across].
+static func _rects(pad: float) -> Array:
 	var out: Array = []
 	for stop: Dictionary in plan():
 		for group: Array in stop.groups:
@@ -345,14 +447,45 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 					lo = lo.min(l)
 					hi = hi.max(l)
 			var mid := (lo+hi)*0.5
-			var c: Vector2 = c0+a*mid.x+b*mid.y
-			var h := (hi-lo)*0.5+Vector2.ONE*TREE_PAD
-			var r := h.length()
-			if c.x+r < x0-400.0 or c.x-r > x1+400.0 or c.y+r < z0-400.0 or c.y-r > z1+400.0: continue
-			# tree_plan: lx = |ox cos - oz sin| along (cos, -sin) = a, lz
-			# along (sin, cos) = b (up to its sign).
-			out.append([c,a.x,-a.y,h.x,h.y])
+			var h := (hi-lo)*0.5+Vector2.ONE*pad
+			out.append([c0+a*mid.x+b*mid.y,a,h.x,h.y])
 	return out
+
+## No grass on a stop (its platforms, house, tower, street and lots, its
+## landmark): RailBed.clear_grass asks for each node of a grass cell's
+## grid. The rectangles once, each with its box.
+static var _grass: Array = []
+static var _grass_done := false
+static var _grass_lock := Mutex.new()
+
+static func _grass_rects() -> Array:
+	_grass_lock.lock()
+	if not _grass_done:
+		_grass_done = true
+		for r: Array in _rects(GRASS_PAD):
+			var c: Vector2 = r[0]
+			var reach := Vector2(float(r[2]),float(r[3])).length()
+			_grass.append(r+[Rect2(c-Vector2.ONE*reach,Vector2.ONE*reach*2.0)])
+	_grass_lock.unlock()
+	return _grass
+
+## The stops' grass rectangles that meet the box (x0, z0)..(x1, z1).
+static func grass_near(x0: float, z0: float, x1: float, z1: float) -> Array:
+	var out: Array = []
+	var box := Rect2(x0,z0,x1-x0,z1-z0)
+	for r: Array in _grass_rects():
+		if (r[4] as Rect2).intersects(box): out.append(r)
+	return out
+
+## Whether (x, z) is in one of `rects` (grass_near's).
+static func on_stop(rects: Array, x: float, z: float) -> bool:
+	for r: Array in rects:
+		var c: Vector2 = r[0]
+		var a: Vector2 = r[1]
+		var ox := x-c.x
+		var oz := z-c.y
+		if absf(ox*a.x+oz*a.y) <= float(r[2]) and absf(-ox*a.y+oz*a.x) <= float(r[3]): return true
+	return false
 
 # --- Building ---------------------------------------------------------------------
 
@@ -387,7 +520,8 @@ func _box_of(p: Dictionary, m: RefCounted, body: StaticBody3D) -> void:
 		var g := float(field.height(q.x,q.y))
 		foot = minf(foot,g)
 		top_g = maxf(top_g,g)
-	var base := float(line.bed(float(p.s))) if int(p.base) == BED else float(field.height(c.x,c.y))
+	var at: Vector2 = p.get("at",c)
+	var base := float(line.bed(float(p.s))) if int(p.base) == BED else float(field.height(at.x,at.y))
 	foot -= SINK
 	var lo := float(p.lo)
 	var y0 := foot if lo == -INF else base+lo
@@ -397,6 +531,38 @@ func _box_of(p: Dictionary, m: RefCounted, body: StaticBody3D) -> void:
 		_add(c,u,hx+0.3,hz+0.3,foot,base+PLINTH,STONE_C,false,m,body)
 		y0 = maxf(y0,base)
 	_add(c,u,hx,hz,y0,y1,p.col,bool(p.under),m,body)
+	for f: Array in p.get("faces",[]):
+		_panes(c,u,hx,hz,f[0],int(f[1]),bool(f[2]),base+PLINTH,y1,m)
+
+## Windows and a door painted on a box's face toward `n` (no collider): a
+## door in the middle of the ground floor from `floor`, a shop window each
+## side of it, and `storeys` rows of windows over it, none within a
+## storey's margin of the top `y1`.
+func _panes(c: Vector2, u: Vector2, hx: float, hz: float, n: Vector2, storeys: int, door: bool, floor_y: float, y1: float, m: RefCounted) -> void:
+	var v := Vector2(-u.y,u.x)
+	var t := Vector2(-n.y,n.x)
+	var dist := absf(n.dot(u))*hx+absf(n.dot(v))*hz
+	var half := absf(t.dot(u))*hx+absf(t.dot(v))*hz
+	var at := c+n*(dist+0.04)
+	var n3 := Vector3(n.x,0.0,n.y)
+	var t3 := Vector3(t.x,0.0,t.y)
+	var o := Vector3(at.x,0.0,at.y)
+	var pane := func(x: float, w: float, y0: float, y1p: float, col: Color) -> void:
+		var a := o+t3*(x-w*0.5)
+		var b := o+t3*(x+w*0.5)
+		m.quad(a+Vector3.UP*y0,b+Vector3.UP*y0,b+Vector3.UP*y1p,a+Vector3.UP*y1p,n3,col)
+	if door: pane.call(0.0,DOOR.x,floor_y,floor_y+DOOR.y,DOOR_C)
+	if half >= 5.0:
+		var sx := minf(half*0.5+0.5,half-2.0)
+		var w := minf(3.0,half-DOOR.x*0.5-1.6)
+		if w > 1.0:
+			for sd: float in [-1.0,1.0]: pane.call(sd*sx,w,floor_y+0.9,floor_y+2.9,GLASS_C)
+	var cols := maxi(1,int(half*2.0/3.4))
+	for k in range(1,storeys+1):
+		var y0 := floor_y+STOREY*k+0.9
+		if y0+WINDOW.y > y1-0.8: break
+		for i in cols:
+			pane.call(-half+half*2.0*(i+0.5)/cols,WINDOW.x,y0,y0+WINDOW.y,GLASS_C)
 
 func _add(c: Vector2, u: Vector2, hx: float, hz: float, y0: float, y1: float, col: Color, under: bool, m: RefCounted, body: StaticBody3D) -> void:
 	var x := Vector3(u.x,0.0,u.y)*hx
