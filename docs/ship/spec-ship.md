@@ -335,6 +335,21 @@ looked at.
    the hud lane's slot shows); smoke on `--world=tutorial` and the
    default; a driven run from a fresh book through all five stages into
    the wilderness, and one that skips.
-7. Play by the user; a tuning task for the requirements table and the
-   cloud height from what they say.
+7. Play by the user; a tuning task from what they say. First play
+   (2026-11-08, stopped at the trees stage), two points, both to fix:
+   - "Waves are bleeding into the meadow." The sea's waves (foam, swell,
+     or the sea mesh itself) show on the tutorial grass. Find why (the
+     meadow's height against sea level, the coast band, the sea shader's
+     shore reach) and make the meadow dry to the eye: a still from the
+     plane at skim height over the grass with no water in it, and one at
+     the WATER stage where ponds still read as water.
+   - "Tree grazing needs to be easier to do. It's too stringent." The
+     lesson's TREES count must move on a pass that feels close, not only
+     on the game's scored graze (half a wingspan). Prefer the lesson
+     counting its own looser tree pass (a wider distance, its first value
+     in the NEEDS table) and denser copses nearer the plane at the TREES
+     stage, leaving the game's scoring as it is; if the scored graze
+     itself should loosen for everyone, that is the user's call, not this
+     task's. Prove with the driver: a pass at the looser distance counts,
+     and three such passes end the stage.
 8. Handoff.
