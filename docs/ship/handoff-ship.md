@@ -89,3 +89,71 @@ frames, 0 errors.
   music yet, which needs a clean licence.
 - Steam: partner account, depots, store assets; `--pilot=fresh` and the
   Deck's 1280x800 are already in the harness.
+
+# Round 2 (2026-11-08): the land-taught tutorial, a clear HUD, a tabbed shop
+
+The user played round 1: a good start, but the ribbon tutorial was hard
+to follow and the HUD and shop crowded. Round 2 (spec section "Round 2")
+replaced the ribbon with a tutorial the land itself teaches, cleared the
+HUD, tabbed the shop, and then tuned from three plays.
+
+## What's built
+
+- **The tutorial** (`scripts/endless/tutorial/`). A fresh book starts in
+  the air, low over flat grass, already flying, in a `tutorial` world 50
+  km from the wilderness under a closed cloud deck (whiteout above about
+  60 m, clear below 40). One HUD line with a count; the money, pointer,
+  key strip and finds hidden until the end. Stages, each advanced off the
+  near misses the game already scores (`lesson.gd`, `NEEDS` table):
+  1. GRASS: three pull-outs over land or eight seconds of skim.
+  2. TREES: three tree passes, counted by the lesson's own clearance (a
+     wingtip within about 7 m of a crown, once per tree), copses from
+     about 160 m out.
+  3. WATER: two pull-outs over water. The land past 110 m is rebuilt in
+     place and a straight reach is stamped 120 to 420 m ahead.
+  4. GAUGE: the surge meter full once.
+  5. WALL: the ruin hall stands about 780 m ahead under a beam with a
+     cracked wall in its mouth; a full-meter surge roll breaks it, the
+     hall swaps the land to the wilderness, the HUD comes back,
+     `tutorial_done` is set. Skip (Backspace, D-pad down) does the swap.
+  A guide ribbon at GRASS and WATER shows the swoop: level, down to 3.5 m
+  for 150 m, up through a gate; over water its dip lies on the reach.
+- **The HUD.** A five-key strip that fits at 1280 and 1440; the shop
+  pointer lower, out of the top band.
+- **The shop.** Planes, Paints, Ribbons tabs (A/D, pad shoulders);
+  rendered plane thumbnails; the landing summary down to earned, aloft,
+  best line, two records.
+- **Fixes found on the way.** The sea sheet no longer shows through the
+  meadow (a per-world `sea_at` switch, off only on the tutorial side);
+  ponds draw as water in any regions world with ponds; a regions world
+  with no carpet tones no longer paints black turf.
+
+## Where to play
+
+`python3 tools/play.py -- --pilot=fresh` (the title, Start, the tutorial).
+`--world=tutorial --tutorial` forces it; `--lesson-stage=N` sets the
+land's stage for a driver; `--tutorial=0` never runs it.
+
+## Proved
+
+Smoke on the default, `--world=tutorial` and `--tutorial --pilot=fresh`;
+drivers through all five stages into the wilderness and a skip, headless
+and rendered; the nearest water under 400 m at WATER start on four
+headings; the ribbon's legs scoring pull-outs over land and water; stills
+of every stage, the hall and wall, the swap, the deck, the shop tabs and
+the summary. The user flew the whole tutorial by hand into the wilderness
+on the third play.
+
+## Open
+
+- The HUD stays crisp inside the cloud deck (layer 5 over the whiteout's 4).
+- A small "ROLL" marker shows in the meadow near the hall.
+- The "Wilderness" caption sits tight over the pointer after the swap.
+- Shop strips are still laid on the meadow side (7 km out, hidden).
+- A 313 ms frame on the swap.
+- Ponds in the standalone amberlands still draw dry (rivers 0): one line
+  turns them on; the user has not decided.
+- The plane comes out about 4 km from the wilderness start, by its ruin.
+- Everything in round 1's "Not proved" list that was not touched: the
+  earn rate, fullscreen and vsync, the Windows exe, the bird clips, the
+  engine sound.
