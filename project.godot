@@ -10,7 +10,8 @@ config_version=5
 
 [application]
 
-config/name="ZenScape — Landscape Sandbox"
+config/name="ZenScape"
+config/version="0.1.0"
 run/main_scene="res://studies/endless_flight.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 run/max_fps=120

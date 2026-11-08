@@ -1,198 +1,28 @@
 # Gamepad
 
-The whole game plays on an Xbox-style pad, the Steam Deck's included. The keyboard and mouse keep working alongside it, and there is no mode to switch. Whichever device was used last names the prompts.
+The game plays on an Xbox-style pad, the Steam Deck's included. The keyboard
+and mouse keep working alongside it; the last device used names the prompts.
+The in-game Controls page (pause menu) lists every binding with the pad's
+glyphs, read from the InputMap (`scripts/endless/shell/controls_page.gd`).
 
-Code:
-- `scripts/pad.gd`: the actions, the device in use, dead zones and curves, and vibration.
-- `scripts/pad_input.gd`: what the pad does in each place.
-- `scripts/pad_prompt.gd`: hint lines with drawn button glyphs.
-- `scripts/wanderer_eye.gd`: walking and flying.
-
-Tests: `tests/test_gamepad.gd` and `tests/test_gamepad_screens.gd`.
-
-## Layout
-
-The layout follows cozy builders on a pad, such as Townscaper and Tiny Glade on the Deck. In building, a soft cursor stands for the mouse. The shoulders, the D-pad and Y pick what is in hand. Nothing destructive happens on a single press:
-- Undo and redo are holds.
-- Delete in the library asks first, with Keep it in focus.
-- The trash can keeps its own undo.
-
-### Building
-
-| Pad | Does | Keys / mouse it matches |
-|---|---|---|
-| Left stick | Moves the hand's cursor. It eases in and speeds up while held. At rest it keeps to the land point under it as the view orbits and the world turns. | Moving the mouse |
-| A (tap, hold) | Press, or hold and move for a stroke or drag. A quick second press glides the camera there. | Left click / drag, double-click |
-| X (held) | Shift: thin, pluck, or turn without winding time | Shift |
-| B | Puts down what is in hand: the material, then the tool. Closes an open page, the palette or the moods. | Esc (never opens the menu) |
-| B held ½ s | Undo | Cmd Z |
-| Y | Next mode of the tool in hand (Pull/Draw, Pinch/Groove…) | Q / E |
-| Y held ½ s | Redo | Cmd Shift Z |
-| LB / RB | Previous / next tool on the roll | Pressing a pocket |
-| D-pad ◂ / ▸ | Previous / next specimen found in the case | Pressing the case |
-| D-pad ▴ / ▾ | Size up / down | [ ] or 1 2 3 |
-| Right stick | Orbit and tilt | Right-drag |
-| LT / RT | Zoom out / in, toward the cursor | Wheel |
-| R3 | Overview | R |
-| L3 | Photo mode | P |
-| View | Steps into the eyes where the cursor is | V |
-| View held ½ s | Watch mode | O |
-| Menu | Pause; closes the moods first if open | Esc |
-
-### Walking
-
-| Pad | Does | Keys / mouse |
-|---|---|---|
-| Left stick | Walk, analog | WASD / arrows |
-| Right stick | Look | Mouse |
-| A | Jump; again on landing, the higher pump; in a skid, the side flip; surfing a slope, the slide jump; on a wall (or just after touching one in the air), kick off it; again in the air to fly; beside the plane, take off | Space |
-| LT (held) | Crouch; at a run, then A, the long jump; on a slope, surf down it. Pressed fresh in the air a couple of metres up or more: the slam, driven straight down to hit with the height he fell (no charge spent; it pushes what's round him, opens buried finds from a decent height; scripts/slam.gd). Held from the ground, or pressed lower: the slide on landing | Shift or C |
-| X (in the air) | Twirl; out of a slide, steer across to build speed and hop again on the touch | X |
-| RB | Spend the flow charge: the updraft, or forward out of a slide the burst (scripts/updraft.gd). Up out of an updraft, LT cashes the height in as the slam | Q |
-| LB (held, on the ground) | Telescope up; let go to lower (scripts/telescope.gd). He stands or shuffles while it's up | Right mouse (held) |
-| B or View | Step back out to building | V / Esc |
-| Menu | Pause (steps out) | — |
-
-Walking is already first person, so there is nothing for C, and Y does nothing while walking (except at a cannon, below).
-
-#### Through the telescope
-
-| Pad | Does | Keys / mouse |
-|---|---|---|
-| Right stick | Look, slower as the zoom grows | Mouse |
-| LT / RT | Zoom out / in, smoothly, 3x to 12x | Wheel, a step a notch |
-| Left stick | Shuffle | WASD |
-| LB released | Lower | Right mouse released |
-
-While it's up A, Y, R3 and crouch do nothing; held on an isle a moment, its card shows.
-
-#### At a cannon (studies/cannon_yard.tscn, scripts/cannon/cannon_field.gd)
+The bindings live in one table, `ACTIONS` in `scripts/pad.gd`, which also holds
+dead zones, curves and vibration. Flight bindings:
 
 | Pad | Does | Keys |
 |---|---|---|
-| A (standing by it) | Operate it from outside (no jump) | Space |
-| Y (standing by it, or operating) | Climb into the barrel | F |
-| Operating: left stick | Aim the barrel (turn, pitch) | WASD |
-| Operating: D-pad | Power, 5 notches | , . |
-| Operating: A | Fire a keg from the hover (loads it, then fires); none left, a click | Space |
-| Operating: B | Step away | E |
-| Inside: A | Launch yourself, at the aim and power tested | Space |
-| Inside: B | Climb back out (operating again) | E |
+| Left stick | Bank and pitch | W A S D, arrows |
+| Right stick | Look round | Right mouse |
+| Right trigger | Boost | Space |
+| Left trigger | Brake | Shift |
+| A | Barrel roll | Z |
+| LB / RB | Knife edge (lean) | Q / E |
+| Y | Flaps, land | F |
+| X (held) | Surge, with a full meter | B |
+| B | Drop the cargo | E |
+| D-pad up | Next weight preset | V |
+| D-pad right | Next pace preset | P |
+| R3 (held on a bracketed plane) | Challenge it to a race | Tab |
+| L3 | Photo mode | O |
+| Start | Pause | Esc |
 
-The cannon prompt names each button for the mode, the kegs in hand and the power.
-
-### Flying (the plane)
-
-| Pad | Does | Keys / mouse |
-|---|---|---|
-| Left stick | Bank, turn and pitch | A D, W S |
-| Right stick | Look round. The view holds 2.5 s, then swings back. | Mouse |
-| RT or A | Boost | Space |
-| LT | Brake | Shift |
-| LB / RB | Barrel roll | Q / E, click |
-| Y | Land. Again before the touch flies on; after it, hops out. | F |
-| X | Eject (the skydive, docs/skydive.md) | X |
-| R3 | Chase / first-person camera (the isles) | C |
-| R3, held | Endless flight: challenge the bracketed plane to a race; pressed in the race, call it off (scripts/endless/rival_race.gd) | Tab, held |
-| B or View | Step out | V / Esc |
-| Menu | Pause | — |
-
-During the landing, RT, a roll or Y flies on, as Boost, Q/E or F do.
-
-### Skydiving (out of the plane)
-
-| Pad | Does | Keys / mouse |
-|---|---|---|
-| X | Open the canopy (it also opens by itself near the ground) | X |
-| Left stick | Falling: turn, forward tracks, back slides. Under the canopy: steer, forward for speed, back to brake | A D, W S |
-| RT or A | Falling: tuck and dive faster | Space |
-| LT | Falling: spread and slow. Under the canopy: brake and float | Shift |
-| Right stick | Look round | Mouse |
-| B or View | Step out | V / Esc |
-
-### Photo mode
-
-| Pad | Does | Keys |
-|---|---|---|
-| Right stick | Orbit / look | Drag |
-| Left stick | Pan / walk the ground eye | Right-drag, arrows |
-| LT / RT | Dolly | Wheel |
-| A | Take the photo | Space |
-| B | Back | P / Esc |
-| X | Ground eye | G |
-| Y | Depth of field | F |
-| LB / RB | Lens | [ ] |
-| D-pad ▴ / ▾ | Exposure | Shift [ ] |
-| View | Hide the chrome | H |
-| R3 | Reframe | R |
-| Menu | Leave and pause | — |
-
-### Watch mode
-
-Any button comes back. Menu comes back and pauses.
-
-### Screens
-
-| Screen | Pad |
-|---|---|
-| Front page | D-pad or left stick moves through the entries, A presses. Godot's focus is used; the card lights the focused entry. |
-| Pause, field notes | D-pad up/down steps the rows, A presses, B folds the copy well, goes back from the notes, or resumes. Menu resumes. |
-| Settings | Every row takes focus on the pad. D-pad moves, ◂ ▸ sets sliders and lists, A toggles, B closes. Includes **Controller vibration** (`user://pad.cfg`). |
-| Library | ◂ ▸ browse the worlds, A enters, B goes back. ▴ lifts focus onto the action row (Enter, Rename, Duplicate, Delete), ▴ again onto Settings and Back. ◂ ▸ walks a row, A presses, ▾ or B returns to the worlds. X starts a new world. Delete shows its card with Keep it focused: ◂ ▸ choose, A presses, B cancels. |
-| Rename | A keeps the name, B cancels. Typing needs a keyboard, or the Deck's on-screen keyboard (Steam + X). |
-| New world | ▴ ▾ pick the land, ◂ ▸ the kind, X rolls the seed, Y goes to the name, A begins, B goes back. |
-| First steps card, almanac, almanac pages, command palette | The cursor and A, like the mouse. B closes a page or the palette. |
-
-A stitched ring in the linen's thread, with a faint lift, follows the focus on these screens while the pad is in hand.
-
-## Actions
-
-Every pad read goes through a named action in the InputMap (`Pad.ACTIONS`). `Pad.ensure()` adds the ones the project does not define. It leaves alone any action already in `project.godot` or set by a remap. It also gives `ui_accept` the pad's A and `ui_cancel` its B.
-
-Keys sit in the same action where the code polls them:
-- `move_*`
-- `walk_jump`, `walk_crouch`, `walk_twirl` and `walk_sneak` (Ctrl or Alt held; the pad has no button for it: the stick eased is a sneak)
-- `fly_boost` and `fly_brake`
-- `fly_eject` (the pad's X: eject, then open the canopy; the X key is the same verb, read as an event)
-- `fly_drop` (E or the pad's B in flight: open the cargo bag and let its load fall; the home isle's drop pass)
-- `telescope` (the pad's LB and the right mouse button, held; `Pad.ACTIONS` takes a `["mouse", button]` spec for it)
-
-Keys read as events keep their own handlers.
-
-The screens that only read keys (the library, New world, photo mode) are handed the pad's moves as those keys. They are marked with `Pad.PAD_DEVICE` so they are not taken for the keyboard.
-
-Prompts name a binding with `{action}` or a glyph id (`{A}`, `{LB}`, `{LS}`). A remap changes the glyph drawn.
-
-## Devices and feel
-
-**Which device is in use:**
-- The pad counts as picked up on a press, or a stick or trigger pushed past 0.45.
-- The keyboard and mouse count as picked up on a key, a click, or the mouse moving 3 px.
-
-**Prompts.** They follow the device:
-- the walk, fly, landing, photo and watch hints
-- the hand's hint line
-- the first steps' lines, and the field notes with them
-- the pause panel's "Esc"
-- the library's strip hint
-
-**The cursor:**
-- It moves the system pointer: `warp_mouse` where there is a mouse, and the pointer's own events otherwise. Everything that reads the pointer follows it.
-- While the pad drives it, the system arrow hides and a small stitched reticle shows instead.
-- The pointer echo some systems send after a warp is dropped. It is neither the mouse picked up nor a second move.
-
-**Dead zones and curves:**
-- Sticks: 0.18 radial, rescaled from the edge, with a 1.6–1.8 power curve.
-- Triggers: 0.1.
-- Cursor: 0.75 screen heights a second at full push. It starts at 40 % and reaches full speed over 0.6 s.
-- Orbit: 0.24 of a turn a second.
-- Zoom: ×2.2 a second.
-
-**Vibration.** Small pulses on touchdown, a barrel roll, A on the land, and undo/redo. It is off with the setting, and silent while the keyboard and mouse are in hand.
-
-## Not covered yet
-
-- Scrolling the almanac pages and the field notes' long list on the pad. The pages' items are pressed with the cursor; the notes scroll with the D-pad.
-- The command palette's typing.
-- Rename's typing, beyond the Deck's on-screen keyboard.
-- The mood orbs under `--classic-shell`, the old craft shell, and the legacy file dialog.
+In menus the pad's A, B and the d-pad work every page.

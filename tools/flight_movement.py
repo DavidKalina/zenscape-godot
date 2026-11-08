@@ -30,7 +30,7 @@ import statistics as st
 from collections import defaultdict
 
 RUNS = os.path.expanduser("~/Library/Application Support/Godot/app_userdata/"
-	"ZenScape — Landscape Sandbox/flight_runs")
+	"ZenScape/flight_runs")
 # FlightMetrics FLOW_SMOOTH, FLOW_STILL, FLOW_STRAIGHT, FLOW_REVERSE.
 SMOOTH = 0.25
 STILL = 6.0
