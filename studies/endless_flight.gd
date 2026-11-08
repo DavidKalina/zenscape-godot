@@ -485,6 +485,8 @@ var crashes := 0
 var book: PilotBook
 ## The first flight's guide (scripts/endless/first_flight.gd), on a fresh book.
 var first_flight: Node
+## The land that teaches, in --world=tutorial (scripts/endless/tutorial/tutorial_land.gd).
+var tutorial_land: Node
 ## The overlay that holds the keys while it is up (the shop, the logbook,
 ## photo mode; null: none). One at a time: open one only when this is null.
 var overlay: Object = null
@@ -824,6 +826,7 @@ func _ready() -> void:
 		first_flight = preload("res://scripts/endless/first_flight.gd").new()
 		add_child(first_flight)
 		first_flight.setup(self)
+	if world.id == "tutorial": tutorial_land = preload("res://scripts/endless/tutorial/tutorial_land.gd").new(); add_child(tutorial_land); tutorial_land.setup(self)
 	coast = preload("res://scripts/endless/coast_sites.gd").new()
 	coast.name = "Coast"
 	add_child(coast)

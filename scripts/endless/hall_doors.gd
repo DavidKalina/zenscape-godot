@@ -605,7 +605,7 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 		var fl: float = _frames[i].origin.y
 		# The stone under it all, the steps down round it.
 		var stone := HallSeat.top(l.x,l.z,_out+HallSeat.BACK,_steps[i])
-		if stone > -INF and (h == null or fl+stone > float(h)): h = fl+stone
+		if stone > -INF and (h == null or (not (h is Vector2) and fl+stone > float(h))): h = fl+stone
 		if absf(l.x) > TOWER_X+TOWER_SOLID+grow or l.z < -TOWER_SOLID or l.z > _out+4.0+grow: continue
 		if l.y > TOWER_TOP+4.0: continue
 		for s: float in [-1.0,1.0]:
