@@ -16,8 +16,8 @@ func _init() -> void:
 	land.merge({"continent_swing":0.0,"hill_tall":0.0,"mountains":0.0,"peaks":0.0,"valleys":0.0,"carve":0.0,
 		"rivers":0.0,"ponds":0.5},true)
 	land.erase("coast_half")
-	# Loose copses, not woods.
-	flora = {"forest":0.45,"forest_meadows":1.0,"tree_weights":PackedFloat32Array(),"grass":1.0,"flowers":true}
+	# Copses, not woods: dense enough that one is near wherever TREES comes.
+	flora = {"forest":0.6,"forest_meadows":1.0,"tree_weights":PackedFloat32Array(),"grass":1.0,"flowers":true}
 	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"tunnels":0.0,"halls":0.0,"arches":0.0,"splits":0.0,
 		"stacks":0.0,"hoodoos":0.0,"traffic":-1}
 	spawn = {"at":Vector2.ZERO,"alt":18.0,"heading":0.0}

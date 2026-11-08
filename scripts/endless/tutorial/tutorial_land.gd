@@ -46,8 +46,11 @@ const DECK_SIZE := 16000.0
 ## No ponds within this of the plane when WATER comes (m): past the land
 ## standing at its finest and colliding.
 const DRY := 450.0
-## Tree blocks wholly past this (m) are planned again on a stage change.
+## Tree blocks wholly past this (m) are planned again on a stage change;
+## at TREES nearer (the copses come up round the plane to be grazed: the
+## block it is in and its first ring stay as they stood).
 const REPLAN_PAST := 420.0
+const REPLAN_TREES := 160.0
 ## The hall's mouth ahead of the plane at WALL (m), and how far off it may be
 ## left before it stands ahead again.
 const HALL_AHEAD := 780.0
@@ -126,7 +129,7 @@ func _set_stage(s: int) -> void:
 		var p: Vector3 = game.plane.position
 		world.dry_at = Vector2(p.x,p.z)
 		world.dry_r = DRY
-	_replan(REPLAN_PAST)
+	_replan(REPLAN_TREES if s == Stage.TREES else REPLAN_PAST)
 
 ## The tree blocks wholly past `past` m of the plane dropped, to be planned
 ## again under the stage now (LandTrees streams them back in).

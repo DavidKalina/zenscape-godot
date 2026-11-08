@@ -35,6 +35,7 @@ const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TreePlan = preload("res://scripts/endless/tree_plan.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
 
@@ -44,9 +45,13 @@ enum Stage {GRASS, TREES, WATER, GAUGE, WALL, DONE}
 ## Per stage: the line's verb, and what ends it. `pulls_land` pull-outs over
 ## land, `skim` seconds of skim, `grazes` grazes of a tree, `pulls_water`
 ## pull-outs over water, `meter` the meter full once, `wall` the wall broken.
+## At TREES `pass_spans` is the lesson's own tree pass: the plane's middle
+## within that many spans of a tree's crown, counted once per tree as it
+## leaves (`_tree_pass`); looser than the game's scored graze (CLOSE, half a
+## span over the crown), which still counts and is left as it is.
 const NEEDS := {
 	Stage.GRASS: {"verb":"dive and pull out over the grass", "pulls_land":3, "skim":8.0},
-	Stage.TREES: {"verb":"graze a tree", "grazes":3},
+	Stage.TREES: {"verb":"graze a tree", "pass_spans":3.0, "grazes":3},
 	Stage.WATER: {"verb":"pull out low over the water", "pulls_water":2},
 	Stage.GAUGE: {"verb":"fill the gauge", "meter":1},
 	Stage.WALL: {"verb":"surge roll through the cracked wall", "wall":1},
@@ -73,6 +78,12 @@ var stage: int = Stage.GRASS
 ## This stage's count toward its requirement, and the skim's seconds (GRASS).
 var count := 0
 var skim := 0.0
+## The tree pass (TREES): the nearest crown's clearance this frame (m, from
+## the plane's middle; INF none near), the tree the open pass is by (its
+## XZ, or INF) and the trees already counted.
+var tree_clear := INF
+var _pass_tree := Vector2(INF,INF)
+var _passed := {}
 var skipped := false
 ## Seconds the plane has been over LOWER_OVER m (for "lower").
 var high_for := 0.0
@@ -189,7 +200,8 @@ func step(delta: float) -> void:
 			if flying and bool(game.near.skimming): skim += delta
 			if count >= int(n.pulls_land) or skim >= float(n.skim): _next()
 		Stage.TREES:
-			if kind == "graze" and surf == "tree": count += 1
+			if _tree_pass(flying,float(n.pass_spans)): count += 1
+			elif kind == "graze" and surf == "tree" and _pass_tree.x == INF: count += 1
 			if count >= int(n.grazes): _next()
 		Stage.WATER:
 			if kind == "pull-out" and surf == "water": count += 1
@@ -209,6 +221,48 @@ func step(delta: float) -> void:
 	_line.visible = running() and game.get("overlay") == null
 	if _line.visible: _line.queue_redraw()
 
+## The lesson's tree pass, one frame: true as a pass ends (the plane leaves
+## the crown it came within `spans` of, flying). A tree counts once.
+func _tree_pass(flying: bool, spans: float) -> bool:
+	var near := _nearest_tree()
+	tree_clear = near.z
+	var reach := spans*WorldScale.span
+	var at := Vector2(near.x,near.y)
+	if _pass_tree.x != INF:
+		# Still by the same tree and inside the reach (a little slack out).
+		if flying and at == _pass_tree and tree_clear < reach*1.25: return false
+		var done := _pass_tree
+		_pass_tree = Vector2(INF,INF)
+		if _passed.has(done): return false
+		_passed[done] = true
+		return true
+	if flying and tree_clear < reach and not _passed.has(at): _pass_tree = at
+	return false
+
+## The nearest tree crown to the plane's middle: (x, z, clearance m). The
+## crown a cone from its bottom (its radius) to the top; under it, the
+## crown's side; over it, the line to the top.
+func _nearest_tree() -> Vector3:
+	var best := Vector3(INF,INF,INF)
+	if game.trees == null: return best
+	var p: Vector3 = game.plane.position
+	var ck := TreePlan.cell_of(p.x,p.z)
+	for dz in range(-1,2):
+		for dx in range(-1,2):
+			var s: PackedFloat32Array = game.trees.cell_trees(ck+Vector2i(dx,dz))
+			for i in range(0,s.size(),8):
+				if s[i+3] <= 0.0: continue
+				var h := Vector2(p.x-s[i],p.z-s[i+1]).length()
+				if h-s[i+6] > best.z: continue
+				var top := s[i+2]+s[i+3]
+				var bottom := s[i+2]+s[i+4]
+				var c: float
+				if p.y >= top: c = Vector2(h,p.y-top).length()
+				elif p.y <= bottom: c = maxf(h-s[i+6],0.0)
+				else: c = maxf(h-s[i+6]*(top-p.y)/maxf(top-bottom,0.01),0.0)
+				if c < best.z: best = Vector3(s[i],s[i+1],c)
+	return best
+
 func _next() -> void:
 	_set_stage(stage+1)
 
@@ -216,6 +270,8 @@ func _set_stage(s: int) -> void:
 	stage = s
 	count = 0
 	skim = 0.0
+	_pass_tree = Vector2(INF,INF)
+	_passed.clear()
 	_flash = FLASH
 	if stage == Stage.DONE:
 		_line.visible = false
