@@ -51,6 +51,8 @@ var owned := {}
 var worn := {}
 var opened := {}
 var flights := 0
+## The first flight's guide was flown or skipped (scripts/endless/first_flight.gd).
+var tutorial_done := false
 var flight := {}
 ## Where it is kept ("" never writes).
 var path := PATH
@@ -105,12 +107,13 @@ func load_book() -> void:
 	worn = data.get("worn",{})
 	opened = data.get("opened",{})
 	flights = int(data.get("flights",0))
+	tutorial_done = bool(data.get("tutorial_done",false))
 
 func save() -> void:
 	_dirty = false
 	_since = 0.0
 	if path == "": return
-	var data := {"money":money,"money_scale":MONEY_SCALE,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
+	var data := {"money":money,"money_scale":MONEY_SCALE,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights,"tutorial_done":tutorial_done}
 	var tmp := path+".tmp"
 	var f := FileAccess.open(tmp,FileAccess.WRITE)
 	if f == null: return
