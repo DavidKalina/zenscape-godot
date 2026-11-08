@@ -352,4 +352,16 @@ looked at.
      itself should loosen for everyone, that is the user's call, not this
      task's. Prove with the driver: a pass at the looser distance counts,
      and three such passes end the stage.
+   Second play (2026-11-08, grass and trees done, quit at WATER): "I can
+   never reach the water." At WATER the ponds come only in chunks built
+   after the stage changed, and the land already stands for kilometres
+   round the plane, so none is in reach. Every stage's land must be in
+   reach within seconds of the stage starting, in the direction of
+   flight: at WATER a pond or a straight reach lies ahead within about
+   400 m (the land ahead rebuilt or replanned from a near radius, the way
+   trees are from 160 m; the seam at the near edge must not show from
+   skim height), and the same promise checked for TREES. If a rebuild is
+   not possible, stamp a pond ahead and say so. Prove with the driver:
+   the nearest pond's distance at WATER start and ten seconds later, under
+   400 m, from several headings; and the full lesson end to end.
 8. Handoff.
