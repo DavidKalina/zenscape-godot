@@ -51,7 +51,7 @@ var owned := {}
 var worn := {}
 var opened := {}
 var flights := 0
-## The first flight's guide was flown or skipped (scripts/endless/first_flight.gd).
+## The lesson was flown or skipped (scripts/endless/tutorial/lesson.gd).
 var tutorial_done := false
 var flight := {}
 ## Where it is kept ("" never writes).
