@@ -34,8 +34,8 @@ enum Stage {GRASS, TREES, WATER, GAUGE, WALL, DONE}
 ## The cloud deck's underside over the turf (m), and the whiteout's ramp
 ## (m below it to m into it).
 const DECK := 60.0
-const WHITE_FROM := -3.0
-const WHITE_FULL := 14.0
+const WHITE_FROM := -10.0
+const WHITE_FULL := 8.0
 const DECK_SIZE := 16000.0
 ## No ponds within this of the plane when WATER comes (m): past the land
 ## standing at its finest and colliding.
@@ -69,7 +69,7 @@ func setup(g: Node3D) -> void:
 		if a.begins_with("--lesson-stage="): _flag_stage = clampi(a.get_slice("=",1).to_int(),0,Stage.DONE)
 	var at: Vector2 = world.spawn.at
 	_turf = float(game.field.height(at.x,at.y))
-	_build_deck()
+	if not ("--no-deck" in preload("res://scripts/launch_args.gd").user_args()): _build_deck()
 	_set_stage(wanted_stage())
 
 ## The stage the lesson asks for (its own, else the flag's).
@@ -203,10 +203,13 @@ func _build_deck() -> void:
 	_deck.name = "CloudDeck"
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(DECK_SIZE,DECK_SIZE)
+	pm.subdivide_width = 31
+	pm.subdivide_depth = 31
 	_deck.mesh = pm
+	_deck.custom_aabb = AABB(Vector3(-DECK_SIZE*0.5,-40.0,-DECK_SIZE*0.5),Vector3(DECK_SIZE,80.0,DECK_SIZE))
 	var sh := Shader.new()
 	sh.code = """shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, cull_disabled, depth_draw_always, shadows_disabled;
 uniform vec3 tone = vec3(0.9, 0.92, 0.95);
 varying vec3 wp;
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -236,6 +239,7 @@ void fragment() {
 	layer.add_child(_white)
 
 func _step_deck() -> void:
+	if _deck == null: return
 	var eye: Vector3 = (game.camera as Camera3D).global_position
 	var on: bool = not done and int(world.side(eye.x,eye.z)) == 1
 	var deck_y := _turf+DECK
@@ -247,4 +251,4 @@ func _step_deck() -> void:
 
 ## Whether the eye is in the deck (for drivers).
 func whited() -> float:
-	return _white.color.a if _white.visible else 0.0
+	return _white.color.a if _white != null and _white.visible else 0.0
