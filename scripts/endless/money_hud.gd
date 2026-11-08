@@ -19,7 +19,8 @@ const GAIN_HOLD := 2.6
 const MARGIN := Vector2(36.0, 30.0)
 const PX := 30.0
 ## The pointer's place (fraction of the screen down) and its words.
-const POINT_Y := 0.075
+## Low enough to leave the top band (to about 12%) clear for a one-line card.
+const POINT_Y := 0.15
 const POINT_WORDS := "a shop"
 const POINT_SUB := "land on its strip to spend your money"
 
