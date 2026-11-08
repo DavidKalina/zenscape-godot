@@ -92,7 +92,7 @@ var high_for := 0.0
 var begun := false
 var _flash := 0.0
 var _line: Control
-## The guide ribbon at GRASS and WATER (lesson_ribbon.gd).
+## The guide ribbon at GRASS, TREES and WATER (lesson_ribbon.gd).
 var ribbon: Node
 var _land: Node
 var _hidden: Array[CanvasItem] = []

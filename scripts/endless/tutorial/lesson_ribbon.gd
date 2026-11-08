@@ -1,8 +1,11 @@
 extends Node
-## The lesson's guide at GRASS and WATER: a ribbon laid ahead of the plane
-## along its heading, level at cruise, down to skim height for a stretch,
-## and up through a high gate. At WATER the stretch lies over the reach the
-## tutorial land stamped ahead (tutorial.gd `ahead`), later over a pond ahead.
+## The lesson's guide at GRASS, TREES and WATER: a ribbon laid ahead of the
+## plane along its heading, level at cruise, down to skim height for a
+## stretch, and up through a high gate. At WATER the stretch lies over the
+## reach the tutorial land stamped ahead (tutorial.gd `ahead`), later over a
+## pond ahead. At TREES it runs past a standing tree ahead on its side, the
+## crown TREE_CLEAR off (inside the lesson's tree pass, NEEDS `pass_spans`),
+## every other crown at least OTHER_CLEAR off the whole ribbon.
 ## It is only a guide: the lesson counts the pull-outs. A leg flown, or left
 ## behind (its next gate far off or well behind, round 1's LOST rule), is
 ## laid again ahead. Drawn by rival_marks.gd in its own inks.
@@ -15,9 +18,11 @@ const RivalRace = preload("res://scripts/endless/rival_race.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
+const TreePlan = preload("res://scripts/endless/tree_plan.gd")
 
-## The lesson's stages that get a ribbon (lesson.gd Stage.GRASS, WATER).
+## The lesson's stages that get a ribbon (lesson.gd Stage.GRASS, TREES, WATER).
 const GRASS := 0
+const TREES := 1
 const WATER := 2
 ## The skim stretch's middle over the turf or water (m), its gates' half
 ## width (spans) and half height (m).
@@ -63,6 +68,36 @@ const FAR_IN := 300.0
 const SWOOP := 1.6
 ## The ribbon's points along the way (m).
 const STEP := 4.0
+## TREES: the tree passed lies TREE_AT m along the flight, at most
+## TREE_TURN off the nose (TREE_TURN_WIDE when none is found nearer it);
+## the skim stretch runs TREE_IN m before it and TREE_OUT m past it, then
+## the way up over TREE_UP m; the crown is passed TREE_CLEAR spans off
+## (at most TREE_PASS of the lesson's pass reach), every other crown at
+## least OTHER_CLEAR spans and OTHER_PASS times the pass reach off the
+## ribbon (so a leg flown counts its one tree). The level stretch at
+## TREE_CRUISE over the turf (over the crowns). With no such tree in reach
+## (a wood ahead; solid trees stand only within ~430 m), every other crown
+## only OTHER_CLEAR spans off (`crowded`). None at all: tried again in a
+## quarter second.
+const TREE_AT := Vector2(230.0,750.0)
+const TREE_TURN := deg_to_rad(30.0)
+const TREE_TURN_WIDE := deg_to_rad(55.0)
+const TREE_IN := 70.0
+const TREE_OUT := 30.0
+const TREE_UP := 150.0
+const TREE_CLEAR := 1.5
+const TREE_PASS := 0.6
+const OTHER_CLEAR := 1.5
+const OTHER_PASS := 1.4
+const TREE_CRUISE := Vector2(26.0,34.0)
+## Legs weighed whole (their ribbon against every crown), at most; before
+## that each candidate's low part (LOW_IN m before the skim stretch to
+## LOW_OUT m past it) is looked along on the ground.
+const TREE_TRIES := 12
+const LOW_IN := 50.0
+const LOW_OUT := 50.0
+## Bucket for the clearance check (m).
+const TREE_BUCKET := 24.0
 
 var game: Node
 var marks: RivalMarks
@@ -75,6 +110,14 @@ var lays := 0
 var over := ""
 ## The skim stretch's ends (world), for drivers and stills.
 var dip := []
+## TREES: the tree the leg passes (x, foot y, z) and its top over the foot
+## (w); the trees laid this stage.
+var tree := Vector4(INF,INF,INF,0.0)
+## Whether the last tree leg lies in a wood (other crowns nearer than the
+## lesson's pass reach: flying it may count more than its one tree).
+var crowded := false
+var _used := {}
+var _buckets := {}
 var _ahead_used := Vector2(INF,INF)
 var _prev := Vector3.INF
 var _wait := 0.0
@@ -90,13 +133,18 @@ func set_stage(s: int) -> void:
 	stage = s
 	lays = 0
 	_prev = Vector3.INF
-	if s == GRASS or s == WATER: _lay()
+	_used.clear()
+	if _ribboned(s): _lay()
 	else: clear()
+
+static func _ribboned(s: int) -> bool:
+	return s == GRASS or s == TREES or s == WATER
 
 func clear() -> void:
 	gates = []
 	next = 0
 	dip = []
+	tree = Vector4(INF,INF,INF,0.0)
 	marks.set_course({})
 	marks.step(0.0,null,{})
 
@@ -105,7 +153,7 @@ func shown() -> bool:
 
 ## One frame, after the plane moved.
 func step(delta: float) -> void:
-	if stage != GRASS and stage != WATER:
+	if not _ribboned(stage):
 		return
 	var p: Vector3 = game.plane.position
 	var a := _prev
@@ -116,7 +164,7 @@ func step(delta: float) -> void:
 	# No leg could be laid (too near the stage's start): again each second.
 	if gates.is_empty():
 		_wait += delta
-		if _wait >= 1.0:
+		if _wait >= (0.25 if stage == TREES else 1.0):
 			_wait = 0.0
 			_lay()
 	if a != Vector3.INF and bool(game.hand_landing.flying()) and next < gates.size():
@@ -186,6 +234,9 @@ func _lay() -> void:
 	var p: Vector3 = game.plane.position
 	var d := _way()
 	var run := {}
+	if stage == TREES:
+		_lay_tree(p,d)
+		return
 	if stage == WATER: run = _water_run(p,d)
 	if run.is_empty(): run = _land_run(p,d)
 	over = str(run.over)
@@ -279,22 +330,37 @@ func _along(p: Vector3, d: Vector3, c: Vector2, dir: Vector2, half: float, what:
 ## The gates: level at cruise, down to the skim stretch, along it, up through
 ## the high gate; those nearer than NEAR along the way left out.
 func _set_leg(p: Vector3, run: Dictionary) -> void:
+	var gs := _leg_gates(p,run)
+	if gs.size() < 2:
+		clear()
+		return
+	gates = gs
+	next = 0
+	var a: Vector3 = run.a
+	var b: Vector3 = run.b
+	var lo := _top(a,b)+LOW
+	dip = [Vector3(a.x,lo,a.z),Vector3(b.x,lo,b.z)]
+	marks.set_course({"gates":gates,"line":_ribbon(gates),"line_step":STEP})
+
+## The gates of a leg over `run` (not yet laid).
+func _leg_gates(p: Vector3, run: Dictionary) -> Array:
 	var a: Vector3 = run.a
 	var b: Vector3 = run.b
 	var dir: Vector3 = run.dir
 	var lo := _top(a,b)+LOW
-	dip = [Vector3(a.x,lo,a.z),Vector3(b.x,lo,b.z)]
+	var low := [Vector3(a.x,lo,a.z),Vector3(b.x,lo,b.z)]
 	var in1 := a-dir*DOWN
 	var in0: Vector3 = run.get("join",in1-dir*LEVEL)
 	var top := _top(in0,a)
-	var y_in := clampf(p.y,top+CRUISE.x,top+CRUISE.y)
-	var hi := b+dir*UP
+	var cruise: Vector2 = run.get("cruise",CRUISE)
+	var y_in := clampf(p.y,top+cruise.x,top+cruise.y)
+	var hi := b+dir*float(run.get("up",UP))
 	var low_half := Vector2(LOW_HALF.x,LOW_HALF.y/WorldScale.span)
 	var spots := [
 		{"at":Vector3(in0.x,y_in,in0.z)},
 		{"at":Vector3(in1.x,y_in,in1.z)},
-		{"at":dip[0],"half":low_half},
-		{"at":dip[1],"half":low_half},
+		{"at":low[0],"half":low_half},
+		{"at":low[1],"half":low_half},
 		{"at":Vector3(hi.x,_top(b,hi)+HIGH,hi.z)},
 	]
 	var d := _way()
@@ -302,20 +368,196 @@ func _set_leg(p: Vector3, run: Dictionary) -> void:
 	if (in0-p).dot(d) > FAR_IN:
 		var j := p+d*JOIN
 		spots.push_front({"at":Vector3(j.x,y_in,j.z),"dir":((in0-j)*Vector3(1,0,1)).normalized()})
-	gates = []
-	next = 0
+	var gs := []
 	for s: Dictionary in spots:
 		var at: Vector3 = s.at
-		if (at-p).dot(d) < NEAR and gates.is_empty(): continue
+		if (at-p).dot(d) < NEAR and gs.is_empty(): continue
 		var half: Vector2 = s.get("half",PlaceLines.AIR_HALF)
 		var gd: Vector3 = s.get("dir",dir)
 		var hw := WorldScale.span*half.x
 		var hh := WorldScale.span*half.y
-		gates.append({"id":"lesson/%d" % gates.size(),"kind":"air","p":at,"dir":gd,"half_w":hw,"lo":at.y-hh,"hi":at.y+hh,"s":0.0,"through":true})
-	if gates.size() < 2:
-		clear()
-		return
-	marks.set_course({"gates":gates,"line":_ribbon(gates),"line_step":STEP})
+		gs.append({"id":"lesson/%d" % gs.size(),"kind":"air","p":at,"dir":gd,"half_w":hw,"lo":at.y-hh,"hi":at.y+hh,"s":0.0,"through":true})
+	return gs
+
+# --- TREES: a leg past a tree --------------------------------------------------
+
+## The lesson's tree pass reach (m): NEEDS TREES `pass_spans`.
+func _pass_reach() -> float:
+	var l: Node = get_parent()
+	var spans := 3.0
+	if l != null and "NEEDS" in l: spans = float((l.NEEDS as Dictionary).get(TREES,{}).get("pass_spans",spans))
+	return spans*WorldScale.span
+
+## A leg past a standing tree ahead, the nearest that leaves the ribbon
+## clear of every other crown; none: no leg (tried again shortly).
+func _lay_tree(p: Vector3, d: Vector3) -> void:
+	var cands := _trees_ahead(p,d,TREE_TURN_WIDE)
+	var clear_m := minf(TREE_CLEAR*WorldScale.span,TREE_PASS*_pass_reach())
+	# Past the pass's reach and its slack out: a leg counts one tree. In a
+	# wood with no such tree in reach, the crowns only kept clear of the way.
+	var strict := maxf(OTHER_CLEAR*WorldScale.span,_pass_reach()*OTHER_PASS)
+	var loose := OTHER_CLEAR*WorldScale.span
+	_low_seen.clear()
+	_whole_seen.clear()
+	_whole_n = 0
+	for tier: Array in [[strict,TREE_TURN],[strict,TREE_TURN_WIDE],[loose,TREE_TURN],[loose,TREE_TURN_WIDE]]:
+		if _try_trees(p,d,cands,clear_m,float(tier[0]),float(tier[1])):
+			crowded = tier[0] == loose
+			return
+	over = "none"
+	clear()
+
+## Each (tree, side)'s low part's least clearance to another crown, and its
+## whole ribbon's clearances, kept over the tiers of one lay.
+var _low_seen := {}
+var _whole_seen := {}
+var _whole_n := 0
+
+func _try_trees(p: Vector3, d: Vector3, cands: Array, clear_m: float, other_m: float, turn: float) -> bool:
+	var loose := OTHER_CLEAR*WorldScale.span
+	for i in range(cands.size()):
+		var t: Array = cands[i]
+		if float(t[7]) > turn: continue
+		var tp: Vector3 = Vector3(t[0],t[1],t[2])
+		var to := tp-p
+		to.y = 0.0
+		# The side the plane's line already passes on first.
+		var first := 1.0 if to.cross(d).y > 0.0 else -1.0
+		for side: float in [first,-first]:
+			var key := i*2+(0 if side > 0.0 else 1)
+			var run := _tree_side(p,t,side,clear_m)
+			# A quick look along the low part first; the whole ribbon after.
+			if not _low_seen.has(key): _low_seen[key] = _low_clear(run,tp,loose)
+			if float(_low_seen[key]) < other_m: continue
+			var gs := _leg_gates(p,run)
+			if gs.size() < 2: continue
+			var line := _ribbon(gs)
+			if not _whole_seen.has(key):
+				if _whole_n >= TREE_TRIES: return false
+				_whole_n += 1
+				_whole_seen[key] = _clearances(line,tp)
+			var got: Vector2 = _whole_seen[key]
+			if got.x > _pass_reach()*0.85 or got.x < clear_m*0.6 or got.y < other_m: continue
+			over = "tree"
+			tree = Vector4(t[0],t[1],t[2],t[3])
+			_used[Vector2(t[0],t[2])] = true
+			gates = gs
+			next = 0
+			var lo := _top(run.a,run.b)+LOW
+			dip = [Vector3(run.a.x,lo,run.a.z),Vector3(run.b.x,lo,run.b.z)]
+			marks.set_course({"gates":gates,"line":line,"line_step":STEP})
+			return true
+	return false
+
+## The skim stretch past tree `t` on `side` (+1 its left as seen along the
+## way), the line `clear_m` off its crown at skim height, aimed from `p`.
+func _tree_side(p: Vector3, t: Array, side: float, clear_m: float) -> Dictionary:
+	var tp := Vector3(t[0],0.0,t[2])
+	# The skim height over its foot (a tree stands on the turf).
+	var y := LOW
+	var top := float(t[3])
+	var bottom := float(t[4])
+	var r := float(t[5])
+	var at_y := r
+	if y >= top: at_y = 0.0
+	elif y > bottom: at_y = r*(top-y)/maxf(top-bottom,0.01)
+	var off := at_y+clear_m
+	var flat := Vector3(p.x,0.0,p.z)
+	var dir := (tp-flat).normalized()
+	var c := tp
+	for i in range(4):
+		var perp := Vector3(-dir.z,0.0,dir.x)*side
+		c = tp+perp*off
+		dir = (c-flat).normalized()
+	return {"a":c-dir*TREE_IN,"b":c+dir*TREE_OUT,"dir":dir,"over":"tree","up":TREE_UP,"cruise":TREE_CRUISE}
+
+## Standing trees TREE_AT m along the flight, at most `turn` off the nose,
+## not yet laid or passed this stage, nearest first: [x, foot y, z, top over
+## the foot, crown bottom, crown radius, score, off the nose (rad)]. Fills
+## the clearance buckets.
+func _trees_ahead(p: Vector3, d: Vector3, turn: float) -> Array:
+	_buckets.clear()
+	var trees: Node = game.get("trees")
+	if trees == null or not trees.has_method("cell_trees"): return []
+	var passed := {}
+	var l: Node = get_parent()
+	if l != null and "_passed" in l: passed = l._passed
+	var far := TREE_AT.y+TREE_UP+100.0
+	var lo := Vector2(p.x,p.z)-Vector2.ONE*far
+	var hi := Vector2(p.x,p.z)+Vector2.ONE*far
+	var c0 := TreePlan.cell_of(lo.x,lo.y)
+	var c1 := TreePlan.cell_of(hi.x,hi.y)
+	var fd := Vector2(d.x,d.z)
+	var out := []
+	for cz in range(c0.y,c1.y+1):
+		for cx in range(c0.x,c1.x+1):
+			var s: PackedFloat32Array = trees.cell_trees(Vector2i(cx,cz))
+			for i in range(0,s.size(),8):
+				if s[i+3] <= 0.0: continue
+				var to := Vector2(s[i]-p.x,s[i+1]-p.z)
+				# Only trees ahead go in the buckets (the ribbon lies ahead).
+				if to.dot(fd) < -50.0: continue
+				var row := [s[i],s[i+2],s[i+1],s[i+3],s[i+4],s[i+6]]
+				var bk := Vector2i(floori(s[i]/TREE_BUCKET),floori(s[i+1]/TREE_BUCKET))
+				if not _buckets.has(bk): _buckets[bk] = []
+				(_buckets[bk] as Array).append(row)
+				var along := to.dot(fd)
+				if along < TREE_AT.x or along > TREE_AT.y: continue
+				var off := absf(fd.angle_to(to))
+				if off > turn: continue
+				var key := Vector2(s[i],s[i+1])
+				if _used.has(key) or passed.has(key): continue
+				out.append([s[i],s[i+2],s[i+1],s[i+3],s[i+4],s[i+6],along*(1.0+off),off])
+	out.sort_custom(func(x: Array, y: Array) -> bool: return float(x[6]) < float(y[6]))
+	return out
+
+## The least ground distance from another crown to the low part of `run`
+## (from LOW_IN m before its skim stretch to LOW_OUT m past it), given up
+## once under `least`: the cheap test before the whole ribbon's.
+func _low_clear(run: Dictionary, tp: Vector3, least: float) -> float:
+	var dir: Vector3 = run.dir
+	var a: Vector3 = (run.a as Vector3)-dir*LOW_IN
+	var b: Vector3 = (run.b as Vector3)+dir*LOW_OUT
+	var a2 := Vector2(a.x,a.z)
+	var b2 := Vector2(b.x,b.z)
+	var pad := _pass_reach()*OTHER_PASS+8.0
+	var lo := Vector2(minf(a2.x,b2.x),minf(a2.y,b2.y))-Vector2.ONE*pad
+	var hi := Vector2(maxf(a2.x,b2.x),maxf(a2.y,b2.y))+Vector2.ONE*pad
+	var best := INF
+	for bz in range(floori(lo.y/TREE_BUCKET),floori(hi.y/TREE_BUCKET)+1):
+		for bx in range(floori(lo.x/TREE_BUCKET),floori(hi.x/TREE_BUCKET)+1):
+			var list: Variant = _buckets.get(Vector2i(bx,bz))
+			if list == null: continue
+			for t: Array in list:
+				if float(t[0]) == tp.x and float(t[2]) == tp.z: continue
+				var q := Vector2(float(t[0]),float(t[2]))
+				var near := Geometry2D.get_closest_point_to_segment(q,a2,b2)
+				best = minf(best,q.distance_to(near)-float(t[5]))
+				if best < least: return best
+	return best
+
+## Over the ribbon `line`: (the least clearance to the crown of the tree at
+## `tp`, the least to any other crown), m. As lesson.gd's `_nearest_tree`.
+func _clearances(line: PackedVector3Array, tp: Vector3) -> Vector2:
+	var best := Vector2(INF,INF)
+	for q: Vector3 in line:
+		var bk := Vector2i(floori(q.x/TREE_BUCKET),floori(q.z/TREE_BUCKET))
+		for dz in range(-1,2):
+			for dx in range(-1,2):
+				var list: Variant = _buckets.get(bk+Vector2i(dx,dz))
+				if list == null: continue
+				for t: Array in list:
+					var h := Vector2(q.x-float(t[0]),q.z-float(t[2])).length()
+					var r := float(t[5])
+					var top := float(t[1])+float(t[3])
+					var bottom := float(t[1])+float(t[4])
+					var c: float
+					if q.y >= top: c = Vector2(h,q.y-top).length()
+					elif q.y <= bottom: c = maxf(h-r,0.0)
+					else: c = maxf(h-r*(top-q.y)/maxf(top-bottom,0.01),0.0)
+					if float(t[0]) == tp.x and float(t[2]) == tp.z: best.x = minf(best.x,c)
+					else: best.y = minf(best.y,c)
+	return best
 
 ## The ribbon through the gates' middles: straight along the ground between
 ## them, its height eased (level at each gate), so it reads level, down,
