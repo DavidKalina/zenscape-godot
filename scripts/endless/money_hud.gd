@@ -2,7 +2,7 @@ extends Control
 ## The money in flight, kept quiet: the balance small in the top right corner
 ## (the landing summary's numerals and inks), a "+N" under it fading as money
 ## comes in. And, until a shop has been found, a pointer to the first one
-## (ShopSites `first_site`, the start's square, START_REACH out): an arrow
+## (ShopSites `first_shop`: the start's square's, else the nearest round it): an arrow
 ## turned toward it off the view's heading, its distance, and what a shop is
 ## for. Hidden under the title, an overlay (the shop, the logbook) and while
 ## the game has no book.
@@ -28,9 +28,8 @@ var _shown := -1
 var _gain := 0
 var _gain_t := 0.0
 var _a := 0.0
-## The first shop's site ({} until looked for, or none), and whether looked.
+## The first shop's site ({} while none is known).
 var _site: Dictionary = {}
-var _looked := false
 
 func _init(host: Node = null) -> void:
 	game = host
@@ -57,18 +56,17 @@ func _process(delta: float) -> void:
 	_gain_t = maxf(_gain_t-delta,0.0)
 	queue_redraw()
 
-## Whether the pointer to the first shop shows: no shop found yet.
+## Whether the pointer to the first shop shows: no shop found yet, and one
+## known (ShopSites `first_shop`, looked for a little each frame).
 func pointing() -> bool:
 	var book: RefCounted = game.get("book") if game != null else null
 	if book == null or game.get("shops") == null: return false
 	for k: String in (book.found as Dictionary):
 		if k.begins_with("shop/"): return false
-	if not _looked:
-		_looked = true
-		_site = game.shops.first_site()
+	_site = game.shops.first_shop()
 	return not _site.is_empty()
 
-## The first shop's centre ({} none).
+## The first shop's centre (null for none yet).
 func target() -> Variant:
 	return _site.get("centre") if pointing() else null
 

@@ -35,8 +35,9 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const SEA_Y := -40.0
 const CELL := 3200.0
 const MARGIN := 500.0
-## The start's square: its shop this far from the start (m), nearest first.
-const START_REACH := Vector2(400.0,1500.0)
+## The start's square: its shop this far from the start (m), nearest first
+## (out to 3 km: at 1.5 km five of seeds 1..6 had none in the wilderness).
+const START_REACH := Vector2(400.0,3000.0)
 ## Spots a square tries, and headings at each.
 const TRIES := 400
 const HEADINGS := 6
@@ -151,6 +152,34 @@ func first_site() -> Dictionary:
 	var c := _cell(key)
 	while c.state == "looking": _look(key,c,INF)
 	return c.site
+
+## The shop a first flight is pointed at (money_hud.gd): the start's square's
+## (START_REACH out), else the nearest found yet in the eight squares round
+## it, each looked for on the worker one at a time, as `step` does (call it
+## once a frame: it starts the next look when the worker is free). {} until
+## one is found. On rough land the start's square often has no strip (the
+## wilderness, seeds 1..6: three of six; the nearest then 5 km or more).
+func first_shop() -> Dictionary:
+	if not on: return {}
+	var home := cell_of(start.x,start.y)
+	var best := {}
+	var best_d := INF
+	for dj in range(-1,2):
+		for di in range(-1,2):
+			var key := home+Vector2i(di,dj)
+			var c := _cell(key)
+			if c.state == "looking":
+				if _look_main: _look(key,c,BUDGET_MS*500.0)
+				else: _look_off(key,c)
+			var s: Dictionary = c.site
+			if s.is_empty(): continue
+			if key == home: return s
+			var d := start.distance_to(Vector2(s.centre.x,s.centre.z))
+			if d < best_d:
+				best_d = d
+				best = s
+	# The start's square first: nothing else while it is still looked for.
+	return {} if _cell(home).state == "looking" else best
 
 ## One frame: look, build and free, check what stands, dress the plane,
 ## open or close the shop.
