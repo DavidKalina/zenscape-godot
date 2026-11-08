@@ -149,11 +149,15 @@ static func current() -> RefCounted:
 	_lock.unlock()
 	return got
 
+## A world the game asks for when no --world= names one (the lesson's
+## `tutorial`, studies/endless_flight.gd); "" none.
+static var asked := ""
+
 ## The id `--world=` asks for.
 static func wanted_id() -> String:
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--world="): return a.get_slice("=",1)
-	return PLAYS
+	return asked if asked != "" else PLAYS
 
 ## A fresh profile by id (or a res:// path to a profile script, for a
 ## throwaway one in scratch/); an unknown id warns and plays wilderness.

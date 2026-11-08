@@ -120,6 +120,7 @@ extends Node3D
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
+const Lesson = preload("res://scripts/endless/tutorial/lesson.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
@@ -483,8 +484,8 @@ var crashes := 0
 ## The pilot's book (scripts/endless/pilot_book.gd): money, tallies, records,
 ## what was bought, kept between runs; its `flight` is this flight's own.
 var book: PilotBook
-## The first flight's guide (scripts/endless/first_flight.gd), on a fresh book.
-var first_flight: Node
+## The lesson (scripts/endless/tutorial/lesson.gd), on a fresh book; else null.
+var lesson: Node
 ## The overlay that holds the keys while it is up (the shop, the logbook,
 ## photo mode; null: none). One at a time: open one only when this is null.
 var overlay: Object = null
@@ -533,6 +534,7 @@ func _ready() -> void:
 	rr.apply(get_tree().root,rr.load_cap())
 	EndlessLook.reset_season_globals()
 	# The world: its shader globals over the reset, its start under the flags.
+	WorldProfile.asked = "tutorial" if Lesson.wanted(book) and ResourceLoader.exists(WorldProfile.PROFILES+"tutorial.gd") else ""
 	world = WorldProfile.current()
 	world.apply_globals()
 	_start = world.spawn.get("at",_start)
@@ -820,10 +822,10 @@ func _ready() -> void:
 	shops.name = "Shops"
 	add_child(shops)
 	shops.setup(self)
-	if preload("res://scripts/endless/first_flight.gd").wanted(book):
-		first_flight = preload("res://scripts/endless/first_flight.gd").new()
-		add_child(first_flight)
-		first_flight.setup(self)
+	if Lesson.wanted(book):
+		lesson = Lesson.new()
+		add_child(lesson)
+		lesson.setup(self)
 	coast = preload("res://scripts/endless/coast_sites.gd").new()
 	coast.name = "Coast"
 	add_child(coast)
@@ -919,6 +921,7 @@ func _menu_picked(what: String) -> void:
 	if what == "quit":
 		get_tree().quit()
 		return
+	if lesson != null and lesson.air_start(): return
 	if stage != null: stage.start()
 
 func _start_height() -> float:
@@ -1406,7 +1409,7 @@ func tick(delta: float) -> void:
 		if not stage.running(): _menu_done()
 	if beats != null: beats.step(delta,self)
 	if lines != null: lines.step(delta,self)
-	if first_flight != null: first_flight.step(delta)
+	if lesson != null: lesson.step(delta)
 	FrameLog.mark(&"lines")
 	if burrower != null: burrower.step(delta,self)
 	FrameLog.mark(&"burrower")
