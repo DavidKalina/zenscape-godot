@@ -197,6 +197,9 @@ const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
 const MenuSpot = preload("res://scripts/endless/menu_spot.gd")
 const MenuStage = preload("res://scripts/endless/menu_stage.gd")
 const MainMenu = preload("res://scripts/endless/main_menu.gd")
+## The menus: Pause, Settings, Controls, Credits (scripts/endless/shell/).
+const Shell = preload("res://scripts/endless/shell/shell.gd")
+const ShellSettings = preload("res://scripts/endless/shell/shell_settings.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -483,6 +486,8 @@ var book: PilotBook
 ## The overlay that holds the keys while it is up (the shop, the logbook,
 ## photo mode; null: none). One at a time: open one only when this is null.
 var overlay: Object = null
+## The menus (Pause, Settings, Controls, Credits; scripts/endless/shell/shell.gd).
+var shell: Shell
 ## Photo mode (scripts/endless/photo_mode.gd): O; the flight held while up.
 var photo: PhotoMode
 ## The book's counting hooks (scripts/endless/pilot_tallies.gd), stepped in
@@ -849,6 +854,9 @@ func _ready() -> void:
 		add_child(spindrift)
 		spindrift.setup(self,peak,Callable(field,"height"),towers,seed,Field.SEA_Y)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
+	shell = Shell.new()
+	add_child(shell)
+	shell.setup(self)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
 	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -901,6 +909,7 @@ func _park_for_menu(spots: Array) -> void:
 
 ## The menu's pick: Start hands off into the takeoff, Quit quits.
 func _menu_picked(what: String) -> void:
+	if shell != null and shell.title_pick(what): return
 	if what == "quit":
 		get_tree().quit()
 		return
@@ -1852,7 +1861,7 @@ func _fly_input(_delta: float) -> Dictionary:
 	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
 	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
-	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,"lean":lean,
+	var input := {"turn":stick.x,"pitch":ShellSettings.stick_pitch(stick.y),"look":_fly_look,"lean":lean,
 		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
@@ -1902,10 +1911,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if photo.handle(event): return
 	# An overlay (the shop, the logbook, photo mode) takes the keys while up.
 	if overlay != null: return
+	# Esc or the pad's Menu: Pause (scripts/endless/shell/shell.gd).
+	if shell.wants(event): return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
-		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
+		else: _fly_look += ShellSettings.steer(Vector2(event.relative.x,-event.relative.y))*FLY_LOOK
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
