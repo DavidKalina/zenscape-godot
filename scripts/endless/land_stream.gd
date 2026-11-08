@@ -182,25 +182,47 @@ func solid_at(x: float, z: float) -> bool:
 ## The land past `keep` m (flat, from the eye) built again in place under
 ## the field as it is now (a world that gates its land, e.g. the tutorial's
 ## stages): each standing chunk past it keeps drawing until its new build
-## commits over it, nearest first; builds in flight are asked again. Returns
-## the squares of the chunks kept (Rect2, world XZ), whose land stays as it
-## stood: the field must not change under them.
-func restream(keep: float) -> Array[Rect2]:
+## commits over it, nearest first; builds in flight are asked again. With
+## `only`, just the chunks meeting it. Returns the squares of the chunks
+## kept (Rect2, world XZ), whose land stays as it stood: the field must not
+## change under them.
+func restream(keep: float, only := Rect2()) -> Array[Rect2]:
 	_epoch += 1
 	var kept: Array[Rect2] = []
 	for key: Vector3i in _chunks.keys():
-		var s := size_of(key.x)
+		var r := _square(key)
 		if _distance_flat(key) <= keep:
-			kept.append(Rect2(key.y*s,key.z*s,s,s))
+			kept.append(r)
 			continue
+		if only.has_area() and not only.intersects(r): continue
 		_stale[key] = _epoch
 	for key: Vector3i in _pending.keys():
-		if _distance_flat(key) > keep: _stale[key] = _epoch
-		else:
-			var s := size_of(key.x)
-			kept.append(Rect2(key.y*s,key.z*s,s,s))
+		var r := _square(key)
+		if _distance_flat(key) <= keep: kept.append(r)
+		elif not only.has_area() or only.intersects(r): _stale[key] = _epoch
 	_planned_at = Vector3.INF
 	return kept
+
+## The squares of the chunks standing or in flight within `keep` m (as
+## `restream` keeps), nothing asked.
+func kept_squares(keep: float) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	for key: Vector3i in _chunks.keys():
+		if _distance_flat(key) <= keep: out.append(_square(key))
+	for key: Vector3i in _pending.keys():
+		if _distance_flat(key) <= keep: out.append(_square(key))
+	return out
+
+## Whether a chunk meeting `r` (world XZ) still waits on a build asked by
+## `restream`.
+func stale_in(r: Rect2) -> bool:
+	for key: Vector3i in _stale:
+		if _square(key).intersects(r): return true
+	return false
+
+func _square(key: Vector3i) -> Rect2:
+	var s := size_of(key.x)
+	return Rect2(key.y*s,key.z*s,s,s)
 
 ## The lead from the flight's velocity (m/s): LEAD_TIME s of its level
 ## part, at most LEAD_MOST m. Before `step`.

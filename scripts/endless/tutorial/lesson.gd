@@ -7,6 +7,8 @@ extends Node
 ##   GRASS  pull-outs over land, or seconds of skim (NearMiss `skimming`);
 ##   TREES  grazes of a tree;
 ##   WATER  pull-outs over water;
+##   PARRY  parries of the pirate ship's balls (parry.gd `parries`; the ship
+##          is the land's, tutorial_land.gd);
 ##   GAUGE  the surge meter full once (SurgeSmash FULL);
 ##   WALL   the ruin hall's cracked wall broken: `tutorial_land.broke_through`
 ##          when that node is there (lane `tutorial-land`); without it, the
@@ -40,12 +42,13 @@ const LessonRibbon = preload("res://scripts/endless/tutorial/lesson_ribbon.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
 
-enum Stage {GRASS, TREES, WATER, GAUGE, WALL, DONE}
+enum Stage {GRASS, TREES, WATER, PARRY, GAUGE, WALL, DONE}
 
 # --- The requirements (one table; tuned later) -----------------------------------
 ## Per stage: the line's verb, and what ends it. `pulls_land` pull-outs over
 ## land, `skim` seconds of skim, `grazes` grazes of a tree, `pulls_water`
-## pull-outs over water, `meter` the meter full once, `wall` the wall broken.
+## pull-outs over water, `parries` parries (the line names the roll's key:
+## `line_text`), `meter` the meter full once, `wall` the wall broken.
 ## At TREES `pass_spans` is the lesson's own tree pass: the plane's middle
 ## within that many spans of a tree's crown, counted once per tree as it
 ## leaves (`_tree_pass`); looser than the game's scored graze (CLOSE, half a
@@ -54,6 +57,7 @@ const NEEDS := {
 	Stage.GRASS: {"verb":"dive and pull out over the grass", "pulls_land":3, "skim":8.0},
 	Stage.TREES: {"verb":"graze a tree", "pass_spans":3.0, "grazes":3},
 	Stage.WATER: {"verb":"pull out low over the water", "pulls_water":2},
+	Stage.PARRY: {"verb":"roll %s as the ball reaches you", "parries":2},
 	Stage.GAUGE: {"verb":"fill the gauge", "meter":1},
 	Stage.WALL: {"verb":"surge roll through the cracked wall", "wall":1},
 }
@@ -85,6 +89,8 @@ var skim := 0.0
 var tree_clear := INF
 var _pass_tree := Vector2(INF,INF)
 var _passed := {}
+## PARRY: the parry's count when the stage began.
+var _parries_at := -1
 var skipped := false
 ## Seconds the plane has been over LOWER_OVER m (for "lower").
 var high_for := 0.0
@@ -136,7 +142,7 @@ func need() -> Dictionary:
 ## The count the stage wants (the first of its keys; GRASS's pull-outs).
 func goal() -> int:
 	var n := need()
-	for k: String in ["pulls_land","grazes","pulls_water","meter","wall"]:
+	for k: String in ["pulls_land","grazes","pulls_water","parries","meter","wall"]:
 		if n.has(k): return int(n[k])
 	return 0
 
@@ -213,6 +219,12 @@ func step(delta: float) -> void:
 		Stage.WATER:
 			if kind == "pull-out" and surf == "water": count += 1
 			if count >= int(n.pulls_water): _next()
+		Stage.PARRY:
+			var pr: Node = game.get("parry")
+			if pr != null:
+				if _parries_at < 0: _parries_at = int(pr.parries)
+				count = int(pr.parries)-_parries_at
+			if count >= int(n.parries): _next()
 		Stage.GAUGE:
 			if float(game.near.meter) >= SurgeSmash.FULL:
 				count = 1
@@ -282,6 +294,8 @@ func _set_stage(s: int) -> void:
 	skim = 0.0
 	_pass_tree = Vector2(INF,INF)
 	_passed.clear()
+	var pr: Node = game.get("parry")
+	_parries_at = int(pr.parries) if pr != null else -1
 	_flash = FLASH
 	ribbon.set_stage(stage)
 	if stage == Stage.DONE:
@@ -321,6 +335,7 @@ func _hide_hud(hide: bool) -> void:
 func line_text() -> Array:
 	var n := need()
 	var verb := str(n.get("verb",""))
+	if "%s" in verb: verb = verb % Pad.pick("(Z)","(A)")
 	var c := ""
 	if stage == Stage.GRASS and skim >= 1.0 and skim/float(n.skim) > float(count)/float(n.pulls_land):
 		c = "%d/%d s" % [int(skim),int(float(n.skim))]

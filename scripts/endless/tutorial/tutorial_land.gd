@@ -5,7 +5,7 @@ extends Node
 ##
 ## The contract: it reads `game.lesson.stage` when `game.get("lesson")`
 ## exists, else the `--lesson-stage=N` launch flag (0 GRASS, 1 TREES, 2 WATER,
-## 3 GAUGE, 4 WALL, 5 DONE), and emits `broke_through` once the wall is
+## 3 PARRY, 4 GAUGE, 5 WALL, 6 DONE), and emits `broke_through` once the wall is
 ## broken and the plane has swapped to the wilderness.
 ##
 ##   the gating   the stage goes to the world profile (`stage`), which gates
@@ -21,6 +21,14 @@ extends Node
 ##                stamped in the first clear square ahead (AHEAD_FROM to
 ##                AHEAD_MOST m along the flight), so water is in reach
 ##                within seconds.
+##   the ship     at PARRY a pirate ship (pirate_ship.gd, in her lesson temper)
+##                rides at anchor on a lake stamped ahead for her (the profile's
+##                `stamp_lake`: the meadow's ponds and reaches are narrower than
+##                her beam), about LAKE_AT m out along the flight, broadside to
+##                it; the land over its square is built again (LandStream
+##                `restream` with `only`), its tree blocks planned again. She
+##                shows, and fires, once that land is in. From GAUGE on she
+##                stays where she is, quiet.
 ##   the wall     at WALL the ruin hall (tutorial_hall.gd) stands HALL_AHEAD m
 ##                ahead of the plane, a cracked wall across its mouth, a
 ##                beam of light over it; flown away from past HALL_LOST m with
@@ -40,8 +48,9 @@ signal broke_through
 
 const Hall = preload("res://scripts/endless/tutorial/tutorial_hall.gd")
 const Ponds = preload("res://scripts/endless/land_ponds.gd")
+const PirateShip = preload("res://scripts/endless/pirate_ship.gd")
 
-enum Stage {GRASS, TREES, WATER, GAUGE, WALL, DONE}
+enum Stage {GRASS, TREES, WATER, PARRY, GAUGE, WALL, DONE}
 
 ## The cloud deck's underside over the turf (m), and the whiteout's ramp
 ## (m below it to m into it).
@@ -61,6 +70,11 @@ const AHEAD_MOST := 420.0
 ## block it is in and its first ring stay as they stood).
 const REPLAN_PAST := 420.0
 const REPLAN_TREES := 160.0
+## PARRY: with no room for the ship's lake ahead, tried again this often (s).
+const SHIP_RETRY := 0.5
+## She shows once the land over her lake is in, at the latest this long after
+## she is put there (s).
+const SHIP_SHOW_MOST := 4.0
 ## The hall's mouth ahead of the plane at WALL (m), and how far off it may be
 ## left before it stands ahead again.
 const HALL_AHEAD := 780.0
@@ -92,6 +106,11 @@ var _turf := 0.0
 var _skip_t := -1.0
 var _skip_white := 0.0
 var _skip_at := Vector3.INF
+## PARRY: the ship (pirate_ship.gd) and her lake (the profile's `stamp_lake`).
+var ship: Node3D
+var lake := {}
+var _ship_wait := 0.0
+var _ship_t := 0.0
 
 func setup(g: Node3D) -> void:
 	name = "TutorialLand"
@@ -125,6 +144,15 @@ func _process(delta: float) -> void:
 	var s := wanted_stage()
 	if s != stage: _set_stage(s)
 	_step_skip(delta)
+	if stage == Stage.PARRY and ship == null and not done: _ship_step(delta)
+	if ship != null:
+		_ship_t += delta
+		var shown: bool = ship.visible or _lake_in() or _ship_t > SHIP_SHOW_MOST
+		# The lake's tree blocks once more as she shows: a block planned before
+		# the stamp and still in flight then stood its trees in the water.
+		if shown and not ship.visible: _replan_in(lake.rect)
+		ship.visible = shown
+		ship.quiet = stage != Stage.PARRY or not shown
 	if stage >= Stage.WALL and hall == null and not done and bool(game.get("walk_ready")): _place_hall()
 	if hall != null: _watch_hall()
 	_step_deck()
@@ -203,6 +231,73 @@ func _replan(past: float) -> void:
 	for key: Vector2i in drop: trees._free_block(key)
 	trees._planned_at = Vector3.INF
 	print("tutorial land: %d tree blocks planned again" % drop.size())
+
+# --- The ship ------------------------------------------------------------------
+
+## PARRY: the lake stamped ahead (tried again while none fits), then the ship
+## on it.
+func _ship_step(delta: float) -> void:
+	_ship_wait -= delta
+	if _ship_wait > 0.0: return
+	_ship_wait = SHIP_RETRY
+	if game.get("coast") == null or not game.has_method("water_at"): return
+	var p: Vector3 = game.plane.position
+	var at := Vector2(p.x,p.z)
+	var v: Vector3 = game.plane.velocity
+	var dir := Vector2(v.x,v.z)
+	dir = dir.normalized() if dir.length() > 1.0 else Vector2(-sin(float(game.plane.heading)),-cos(float(game.plane.heading)))
+	var land: Node = game.get("land")
+	var kept: Array[Rect2] = []
+	if land != null and land.has_method("kept_squares"): kept = land.kept_squares(KEEP_NEAR)
+	lake = world.stamp_lake(at,dir,kept)
+	if lake.is_empty():
+		print("tutorial land: no room for the ship's lake ahead; again in %.1f s" % SHIP_RETRY)
+		return
+	var c: Vector2 = lake.centre
+	print("tutorial land: a lake for the ship at %s, %.0f m ahead, %.0f by %.0f m (the meadow's ponds are narrower than she is)" % [str(c.round()),c.distance_to(at),(float(lake.half)+float(lake.r))*2.0,float(lake.r)*2.0])
+	if land != null and land.has_method("restream"): land.restream(KEEP_NEAR,lake.square)
+	_replan_in(lake.rect)
+	_sail(c,float(lake.angle))
+
+## The ship at anchor on the lake at `c`, her length along `ang` (rad, XZ).
+func _sail(c: Vector2, ang: float) -> void:
+	var level := float(game.water_at(Vector3(c.x,0.0,c.y)))
+	var s: Node3D = PirateShip.new()
+	s.lesson = true
+	s.quiet = true
+	s.sea_y = level
+	s.speed = 0.0
+	s.rock = 0.0
+	# Her route's middle put so that its start (`route_pose(0)`, ROUTE_R off the
+	# middle) is the lake's: her bow along `ang`.
+	var turn := -ang
+	var mid := c+Vector2(PirateShip.ROUTE_R*sin(turn),PirateShip.ROUTE_R*cos(turn))
+	var coast: Node3D = game.coast
+	coast.add_child(s)
+	s.setup(game,mid,"tutorial/ship",null,PirateShip.ROUTE_LEG,turn)
+	coast.add_ship(s)
+	s.visible = false
+	ship = s
+	print("tutorial land: the ship at anchor at %s, water %.2f" % [str(Vector2(s.position.x,s.position.z).round()),level])
+
+## Whether the land over the lake's square is built again (no chunk meeting
+## it waits on its new build).
+func _lake_in() -> bool:
+	var land: Node = game.get("land")
+	if lake.is_empty() or land == null or not land.has_method("stale_in"): return true
+	return not land.stale_in(lake.square)
+
+## The tree blocks meeting `r` (world XZ) planned again (the lake's trees).
+func _replan_in(r: Rect2) -> void:
+	var trees: Node = game.get("trees")
+	if trees == null or not ("_blocks" in trees): return
+	var block: float = trees.BLOCK
+	var drop: Array[Vector2i] = []
+	for key: Vector2i in trees._blocks:
+		if Rect2(key.x*block,key.y*block,block,block).intersects(r): drop.append(key)
+	for key: Vector2i in drop: trees._free_block(key)
+	trees._planned_at = Vector3.INF
+	print("tutorial land: %d tree blocks planned again round the lake" % drop.size())
 
 # --- The wall ------------------------------------------------------------------
 

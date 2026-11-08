@@ -79,6 +79,11 @@ func _sail(game: Node, at: Vector2, label: String, leg: float, turn: float) -> N
 	ships.append(s)
 	return s
 
+## A ship sailed by another (the tutorial's at PARRY, tutorial_land.gd), a child
+## of this node already set up: stepped, aimed and met with the rest.
+func add_ship(s: Node3D) -> void:
+	ships.append(s)
+
 ## One turn of the beam, the lamp's flash as it comes round on the eye.
 func step(delta: float, game: Node) -> void:
 	if _beam == null: return

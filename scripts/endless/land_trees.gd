@@ -752,8 +752,13 @@ func _build_raw(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted
 	var impl: Object = field.native_impl_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad) if nat != null else null
 	if impl == null: return _build_block(key,field,plan) if kind == "b" else _build_far(key,field,plan)
 	var began := Time.get_ticks_usec()
-	var arches: PackedFloat64Array = plan.arches_flat(field,x0,z0,x0+size,z0+size)
 	var ponds: Array = field.ponds_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad)
+	# A straight reach (a pond of 14 numbers, the tutorial's) is round to the
+	# native building (tree_cell.h `pond_at` reads 12): trees stood in its
+	# length. The GDScript building reads it whole.
+	for q: PackedFloat32Array in ponds:
+		if q.size() >= 14: return _build_block(key,field,plan) if kind == "b" else _build_far(key,field,plan)
+	var arches: PackedFloat64Array = plan.arches_flat(field,x0,z0,x0+size,z0+size)
 	if kind == "f":
 		var far: Dictionary = nat.far(impl,key,arches,ponds,_floor)
 		return {"kind":"f","key":key,"buf":far.buf,"n":int(far.n),"floor":far.floor,"ms":(Time.get_ticks_usec()-began)/1000.0}

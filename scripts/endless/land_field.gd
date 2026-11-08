@@ -470,6 +470,7 @@ var _pond_local := {}
 ## The square the last sample asked about, and its pond.
 var _pond_cell := Vector2i(1 << 30,0)
 var _pond_here := PackedFloat32Array()
+var _pond_epoch := 0
 ## The last sample's pond, when it was within the pond's reach and nearer
 ## than any river: distance outside its edge, from its centre, its radius
 ## that way, its level.
@@ -1006,7 +1007,8 @@ func split_near(at: Vector2, rings := Splits.START_RINGS) -> PackedFloat32Array:
 func _pond_for(x: float, z: float) -> PackedFloat32Array:
 	var cx := floori(x/Ponds.CELL)
 	var cz := floori(z/Ponds.CELL)
-	if cx != _pond_cell.x or cz != _pond_cell.y:
+	if cx != _pond_cell.x or cz != _pond_cell.y or _pond_epoch != Ponds.epoch:
+		_pond_epoch = Ponds.epoch
 		_pond_here = Ponds.cell_pond(_impl,seed,ponds,x,z,_pond_local)
 		if not _pond_here.is_empty() and not _peak_clear(_pond_here[0],_pond_here[1],_pond_here[11]+Ponds.REACH): _pond_here = PackedFloat32Array()
 		_pond_cell = Vector2i(cx,cz)
