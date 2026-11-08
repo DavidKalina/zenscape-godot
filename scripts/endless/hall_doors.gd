@@ -500,13 +500,13 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	var kept := func(x: float, z: float) -> bool:
 		if absf(x) < _foot-1.0 and z > -1.0: return true
 		return absf(absf(x)-TOWER_X) < 14.0 and absf(z-TOWER_Z) < 14.0
-	var seat := HallSeat.build(4400+i,0.75,back,_steps[i],land,kept,_room)
+	var seat := _seat(i,back,land,kept)
 	root.add_child(seat)
 	for mi: Node in seat.find_children("*","MeshInstance3D",true,false):
 		(mi as MeshInstance3D).layers = layers
 		(mi as MeshInstance3D).material_override = lit
 	for s: float in [-1.0,1.0]:
-		var tower := RuinKit_.piece("belfry_tower",4300+i*3+int(s),0.55)
+		var tower := _tower(4300+i*3+int(s))
 		tower.position = Vector3(s*TOWER_X,0.0,TOWER_Z)
 		tower.rotation.y = PI*0.5*(s+1.0)
 		root.add_child(tower)
@@ -562,6 +562,14 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	root.add_child(spill)
 	_spills.append(spill)
 	return root
+
+## Ruin `i`'s seat: the stone it stands on, down into `land` (frame heights).
+func _seat(i: int, back: float, land: Callable, kept: Callable) -> Node3D:
+	return HallSeat.build(4400+i,0.75,back,_steps[i],land,kept,_room)
+
+## A belfry tower of `seed_value`.
+func _tower(seed_value: int) -> Node3D:
+	return RuinKit_.piece("belfry_tower",seed_value,0.55)
 
 func _daylight() -> ShaderMaterial:
 	var sh := Shader.new()

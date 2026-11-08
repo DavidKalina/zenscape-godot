@@ -109,6 +109,10 @@ var _skip_at := Vector3.INF
 ## PARRY: the ship (pirate_ship.gd) and her lake (the profile's `stamp_lake`).
 var ship: Node3D
 var lake := {}
+## The hall being built ahead of WALL (tutorial_hall.gd `warm`).
+var _hall_next: Node3D
+## Where it is to stand, fixed when WALL first asks for it ([at, way]).
+var _hall_spot := []
 var _ship_wait := 0.0
 var _ship_t := 0.0
 
@@ -122,6 +126,19 @@ func setup(g: Node3D) -> void:
 	_turf = float(game.field.height(at.x,at.y))
 	if not ("--no-deck" in preload("res://scripts/launch_args.gd").user_args()): _build_deck()
 	_set_stage(wanted_stage())
+	_warm_hall()
+
+func _exit_tree() -> void:
+	if _hall_next != null:
+		_hall_next.discard()
+		_hall_next.free()
+		_hall_next = null
+
+## The next hall's pieces built ahead (on a worker), so WALL has no long frame.
+func _warm_hall() -> void:
+	if _hall_next != null or done: return
+	_hall_next = Hall.new()
+	_hall_next.warm(game)
 
 ## The stage the lesson asks for (its own, else the flag's).
 func wanted_stage() -> int:
@@ -141,10 +158,16 @@ func skip() -> void:
 
 func _process(delta: float) -> void:
 	if game == null or game.plane == null: return
+	var t0 := Time.get_ticks_usec()
 	var s := wanted_stage()
 	if s != stage: _set_stage(s)
+	FrameLog.add(&"tl_stage",(Time.get_ticks_usec()-t0)/1000.0)
+	t0 = Time.get_ticks_usec()
 	_step_skip(delta)
+	FrameLog.add(&"tl_skip",(Time.get_ticks_usec()-t0)/1000.0)
+	t0 = Time.get_ticks_usec()
 	if stage == Stage.PARRY and ship == null and not done: _ship_step(delta)
+	FrameLog.add(&"tl_ship",(Time.get_ticks_usec()-t0)/1000.0)
 	if ship != null:
 		_ship_t += delta
 		var shown: bool = ship.visible or _lake_in() or _ship_t > SHIP_SHOW_MOST
@@ -153,8 +176,12 @@ func _process(delta: float) -> void:
 		if shown and not ship.visible: _replan_in(lake.rect)
 		ship.visible = shown
 		ship.quiet = stage != Stage.PARRY or not shown
+	t0 = Time.get_ticks_usec()
 	if stage >= Stage.WALL and hall == null and not done and bool(game.get("walk_ready")): _place_hall()
+	FrameLog.add(&"tl_hall",(Time.get_ticks_usec()-t0)/1000.0)
+	t0 = Time.get_ticks_usec()
 	if hall != null: _watch_hall()
+	FrameLog.add(&"tl_watch",(Time.get_ticks_usec()-t0)/1000.0)
 	_step_deck()
 
 func _set_stage(s: int) -> void:
@@ -302,17 +329,26 @@ func _replan_in(r: Rect2) -> void:
 # --- The wall ------------------------------------------------------------------
 
 func _place_hall() -> void:
-	var p: Vector3 = game.plane.position
-	var v: Vector3 = game.plane.velocity
-	var way := Vector2(v.x,v.z)
-	if way.length() < 1.0: way = Vector2(-sin(float(game.plane.heading)),-cos(float(game.plane.heading)))
-	way = way.normalized()
-	var at := Vector2(p.x,p.z)+way*HALL_AHEAD
+	_warm_hall()
+	if not _hall_next.warmed(): return
+	if _hall_spot.is_empty():
+		var p: Vector3 = game.plane.position
+		var v: Vector3 = game.plane.velocity
+		var way := Vector2(v.x,v.z)
+		if way.length() < 1.0: way = Vector2(-sin(float(game.plane.heading)),-cos(float(game.plane.heading)))
+		way = way.normalized()
+		_hall_spot = [Vector2(p.x,p.z)+way*HALL_AHEAD,way]
+	var at: Vector2 = _hall_spot[0]
+	var way: Vector2 = _hall_spot[1]
+	# Its meadow seat built over the next frames (sampled here, built on a worker).
+	if not _hall_next.seat_ready(at,way): return
+	_hall_spot = []
 	world.keep_off = [[at+way*80.0,KEEP_RUIN],[at-way*170.0,KEEP_WAY]]
 	if game.doors != null:
 		push_warning("tutorial land: the world already has doors; the hall replaces them")
 		game.doors.queue_free()
-	hall = Hall.new()
+	hall = _hall_next
+	_hall_next = null
 	game.add_child(hall)
 	hall.place(game,at,way,int(game.seed))
 	game.doors = hall
