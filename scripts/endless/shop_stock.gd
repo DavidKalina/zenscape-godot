@@ -12,8 +12,9 @@ extends RefCounted
 ##           (PlaneFigure `repaint`'s keys), repainted in place
 ##   ribbon  a streamer off the rudder's top, two colours: nothing on the
 ##           flight, only to look at
+##   plane   the body (PlaneFigure BODIES), swapped in place; first, so a
+##           paint goes on the body worn. Cosmetic: the same handling.
 ## The book (PilotBook) keeps owned ids and the worn id per slot.
-
 
 ## Decent flying's money a minute at the book's scale (PilotBook MONEY_SCALE).
 const PER_MINUTE := 6_000
@@ -31,11 +32,14 @@ const PRICE := {
 ## PLANE_TIERS[i]; the hero plane is free): two, four and eight hours.
 const PLANE_TIERS := [720_000, 1_440_000, 2_880_000]
 
-const SLOTS := ["paint","ribbon"]
+const SLOTS := ["plane","paint","ribbon"]
 ## Each slot's heading in the shop.
-const SLOT_NAMES := {"paint":"Paints","ribbon":"Ribbons"}
+const SLOT_NAMES := {"plane":"Planes","paint":"Paints","ribbon":"Ribbons"}
 
 const ITEMS := [
+	{"id":"plane/hero","slot":"plane","name":"Biplane","price":0,"body":"hero"},
+	{"id":"plane/highwing","slot":"plane","name":"High Wing","price":PRICE.plane_2h,"body":"highwing"},
+	{"id":"plane/racer","slot":"plane","name":"Racer","price":PRICE.plane_4h,"body":"racer"},
 	# The wanderer's own: terracotta, teal and cream (PlaneFigure's defaults).
 	{"id":"paint/home","slot":"paint","name":"Homestead","price":0,
 		"livery":{"body":Color("b9583b"),"dark":Color("2f4a4f"),"trim":Color("2f6670"),"wing":Color("ece2c8")}},
@@ -108,6 +112,7 @@ static func dress(figure: Node3D, book: RefCounted, try := {}) -> void:
 		if String(figure.get_meta("shop_"+slot,"")) == id: continue
 		figure.set_meta("shop_"+slot,id)
 		match slot:
+			"plane": if figure.has_method("set_body"): figure.set_body(String(item(id).get("body","hero")))
 			"paint": _paint(figure,item(id).get("livery",{}))
 			"ribbon": _ribbon(figure,item(id).get("colours",[]))
 
