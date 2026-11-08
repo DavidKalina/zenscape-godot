@@ -33,7 +33,7 @@ const FADE_IN := 0.35
 const FADE_OUT := 0.2
 const READ_EVERY := 0.25
 ## New records listed on the card; the rest are counted.
-const RECORDS_SHOWN := 4
+const RECORDS_SHOWN := 2
 ## The tallies the card lists (the time and the way have their own line),
 ## when not zero.
 const ROWS := ["trees","grass_m","clouds","flocks","skims","scrapes","crashes","photos"]
@@ -88,53 +88,19 @@ static func rows(book: PilotBook) -> Array:
 	if f.has("place"): out.append({"kind":"sub","label":"on %s" % load(PLACE_LINES).place_name(str(f.place)),"col":GOLD})
 	out.append({"kind":"big","label":"earned","value":Money.money(int(f.get("earned",0))),"col":GOLD})
 	out.append({"kind":"row","label":"aloft","value":"%s  ·  %s" % [Tallies.say("aloft",float(ft.get("aloft",0.0))),Tallies.say("metres",float(ft.get("metres",0.0)))]})
-	# The best line, read back.
-	out.append({"kind":"head","label":"best line"})
+	# The best line, one row; left out when none was banked.
 	var line: Dictionary = f.get("best_line",{})
-	if line.is_empty():
-		out.append({"kind":"sub","label":"no line banked","col":GREY})
-	else:
+	if not line.is_empty():
 		var top := "%s  x%.1f" % [Tallies.big(float(line.get("points",0.0))),float(line.get("mult",1.0))]
 		if line.has("name") and str(line.name) != "": top = "%s  ·  %s" % [str(line.name),top]
-		out.append({"kind":"row","label":"%d banked" % (f.get("lines",[]) as Array).size(),"value":top,"col":GOLD})
-		var moves: Array = line.get("moves",[])
-		if not moves.is_empty(): out.append({"kind":"sub","label":_list(moves,"  ·  ")})
-		var land: Array = line.get("terrain",[])
-		if not land.is_empty(): out.append({"kind":"sub","label":_list(land,"  >  "),"col":NEAR_C})
-	# The rest of the flight's tallies.
-	var any := false
-	for key: String in ROWS:
-		var v := float(ft.get(key,0.0))
-		if v <= 0.0: continue
-		if not any: out.append({"kind":"head","label":"this flight"})
-		any = true
-		out.append({"kind":"row","label":Tallies.label(key),"value":Tallies.say(key,v)})
-	# Challenges.
-	var chal: Array = f.get("challenges",[])
-	if not chal.is_empty():
-		out.append({"kind":"head","label":"challenges"})
-		for c: Dictionary in chal:
-			var what := "%s %s" % [str(c.get("kind","challenge")),"done" if bool(c.get("done",false)) else "ended"]
-			var v := "%d/%d" % [int(c.get("got",0)),int(c.get("of",0))]
-			if float(c.get("time",0.0)) > 0.0: v += "  ·  "+Tallies.clock(float(c.time))
-			if int(c.get("money",0)) > 0: v += "  ·  +"+Money.money(int(c.money))
-			out.append({"kind":"row","label":what,"value":v,"col":GOLD if bool(c.get("done",false)) else CREAM})
-	# New records.
+		out.append({"kind":"row","label":"best line","value":top,"col":GOLD})
+	# New records: two, then the count of the rest. The flight's tallies,
+	# challenges and finds are in the logbook (J).
 	var recs: Array = f.get("records",[])
-	if not recs.is_empty():
-		out.append({"kind":"head","label":"new records"})
-		for i in mini(recs.size(),RECORDS_SHOWN):
-			var key: String = recs[i]
-			out.append({"kind":"row","label":Tallies.label(key),"value":Tallies.say(key,float(book.records.get(key,0.0))),"col":GOLD})
-		if recs.size() > RECORDS_SHOWN: out.append({"kind":"sub","label":"and %d more in the logbook (J)" % (recs.size()-RECORDS_SHOWN),"col":GREY})
-	# Finds.
-	var found: Array = f.get("found",[])
-	if not found.is_empty():
-		var parts := []
-		for kn: Array in Tallies.finds(found):
-			if int(kn[1]) > 0: parts.append("%d %s" % [kn[1],str(kn[0]).trim_suffix("s") if int(kn[1]) == 1 else kn[0]])
-		out.append({"kind":"head","label":"found"})
-		out.append({"kind":"sub","label":_list(parts,"  ·  ")})
+	for i in mini(recs.size(),RECORDS_SHOWN):
+		var key: String = recs[i]
+		out.append({"kind":"row","label":"record  "+Tallies.label(key),"value":Tallies.say(key,float(book.records.get(key,0.0))),"col":GOLD})
+	if recs.size() > RECORDS_SHOWN: out.append({"kind":"sub","label":"and %d more in the logbook (J)" % (recs.size()-RECORDS_SHOWN),"col":GREY})
 	return out
 
 ## The rows as text lines (for drivers and checks).
