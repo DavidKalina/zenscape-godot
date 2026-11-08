@@ -99,7 +99,7 @@ Proof: the smoke check; a driven run that banks a few lines and lands and
 prints the pay against the table; a still of the shop and of the landing
 summary with the new numbers.
 
-### Lane `tutorial`: the first flight
+### Lane `tutorial`: the first flight (round 1; superseded by round 2's tutorial lanes below)
 
 The first time a book is fresh, Start rolls the plane off as today and
 then a guide takes the first three minutes: a ribbon line (the shape
@@ -174,3 +174,167 @@ one and lands.
 - Anything played: a `scratch/` driver on `tools/harness/drive.gd`.
 - Anything seen: `tools/shot.py` stills, opened and looked at.
 - No committed tests, no full suite: this is prototyping (AGENTS.md).
+
+## Round 2 (after the handoff of round 1; the user played the build)
+
+The user's verdict on round 1: a good start; the ribbon tutorial was hard
+to follow and felt like it did not work; the HUD is crowded (the guide
+card and the shop pointer both sit top centre, the card hides the gates,
+the key strip lists thirteen keys and runs off a 1440 window); the shop
+and the landing summary are dense. Round 2 replaces the ribbon with a
+tutorial the land itself teaches, and clears the HUD and the shop.
+
+### The tutorial, as the user described it
+
+A fresh book's first flight starts already in the air, low, skimming
+flat grass, and never stops flying. There is no step list. The land ahead
+is whatever the current lesson needs, and it keeps being that until the
+player has done the thing enough times; then the land ahead becomes the
+next lesson's land. The stages, in order, each with a requirement that
+advances it (first values; one table, tuned later):
+
+1. GRASS: endless flat meadow. Requirement: three pull-outs over land, or
+   eight seconds of skim.
+2. TREES: loose copses start appearing in the meadow ahead. Requirement:
+   three grazes of a tree.
+3. WATER: ponds and a straight river reach open up ahead. Requirement:
+   two pull-outs over water.
+4. GAUGE: all of it mixed ahead. Requirement: the surge meter fills once.
+5. WALL: the ruin hall appears ahead with a cracked wall in its mouth.
+   Requirement: a surge roll breaks the wall; the hall swaps the land to
+   the wilderness at its start, the pointer to the first shop comes on,
+   and the game is the game. `tutorial_done` is recorded.
+
+The sky is closed and the ground is open: a flat cloud deck about 60 m
+over the turf whites the view out when the plane climbs into it (the
+doors world's whiteout, reused), with no wall, no bounce, nothing that
+fights the stick. There is no range limit: the lesson's land is laid ahead
+of the plane wherever it goes. The HUD during the tutorial is one short
+line with a count ("graze a tree  1/3") and nothing else: no money, no
+shop pointer, no key strip. Skip stays (Backspace, pad D-pad down), shown
+small under the line. The parry is not taught (held for when the burrower
+becomes a collectible).
+
+### The contract between the two tutorial lanes
+
+- `scripts/endless/tutorial/lesson.gd` (lane `tutorial-flow`): node
+  `game.lesson`, null when no tutorial runs. `enum Stage {GRASS, TREES,
+  WATER, GAUGE, WALL, DONE}`, `var stage: int`, `signal
+  stage_changed(stage: int)`, `static func wanted(book) -> bool` (fresh
+  book and no `tutorial_done`; `--tutorial` forces it in any run,
+  `--tutorial=0` never; `--no-title` alone does not stop it).
+- `scripts/endless/tutorial/tutorial_land.gd` (lane `tutorial-land`):
+  node `game.tutorial_land`, present when the world is `tutorial`. It reads
+  `game.lesson.stage` when `game.lesson` exists, else a `--lesson-stage=N`
+  launch flag (its own scratch drivers set the stage by hand). `signal
+  broke_through` when the wall is broken and the swap to the wilderness
+  is done.
+- Each lane connects to the other's signal only if the node exists
+  (`game.get("lesson")`, `game.get("tutorial_land")`), so each runs and
+  proves alone before the merge.
+
+### Lane `tutorial-land` (Opus): the land that teaches
+
+A world profile `tutorial` (`scripts/endless/world/profiles/tutorial.gd`,
+`--world=tutorial`): flat meadow everywhere (no hills, no rivers, no
+stones), the wilderness's grass and flowers, its hour and mood. Trees,
+water and the hall are gated by the stage: chunks built while the stage
+is below TREES carry no trees; ponds and the river reach appear only in
+chunks built at WATER or later; at WALL the ruin hall (`hall_doors.gd`)
+stands ahead of the plane within about 800 m with a cracked wall
+(`cracked_walls.gd`) across its mouth, and a marker or line points to it.
+Breaking the wall with a surge roll and flying through the hall swaps the
+land to the wilderness (the doors machinery: `door_map.gd`,
+`hall_doors.gd` `_swap`), landing the plane in the air near the
+wilderness's start spawn so round 1's first-shop distances hold. The
+cloud deck at about 60 m over the turf, whiteout on entry, clear on
+descent. Changing the stage only changes chunks built from then on; say
+in the commit how the seam between old and new chunks looks (ponds are
+local features; trees are placed per chunk).
+
+Where: new files under `scripts/endless/tutorial/` and the profile.
+Additive edits only to the profiles list, `world_profile.gd` and the
+world selection; `studies/endless_flight.gd` gets the one line that
+builds `tutorial_land` when the world is `tutorial`. List every shared
+line under Notes for merge.
+
+Proof: the smoke check with `--world=tutorial`; a scratch driver that
+flies ahead at each `--lesson-stage` and asserts no trees at GRASS,
+trees at TREES, water at WATER, the hall and the wall at WALL, and the
+swap after the wall is broken (`surge_smash.gd` with a full meter); stills
+of each stage's land from the plane and of the hall with the wall, looked
+at; a still inside the cloud deck.
+
+### Lane `tutorial-flow` (Opus): the lesson
+
+`lesson.gd` as the contract says, wired from `studies/endless_flight.gd`
+in place of `first_flight.gd` (the ribbon is unwired, its file left or
+removed, said in the commit). On Start with a fresh book the world is
+`tutorial` and the plane begins in the air, low and level, over the grass,
+at skim height, flying (the title's takeoff shortened or skipped; say
+which). The stage advances off the near-miss events that already exist
+(`near_miss.gd` moments: pull-out over land and water, graze of a tree,
+the skim trickle, the meter at `surge_smash.gd`'s armed level) and off
+`tutorial_land.broke_through` to DONE. One HUD line, top centre, the
+fonts and inks of `first_flight.gd`'s card: the lesson's verb and the
+count, a small skip hint under it, and "lower" appended when the plane
+has been above 40 m for two seconds. While the lesson runs the money HUD,
+the shop pointer and the key strip are hidden, and shown again at DONE.
+The requirements table is one constant block at the top of `lesson.gd`.
+`tutorial_done` on DONE and on skip; skip also swaps to the wilderness
+(through `tutorial_land` if present, else by the world's own start).
+
+Where: `scripts/endless/tutorial/lesson.gd`, `lesson_hud.gd` if the line
+wants its own file; the wiring lines in `studies/endless_flight.gd`;
+`pilot_book.gd` reuses `tutorial_done`.
+
+Proof: the smoke check; a scratch driver on `--world=wilderness --tutorial`
+(the land lane's world is not there yet) that drives the plane through
+pull-outs, grazes and a water pass and asserts each stage change in order,
+and one that skips; stills of the HUD line at two stages, looked at.
+
+### Lane `hud` (Sonnet): room on the screen
+
+One owner for the top centre: a single slot that shows the lesson line
+while a lesson runs, else the shop pointer; nothing else prints there.
+The bottom key strip shrinks to the three or four keys that matter now
+(in flight: bank, pitch, boost, brake; stopped: the roll and back-up
+hints it already shows; the rest live on the Controls page, with a line
+"more: Controls in the menu") and fits inside 1440 wide with margin. The
+money reads top right as now. Check the near-miss tag, the meter and the
+find line against each other at 1440x900 and 1280x800 so nothing overlaps.
+
+Where: `scripts/endless/near_miss_hud_handoff.gd` or wherever the key
+strip and the pointer are drawn (`money_hud.gd` draws the pointer); small
+edits, no new systems. Do not touch `scripts/endless/tutorial/`.
+
+Proof: the smoke check; stills in flight and stopped at both sizes,
+looked at, nothing overlapping or cut off.
+
+### Lane `shop` (Sonnet): a shop that reads at a glance
+
+The shop shows one group at a time with three tabs across the top:
+Planes, Paints, Ribbons (A/D or the pad's shoulders switch; W/S choose
+as now). Each plane row has a real swatch: a small rendered thumbnail or
+a drawn silhouette of the body, not a blank square. The landing summary
+is trimmed to the earn, the best line's one row, and at most two record
+lines with "and N more in the logbook (J)" for the rest; sections that
+are empty are not drawn.
+
+Where: `scripts/endless/shop_view.gd`, `landing_summary.gd`; swatch
+images under `assets/models/<body>/` or drawn in code.
+
+Proof: the smoke check; the economy lane's driver pattern (`scratch/`
+econ) to open the shop and land; stills of each tab and of the summary,
+looked at.
+
+### Trunk, round 2
+
+6. Merge the four lanes into `iter/ship`; join the wiring in
+   `studies/endless_flight.gd` and the HUD visibility (the lesson hides,
+   the hud lane's slot shows); smoke on `--world=tutorial` and the
+   default; a driven run from a fresh book through all five stages into
+   the wilderness, and one that skips.
+7. Play by the user; a tuning task for the requirements table and the
+   cloud height from what they say.
+8. Handoff.
