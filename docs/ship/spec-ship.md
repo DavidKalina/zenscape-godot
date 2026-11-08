@@ -379,3 +379,68 @@ looked at.
    scores a pull-out, and the full lesson still runs; stills of the dip
    over grass and over water from the plane.
 8. Handoff.
+
+## Round 3 (2026-11-08; the user played round 2's tutorial)
+
+The user's verdict: pretty good. Three notes, each a trunk task below:
+"some terrible frametimes when switching between stages of the
+tutorial"; "the guidance lines should be used for tree grazing as well";
+"we're missing the parry section". This round supersedes round 2's line
+"The parry is not taught": it is, by the pirate ship (the user's choice),
+as a stage between WATER and GAUGE (the user's choice: a parry pours into
+the meter, so it leads into GAUGE).
+
+The stages are now GRASS, TREES, WATER, PARRY, GAUGE, WALL, DONE. The
+contract's `enum Stage` gains PARRY between WATER and GAUGE in both
+`lesson.gd` and `tutorial_land.gd`; `--lesson-stage=N` numbers shift
+with it (say so in the commit).
+
+### Trunk, round 3
+
+9. TREES gets a guide ribbon, as GRASS and WATER have (`lesson_ribbon.gd`):
+   a leg laid ahead along the plane's heading that dips to skim height
+   and runs past a real tree's crown on its side, within the lesson's own
+   tree-pass distance (the NEEDS table), then pulls up through a gate.
+   The tree is one the land put ahead (or one the leg asks the land to
+   place, if none lies near the heading). Flying the leg as drawn scores
+   the lesson's tree pass; flown or left behind, the next leg is laid
+   ahead, until the stage ends. Prove with the driver: a leg lies ahead
+   within a second of TREES starting, flying it counts a pass, three legs
+   end the stage; a still of the leg beside a tree from the plane.
+10. The PARRY stage. The land at PARRY puts a pirate ship
+   (`pirate_ship.gd`, already a `parry_source` for `parry.gd`) on water
+   ahead within about 600 m in the direction of flight, in reach within
+   seconds of the stage starting (round 2's rule for every stage); if the
+   ship needs more water than the meadow's ponds, the land stamps a lake
+   or a wide reach for her and says so. She fires at the plane in a
+   lesson temper: one ball at a time, slower and more readable than in
+   the wilderness, nothing that ends the flight (the parry already does
+   no damage). The lesson counts parries (`parry.gd`'s landed or taken
+   event; NEEDS first value 2) and the HUD line names the move and the
+   key ("roll as the ball reaches you  1/2", with the roll's key or pad
+   button as the strip shows it). The whistle tell stays as it is. At
+   GAUGE the ship stays where she is, quiet or gone (say which). Prove
+   with the driver: the ship lies ahead within 600 m at PARRY start on
+   several headings, a timed roll parries her ball and counts, two end
+   the stage and GAUGE starts; the full lesson end to end and the skip
+   still run; stills of the ship ahead from the plane and of a ball
+   coming in, looked at.
+11. Stage-switch hitches. Measure every stage change (GRASS to TREES,
+   TREES to WATER, WATER to PARRY, PARRY to GAUGE, GAUGE to WALL with the
+   hall, and the swap to the wilderness, 313 ms in round 2) through the
+   real play loop with `--frame-log` and `tools/frame_report.py`
+   (AGENTS.md, Stutter and frame rate), rendered, since mesh uploads and
+   MultiMesh writes wait on the GPU and headless hides them. If the user
+   has flown a frame-logged tutorial (`scratch/f1.csv` or a log named in
+   the trail), read it first: it is the truth. Name each spike's cause,
+   then fix: build the next stage's land ahead of the switch, spread
+   rebuilds over frames (the coroutine and worker paths the chunk builder
+   already has), warm the hall, the wall and the ship before they are
+   needed. Target, first value: no frame over 50 ms at any switch or the
+   swap on this Mac, rendered; report the worst frame at each switch
+   before and after, repeated once (an A/B is believed only on a repeat).
+   What the driven run cannot show, say.
+12. Play by the user, a frame-logged flight
+   (`python3 tools/play.py -- --pilot=fresh --frame-log=res://scratch/f2.csv`),
+   and a tuning task from what they say.
+13. Handoff (round 3 appended to `handoff-ship.md`).
