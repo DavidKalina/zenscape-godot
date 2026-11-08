@@ -128,6 +128,10 @@ var _shown := {}           # keys drawn now
 var _planned_at := Vector3.INF
 var _indices := PackedInt32Array()
 var _bodies := {}          # key -> StaticBody3D
+## Chunks to build again (`restream`): key -> the epoch they were dropped in;
+## a build asked before it stands in for now and is asked again.
+var _stale := {}
+var _epoch := 0
 var _quit := false
 
 func setup(land_seed: int, ground: Material = null) -> void:
@@ -174,6 +178,29 @@ func prime(at: Vector3) -> float:
 ## its collider (the plane's wheels can stand there).
 func solid_at(x: float, z: float) -> bool:
 	return _bodies.has(Vector3i(0,floori(x/BASE),floori(z/BASE)))
+
+## The land past `keep` m (flat, from the eye) built again in place under
+## the field as it is now (a world that gates its land, e.g. the tutorial's
+## stages): each standing chunk past it keeps drawing until its new build
+## commits over it, nearest first; builds in flight are asked again. Returns
+## the squares of the chunks kept (Rect2, world XZ), whose land stays as it
+## stood: the field must not change under them.
+func restream(keep: float) -> Array[Rect2]:
+	_epoch += 1
+	var kept: Array[Rect2] = []
+	for key: Vector3i in _chunks.keys():
+		var s := size_of(key.x)
+		if _distance_flat(key) <= keep:
+			kept.append(Rect2(key.y*s,key.z*s,s,s))
+			continue
+		_stale[key] = _epoch
+	for key: Vector3i in _pending.keys():
+		if _distance_flat(key) > keep: _stale[key] = _epoch
+		else:
+			var s := size_of(key.x)
+			kept.append(Rect2(key.y*s,key.z*s,s,s))
+	_planned_at = Vector3.INF
+	return kept
 
 ## The lead from the flight's velocity (m/s): LEAD_TIME s of its level
 ## part, at most LEAD_MOST m. Before `step`.
@@ -226,7 +253,7 @@ func _plan() -> void:
 			_split(TOP_LEVEL,cx+dx,cz+dz)
 	_queue.clear()
 	for key: Vector3i in _wanted.keys():
-		if not _chunks.has(key) and not _pending.has(key): _queue.append(key)
+		if (not _chunks.has(key) or _stale.has(key)) and not _pending.has(key): _queue.append(key)
 	# Nearest first; at the start the coarse ones first, so the view fills.
 	var first := _chunks.is_empty()
 	_queue.sort_custom(func(a: Vector3i, b: Vector3i) -> bool:
@@ -342,14 +369,14 @@ func _ask() -> void:
 	var held: Array = []
 	while _tasks.size() < most and not _queue.is_empty():
 		var key: Vector3i = _queue.pop_front()
-		if _chunks.has(key) or _pending.has(key) or not _wanted.has(key): continue
+		if (_chunks.has(key) and not _stale.has(key)) or _pending.has(key) or not _wanted.has(key): continue
 		var high := key.x == 0
 		if high and _high.size() >= NEAR_TASKS:
 			held.append(key)
 			continue
 		_pending[key] = true
 		stats.asked += 1
-		var id := WorkerThreadPool.add_task(_build.bind(key,seed),high)
+		var id := WorkerThreadPool.add_task(_build.bind(key,seed,_epoch),high)
 		_tasks[id] = key
 		if high: _high[id] = true
 	if not held.is_empty(): _queue = held+_queue
@@ -364,7 +391,7 @@ func _ask() -> void:
 
 ## A chunk's arrays, made from its own field: the (CELLS+1)^2 grid, then
 ## its skirt's four edges, with normals from a one-sample border.
-func _build(key: Vector3i, land_seed: int) -> void:
+func _build(key: Vector3i, land_seed: int, epoch := 0) -> void:
 	if _quit: return
 	var began := Time.get_ticks_usec()
 	var f: RefCounted = Field.new(land_seed)
@@ -385,6 +412,7 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	_crest_cut(f,made,key,x0,z0,s)
 	made.tops =_tops_of(key,made.get("heights",PackedFloat32Array()))
 	made.key = key
+	made.epoch = epoch
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
 	_done.append(made)
@@ -659,6 +687,17 @@ func _commit() -> bool:
 		var s := size_of(key.x)
 		node.position = Vector3(key.y*s,0.0,key.z*s)
 		add_child(node)
+		if _chunks.has(key):
+			# Built again (`restream`): drawn as the old one was, the old freed.
+			var old: Node3D = _chunks[key].node
+			node.visible = old.visible
+			old.queue_free()
+			if _bodies.has(key):
+				(_bodies[key] as Node).queue_free()
+				_bodies.erase(key)
+		if _stale.has(key):
+			if int(r.get("epoch",0)) >= int(_stale[key]): _stale.erase(key)
+			elif _wanted.has(key): _queue.push_front(key)
 		_chunks[key] = {"node":node,"heights":r.heights if key.x == 0 else PackedFloat32Array(),"faces":r.get("faces",PackedVector3Array()),"tops":tops}
 		stats.committed += 1
 		stats.slowest_commit_ms = maxf(stats.slowest_commit_ms,(Time.get_ticks_usec()-t0)/1000.0)
@@ -693,6 +732,7 @@ func _show() -> void:
 		if show.has(key) or _wanted.has(key): continue
 		(_chunks[key].node as Node).queue_free()
 		_chunks.erase(key)
+		_stale.erase(key)
 		stats.freed += 1
 		if _bodies.has(key):
 			(_bodies[key] as Node).queue_free()

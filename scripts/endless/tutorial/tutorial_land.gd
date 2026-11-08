@@ -10,12 +10,17 @@ extends Node
 ##
 ##   the gating   the stage goes to the world profile (`stage`), which gates
 ##                what the meadow builds from then on: tree blocks committed
-##                below TREES stand bare; ponds and straight reaches only in
-##                squares first asked at WATER or later, outside DRY m of the
-##                plane at that moment. On each change the tree blocks past
+##                below TREES stand bare; ponds and straight reaches only
+##                from WATER on. On each change the tree blocks past
 ##                REPLAN_PAST m are dropped and planned again under the new
 ##                stage, so the new land shows from there out; the near ones
-##                (and their solids) stay as they stood.
+##                (and their solids) stay as they stood. At WATER the land
+##                past KEEP_NEAR m is built again in place (LandStream
+##                `restream`), no pond comes in a square that meets the land
+##                left standing, and a straight reach is
+##                stamped in the first clear square ahead (AHEAD_FROM to
+##                AHEAD_MOST m along the flight), so water is in reach
+##                within seconds.
 ##   the wall     at WALL the ruin hall (tutorial_hall.gd) stands HALL_AHEAD m
 ##                ahead of the plane, a cracked wall across its mouth, a
 ##                beam of light over it; flown away from past HALL_LOST m with
@@ -34,6 +39,7 @@ extends Node
 signal broke_through
 
 const Hall = preload("res://scripts/endless/tutorial/tutorial_hall.gd")
+const Ponds = preload("res://scripts/endless/land_ponds.gd")
 
 enum Stage {GRASS, TREES, WATER, GAUGE, WALL, DONE}
 
@@ -43,9 +49,13 @@ const DECK := 60.0
 const WHITE_FROM := -10.0
 const WHITE_FULL := 8.0
 const DECK_SIZE := 16000.0
-## No ponds within this of the plane when WATER comes (m): past the land
-## standing at its finest and colliding.
-const DRY := 450.0
+## At WATER the land within this of the plane (m) stays as it stood (past
+## its colliders, COLLIDE 70 m); the rest is built again with its ponds.
+const KEEP_NEAR := 110.0
+## The reach stamped ahead at WATER: its near end from this far along the
+## flight (m), its square looked for out to AHEAD_MOST m.
+const AHEAD_FROM := 120.0
+const AHEAD_MOST := 420.0
 ## Tree blocks wholly past this (m) are planned again on a stage change;
 ## at TREES nearer (the copses come up round the plane to be grazed: the
 ## block it is in and its first ring stay as they stood).
@@ -122,14 +132,61 @@ func _process(delta: float) -> void:
 func _set_stage(s: int) -> void:
 	var was := stage
 	stage = s
+	var wet := was >= 0 and s >= Stage.WATER and was < Stage.WATER
+	# Everything dry while the land kept is found: no build in flight may
+	# cut a pond into it.
+	if wet: world.dry = [Rect2(-1e9,-1e9,2e9,2e9)] as Array[Rect2]
 	if not done: world.stage = mini(s,Stage.WALL)
 	print("tutorial land: stage %d (was %d)" % [s,was])
 	if was < 0: return
-	if s >= Stage.WATER and was < Stage.WATER:
-		var p: Vector3 = game.plane.position
-		world.dry_at = Vector2(p.x,p.z)
-		world.dry_r = DRY
+	if wet:
+		_wet()
+		return
 	_replan(REPLAN_TREES if s == Stage.TREES else REPLAN_PAST)
+
+## WATER: the land and tree blocks past KEEP_NEAR m built again with the
+## ponds; the land left standing stays dry (a kept tree block a pond reaches
+## into is planned again); a reach stamped ahead.
+func _wet() -> void:
+	var p: Vector3 = game.plane.position
+	var at := Vector2(p.x,p.z)
+	var dry: Array[Rect2] = []
+	var land: Node = game.get("land")
+	if land != null and land.has_method("restream"): dry = land.restream(KEEP_NEAR)
+	var trees: Node = game.get("trees")
+	var kept_trees: Array[Vector2i] = []
+	if trees != null and ("_blocks" in trees):
+		var block: float = trees.BLOCK
+		for key: Vector2i in trees._blocks:
+			var r := Rect2(key.x*block,key.y*block,block,block)
+			if _flat_d(r,at) <= KEEP_NEAR: kept_trees.append(key)
+	var v: Vector3 = game.plane.velocity
+	var dir := Vector2(v.x,v.z)
+	dir = dir.normalized() if dir.length() > 1.0 else Vector2(-sin(float(game.plane.heading)),-cos(float(game.plane.heading)))
+	world.dry = dry
+	var c: Vector2 = world.stamp_ahead(at,dir,AHEAD_FROM,AHEAD_MOST)
+	print("tutorial land: water ahead at %s (%.0f m)" % [str(c.round()),c.distance_to(at)])
+	_replan(KEEP_NEAR)
+	# Kept tree blocks a pond reaches into are planned again too.
+	if trees != null and not kept_trees.is_empty():
+		var boxes: Array[Rect2] = []
+		for q: PackedFloat32Array in game.field.ponds_in(at.x-1000.0,at.y-1000.0,at.x+1000.0,at.y+1000.0):
+			var b: float = q[11]+Ponds.REACH
+			boxes.append(Rect2(q[0]-b,q[1]-b,b*2.0,b*2.0))
+		var block: float = trees.BLOCK
+		var n := 0
+		for key: Vector2i in kept_trees:
+			if not trees._blocks.has(key): continue
+			var r := Rect2(key.x*block,key.y*block,block,block)
+			for b: Rect2 in boxes:
+				if r.intersects(b):
+					trees._free_block(key)
+					n += 1
+					break
+		if n > 0: print("tutorial land: %d near tree blocks planned again round the water" % n)
+
+static func _flat_d(r: Rect2, at: Vector2) -> float:
+	return Vector2(clampf(at.x,r.position.x,r.end.x),clampf(at.y,r.position.y,r.end.y)).distance_to(at)
 
 ## The tree blocks wholly past `past` m of the plane dropped, to be planned
 ## again under the stage now (LandTrees streams them back in).

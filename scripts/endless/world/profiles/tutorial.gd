@@ -11,9 +11,10 @@ extends "res://scripts/endless/world/profiles/regions.gd"
 ## `stage`; --lesson-stage=N gives the first) gates the meadow's land as it
 ## is built: tree blocks committed below TREES stand bare; ponds and the
 ## straight river reaches (a long pond, land_ponds.gd) come only in squares
-## first asked at WATER or later and outside `dry_r` m of where the plane was
-## when WATER came (so no square the near land already stood on changes
-## under it); `keep_off` holds trees off the hall's ground.
+## at WATER or later, in no square that meets `dry` (the land and tree blocks
+## left standing round the plane when WATER came, so nothing changes under
+## it), and `ahead` stamps a straight reach in the first clear square ahead
+## of the plane then; `keep_off` holds trees off the hall's ground.
 ##
 ## No `side_of`: the doors (region_doors.gd) don't build from the start here.
 
@@ -36,9 +37,14 @@ var offset := Vector2(OFFSET,0.0)
 ## The lesson's stage now (read on workers and the main thread; set by
 ## tutorial_land.gd).
 var stage := GRASS
-## No ponds within dry_r m of dry_at (world XZ): the land stood when WATER came.
-var dry_at := Vector2(INF,INF)
-var dry_r := 0.0
+## No ponds in a square that meets these (world XZ): the land stood when WATER
+## came. Set once, before the land past them is built again.
+var dry: Array[Rect2] = []
+## How far off the nose the reach stamped ahead may lie (rad).
+const AHEAD_TURN := deg_to_rad(15.0)
+## The reach stamped ahead at WATER (`stamp_ahead`): square -> [centre XZ,
+## angle, half length].
+var ahead := {}
 ## Trees kept off these: [centre XZ, radius] (the hall's ground).
 var keep_off: Array = []
 
@@ -90,21 +96,68 @@ func pond_gate(seed: int, ci: int, cj: int, impl: Object) -> Variant:
 	var c := Vector2((ci+0.5)*Ponds.CELL,(cj+0.5)*Ponds.CELL)
 	if side(c.x,c.y) != 1: return null
 	if stage < WATER: return false
-	if c.distance_to(dry_at) < dry_r+Ponds.CELL*0.71: return false
+	var key := Vector2i(ci,cj)
+	if ahead.has(key):
+		var a: Array = ahead[key]
+		return _reach_at(a[0] as Vector2,float(a[1]),float(a[2]),impl)
+	if _dry(ci,cj): return false
 	var h := float(hash([seed,ci,cj,4401]) & 0xffff)/65536.0
 	if h > REACH_SHARE: return null
 	return _reach(seed,ci,cj,impl)
+
+func _dry(ci: int, cj: int) -> bool:
+	var sq := Rect2(ci*Ponds.CELL,cj*Ponds.CELL,Ponds.CELL,Ponds.CELL)
+	for r: Rect2 in dry:
+		if r.intersects(sq): return true
+	return false
+
+## At WATER, a straight reach stamped in the first square ahead of `at`
+## along `dir` (world XZ), between `from` and `most` m out, laid from `at`
+## toward it; it clears `dry` and lies wholly inside its own square (as
+## every pond does), and stands in place of whatever that square would
+## roll. Returns its centre, or INF.
+func stamp_ahead(at: Vector2, dir: Vector2, from: float, most: float) -> Vector2:
+	ahead = {}
+	var d := from
+	while d <= most:
+		var q := at+dir*d
+		d += 20.0
+		if side(q.x,q.y) != 1: continue
+		var key := Vector2i(floori(q.x/Ponds.CELL),floori(q.y/Ponds.CELL))
+		var lo := Vector2(key)*Ponds.CELL
+		for half: float in [REACH_HALF,70.0,40.0]:
+			var box := half+REACH_R+Ponds.REACH
+			if box*2.0 >= Ponds.CELL: continue
+			var c := Vector2(clampf(q.x,lo.x+box,lo.x+Ponds.CELL-box),clampf(q.y,lo.y+box,lo.y+Ponds.CELL-box))
+			var r := Rect2(c-Vector2(box,box),Vector2(box,box)*2.0)
+			var clear := true
+			for k: Rect2 in dry:
+				if k.intersects(r): clear = false
+			if not clear: continue
+			# Near the line of flight (the clamp into its square may push it
+			# off): at most AHEAD_TURN off the nose, laid along the way there,
+			# its near end ahead of the plane.
+			var to := c-at
+			if absf(dir.angle_to(to)) > AHEAD_TURN: continue
+			if to.length()-half < from*0.5: continue
+			var ang := to.angle()
+			ahead = {key: [c,ang,half]}
+			return c
+	return Vector2(INF,INF)
 
 ## A straight reach across square (ci, cj): a long pond, its level just under
 ## the lowest ground along it.
 func _reach(seed: int, ci: int, cj: int, impl: Object) -> PackedFloat32Array:
 	var a := float(hash([seed,ci,cj,4402]) & 0xffff)/65536.0*PI
-	var c := Vector2((ci+0.5)*Ponds.CELL,(cj+0.5)*Ponds.CELL)
+	return _reach_at(Vector2((ci+0.5)*Ponds.CELL,(cj+0.5)*Ponds.CELL),a,REACH_HALF,impl)
+
+## A reach centred at `c`, along angle `a`, `half` m each way.
+func _reach_at(c: Vector2, a: float, half: float, impl: Object) -> PackedFloat32Array:
 	var d := Vector2(cos(a),sin(a))
 	var low := INF
 	for t: float in [-1.0,-0.5,0.0,0.5,1.0]:
 		for s: float in [-1.0,1.0]:
-			var q := c+d*REACH_HALF*t+Vector2(-d.y,d.x)*s*(REACH_R+6.0)
+			var q := c+d*half*t+Vector2(-d.y,d.x)*s*(REACH_R+6.0)
 			low = minf(low,float((impl.sample(q.x,q.y) as Vector2).x))
 	var p := PackedFloat32Array()
 	p.resize(14)
@@ -113,7 +166,7 @@ func _reach(seed: int, ci: int, cj: int, impl: Object) -> PackedFloat32Array:
 	p[2] = REACH_R
 	p[3] = low-Ponds.BRIM
 	p[4] = 2.2
-	p[11] = REACH_HALF+REACH_R
-	p[12] = REACH_HALF
+	p[11] = half+REACH_R
+	p[12] = half
 	p[13] = a
 	return p
