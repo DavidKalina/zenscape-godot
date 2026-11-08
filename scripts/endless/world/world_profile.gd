@@ -50,9 +50,10 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PROFILES := "res://scripts/endless/world/profiles/"
 ## The base tables' world, and the fallback for an unknown id.
 const DEFAULT := "wilderness"
-## The world endless flight plays with no --world=: one region at a time,
-## joined by doors (profiles/doors.gd).
-const PLAYS := "doors"
+## The world endless flight plays with no --world=: the wilderness alone
+## (the Steam build, docs/ship/spec-ship.md). --world=doors plays it joined to
+## the amberlands by doors (profiles/doors.gd).
+const PLAYS := "wilderness"
 
 var id := DEFAULT
 var title := "Wilderness"
