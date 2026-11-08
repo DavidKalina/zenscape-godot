@@ -129,6 +129,7 @@ func setup(g: Node3D) -> void:
 	_warm_hall()
 
 func _exit_tree() -> void:
+	PirateShip.cool()
 	if _hall_next != null:
 		_hall_next.discard()
 		_hall_next.free()
@@ -193,6 +194,11 @@ func _set_stage(s: int) -> void:
 	if wet: world.dry = [Rect2(-1e9,-1e9,2e9,2e9)] as Array[Rect2]
 	if not done: world.stage = mini(s,Stage.WALL)
 	print("tutorial land: stage %d (was %d)" % [s,was])
+	# PARRY's ship built ahead (PirateShip `warm`, on a worker): asked at the
+	# land's setup, in the load (at WATER it ran beside WATER's own land
+	# rebuild, which then took 15 ms frames for half a second); again here, a
+	# no-op once asked.
+	if s <= Stage.PARRY and ship == null and not done: PirateShip.warm()
 	if was < 0: return
 	if wet:
 		_wet()
@@ -276,15 +282,28 @@ func _ship_step(delta: float) -> void:
 	var land: Node = game.get("land")
 	var kept: Array[Rect2] = []
 	if land != null and land.has_method("kept_squares"): kept = land.kept_squares(KEEP_NEAR)
+	var t0 := Time.get_ticks_usec()
 	lake = world.stamp_lake(at,dir,kept)
+	var ms_lake := (Time.get_ticks_usec()-t0)/1000.0
+	FrameLog.add(&"tl_lake",ms_lake)
 	if lake.is_empty():
 		print("tutorial land: no room for the ship's lake ahead; again in %.1f s" % SHIP_RETRY)
 		return
 	var c: Vector2 = lake.centre
 	print("tutorial land: a lake for the ship at %s, %.0f m ahead, %.0f by %.0f m (the meadow's ponds are narrower than she is)" % [str(c.round()),c.distance_to(at),(float(lake.half)+float(lake.r))*2.0,float(lake.r)*2.0])
+	t0 = Time.get_ticks_usec()
 	if land != null and land.has_method("restream"): land.restream(KEEP_NEAR,lake.square)
+	var ms_re := (Time.get_ticks_usec()-t0)/1000.0
+	FrameLog.add(&"tl_restream",ms_re)
+	t0 = Time.get_ticks_usec()
 	_replan_in(lake.rect)
+	var ms_tr := (Time.get_ticks_usec()-t0)/1000.0
+	FrameLog.add(&"tl_replan",ms_tr)
+	t0 = Time.get_ticks_usec()
 	_sail(c,float(lake.angle))
+	var ms_sail := (Time.get_ticks_usec()-t0)/1000.0
+	FrameLog.add(&"tl_sail",ms_sail)
+	print("tutorial land: PARRY parts ms: lake %.1f restream %.1f replan %.1f sail %.1f" % [ms_lake,ms_re,ms_tr,ms_sail])
 
 ## The ship at anchor on the lake at `c`, her length along `ang` (rad, XZ).
 func _sail(c: Vector2, ang: float) -> void:

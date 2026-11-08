@@ -1714,6 +1714,7 @@ func _bits_step(delta: float) -> void:
 # --- Her look and solids -------------------------------------------------------
 
 func _build() -> void:
+	_warmed()
 	var all := solids(wide,high)
 	var blocks: bool = "--ship-blocks" in preload("res://scripts/launch_args.gd").user_args()
 	_fx = ShipGuns.new(get_parent(),twin._fx if twin != null else null)
@@ -1747,6 +1748,52 @@ func _build() -> void:
 		if blocks: plate["look"] = _plate(box,part)
 		else: _plug(plate,part)
 		plates[part] = plate
+
+## Built ahead of a ship (the tutorial asks at its land's setup, before
+## PARRY's ship), on a worker: her files loaded (the glb's meshes and textures
+## made there), each plate's merged plug (`_wholes`) and the guns' shared
+## meshes (ShipGuns `warm_shared`), so the frame she is built in has none of
+## it. A build joins it first (`_warmed`). The files loaded off the main
+## thread leave their load tokens to Godot's exit (4 "ObjectDB instances
+## leaked", RefCounted at count 0); the loader's own threads leave more.
+const WARM := [MODEL,BALL_MODEL,"res://assets/models/pirate_ship/wood.tres",PUFF_SHADER,WHISTLE]
+static var _warm_task := -1
+static var _warm_asked := false
+## Held so the cache keeps them (the puff's shader and the whistle are read
+## later, at her first shot).
+static var _warm_res: Array[Resource] = []
+
+static func warm() -> void:
+	if _warm_asked or not _wholes.is_empty(): return
+	_warm_asked = true
+	_warm_task = WorkerThreadPool.add_task(_warm_build,false,"pirate ship warm")
+
+static func _warm_build() -> void:
+	var res: Array[Resource] = []
+	for path: String in WARM: res.append(load(path))
+	var model: Node = (res[0] as PackedScene).instantiate()
+	for part: String in ["stern","bow"]:
+		var shards: Array[Dictionary] = []
+		for shard: Node in model.find_child("CrackPlug_"+part.capitalize(),true,false).get_children():
+			if not shard.name.begins_with("Cover"): shards.append({"node":shard,"home":(shard as Node3D).transform})
+		_wholes[part] = _merge(shards)
+	model.free()
+	ShipGuns.warm_shared = ShipGuns.make_shared()
+	_warm_res = res
+
+## A warm build in flight joined (before a ship reads what it made).
+static func _warmed() -> void:
+	if _warm_task == -1: return
+	WorkerThreadPool.wait_for_task_completion(_warm_task)
+	_warm_task = -1
+
+## What `warm` holds let go (the tutorial land leaving): its build joined.
+static func cool() -> void:
+	_warmed()
+	_warm_res.clear()
+	_wholes.clear()
+	ShipGuns.warm_shared = {}
+	_warm_asked = false
 
 ## The model on the moving node, its guns' muzzles read off its empties.
 func _dress() -> void:
@@ -1797,7 +1844,7 @@ static var _wholes := {}
 
 ## `shards` ({node, home}) merged, a surface a material, with LODs as the import
 ## makes them.
-func _merge(shards: Array[Dictionary]) -> Mesh:
+static func _merge(shards: Array[Dictionary]) -> Mesh:
 	var by := {}
 	for s: Dictionary in shards:
 		var mesh: Mesh = (s.node as MeshInstance3D).mesh

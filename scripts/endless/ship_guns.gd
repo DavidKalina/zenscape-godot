@@ -65,6 +65,13 @@ var blasts := 0
 var splashes := 0
 var puffs := 0
 
+## The meshes both ships share, made ahead on a worker (PirateShip `warm`) for
+## the next ship with no twin.
+static var warm_shared := {}
+
+static func make_shared() -> Dictionary:
+	return {"blast":_blast_mesh(),"splash":_splash_mesh(),"quad":_quad(),"cuts":{}}
+
 ## Its nodes go under `parent` (the world's frame); `twin` is the other ship's,
 ## whose meshes it shares.
 func _init(parent: Node, twin: RefCounted) -> void:
@@ -73,8 +80,11 @@ func _init(parent: Node, twin: RefCounted) -> void:
 	parent.add_child(root)
 	if twin != null:
 		shared = twin.shared
+	elif not warm_shared.is_empty():
+		shared = warm_shared
+		warm_shared = {}
 	else:
-		shared = {"blast":_blast_mesh(),"splash":_splash_mesh(),"quad":_quad(),"cuts":{}}
+		shared = make_shared()
 	_trail_mat = ShaderMaterial.new()
 	_trail_mat.shader = TRAIL_SHADER
 	var mm := MultiMesh.new()
