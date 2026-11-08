@@ -6,11 +6,12 @@ extends "res://scripts/endless/shell/shell_page.gd"
 const MAKER := "David Kalina"
 ## [what, licence, author, source] for each clip that needs or earns credit.
 const SOUNDS := [
-	["Mountain Chickadee","CC BY-SA 4.0","Matthias Sirch","commons.wikimedia.org/wiki/File:Poecile_gambeli_-_Mountain_Chickadee_XC395088.mp3"],
-	["Steller's Jay (two calls)","CC BY-SA 3.0","Jonathon Jongsma","commons.wikimedia.org/wiki/File:Cyanocitta_stelleri_-_Steller's_Jay_XC109654.mp3, _XC110259.mp3"],
-	["Hermit Thrush","CC BY-SA 4.0","Leonardo Guzman Hernandez","commons.wikimedia.org/wiki/File:Catharus_guttatus_-_Hermit_Thrush_XC389885.mp3"],
-	["Ruby-crowned Kinglet","CC BY-SA 4.0","Jonathon Jongsma","commons.wikimedia.org/wiki/File:Regulus_calendula_-_Ruby-crowned_Kinglet_XC175095.mp3"],
-	["Great Horned Owl","CC BY-SA 4.0","Michael & Katie LaTour","commons.wikimedia.org/wiki/File:Bubo_virginianus_-_Great_Horned_Owl_XC450919.mp3"],
+	["Black-capped Chickadee","CC0","*ngoomie","commons.wikimedia.org/wiki/File:Black-capped_Chickadee_201947598.wav"],
+	["Steller's Jay","Public domain","National Park Service","commons.wikimedia.org/wiki/File:Steller's_Jay_-_National_Park_Service.ogg"],
+	["Steller's Jay","CC0","nfrae","freesound.org/people/nfrae/sounds/703255"],
+	["Hermit Thrush","Public domain","National Park Service, Yosemite","commons.wikimedia.org/wiki/File:Hermit_Thrush_Yosemite_National_Park.ogg"],
+	["Ruby-crowned Kinglet","Public domain","G. McGrane","commons.wikimedia.org/wiki/File:Ruby-crowned_Kinglet.ogg"],
+	["Great Horned Owl","CC0","Felix Blume","freesound.org/people/felix.blume/sounds/612651"],
 	["Clark's Nutcracker","Public domain","NPS / Shan Burson","Yellowstone sound library"],
 	["Common Raven","Public domain","NPS / David Restivo","Yellowstone sound library"],
 	["Mountain Bluebird, American Robin","Public domain","NPS & MSU Acoustic Atlas / Jennifer Jerrett","Yellowstone sound library"],
@@ -31,7 +32,7 @@ func _init(_shell: Node) -> void:
 		{"kind":"heading","text":"Made by"},
 		{"kind":"line","text":MAKER},
 		{"kind":"heading","text":"Sounds"},
-		{"kind":"line","small":true,"dim":true,"text":"Wildlife recordings from Wikimedia Commons, trimmed and levelled for the game. The CC BY-SA recordings are shared under creativecommons.org/licenses/by-sa/3.0 and /4.0."},
+		{"kind":"line","small":true,"dim":true,"text":"Wildlife recordings from Wikimedia Commons and Freesound, public domain or CC0, trimmed and levelled for the game."},
 	]
 	for s: Array in SOUNDS:
 		rows.append({"kind":"line","text":"%s, by %s (%s)" % [s[0],s[2],s[1]]})
