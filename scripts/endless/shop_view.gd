@@ -18,6 +18,8 @@ const DIM := Color(0.96,0.95,0.92,0.55)
 const LOST := Color("ff8a6b")
 const INK := Color(0.07,0.06,0.05,0.78)
 const WIDE := 440.0
+const THUMB := Vector2(88,50)
+const PlaneFigure = preload("res://scripts/plane_figure.gd")
 
 var book: RefCounted
 var figure: Node3D
@@ -28,6 +30,12 @@ var bought: Callable
 ## The rows in order: [{id, slot, row: Control, price: Label, mark: Label}].
 var _rows: Array = []
 var chosen := 0
+## The tabs in order: [{slot, label, panel, section}]; the one up. Kept
+## between visits.
+var _tabs: Array = []
+var _tab := 0
+static var _last_tab := 1
+const SECTION_H := 232.0
 var _money: Label
 var _note: Label
 var _note_left := 0.0
@@ -73,27 +81,51 @@ func _ready() -> void:
 	_money = _label("",NUMS,GOLD,34)
 	_money.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	head.add_child(_money)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation",8)
+	col.add_child(tabs)
 	for slot: String in ShopStock.SLOTS:
-		var sec := _label(String(ShopStock.SLOT_NAMES.get(slot,slot)).to_upper(),_word(15.0,0.18),DIM)
-		var gap := Control.new()
-		gap.custom_minimum_size = Vector2(0,8)
-		col.add_child(gap)
+		var t := _label(String(ShopStock.SLOT_NAMES.get(slot,slot)).to_upper(),_word(16.0,0.16),DIM)
+		t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var tp := PanelContainer.new()
+		tp.add_child(t)
+		tp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tabs.add_child(tp)
+		var sec := VBoxContainer.new()
+		sec.add_theme_constant_override("separation",4)
+		sec.custom_minimum_size = Vector2(0,SECTION_H)
 		col.add_child(sec)
 		for i: Dictionary in ShopStock.items(slot):
-			col.add_child(_row(i))
+			sec.add_child(_row(i))
+		_tabs.append({"slot":slot,"label":t,"panel":tp,"section":sec})
 	var gap2 := Control.new()
 	gap2.custom_minimum_size = Vector2(0,6)
 	col.add_child(gap2)
 	_note = _label("",_word(17.0,0.0),LOST)
 	col.add_child(_note)
-	var hint := _label(Pad.pick("W S choose  ·  Enter buy or wear  ·  Esc leave  ·  Space take off",
-		"Stick choose  ·  X buy or wear  ·  B leave  ·  A take off"),_word(15.0,0.0),DIM)
+	var hint := _label(Pad.pick("A D tab  ·  W S choose  ·  Enter buy or wear  ·  Esc leave  ·  Space take off",
+		"LB RB tab  ·  Stick choose  ·  X buy or wear  ·  B leave  ·  A take off"),_word(15.0,0.0),DIM)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD
 	col.add_child(hint)
-	# Start on what is worn.
-	var worn := ShopStock.worn(book,ShopStock.SLOTS[0])
+	# Open on the tab last used (Paints the first time), on what is worn there.
+	_tab = _last_tab
+	_pick_worn()
+	_refresh()
+
+func _pick_worn() -> void:
+	var slot: String = _tabs[_tab].slot
+	var worn := ShopStock.worn(book,slot)
+	chosen = -1
 	for k in _rows.size():
-		if _rows[k].id == worn: chosen = k
+		if _rows[k].slot != slot: continue
+		if chosen < 0 or _rows[k].id == worn: chosen = k
+
+## Switches tabs by `by` (wrapping), choosing what is worn there.
+func tab(by: int) -> void:
+	_tab = wrapi(_tab+by,0,_tabs.size())
+	_last_tab = _tab
+	_pick_worn()
 	_refresh()
 
 func _row(i: Dictionary) -> Control:
@@ -124,6 +156,7 @@ func _row(i: Dictionary) -> Control:
 
 ## The item's colours side by side.
 func _swatch(i: Dictionary) -> Control:
+	if i.has("body"): return _plane_thumb(String(i.body))
 	var cols: Array = []
 	if i.has("livery"):
 		var l: Dictionary = i.livery
@@ -179,6 +212,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key != null and key.pressed and not key.echo:
 		match key.keycode:
+			KEY_A, KEY_LEFT: tab(-1)
+			KEY_D, KEY_RIGHT: tab(1)
 			KEY_W, KEY_UP: choose(-1)
 			KEY_S, KEY_DOWN: choose(1)
 			KEY_ENTER, KEY_KP_ENTER: act()
@@ -193,6 +228,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event is InputEventJoypadButton and event.pressed:
 		match (event as InputEventJoypadButton).button_index:
+			JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_DPAD_LEFT: tab(-1)
+			JOY_BUTTON_RIGHT_SHOULDER, JOY_BUTTON_DPAD_RIGHT: tab(1)
 			JOY_BUTTON_DPAD_UP: choose(-1)
 			JOY_BUTTON_DPAD_DOWN: choose(1)
 			JOY_BUTTON_X: act()
@@ -201,7 +238,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func choose(by: int) -> void:
-	chosen = wrapi(chosen+by,0,_rows.size())
+	var mine: Array = []
+	for k in _rows.size():
+		if _rows[k].slot == _tabs[_tab].slot: mine.append(k)
+	chosen = mine[wrapi(mine.find(chosen)+by,0,mine.size())]
 	_refresh()
 
 ## The chosen item worn, bought first if it is not had (when the money
@@ -247,6 +287,17 @@ func _say(text: String, colour := LOST, hold := 1.6) -> void:
 func _refresh() -> void:
 	_money.text = Money.money(int(book.money))
 	var try := {}
+	for k in _tabs.size():
+		var on_tab := k == _tab
+		(_tabs[k].section as Control).visible = on_tab
+		(_tabs[k].label as Label).add_theme_color_override("font_color",GOLD if on_tab else DIM)
+		var tb := StyleBoxFlat.new()
+		tb.bg_color = Color(GOLD,0.18) if on_tab else Color(0,0,0,0)
+		tb.border_color = GOLD if on_tab else Color(GOLD,0.2)
+		tb.border_width_bottom = 2
+		tb.content_margin_top = 4.0
+		tb.content_margin_bottom = 4.0
+		(_tabs[k].panel as PanelContainer).add_theme_stylebox_override("panel",tb)
 	for k in _rows.size():
 		var r: Dictionary = _rows[k]
 		var id: String = r.id
@@ -267,3 +318,58 @@ func _refresh() -> void:
 ## The chosen row's item id (for drivers).
 func chosen_id() -> String:
 	return String(_rows[chosen].id)
+
+## A plane's thumbnail: its model lit from the front quarter in a small
+## viewport of its own, drawn once.
+func _plane_thumb(body: String) -> Control:
+	var box := SubViewportContainer.new()
+	box.stretch = true
+	box.custom_minimum_size = Vector2(THUMB.x,THUMB.y)
+	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var vp := SubViewport.new()
+	vp.size = Vector2i(THUMB*2.0)
+	vp.own_world_3d = true
+	vp.transparent_bg = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	box.add_child(vp)
+	var scene := load(PlaneFigure.BODIES[body]) as PackedScene
+	if scene == null: return box
+	var model := scene.instantiate() as Node3D
+	vp.add_child(model)
+	var bounds := _bounds(model)
+	var mid := bounds.get_center()
+	var r := bounds.size.length()*0.5
+	var cam := Camera3D.new()
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.size = r*2.0*0.95
+	vp.add_child(cam)
+	cam.look_at_from_position(mid+Vector3(-0.55,0.45,-0.7).normalized()*r*3.0,mid)
+	var sun := DirectionalLight3D.new()
+	vp.add_child(sun)
+	sun.look_at_from_position(Vector3(-1,2,-1.5),Vector3.ZERO)
+	var env := Environment.new()
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.8,0.82,0.85)
+	env.ambient_light_energy = 0.6
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+	return box
+
+static func _bounds(n: Node) -> AABB:
+	var out := AABB()
+	var first := true
+	for m in n.find_children("*","MeshInstance3D",true,false):
+		var mi := m as MeshInstance3D
+		var b := _xform(mi,n)
+		out = b if first else out.merge(b)
+		first = false
+	return out
+
+static func _xform(mi: MeshInstance3D, root: Node) -> AABB:
+	var t := Transform3D.IDENTITY
+	var cur: Node = mi
+	while cur != null and cur != root:
+		t = (cur as Node3D).transform*t
+		cur = cur.get_parent()
+	return t*mi.get_aabb()
