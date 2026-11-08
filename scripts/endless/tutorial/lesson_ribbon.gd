@@ -1,5 +1,5 @@
 extends Node
-## The lesson's guide at GRASS, TREES and WATER: a ribbon laid ahead of the
+## The lesson's guide at GRASS, TREES and WATER: a way laid ahead of the
 ## plane along its heading, level at cruise, down to skim height for a
 ## stretch, and up through a high gate. At WATER the stretch lies over the
 ## reach the tutorial land stamped ahead (tutorial.gd `ahead`), later over a
@@ -8,12 +8,14 @@ extends Node
 ## every other crown at least OTHER_CLEAR off the whole ribbon.
 ## It is only a guide: the lesson counts the pull-outs. A leg flown, or left
 ## behind (its next gate far off or well behind, round 1's LOST rule), is
-## laid again ahead. Drawn by rival_marks.gd in its own inks.
+## laid again ahead. The gates are data the way runs through, not drawn:
+## guide_lines.gd draws the way as lines the plane emits from its wingtips,
+## bending from it back onto the way.
 ##
 ## lesson.gd owns it: `set_stage` on each stage change, `step` each frame,
 ## `clear` when hidden.
 
-const RivalMarks = preload("res://scripts/endless/rival_marks.gd")
+const GuideLines = preload("res://scripts/endless/tutorial/guide_lines.gd")
 const RivalRace = preload("res://scripts/endless/rival_race.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -100,7 +102,9 @@ const LOW_OUT := 50.0
 const TREE_BUCKET := 24.0
 
 var game: Node
-var marks: RivalMarks
+var lines: GuideLines
+## The leg's way through its gates' middles (the lines follow it).
+var way := PackedVector3Array()
 var stage := -1
 var gates: Array = []
 var next := 0
@@ -125,9 +129,8 @@ var _wait := 0.0
 func setup(g: Node) -> void:
 	game = g
 	name = "LessonRibbon"
-	marks = RivalMarks.new()
-	marks.name = "LessonRibbonMarks"
-	add_child(marks)
+	lines = GuideLines.new()
+	add_child(lines)
 
 func set_stage(s: int) -> void:
 	stage = s
@@ -145,8 +148,12 @@ func clear() -> void:
 	next = 0
 	dip = []
 	tree = Vector4(INF,INF,INF,0.0)
-	marks.set_course({})
-	marks.step(0.0,null,{})
+	if not way.is_empty(): _set_way(PackedVector3Array())
+	lines.step(0.0,null,Vector3.ZERO,null,0.0)
+
+func _set_way(pts: PackedVector3Array) -> void:
+	way = pts
+	lines.set_way(pts)
 
 func shown() -> bool:
 	return not gates.is_empty()
@@ -168,9 +175,7 @@ func step(delta: float) -> void:
 			_wait = 0.0
 			_lay()
 	if a != Vector3.INF and bool(game.hand_landing.flying()) and next < gates.size():
-		var r := RivalRace.through(gates[next],a,p)
-		if r == "through": marks.cleared(next)
-		if r != "": next += 1
+		if RivalRace.through(gates[next],a,p) != "": next += 1
 	if not gates.is_empty() and (next >= gates.size() or _lost(p)): _lay()
 	_show(delta,p)
 
@@ -183,20 +188,9 @@ func _lost(p: Vector3) -> bool:
 	# Passed it by, or turned away from it.
 	return to.dot(g.dir) < -BEHIND or to.dot(_way()) < -BEHIND
 
-func _show(delta: float, p: Vector3) -> void:
-	var show := {"next":-1,"progress":-1000.0,"alpha":1.0}
-	if not gates.is_empty() and next < gates.size():
-		var g1: Dictionary = gates[next]
-		var g0: Dictionary = gates[next-1] if next > 0 else {}
-		var prog := -1000.0
-		if not g0.is_empty():
-			var seg: Vector3 = (g1.p as Vector3)-(g0.p as Vector3)
-			var k := clampf((p-(g0.p as Vector3)).dot(seg)/maxf(seg.length_squared(),1.0),0.0,1.0)
-			prog = lerpf(float(g0.s),float(g1.s),k)
-		show.next = next
-		show.progress = prog
-	if game.get("overlay") != null: show.alpha = 0.0
-	marks.step(delta,game.camera,show)
+func _show(delta: float, _p: Vector3) -> void:
+	var alpha := 0.0 if game.get("overlay") != null else 1.0
+	lines.step(delta,game.get("plane_figure"),game.plane.velocity,game.camera,alpha)
 
 # --- Laying a leg ---------------------------------------------------------------
 
@@ -340,7 +334,7 @@ func _set_leg(p: Vector3, run: Dictionary) -> void:
 	var b: Vector3 = run.b
 	var lo := _top(a,b)+LOW
 	dip = [Vector3(a.x,lo,a.z),Vector3(b.x,lo,b.z)]
-	marks.set_course({"gates":gates,"line":_ribbon(gates),"line_step":STEP})
+	_set_way(_ribbon(gates))
 
 ## The gates of a leg over `run` (not yet laid).
 func _leg_gates(p: Vector3, run: Dictionary) -> Array:
@@ -445,7 +439,7 @@ func _try_trees(p: Vector3, d: Vector3, cands: Array, clear_m: float, other_m: f
 			next = 0
 			var lo := _top(run.a,run.b)+LOW
 			dip = [Vector3(run.a.x,lo,run.a.z),Vector3(run.b.x,lo,run.b.z)]
-			marks.set_course({"gates":gates,"line":line,"line_step":STEP})
+			_set_way(line)
 			return true
 	return false
 
