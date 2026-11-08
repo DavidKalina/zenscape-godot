@@ -14,6 +14,7 @@ extends Control
 ## `words`, `nums`) are the logbook's too.
 
 const Tag = preload("res://scripts/endless/near_miss_hud_handoff.gd")
+const Money = preload("res://scripts/endless/money.gd")
 const Tallies = preload("res://scripts/endless/pilot_tallies.gd")
 ## The places' names (place_lines.gd; loaded when wanted: it preloads this
 ## card through its HUD).
@@ -85,7 +86,7 @@ static func rows(book: PilotBook) -> Array:
 	out.append({"kind":"title","label":"LANDED","value":"flight %d" % int(f.get("n",0))})
 	# Where, when it is a place (pilot_tallies.gd `_place`).
 	if f.has("place"): out.append({"kind":"sub","label":"on %s" % load(PLACE_LINES).place_name(str(f.place)),"col":GOLD})
-	out.append({"kind":"big","label":"earned","value":Tallies.big(float(f.get("earned",0))),"col":GOLD})
+	out.append({"kind":"big","label":"earned","value":Money.money(int(f.get("earned",0))),"col":GOLD})
 	out.append({"kind":"row","label":"aloft","value":"%s  ·  %s" % [Tallies.say("aloft",float(ft.get("aloft",0.0))),Tallies.say("metres",float(ft.get("metres",0.0)))]})
 	# The best line, read back.
 	out.append({"kind":"head","label":"best line"})
@@ -116,7 +117,7 @@ static func rows(book: PilotBook) -> Array:
 			var what := "%s %s" % [str(c.get("kind","challenge")),"done" if bool(c.get("done",false)) else "ended"]
 			var v := "%d/%d" % [int(c.get("got",0)),int(c.get("of",0))]
 			if float(c.get("time",0.0)) > 0.0: v += "  ·  "+Tallies.clock(float(c.time))
-			if int(c.get("money",0)) > 0: v += "  ·  +%d" % int(c.money)
+			if int(c.get("money",0)) > 0: v += "  ·  +"+Money.money(int(c.money))
 			out.append({"kind":"row","label":what,"value":v,"col":GOLD if bool(c.get("done",false)) else CREAM})
 	# New records.
 	var recs: Array = f.get("records",[])

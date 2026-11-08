@@ -403,6 +403,8 @@ func open(key: Vector2i) -> void:
 	game.book.find(name_of(key))
 	view = ShopView.new()
 	view.setup(game.book,game.plane_figure,Callable(self,"close"))
+	view.bought = func() -> void:
+		if game != null and game.get("sound") != null: game.sound.shot("line-flourish",0.9,0.85)
 	_layer.add_child(view)
 	game.overlay = view
 

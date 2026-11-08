@@ -7,6 +7,7 @@ extends Control
 ## Boost takes off, and that leaves too (shop_sites.gd).
 
 const ShopStock = preload("res://scripts/endless/shop_stock.gd")
+const Money = preload("res://scripts/endless/money.gd")
 const Pad = preload("res://scripts/pad.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
@@ -21,6 +22,9 @@ const WIDE := 440.0
 var book: RefCounted
 var figure: Node3D
 var _leave: Callable
+## Called after a purchase (shop_sites.gd plays the bell through the game's
+## FlightSound).
+var bought: Callable
 ## The rows in order: [{id, slot, row: Control, price: Label, mark: Label}].
 var _rows: Array = []
 var chosen := 0
@@ -112,7 +116,7 @@ func _row(i: Dictionary) -> Control:
 	var mark := _label("",_word(16.0,0.12),GOLD)
 	line.add_child(mark)
 	var price := _label("",NUMS,GOLD,22)
-	price.custom_minimum_size = Vector2(56,0)
+	price.custom_minimum_size = Vector2(96,0)
 	price.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	line.add_child(price)
 	_rows.append({"id":i.id,"slot":i.slot,"row":row,"box":box,"price":price,"mark":mark,"name":nm})
@@ -208,20 +212,40 @@ func act() -> void:
 	if not ShopStock.has(book,id):
 		var price := int(ShopStock.item(id).price)
 		if not ShopStock.buy(book,id):
-			_say("%d short" % (price-int(book.money)))
+			_say("%s short" % Money.money(price-int(book.money)))
 			return
+		book.wear(r.slot,id)
+		_refresh()
+		_bought(r,price)
+		return
 	book.wear(r.slot,id)
 	_refresh()
+
+## The moment of a purchase: the row flares gold and pops, the balance
+## flashes, a gold note says what was spent, and the bell (`bought`).
+func _bought(r: Dictionary, price: int) -> void:
+	_say("Bought %s  ·  -%s" % [String(ShopStock.item(r.id).name),Money.money(price)],GOLD,2.4)
+	var row: Control = r.row
+	var box: StyleBoxFlat = r.box
+	row.pivot_offset = row.size*0.5
+	var tw := create_tween().set_parallel()
+	tw.tween_method(func(a: float) -> void: box.bg_color = Color(GOLD,a),0.85,0.2,0.7).set_ease(Tween.EASE_OUT)
+	tw.tween_property(row,"scale",Vector2.ONE,0.45).from(Vector2(1.06,1.06)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_money.pivot_offset = _money.size*0.5
+	tw.tween_property(_money,"scale",Vector2.ONE,0.5).from(Vector2(1.25,1.25)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_money,"modulate",Color.WHITE,0.6).from(Color(1.6,1.4,0.9))
+	if bought.is_valid(): bought.call()
 
 func leave() -> void:
 	if _leave.is_valid(): _leave.call()
 
-func _say(text: String) -> void:
+func _say(text: String, colour := LOST, hold := 1.6) -> void:
 	_note.text = text
-	_note_left = 1.6
+	_note.add_theme_color_override("font_color",colour)
+	_note_left = hold
 
 func _refresh() -> void:
-	_money.text = "%d" % int(book.money)
+	_money.text = Money.money(int(book.money))
 	var try := {}
 	for k in _rows.size():
 		var r: Dictionary = _rows[k]
@@ -229,7 +253,7 @@ func _refresh() -> void:
 		var had := ShopStock.has(book,id)
 		var on := ShopStock.worn(book,r.slot) == id
 		var price := int(ShopStock.item(id).price)
-		(r.price as Label).text = "" if had else "%d" % price
+		(r.price as Label).text = "" if had else Money.money(price)
 		(r.price as Label).add_theme_color_override("font_color",GOLD if price <= int(book.money) else LOST)
 		(r.mark as Label).text = "WORN" if on else ("OWNED" if had and price > 0 else "")
 		(r.box as StyleBoxFlat).bg_color = Color(GOLD,0.2) if k == chosen else Color(0,0,0,0)

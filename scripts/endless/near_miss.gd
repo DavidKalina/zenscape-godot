@@ -710,7 +710,7 @@ func _prize_line(z: Dictionary, game: Node3D) -> Dictionary:
 		"terrain":[],"t":0.0,"kinds":1,"name":z.title,"money":0}
 	var book = game.get("book")
 	if book != null:
-		line.money = book.line_pay(float(z.points),1.0,1)
+		line.money = book.prize_pay(float(z.points))
 		book.earn(int(line.money))
 	return line
 
