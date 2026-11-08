@@ -63,6 +63,8 @@ var _field: RefCounted
 var _sides: Array = ["wilderness","amberlands"]
 var hud: Hud
 var beat: Marks.Beat
+## Held quiet (the lesson's): no tally, no marks, nothing made.
+var hushed := false
 var stream_reads := 0
 
 static func wanted(seed: int) -> bool:
@@ -335,7 +337,7 @@ func complete(i: int) -> bool:
 func step(delta: float, game: Node) -> void:
 	var p: Vector3 = game.plane.position
 	world = _world_at(p,game)
-	if game.stage != null:
+	if game.stage != null or hushed:
 		_prev = Vector3.INF
 		return
 	_poll -= delta
@@ -443,6 +445,23 @@ func _stream(p: Vector3, _first: bool) -> void:
 		var e: Dictionary = rows[i]
 		node.show_as(str(e.kind),e.at,e,is_found(e),_field)
 		_live[i] = node
+
+## The tally and the marks hidden (`on`) or back; the tally comes up again
+## as at a flight's start.
+func hush(on: bool) -> void:
+	if on == hushed: return
+	hushed = on
+	hud.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_ALWAYS
+	if on:
+		hud.visible = false
+		for i: int in _live.keys():
+			var node: Marks.Mark = _live[i]
+			node.visible = false
+			_pool.append(node)
+		_live.clear()
+	else:
+		hud._started = false
+		_stream(_game.plane.position,false)
 
 func _new_mark() -> Marks.Mark:
 	var node := Marks.Mark.new()

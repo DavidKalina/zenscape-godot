@@ -24,6 +24,12 @@ extends Node
 ##   the deck     a flat cloud deck DECK m over the turf: from under, a pale
 ##                ceiling; climbing into it whites the view out, descending
 ##                clears it. Nothing touches the flight.
+##   the skip     `skip()` (the lesson's, on Backspace): the view whites out,
+##                the hall stands if it does not yet, the wilderness land is
+##                stepped round the far mouth, and the plane comes out of
+##                the wilderness ruin SKIP_OUT m before its mouth, SKIP_OVER m
+##                up, flying away from it at cruise; then the white clears and
+##                `broke_through` fires as the wall's path does.
 
 signal broke_through
 
@@ -49,6 +55,15 @@ const HALL_LOST := 3000.0
 ## Trees held off the ruin and the way in (m).
 const KEEP_RUIN := 190.0
 const KEEP_WAY := 140.0
+## The skip: the white's ramp in and out (s), the longest wait for the far
+## land (s) and the share of it standing that is enough, and where the plane
+## comes out (m before the wilderness ruin's mouth, m over its ground).
+const SKIP_IN := 0.35
+const SKIP_OUT_FADE := 0.8
+const SKIP_WAIT := 4.0
+const SKIP_WARM := 0.9
+const SKIP_OUT := 70.0
+const SKIP_OVER := 28.0
 
 var game: Node3D
 var world: RefCounted
@@ -60,6 +75,10 @@ var _deck: MeshInstance3D
 var _white: ColorRect
 var _beam: MeshInstance3D
 var _turf := 0.0
+## The skip: -1 not asked, else its seconds; the white over the view (0 to 1).
+var _skip_t := -1.0
+var _skip_white := 0.0
+var _skip_at := Vector3.INF
 
 func setup(g: Node3D) -> void:
 	name = "TutorialLand"
@@ -82,10 +101,17 @@ func wanted_stage() -> int:
 func force_stage(s: int) -> void:
 	_flag_stage = s
 
-func _process(_delta: float) -> void:
+## Out to the wilderness at once, without the wall (the lesson's skip).
+func skip() -> void:
+	if done or _skip_t >= 0.0: return
+	_skip_t = 0.0
+	print("tutorial land: skip asked")
+
+func _process(delta: float) -> void:
 	if game == null or game.plane == null: return
 	var s := wanted_stage()
 	if s != stage: _set_stage(s)
+	_step_skip(delta)
 	if stage >= Stage.WALL and hall == null and not done and bool(game.get("walk_ready")): _place_hall()
 	if hall != null: _watch_hall()
 	_step_deck()
@@ -147,6 +173,9 @@ func _watch_hall() -> void:
 		world.keep_off = []
 		if _deck != null: _deck.visible = false
 		if _beam != null: _beam.visible = false
+		# The first shop's pointer from the wilderness's own start, not the meadow's.
+		var shops: Node = game.get("shops")
+		if shops != null and "start" in shops: shops.start = (world.regions[0].spawn.at as Vector2)
 		print("tutorial land: broke through to the wilderness at %s" % str(game.plane.position.round()))
 		broke_through.emit()
 		return
@@ -196,6 +225,70 @@ func _build_beam() -> void:
 	var f: Transform3D = hall._frames[1]
 	_beam.global_position = f*Vector3(0.0,0.0,float(hall._out)+40.0)+Vector3.UP*(c.height*0.5+20.0)
 
+# --- The skip ------------------------------------------------------------------
+
+## The white up, the hall stood, the far land stepped round the way out, the
+## plane carried out; then the white down.
+func _step_skip(delta: float) -> void:
+	if _skip_t < 0.0: return
+	_skip_t += delta
+	if done:
+		_skip_white = move_toward(_skip_white,0.0,delta/SKIP_OUT_FADE)
+		if _skip_white <= 0.0: _skip_t = -1.0
+		return
+	if _white == null: _build_white()
+	_skip_white = move_toward(_skip_white,1.0,delta/SKIP_IN)
+	if hall == null:
+		if bool(game.get("walk_ready")): _place_hall()
+		return
+	var f: Transform3D = hall._frames[0]
+	if _skip_at == Vector3.INF:
+		var a: Vector3 = f*Vector3(0.0,0.0,-SKIP_OUT)
+		a.y = maxf(float(game.field.height(a.x,a.z)),float(game.water_at(a)) if game.has_method("water_at") else -INF)+SKIP_OVER
+		_skip_at = a
+		_skip_t = 0.0
+	var far: Node3D = hall.lands[0]
+	far.step(_skip_at)
+	var c: Dictionary = far.counts()
+	var share := float(c.standing)/maxf(float(c.wanted),1.0)
+	if _skip_white < 1.0 or (share < SKIP_WARM and _skip_t < SKIP_WAIT): return
+	_carry_out(f)
+
+## The plane at `_skip_at`, flying out of the wilderness ruin (frame `f`, its
+## z inward), on the wilderness's land and hour.
+func _carry_out(f: Transform3D) -> void:
+	var out := -f.basis.z
+	var way := Vector2(out.x,out.z).normalized()
+	hall._swap_land(0)
+	hall._side = 0
+	hall.swaps += 1
+	hall.passes += 1
+	# The same plane launched level at cruise (stood still on the grass too);
+	# a new one (`_launch`) left the run hanging at quit.
+	var plane: RefCounted = game.plane
+	var fwd := Vector3(way.x,0.0,way.y)
+	plane.launch(_skip_at,atan2(-way.x,-way.y),plane.cruise(),false)
+	game.hand_landing.begin(plane,false)
+	game.near.reset()
+	game.contact.reset()
+	game.plane_figure.reset(plane)
+	game.chase.reset(plane,_skip_at-fwd*24.0+Vector3.UP*6.0,(game.camera as Camera3D).fov)
+	hall._wash()
+	hall._set_hour(1,0)
+	print("tutorial land: skipped out of the wilderness ruin at %s" % str(_skip_at.round()))
+	_watch_hall()
+
+func _build_white() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 4
+	add_child(layer)
+	_white = ColorRect.new()
+	_white.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_white.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_white.color = Color(0.93,0.94,0.96,0.0)
+	_white.visible = false
+	layer.add_child(_white)
+
 # --- The deck ------------------------------------------------------------------
 
 func _build_deck() -> void:
@@ -228,24 +321,21 @@ void fragment() {
 	_deck.material_override = m
 	_deck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_deck)
-	var layer := CanvasLayer.new()
-	layer.layer = 4
-	add_child(layer)
-	_white = ColorRect.new()
-	_white.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_white.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_white.color = Color(0.93,0.94,0.96,0.0)
-	_white.visible = false
-	layer.add_child(_white)
+	_build_white()
 
 func _step_deck() -> void:
-	if _deck == null: return
+	if _deck == null:
+		if _white != null:
+			_white.visible = _skip_white > 0.002
+			_white.color.a = _skip_white*0.98
+		return
 	var eye: Vector3 = (game.camera as Camera3D).global_position
 	var on: bool = not done and int(world.side(eye.x,eye.z)) == 1
 	var deck_y := _turf+DECK
 	_deck.visible = on and eye.y < deck_y+WHITE_FULL
 	_deck.global_position = Vector3(eye.x,deck_y,eye.z)
 	var w := smoothstep(deck_y+WHITE_FROM,deck_y+WHITE_FULL,eye.y) if on else 0.0
+	w = maxf(w,_skip_white)
 	_white.visible = w > 0.002
 	_white.color.a = w*0.98
 

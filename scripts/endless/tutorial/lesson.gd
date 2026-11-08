@@ -232,7 +232,7 @@ func _connect_land() -> void:
 	if land.has_signal("broke_through") and not land.is_connected("broke_through",wall_done):
 		land.connect("broke_through",wall_done)
 
-## The money HUD (and its shop pointer) and the key strip hidden while the
+## The money HUD (and its shop pointer), the finds and the key strip hidden while the
 ## lesson runs, shown again after. The money HUD fades itself each frame, so
 ## its processing is paused while hidden.
 func _hide_hud(hide: bool) -> void:
@@ -243,6 +243,9 @@ func _hide_hud(hide: bool) -> void:
 	for c: CanvasItem in _hidden:
 		c.visible = not hide
 		c.process_mode = Node.PROCESS_MODE_DISABLED if hide else Node.PROCESS_MODE_INHERIT
+	# The finds' tally and their marks too.
+	var finds: Node = game.get("finds")
+	if finds != null and finds.has_method("hush"): finds.hush(hide)
 	if strip != null:
 		if hide: strip.visible = false
 		elif game.get("stage") == null: strip.visible = true

@@ -2025,6 +2025,12 @@ func _show_region() -> void:
 			_region_id = str(r.id)
 			_region_caption.text = str(r.title)
 			_region_shown = now
+	# Not over the lesson's line, nor in its meadow: the wilderness's caption
+	# comes up as the plane comes out there.
+	if (lesson != null and lesson.running()) or (tutorial_land != null and not bool(tutorial_land.done)):
+		_region_shown = now
+		_region_caption.modulate.a = 0.0
+		return
 	var age := now-_region_shown
 	_region_caption.modulate.a = clampf(age/400.0,0.0,1.0)*clampf(1.0-float(age-REGION_HOLD)/REGION_FADE,0.0,1.0)
 	if _region_debug != null: _region_debug.text = world.describe(eye.x,eye.z)
