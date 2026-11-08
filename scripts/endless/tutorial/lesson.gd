@@ -36,6 +36,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const TreePlan = preload("res://scripts/endless/tree_plan.gd")
+const LessonRibbon = preload("res://scripts/endless/tutorial/lesson_ribbon.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
 
@@ -91,6 +92,8 @@ var high_for := 0.0
 var begun := false
 var _flash := 0.0
 var _line: Control
+## The guide ribbon at GRASS and WATER (lesson_ribbon.gd).
+var ribbon: Node
 var _land: Node
 var _hidden: Array[CanvasItem] = []
 
@@ -117,6 +120,9 @@ func setup(g: Node) -> void:
 	_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_line)
 	_line.visible = false
+	ribbon = LessonRibbon.new()
+	add_child(ribbon)
+	ribbon.setup(g)
 	_hide_hud(true)
 	if game.get("stage") == null: air_start()
 
@@ -184,6 +190,7 @@ func step(delta: float) -> void:
 	_hide_hud(true)
 	if game.get("stage") != null or game.plane == null:
 		_line.visible = false
+		if ribbon.stage >= 0: ribbon.set_stage(-1)
 		return
 	begun = true
 	_flash = maxf(0.0,_flash-delta)
@@ -214,6 +221,9 @@ func step(delta: float) -> void:
 			# Without the lesson's land there is no wall: the surge roll is it.
 			if _land == null and game.smash != null and bool(game.smash.hot): wall_done()
 	if count > before and running(): _flash = FLASH
+	if running():
+		if ribbon.stage != stage: ribbon.set_stage(stage)
+		ribbon.step(delta)
 	# "lower": long over the turf's band.
 	var p: Vector3 = game.plane.position
 	var turf := maxf(float(game.field.height(p.x,p.z)),float(game.water_at(p)))
@@ -273,6 +283,7 @@ func _set_stage(s: int) -> void:
 	_pass_tree = Vector2(INF,INF)
 	_passed.clear()
 	_flash = FLASH
+	ribbon.set_stage(stage)
 	if stage == Stage.DONE:
 		_line.visible = false
 		_hide_hud(false)
