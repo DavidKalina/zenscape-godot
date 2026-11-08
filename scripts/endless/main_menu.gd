@@ -6,11 +6,12 @@ extends Control
 ## title_gilt.gdshader, cream to dark ochre top to bottom) between two gold
 ## hairlines, over a light scrim (shaders/menu_scrim.gdshader). One pick,
 ## Start, in Spectral, its stitch breathing on a BREATH s sine as the old
-## selected row's did; Quit as small caps along the foot.
+## selected row's did; Settings, Controls, Credits and Quit as small caps
+## along the foot (the shell's screens: scripts/endless/shell/).
 ##
-## Space, Enter or the pad's A picks; up and down (the d-pad) move between
-## Start and Quit; Escape or the pad's B quits; the mouse picks by hovering
-## and clicking. `picked` says which ("start" or "quit"). It comes in as
+## Space, Enter or the pad's A picks; up and down, left and right (the
+## d-pad) move through the picks; Escape or the pad's B quits; the mouse picks
+## by hovering and clicking. `picked` says which (WHAT). It comes in as
 ## the old title did (`present`: a dark veil lifting over VEIL s, the
 ## inscription over MARK_IN s, the picks after PICKS_DELAY s) and goes with
 ## `leave` (LEAVE s); while leaving or gone it takes no input.
@@ -37,6 +38,11 @@ const MARK_IN := 2.2
 const PICKS_DELAY := 0.95
 const PICKS_IN := 1.2
 const LEAVE := 0.7
+## The picks' words, Start first, the foot's after it, and what `picked` says.
+const FOOT := ["SETTINGS","CONTROLS","CREDITS","QUIT"]
+const WHAT := ["start","settings","controls","credits","quit"]
+## The gap between the foot's words (design px).
+const FOOT_GAP := 38.0
 
 var _scrim := ColorRect.new()
 var _scrim_material := ShaderMaterial.new()
@@ -67,14 +73,24 @@ class Picks extends Control:
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	## The design rects of Start and Quit, in this control's own pixels.
+	## The design rects of Start (0) and the foot's words (1..), in this
+	## control's own pixels.
 	func rect_of(i: int) -> Rect2:
 		var w := size.x
 		if i == 0:
 			var tw := reading.get_string_size("Start",HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(START_SIZE*px)).x
 			return Rect2(Vector2((w-tw)*0.5-34.0*px,(START_Y-36.0)*px+drop),Vector2(tw+68.0*px,52.0*px))
-		var cw := _caps_width("QUIT")
-		return Rect2(Vector2((w-cw)*0.5-18.0*px,(QUIT_Y-20.0)*px+drop),Vector2(cw+36.0*px,30.0*px))
+		var x := _foot_x(i-1)
+		var cw := _caps_width(FOOT[i-1])
+		return Rect2(Vector2(x-14.0*px,(QUIT_Y-20.0)*px+drop),Vector2(cw+28.0*px,30.0*px))
+
+	## The left edge of the foot's word `k`, the row centred.
+	func _foot_x(k: int) -> float:
+		var total := FOOT_GAP*px*(FOOT.size()-1)
+		for word: String in FOOT: total += _caps_width(word)
+		var x := (size.x-total)*0.5
+		for j in k: x += _caps_width(FOOT[j])+FOOT_GAP*px
+		return x
 
 	func _caps_width(text: String) -> float:
 		caps.spacing_glyph = roundi(TRACK*QUIT_SIZE*px)
@@ -102,16 +118,18 @@ class Picks extends Control:
 			# The stitch's ends, sewn down either side of the word.
 			for x in [r.position.x+9.0*px,r.end.x-9.0*px]:
 				_dashed(Vector2(x,r.position.y+10.0*px),Vector2(x,r.end.y-10.0*px),Color(INK,(0.3+0.55*breath)*0.7),line,3.0*px)
-		# Quit: small caps along the foot.
-		var q := rect_of(1)
-		var qlit := selected == 1
-		if qlit or hovered == 1: draw_rect(q,Color(0.039,0.031,0.016,0.2 if qlit else 0.1))
-		var cw := _caps_width("QUIT")
-		var qa := Vector2(roundf((w-cw)*0.5),roundf(QUIT_Y*px+drop))
-		draw_string(caps,qa,"QUIT",HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(QUIT_SIZE*px),Color(INK,1.0 if qlit else 0.6))
-		if qlit:
-			var y := roundf((QUIT_Y+6.0)*px+drop)
-			_dashed(Vector2(qa.x,y),Vector2(qa.x+cw,y),Color(INK,0.3+0.5*breath),line,2.0*px)
+		# Settings, Controls, Credits, Quit: small caps along the foot.
+		for k in FOOT.size():
+			var i := k+1
+			var q := rect_of(i)
+			var qlit := selected == i
+			if qlit or hovered == i: draw_rect(q,Color(0.039,0.031,0.016,0.2 if qlit else 0.1))
+			var cw := _caps_width(FOOT[k])
+			var qa := Vector2(roundf(_foot_x(k)),roundf(QUIT_Y*px+drop))
+			draw_string(caps,qa,FOOT[k],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(QUIT_SIZE*px),Color(INK,1.0 if qlit else 0.6))
+			if qlit:
+				var y := roundf((QUIT_Y+6.0)*px+drop)
+				_dashed(Vector2(qa.x,y),Vector2(qa.x+cw,y),Color(INK,0.3+0.5*breath),line,2.0*px)
 
 	func _dashed(a: Vector2, b: Vector2, c: Color, width: float, dash: float) -> void:
 		var length := a.distance_to(b)
@@ -222,9 +240,15 @@ func leave() -> void:
 	_entrance.tween_property(self,"modulate:a",0.0,LEAVE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_entrance.tween_callback(hide)
 
-## Start (0) or Quit (1) picked now.
+## The pick lit now: 0 Start, then the foot's (WHAT's order).
 func selected() -> int:
 	return _picks.selected
+
+## Held while a shell screen is open over it: no input, the inscription and
+## picks hidden; given back with `on` false.
+func hold(on: bool) -> void:
+	active = not on and visible
+	_frame.visible = not on
 
 func _process(_delta: float) -> void:
 	if not visible: return
@@ -248,23 +272,27 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 		return
 	if event.is_echo(): return
-	if event.is_action_pressed(&"ui_up") or event.is_action_pressed(&"ui_down") or event.is_action_pressed(&"ui_focus_next"):
-		_picks.selected = 1-_picks.selected
+	var n := WHAT.size()
+	if event.is_action_pressed(&"ui_down") or event.is_action_pressed(&"ui_right") or event.is_action_pressed(&"ui_focus_next"):
+		_picks.selected = (_picks.selected+1)%n
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed(&"ui_up") or event.is_action_pressed(&"ui_left"):
+		_picks.selected = (_picks.selected+n-1)%n
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed(&"ui_accept"):
 		_pick(_picks.selected)
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed(&"ui_cancel"):
-		_pick(1)
+		_pick(WHAT.size()-1)
 		get_viewport().set_input_as_handled()
 
-## The pick under `at` (viewport pixels): 0 Start, 1 Quit, -1 neither.
+## The pick under `at` (viewport pixels): its index in WHAT, or -1.
 func _over(at: Vector2) -> int:
 	var local := at-_frame.global_position
-	for i in 2:
+	for i in WHAT.size():
 		if _picks.rect_of(i).grow(4.0).has_point(local): return i
 	return -1
 
 func _pick(i: int) -> void:
 	_picks.selected = i
-	picked.emit("start" if i == 0 else "quit")
+	picked.emit(WHAT[i])
