@@ -600,6 +600,14 @@ func _build_sea() -> void:
 func _river_water(land_seed: int) -> void:
 	var field := Field.new(land_seed)
 	var on := field.rivers > 0.0
+	# A world of regions reads its knobs from the home region (LandBlend), but
+	# the one ground material draws them all: on if any region has rivers or
+	# ponds (the tutorial's meadow has ponds and no rivers; its wilderness
+	# has both). Ponds are drawn as still river water.
+	var world: RefCounted = WorldProfile.current()
+	if not on and not world.uniform and world.get("regions") != null and not "--no-rivers" in LaunchArgs.user_args():
+		for r: RefCounted in world.regions:
+			if float(r.land.get("rivers",1.0)) > 0.0 or float(r.land.get("ponds",1.0)) > 0.0: on = true
 	ground.set_shader_parameter("river_on",1.0 if on else 0.0)
 	if not on: return
 	# The mouths (river-mouths-handoff.md): --river-mouth=0 as before.
@@ -706,6 +714,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	ground.set_shader_parameter("night_grade",celestial.night_grade)
 	RenderingServer.global_shader_parameter_set("zs_camera_position",eye)
 	sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
+	sea.visible = WorldProfile.current().sea_at(eye.x,eye.z)
 	if water != null: water.step(delta,eye,plane_at,facing,_time,view)
 	if clouds != null: clouds.step(delta,view,wind_direction,_time)
 	if land_shade != null:

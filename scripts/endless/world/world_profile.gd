@@ -77,6 +77,13 @@ func at(_x: float, _z: float) -> RefCounted:
 func weights_at(_x: float, _z: float) -> Dictionary:
 	return {self:1.0}
 
+## Whether the sea sheet may show with the eye at world XZ (x, z). A land
+## with no coast anywhere near (the tutorial's meadow) says no: its sheet
+## would lie only under dry ground, and kilometres off its depth ties the
+## land's, drawing waves over the grass.
+func sea_at(_x: float, _z: float) -> bool:
+	return true
+
 ## Whether dressing layer `layer` runs at (x, z).
 func layer_at(layer: StringName, x: float, z: float) -> bool:
 	var v: Variant = at(x,z).layers.get(layer,true)

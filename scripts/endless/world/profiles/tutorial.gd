@@ -72,6 +72,11 @@ func is_doors() -> bool:
 func side(x: float, z: float) -> int:
 	return int(map.dominant(x,z))
 
+## No sea on the meadow's side: it has no coast (its ponds are the ground's
+## own water); the sheet under its flat field only showed through far off.
+func sea_at(x: float, z: float) -> bool:
+	return side(x,z) == 0
+
 func layer_at(layer: StringName, x: float, z: float) -> bool:
 	if layer == &"trees" and side(x,z) == 1:
 		if stage < TREES: return false
