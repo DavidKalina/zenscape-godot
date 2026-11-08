@@ -1031,6 +1031,8 @@ func _build_ui() -> void:
 	layer.add_child(summary)
 	logbook = preload("res://scripts/endless/logbook_view.gd").new(self)
 	layer.add_child(logbook)
+	# The money in flight and the first shop's pointer (lane economy, spec-ship.md).
+	layer.add_child(preload("res://scripts/endless/money_hud.gd").new(self))
 	_fade = ColorRect.new()
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE

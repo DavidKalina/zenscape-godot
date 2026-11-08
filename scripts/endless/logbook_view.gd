@@ -10,6 +10,7 @@ extends Control
 
 const Card = preload("res://scripts/endless/landing_summary.gd")
 const Tallies = preload("res://scripts/endless/pilot_tallies.gd")
+const Money = preload("res://scripts/endless/money.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Ledger = preload("res://scripts/endless/finds_ledger.gd")
 
@@ -109,7 +110,7 @@ static func columns(book: PilotBook) -> Array:
 
 ## The page as text lines (for drivers and checks).
 func lines() -> Array:
-	var out := ["money | %d" % int(game.book.money),"flights | %d" % int(game.book.flights)]
+	var out := ["money | %s" % Money.money(int(game.book.money)),"flights | %d" % int(game.book.flights)]
 	for col: Array in (_cols if not _cols.is_empty() else columns(game.book)):
 		out.append("[%s]" % col[0])
 		for r: Dictionary in col[1]: out.append(("  %s:" % r.label) if r.get("kind","") == "place" else ("  %s%s | %s" % ["  " if r.get("indent",false) else "",r.label,r.value]))
@@ -143,8 +144,8 @@ func _draw() -> void:
 	var y := r.position.y+48.0*s
 	Card.ink(self,Card.words(30.0*s,0.22),"LOGBOOK",Vector2(left,y),30.0*s,Color(Card.CREAM,a),7.0*s,0.0)
 	var book: PilotBook = game.book
-	Card.ink(self,Card.nums(true),Tallies.big(float(book.money)),Vector2(right,y-2.0*s),50.0*s,Color(Card.GOLD,a),10.0*s,1.0,Color(Card.GOLD,0.5*a),6.0*s)
-	var mw := Card.nums(true).get_string_size(Tallies.big(float(book.money)),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(50.0*s)).x
+	Card.ink(self,Card.nums(true),Money.money(int(book.money)),Vector2(right,y-2.0*s),50.0*s,Color(Card.GOLD,a),10.0*s,1.0,Color(Card.GOLD,0.5*a),6.0*s)
+	var mw := Card.nums(true).get_string_size(Money.money(int(book.money)),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(50.0*s)).x
 	Card.ink(self,Card.words(15.0*s,0.08),"money",Vector2(right-mw-14.0*s,y+4.0*s),15.0*s,Color(Card.GREY,a),4.0*s,1.0)
 	Card.ink(self,Card.words(15.0*s,0.06),("%d flight" if int(book.flights) == 1 else "%d flights") % int(book.flights),Vector2(left,y+34.0*s),15.0*s,Color(Card.GREY,a),4.0*s,0.0)
 	var top := r.position.y+120.0*s

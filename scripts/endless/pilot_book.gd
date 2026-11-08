@@ -24,12 +24,20 @@ const FRESH_PATH := "user://pilot_fresh.json"
 const SAVE_EVERY := 5.0
 ## Money for a banked line: its points (already times its multiplier) at
 ## MONEY_PER_POINT, times the multiplier again to MULT_POW, so a line's pay
-## leans on how hard it was more than on how long: a safe repeated line of
-## 10k points at x2.4 pays 10, a mixed 22k at x5 pays 31 (trunk 1's balance:
-## a first paint, 60, in about ten minutes of decent flying). A line with a
-## move in it pays at least 1.
-const MONEY_PER_POINT := 1.0/1600.0
+## leans on how hard it was more than on how long: an easy line (about 450
+## points at x1.3) pays about 2,600, a hard one (4,000 at x3) about 34,600.
+## Set so decent flying earns about ShopStock.PER_MINUTE (6,000) a minute, the
+## old economy's minutes to each purchase (6 a minute at 1/1600 a point, on
+## the points before line_score.gd's rework, which cut them 5 to 10 times) in
+## money that reads in thousands. An estimate, not yet measured on a flight
+## flown by hand (tools/line_report.py over a --line-log): this is the one
+## knob. A line with a move in it pays at least 1.
+const MONEY_PER_POINT := 5.0
 const MULT_POW := 0.5
+## The book's money scale: money in a book saved before it (no
+## "money_scale" key) is multiplied up to it once on load, so no balance is
+## lost when the prices moved to thousands.
+const MONEY_SCALE := 1000
 ## Records where the least is the best, and the starts of names that are
 ## so (the place lines' times, place_lines.gd: `line/<place>/<name>`).
 const LOWER_WINS := ["tightest_gap"]
@@ -80,6 +88,11 @@ func load_book() -> void:
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not data is Dictionary: return
 	money = int(data.get("money",0))
+	# An old book's money (before MONEY_SCALE) moves to the new scale once.
+	var scale := int(data.get("money_scale",1))
+	if scale != MONEY_SCALE and scale > 0:
+		money = money*MONEY_SCALE/scale
+		_dirty = true
 	tally = {}
 	# A value JSON couldn't hold (an inf or NaN once saved) reads back null: drop it.
 	for k: String in (data.get("tally",{}) as Dictionary):
@@ -97,7 +110,7 @@ func save() -> void:
 	_dirty = false
 	_since = 0.0
 	if path == "": return
-	var data := {"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
+	var data := {"money":money,"money_scale":MONEY_SCALE,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
 	var tmp := path+".tmp"
 	var f := FileAccess.open(tmp,FileAccess.WRITE)
 	if f == null: return
@@ -204,6 +217,13 @@ static func line_pay(points: float, mult: float, moves: int) -> int:
 	var paid := int(round(points*MONEY_PER_POINT*pow(maxf(mult,1.0),MULT_POW)))
 	if moves > 0: paid = maxi(paid,1)
 	return paid
+
+## The money for a prize of `points` (a pirate ship sunk, near_miss.gd
+## `_prize_line`): prize points are fixed, not cut by line_score.gd's rework,
+## so they pay at the old 1/1600 a point on the book's MONEY_SCALE (a sunk
+## ship, 25,000 points, pays 15,625: the same minutes as before).
+static func prize_pay(points: float) -> int:
+	return maxi(int(round(points/1600.0*MONEY_SCALE)),1)
 
 ## A finished challenge: {id, kind, got, of, time, points, money, done:
 ## bool}. Pays its money.

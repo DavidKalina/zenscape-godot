@@ -29,6 +29,7 @@ extends Node
 ## The game (studies/endless_flight.gd) holds one (`beats`), holds the
 ## flight while `holding()` and calls `step` after its `_frame`.
 
+const Money = preload("res://scripts/endless/money.gd")
 const BeatMarks = preload("res://scripts/endless/beat_marks.gd")
 const BeatPan = preload("res://scripts/endless/beat_pan.gd")
 const RivalStrip = preload("res://scripts/endless/rival_strip.gd")
@@ -677,6 +678,7 @@ func _finish_route(game: Node, done: bool) -> void:
 	var n := (route.beats as Array).size()+1
 	var points := got*BEAT_POINTS+spare_points+(DONE_POINTS if done else 0)
 	var money := got*BEAT_MONEY+(DONE_MONEY if done else 0)+int(float(spare_points)/SPARE_POINTS/SPARE_MONEY_EVERY)
+	money *= PilotBook.MONEY_SCALE
 	result = {"id":route.id,"kind":"beats","got":got,"of":n,"time":clock,"points":points,"money":money,"done":done,"margins":margins.duplicate()}
 	game.book.challenge_done(result.duplicate())
 	_rest[route.id] = _t+REST
@@ -742,7 +744,7 @@ class Hud extends Control:
 				var a := 1.0-clampf((float(r._end_t)-3.5)/1.0,0.0,1.0)
 				var head := "route flown" if bool(res.get("done",false)) else "route over"
 				_line(WORDS,"%s  ·  %d of %d" % [head,int(res.got),int(res.of)],mid,40.0*k,Color(CREAM,a),k)
-				_line(NUMS,"+%d" % int(res.money),mid+Vector2(0.0,72.0*k),60.0*k,Color(GOLD,a),k)
+				_line(NUMS,"+"+Money.money(int(res.money)),mid+Vector2(0.0,72.0*k),60.0*k,Color(GOLD,a),k)
 
 	func _line(font: Font, text: String, at: Vector2, px: float, col: Color, k: float) -> void:
 		var size := maxi(roundi(px),8)
