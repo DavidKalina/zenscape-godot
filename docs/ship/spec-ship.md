@@ -444,3 +444,77 @@ with it (say so in the commit).
    (`python3 tools/play.py -- --pilot=fresh --frame-log=res://scratch/f2.csv`),
    and a tuning task from what they say.
 13. Handoff (round 3 appended to `handoff-ship.md`).
+
+## Round 4 (2026-11-08; the user flew task 12's tutorial, `scratch/f2.csv`)
+
+Task 12's frame log was clean: 59 fps, worst frame 45 ms, none over 50.
+The user's three notes, each a lane below:
+
+1. "Way too windy, for no good reason."
+2. "The boxes are unnecessary for the guide lines. I think we need to
+   rework these so the plane 'emits' the lines."
+3. "Parry section is really poorly executed right now. Only 1 cannonball
+   fires every like 2 minutes, and if you pass the pirate ship, you just
+   are kinda stuck."
+
+### Lanes, round 4 (parallel, Opus, branch `lane/<part>` off `iter/ship`)
+
+#### Lane `wind`: calm unless there is a reason
+
+Find every way the wind reaches the player in the tutorial and in the
+wilderness: the push and buffeting on the plane, the wind sound, and what
+the land shows (grass, trees, chaff, leaves) from `wind_field.gd`'s
+strength (day curve x the day's temper x exposure x patches x breath) and
+any older wind the plane feels. Say in the commit which of them made it
+"way too windy" in the user's flight (`scratch/f2.csv` has the position and
+time). Wanted: the tutorial calm throughout (a light breeze to look at,
+nothing that moves the plane), and the wilderness's ordinary day calm to
+breezy, with strong wind only where the land gives a reason (ridges, open
+water, a gusty day that is rare). The `--wind=` flags keep working. Proof:
+smoke; a driven level flight in the tutorial and in the wilderness that
+logs the push on the plane before and after (numbers in the commit); one
+still of the meadow grass from the plane.
+
+#### Lane `guide-lines`: the plane emits the lines
+
+Today the guide (`lesson_ribbon.gd` through `rival_marks.gd`) is a ribbon
+through gates drawn as boxes. Wanted: no boxes or gate frames. The lines
+come out of the plane: two lines (the wingtips, or one from the tail if two
+read worse; look at both) that start at the plane and run ahead along the
+way to fly, the swoop down to skim height, the skim, the pull-up, redrawn
+from the plane every frame as it flies so they always start at it. Where
+the plane is off the way, the lines bend from it back onto the way. The
+legs, their laying at GRASS, TREES and WATER, the LOST rule and how the
+stages count stay as they are; the gates stay as data the guide follows,
+just not drawn. A leg flown or left behind lays the next, with the lines
+growing out of the plane rather than popping. Proof: smoke; the driver
+from rounds 2 and 3 still scores a pull-out, a tree pass and a water
+pull-out by following the guide; stills from behind the plane of the lines
+coming off it into a swoop at GRASS, past a tree at TREES and over water at
+WATER, looked at.
+
+#### Lane `parry`: a parry section that keeps you busy
+
+Today at PARRY the ship fires one slow ball about every two minutes, and a
+plane that flies past her is stuck: she is behind, nothing fires, the stage
+can't end. Wanted: while the plane is within her range she fires a readable
+ball every few seconds (first value 4 s, the first ball within about 2 s
+of the plane coming into range), each with the whistle tell, in the lesson
+temper (one ball in the air at a time, slow enough to read, no damage). A
+plane that passes her or leaves her range is never stuck: she is put ahead
+again on water in the direction of flight (or a second ship is, the first
+going quiet), so a ball is always on the way within about 10 s wherever
+the player flies; say which you chose. A missed parry is fine: the next
+ball comes. Two parries end the stage as before. The HUD line stays.
+Proof: smoke; a driven PARRY that flies straight past her without rolling
+and shows balls keep coming and a ship ahead again (times in the commit);
+a driven PARRY that rolls on time and reaches GAUGE; the full lesson end
+to end; a still of a ball coming in.
+
+### Trunk, round 4
+
+14. Merge the three lanes into `iter/ship`, smoke on the default,
+    `--world=tutorial` and `--tutorial --pilot=fresh`, the full lesson
+    driven end to end.
+15. Play by the user; a tuning task from what they say.
+16. Handoff (round 4 appended to `handoff-ship.md`).
