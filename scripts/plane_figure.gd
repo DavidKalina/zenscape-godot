@@ -62,6 +62,10 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 ## The wanderer's model; loaded only when one is built, so traffic and the
 ## scripts that only read this file's constants don't pull its atlas in.
 const HERO := "res://assets/models/hero_plane/hero_plane.glb"
+## The bodies the shop sells (shop_stock.gd's `plane` slot), id to model. Each
+## is built through the hero's pipeline (art/blender/hero_plane/) with its node
+## names, materials and HOLDS, so everything below drives any of them.
+const BODIES := {"hero":HERO,"highwing":"res://assets/models/highwing/highwing.glb"}
 ## Livery keys (`_init`) to the code-built figure's paints, and to the
 ## model's shader slots with their defaults.
 const TOY_SLOTS := {"body":"wood","dark":"dark","trim":"trim","wing":"cream"}
@@ -340,8 +344,8 @@ func _init(livery := {}) -> void:
 ## Prop spins about its local z, its Blades alone hide for the disc; the
 ## ailerons and elevator hinge on local x, the rudder on y, the wheels' axle
 ## is local x.
-func _build_hero() -> void:
-	var model := (load(HERO) as PackedScene).instantiate() as Node3D
+func _build_hero(path := HERO) -> void:
+	var model := (load(path) as PackedScene).instantiate() as Node3D
 	model.name = "Hero"
 	add_child(model)
 	var own := {}
@@ -754,11 +758,33 @@ func get_wear() -> float:
 ## Repaints it in place to `livery`'s body, dark, trim and wing, its defaults
 ## for any it lacks (the shop, scripts/endless/shop_stock.gd).
 func repaint(livery: Dictionary) -> void:
+	_livery = livery
 	for key: String in HERO_SLOTS:
 		var slot: Array = HERO_SLOTS[key]
 		for m in _hero_paint: m.set_shader_parameter(slot[0],livery.get(key,slot[1]))
 		var old: String = TOY_SLOTS[key]
 		if _paints.has(old): (_paints[old] as ShaderMaterial).set_shader_parameter("albedo",livery.get(key,slot[1]))
+
+## The body worn now (BODIES), and the livery last painted, kept for a swap.
+var body := "hero"
+var _livery := {}
+
+## Swaps the model for body `id` (BODIES) in place, keeping its wear, livery,
+## layer and shade (the shop, shop_stock.gd `dress`). The code-built figure
+## has no body to swap.
+func set_body(id: String) -> void:
+	var old := get_node_or_null("Hero")
+	if id == body or old == null or not BODIES.has(id): return
+	remove_child(old)
+	old.queue_free()
+	for list: Array in [_hero_parts,_hero_lit,_hero_paint,_ailerons,_wheels,_gear]: list.clear()
+	_home.clear()
+	body = id
+	_build_hero(BODIES[id])
+	_bore_set = not bore
+	_cover_set = -1.0
+	set_wear(_wear)
+	repaint(_livery)
 
 ## The plane's paints by name, `livery` (see `_init`) repainting the body,
 ## dark, trim and wing and setting their wear (new without); the pieces
