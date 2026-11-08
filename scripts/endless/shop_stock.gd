@@ -29,6 +29,7 @@ const SLOT_NAMES := {"plane":"Planes","paint":"Paints","ribbon":"Ribbons"}
 const ITEMS := [
 	{"id":"plane/hero","slot":"plane","name":"Biplane","price":0,"body":"hero"},
 	{"id":"plane/highwing","slot":"plane","name":"High Wing","price":PLANE_TIERS[0],"body":"highwing"},
+	{"id":"plane/racer","slot":"plane","name":"Racer","price":PLANE_TIERS[1],"body":"racer"},
 	# The wanderer's own: terracotta, teal and cream (PlaneFigure's defaults).
 	{"id":"paint/home","slot":"paint","name":"Homestead","price":0,
 		"livery":{"body":Color("b9583b"),"dark":Color("2f4a4f"),"trim":Color("2f6670"),"wing":Color("ece2c8")}},

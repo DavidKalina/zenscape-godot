@@ -65,7 +65,7 @@ const HERO := "res://assets/models/hero_plane/hero_plane.glb"
 ## The bodies the shop sells (shop_stock.gd's `plane` slot), id to model. Each
 ## is built through the hero's pipeline (art/blender/hero_plane/) with its node
 ## names, materials and HOLDS, so everything below drives any of them.
-const BODIES := {"hero":HERO,"highwing":"res://assets/models/highwing/highwing.glb"}
+const BODIES := {"hero":HERO,"highwing":"res://assets/models/highwing/highwing.glb","racer":"res://assets/models/racer/racer.glb"}
 ## Livery keys (`_init`) to the code-built figure's paints, and to the
 ## model's shader slots with their defaults.
 const TOY_SLOTS := {"body":"wood","dark":"dark","trim":"trim","wing":"cream"}
