@@ -364,4 +364,18 @@ looked at.
    not possible, stamp a pond ahead and say so. Prove with the driver:
    the nearest pond's distance at WATER start and ten seconds later, under
    400 m, from several headings; and the full lesson end to end.
+   Also from the second play: "I want the guidance lines to help guide the
+   user to swoop down, and pull up." At GRASS and at WATER a ribbon
+   (the shape `place_lines.gd` draws through `rival_marks.gd`, as round
+   1's guide used it; its file `first_flight.gd` is in history at bf19fc2a
+   for the leg-laying code) is laid ahead of the plane along its heading:
+   level at cruise, dipping to skim height for a stretch, pulling up
+   through a gate. At WATER the dip lies over the pond or reach the land
+   put ahead. It is a guide, not a gate to pass: the stage still advances
+   on the pull-outs the lesson counts. When a leg is flown or left behind
+   (round 1's LOST rule) the next is laid ahead again, until the stage
+   ends; no ribbon at TREES, GAUGE or WALL. Prove with the driver: a leg
+   lies ahead within a second of GRASS and of WATER starting, flying it
+   scores a pull-out, and the full lesson still runs; stills of the dip
+   over grass and over water from the plane.
 8. Handoff.
