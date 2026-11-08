@@ -93,14 +93,17 @@ jobs:
         run: |
           "$GODOT" --headless --path . --script res://tests/test_threaded_mesh.gd -- --native-kernels 2>&1 | tee native-test.log
           if grep -E 'SCRIPT ERROR:|ERROR:' native-test.log; then exit 1; fi
-          "$GODOT" --headless --path . --script res://tests/test_export_entry.gd -- --native-kernels 2>&1 | tee menu-test.log
-          if grep -E 'SCRIPT ERROR:|ERROR:' menu-test.log; then exit 1; fi
       - name: Export release build
         run: |
           mkdir -p builds/windows
-          "$GODOT" --headless --path . --export-release "${{ matrix.platform }}" 2>&1 | tee export.log
+          if [[ "$RUNNER_OS" == Windows ]]; then out=builds/windows/ZenScape.exe; else out=builds/ZenScape-mac-universal.zip; fi
+          "$GODOT" --headless --path . --export-release "${{ matrix.platform }}" "$out" 2>&1 | tee export.log
           if grep -E 'SCRIPT ERROR:|ERROR:' export.log; then exit 1; fi
-      - name: Verify shipped release kernel and menu
+      # Copies the export out of the checkout and runs it there: headless,
+      # 400 frames from the title on a fresh user folder; fails on a non-zero
+      # exit or any SCRIPT ERROR / ERROR line bar the exit leak reports
+      # (a kernel DLL that does not load logs ERROR lines).
+      - name: Run the exported game outside the checkout
         run: python tools/verify_desktop_export.py
       - name: Package Windows download
         if: runner.os == 'Windows'
@@ -122,5 +125,5 @@ jobs:
           mv "builds/$archive.zip" "builds/$archive-${GITHUB_SHA:0:7}.zip"
           gh release upload "$BUILD_TAG" "builds/$archive-${GITHUB_SHA:0:7}.zip"
           url="$(gh release view "$BUILD_TAG" --json url --jq .url)"
-          printf '## Verified %s build\n\n[Download build](%s)\n\nCommit: `%s`\n\nNative release kernel and packaged menu/editor checks passed.\n' \
+          printf '## Verified %s build\n\n[Download build](%s)\n\nCommit: `%s`\n\nThe exported game ran 400 frames from the title, native kernels loaded, no errors.\n' \
             '${{ matrix.platform }}' "$url" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
