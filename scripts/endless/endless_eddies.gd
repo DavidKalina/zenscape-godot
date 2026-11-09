@@ -108,10 +108,13 @@ func _wind_here(p: Vector2) -> Vector2:
 	if wind == null: return Vector2(1.0, 0.0)
 	return Vector2(wind.wind_at(p.x, p.y), wind.reach(p.x, p.y))
 
-## The rate at `p`: the field's where it reaches, 1 past it.
+## The rate at `p`: the field's where it reaches, 1 past it (the world's own
+## wind's there when it names one, WindField `beyond`).
 func _rate_at(p: Vector2) -> float:
+	if wind == null: return 1.0
 	var w := _wind_here(p)
-	return lerpf(1.0, rate_of(w.x), w.y) if wind != null else 1.0
+	var far := 1.0 if float(wind.beyond) < 0.0 else rate_of(float(wind.beyond))
+	return lerpf(far, rate_of(w.x), w.y)
 
 ## A band's push at `back` s behind its head: rising over the head's
 ## first metres, easing off, a little swing past rest at the tail.

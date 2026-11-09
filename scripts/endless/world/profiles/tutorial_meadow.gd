@@ -21,3 +21,7 @@ func _init() -> void:
 	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"tunnels":0.0,"halls":0.0,"arches":0.0,"splits":0.0,
 		"stacks":0.0,"hoodoos":0.0,"traffic":-1}
 	spawn = {"at":Vector2.ZERO,"alt":18.0,"heading":0.0}
+	# Calm: past the wind field's land (the tutorial's meadow is) a light
+	# breeze to look at, under what buffets the plane (WindField `beyond`;
+	# the tutorial world takes its paint from this, its start).
+	paint["wind_beyond"] = 0.25

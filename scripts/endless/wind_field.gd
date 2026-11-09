@@ -4,9 +4,14 @@ extends RefCounted
 ## isles' 0..2 strength the shaders read as zs_wind_strength.
 ##
 ##   strength = DAY curve (the hour) x the day's temper (calm, breezy,
-##              gusty, rolled per day from the land seed)
-##              x (the place's exposure + the drifting patches)
+##              gusty, rolled per day from the land seed; gusty rare)
+##              x (the place's exposure + the drifting patches x exposure)
 ##              x a slow breath (its depth the temper's)
+##
+## Calm unless the land gives a reason: the exposure is baked to the power
+## REASON, so ordinary open ground keeps a light breeze and only ridges, tops
+## and open water blow hard, and a patch freshens a place by its exposure (a
+## patch over a hollow or a meadow is near nothing, over a ridge a gale).
 ##
 ## The exposure comes from the land's shape, baked once over the whole world
 ## (the coast's rounded square and its sea ring) at CELL m: ridges, tops and
@@ -24,6 +29,10 @@ extends RefCounted
 ## Flags: --wind=calm|breezy|gusty (every day's temper), --wind=X (strength
 ## X everywhere, no hour, no place), --wind=off (the old single wind, the
 ## mood's), --wind-map (the field's map in the top-right corner).
+##
+## Past the bake (another region's half: the doors' amberlands, the
+## tutorial's meadow) the world's own wind blows: the mood's, or `beyond` when
+## the world's paint names one ("wind_beyond": the tutorial's light breeze).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const TreePlan = preload("res://scripts/endless/tree_plan.gd")
@@ -50,11 +59,16 @@ const REACH_FADE := 3000.0
 ## peak, easing through golden hour and dusk, near still in the blue hour.
 const DAY := [[0.0,0.05],[4.0,0.04],[6.0,0.06],[8.0,0.22],[10.0,0.5],[12.0,0.78],[14.5,1.0],[16.5,0.86],[18.0,0.52],[19.5,0.22],[21.0,0.09],[23.0,0.05]]
 ## The tempers: [name, scale, breath depth, odds].
-const TEMPERS := [["calm",0.45,0.10,0.3],["breezy",0.85,0.18,0.45],["gusty",1.25,0.32,0.25]]
+const TEMPERS := [["calm",0.45,0.10,0.35],["breezy",0.85,0.18,0.53],["gusty",1.25,0.32,0.12]]
 ## The strength at the peak hour, on a breezy day, at full exposure.
 const PEAK := 1.3
 ## The floor a sheltered spot keeps of the local wind (exposure 0).
 const SHELTER := 0.12
+## The baked exposure is the land's raw exposure to this power: open ground
+## (raw about 0.43) keeps under a fifth, a ridge or a top (1) all of it.
+const REASON := 2.0
+## The exposure before the bake lands (and as it eases in): raw 0.5's.
+const NEUTRAL := 0.25
 ## The patches: how many, their radius range (m), what they add (share of
 ## PEAK), their drift (m/s) and the span they wrap round (m, downwind).
 const PATCHES := 5
@@ -66,6 +80,9 @@ const PATCH_SPAN := 28000.0
 const WANDER := 0.35
 const WANDER_RATE := 0.013
 
+## The world's own wind past the bake (the paint's "wind_beyond"), under 0:
+## the mood's (EndlessLook sets it).
+var beyond := -1.0
 ## The mode: "field" (the default), "fixed" (--wind=X), "off" (--wind=off).
 var mode := "field"
 var fixed := 0.75
@@ -198,8 +215,10 @@ func bake(field: RefCounted) -> void:
 		for k in n*n:
 			if water[k] == 0: raw[k] -= forest_shelter*lee[k]
 	for k in n*n: raw[k] = clampf(raw[k],0.0,1.0)
-	# A cell's blur, so ridges read as bands, not specks.
+	# A cell's blur, so ridges read as bands, not specks; then to REASON's
+	# power, so only the exposed places blow hard.
 	exposure = _blur(raw,1)
+	for k in n*n: exposure[k] = pow(exposure[k],REASON)
 	bake_ms = float(Time.get_ticks_usec()-t0)/1000.0
 
 ## The woods' share of each land cell (TreePlan's mask at its middle: the dense
@@ -337,12 +356,12 @@ func _place_blobs() -> void:
 		var at := centre+along_dir*along+across_dir*across
 		blobs.append(Vector4(at.x,at.y,r,amount))
 
-## The baked exposure at (x, z), 0..1 (bilinear; 0.5 before the bake, the
+## The baked exposure at (x, z), 0..1 (bilinear; NEUTRAL before the bake, the
 ## bake easing in over FADE_IN s once it lands).
 func exposure_at(x: float, z: float) -> float:
-	if not baked: return 0.5
+	if not baked: return NEUTRAL
 	var k := smoothstep(0.0,1.0,_in)
-	if k < 1.0: return lerpf(0.5,_exposure_at(x,z),k)
+	if k < 1.0: return lerpf(NEUTRAL,_exposure_at(x,z),k)
 	return _exposure_at(x,z)
 
 ## How far the baked exposure has come in (0..1): the shaders' zs_wind_field.y.
@@ -430,7 +449,8 @@ func spots_near(x: float, z: float) -> Array[Vector4]:
 ## The wind's strength at (x, z) now (zs_wind_strength's scale).
 func wind_at(x: float, z: float) -> float:
 	if mode == "fixed": return fixed
-	var place := lerpf(SHELTER,1.0,exposure_at(x,z))+PATCH_ADD*patch_at(x,z)
+	var e := exposure_at(x,z)
+	var place := lerpf(SHELTER,1.0,e)+PATCH_ADD*e*patch_at(x,z)
 	return PEAK*now*place
 
 ## The wind's heading now (unit xz).

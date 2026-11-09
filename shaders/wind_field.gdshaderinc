@@ -10,8 +10,10 @@
 #include "res://shaders/reference_globals.gdshaderinc"
 
 // x the field's factor now (WindField PEAK x now), y how far its baked
-// exposure has come in (0..1; 0.5 everywhere before), z a fixed strength
-// everywhere (--wind=X; under 0 none), w 1 when the world blows a field.
+// exposure has come in (0..1; NEUTRAL everywhere before), z a fixed strength
+// everywhere (--wind=X; under 0 none), w 1 when the world blows a field, 2
+// when it does and names its own wind past the field's land (WindField
+// `beyond`: the tutorial's meadow), so the grass's swell there is that wind's.
 global uniform vec4 zs_wind_field;
 // The exposure's texture: x, z of its corner (m), its side (m), and the bake's
 // half side (the centre to its outermost cells, m).
@@ -28,8 +30,9 @@ global uniform vec4 zs_wind_patch_4;
 global uniform vec4 zs_wind_near_0;
 global uniform vec4 zs_wind_near_1;
 
-// WindField SHELTER, PATCH_ADD, REACH_FADE.
+// WindField SHELTER, NEUTRAL, PATCH_ADD, REACH_FADE.
 const float ZS_WIND_SHELTER = 0.12;
+const float ZS_WIND_NEUTRAL = 0.25;
 const float ZS_WIND_PATCH_ADD = 0.55;
 const float ZS_WIND_REACH_FADE = 3000.0;
 
@@ -70,14 +73,15 @@ float zs_wind_spots_near(vec2 p) {
 float zs_wind_field_at(vec2 p) {
 	if (zs_wind_field.z >= 0.0) return zs_wind_field.z;
 	vec2 uv = (p - zs_wind_rect.xy) / max(zs_wind_rect.z, 1.0);
-	float e = mix(0.5, textureLod(zs_wind_exposure, uv, 0.0).r, zs_wind_field.y);
+	float e = mix(ZS_WIND_NEUTRAL, textureLod(zs_wind_exposure, uv, 0.0).r, zs_wind_field.y);
 #ifdef ZS_WIND_NEAR_ONLY
 	float spots = zs_wind_spots_near(p);
 #else
 	float spots = zs_wind_blob(p, zs_wind_patch_0) + zs_wind_blob(p, zs_wind_patch_1) + zs_wind_blob(p, zs_wind_patch_2)
 		+ zs_wind_blob(p, zs_wind_patch_3) + zs_wind_blob(p, zs_wind_patch_4);
 #endif
-	return zs_wind_field.x * (mix(ZS_WIND_SHELTER, 1.0, e) + ZS_WIND_PATCH_ADD * min(spots, 1.0));
+	// A patch freshens a place by its exposure (WindField.wind_at).
+	return zs_wind_field.x * (mix(ZS_WIND_SHELTER, 1.0, e) + ZS_WIND_PATCH_ADD * e * min(spots, 1.0));
 }
 
 // The breeze plants lean in (zs_breeze's scale) for wind strength `w`
@@ -122,10 +126,11 @@ float zs_wind_breeze_at(vec2 p) {
 }
 
 // The share of a world's grass_swell that blows at `p` (1 with no field, and
-// past its land).
+// past its land; there the world's own wind's when it names one, w 2).
 float zs_wind_swell_here(vec2 h) {
 	if (!zs_wind_on()) return 1.0;
-	return mix(1.0, zs_wind_swell_of(h.x), h.y);
+	float far = zs_wind_field.w > 1.5 ? zs_wind_swell_of(zs_wind_strength) : 1.0;
+	return mix(far, zs_wind_swell_of(h.x), h.y);
 }
 float zs_wind_swell_at(vec2 p) {
 	return zs_wind_swell_here(zs_wind_here(p));

@@ -245,6 +245,9 @@ var soft := 0.0
 ## INF over nothing or under a span).
 var low := 0.0
 var low_clear := INF
+## Set from outside each frame: the share of the low buffet the air there
+## gives (1: all of it; endless flight: by the wind at the plane, none in calm).
+var buffet_wind := 1.0
 ## Set from outside each frame: true under a roof the ground can't tell
 ## (a tunnel's bore, studies/endless_flight.gd), where it is never low.
 var roofed := false
@@ -655,7 +658,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		sag += float(weight.settle)*low
 		_buffet_t += delta
 		var bt := _buffet_t*TAU
-		shake = float(weight.buffet)*low*clampf(speed/cruise(),0.5,1.6)*(sin(bt*5.3)*0.6+sin(bt*8.9+1.3)*0.4)
+		shake = float(weight.buffet)*buffet_wind*low*clampf(speed/cruise(),0.5,1.6)*(sin(bt*5.3)*0.6+sin(bt*8.9+1.3)*0.4)
 	var along := path*speed
 	if climb_share*power < 1.0 and along.y > 0.0: along.y *= climb_share*power
 	# Near the top the climb fades to nothing; the flown climb (lift aside)
