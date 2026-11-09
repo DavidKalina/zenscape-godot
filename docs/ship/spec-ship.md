@@ -518,7 +518,10 @@ to end; a still of a ball coming in.
     driven end to end.
 15. Play by the user; a tuning task from what they say. First play
     (`scratch/f3.csv`): "parry is still notoriously difficult. Not nearly
-    enough volume of cannon balls to actually test it." Two halves:
+    enough volume of cannon balls to actually test it." Asked whether the
+    parry itself should be eased: "Parry window is fine. I'm only talking
+    about the tutorial." So the task is the volume at the tutorial's PARRY
+    only; the parry's window and the wilderness stay as they are.
     - Volume: at PARRY the balls come in a steady stream to practise on,
       first value a ball about every 1.5 s while the plane is in range,
       more than one in the air at a time if the cadence needs it (each
@@ -526,15 +529,9 @@ to end; a still of a ball coming in.
       where the player can see them come (no shots from off screen). Use
       more guns or more ships if one ship can't keep it up; say which.
       Re-placing ahead (lane parry) stays.
-    - Forgiveness: find the parry's real timing window (`parry.gd`, the
-      roll) and what a stranger gets wrong (early, late, the wrong key),
-      then make it forgiving at PARRY only (wider window, or the ball
-      slowing as it nears the plane), and show a miss as early or late so
-      the next try can be better. The wilderness parry stays as it is.
     Proof through the real play loop and the real roll key: a driven
     PARRY counts the balls per minute and the parries landed with rolls
-    timed early, on time and late across the window (numbers in the
-    commit); the full lesson end to end; rendered stills of the stream
-    coming in, looked at; a frame log over PARRY with no new hitch.
-    Then the user plays again.
+    on time (numbers in the commit); the full lesson end to end; rendered
+    stills of the stream coming in, looked at; a frame log over PARRY with
+    no new hitch. Then the user plays again.
 16. Handoff (round 4 appended to `handoff-ship.md`).

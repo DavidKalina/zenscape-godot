@@ -47,9 +47,9 @@ extends Node3D
 ##
 ## The lesson's temper (`lesson`; tutorial_land.gd at PARRY, docs/ship/spec-ship.md
 ## rounds 3 and 4): at anchor on a lake in the meadow (`speed` 0, `sea_y` the
-## lake's, `rock` 0), hull guns only, a ball every LESSON_EVERY s while the plane
-## is in range and she isn't behind it, one in the air at a time (LESSON_GAP s
-## after the last is done), slower (LESSON_BALL m/s), whistling, and turning onto
+## lake's, `rock` 0), hull guns only, a stream of balls, a tell every LESSON_EVERY
+## s while the plane is in range and she is on screen (LESSON_SCREEN),
+## up to LESSON_AIR coming at once, slower (LESSON_BALL m/s), whistling, and turning onto
 ## the plane as it comes (LESSON_HOME), a softer knock on a hit, no skim bonus
 ## near her (it filled the gauge before GAUGE); `quiet` holds her fire; `moor`
 ## puts her on another lake (the land, once the plane has left her behind);
@@ -324,21 +324,24 @@ const WATCH_AHEAD: Array[float] = [1.5,3.0,4.5]
 const WATCH_ROOM := 10.0
 ## The lesson's temper: a ball's speed (m/s; at least LESSON_OVER faster than
 ## the plane, so a ball can always meet it); from one gun's tell to the next
-## (s); the wait from one ball's end to the next tell (s); how far off abeam
-## she fires (rad), from how near to how far (m) and at a plane heading how
-## far off her at most (rad: past it she is behind the plane, and the land
-## moors her ahead again); a hit's speed kept, shove (m/s) and turn (rad).
+## (s); the most of her balls (and tells) coming at the plane at once; how far
+## off abeam she fires (rad), from how near to how far (m); a hit's speed
+## kept, shove (m/s) and turn (rad).
 const LESSON_BALL := 60.0
 const LESSON_OVER := 12.0
-const LESSON_EVERY := 4.0
-const LESSON_GAP := 0.8
+const LESSON_EVERY := 1.5
+const LESSON_AIR := 4
 const LESSON_ARC := 1.3
 const LESSON_RANGE := Vector2(70.0,480.0)
-## The first ball after she is moored (`moor`, and at `setup`) may go this far
-## (m): her lake lies where the pond squares allow, often past LESSON_RANGE, and
+## After she is moored (`moor`, and at `setup`) her balls may go this far
+## (m) until the plane first comes within LESSON_RANGE: her lake lies where the
+## pond squares allow, often past LESSON_RANGE, and
 ## a plane turning on the spot may never come nearer.
 const LESSON_FIRST := 680.0
-const LESSON_FACING := deg_to_rad(100.0)
+## She fires only with the gun's muzzle in the middle of the screen, this share
+## of its half-width and half-height out from the middle, so every ball is
+## seen coming from ahead; off it the land moors her ahead again.
+const LESSON_SCREEN := 0.8
 const LESSON_HIT := Vector3(0.95,4.0,0.08)
 ## A lesson ball turns onto the plane as it comes, at most this fast (rad/s),
 ## so a turn after the shot doesn't leave it wide: the lesson is the roll's
@@ -432,7 +435,6 @@ var _tells: Array[Dictionary] = []
 ## The one tell every gun draws; null with --ship-blocks.
 var _flash_mesh: Mesh
 var _every := 0.0
-var _lesson_gap := 0.0
 var _lesson_first := true
 var _lob_every := 0.0
 ## The guns' look (ship_guns.gd), and a lob's whistle (null when muted).
@@ -832,33 +834,40 @@ func _guns_step(delta: float, p: Vector3, d: float) -> void:
 			best.rest = LOB_REST
 			_tell(best)
 
-## The lesson's fire: a hull gun's tell LESSON_EVERY s after the last, once no
-## ball of hers is still coming at the plane (LESSON_GAP s after the last
-## passed it, met it or fell), the plane within LESSON_ARC of abeam and
-## LESSON_RANGE (LESSON_FIRST for her first after mooring), and she not behind
-## it (within LESSON_FACING of its way). Out of range the clock runs on, so the
-## first ball comes as the plane comes in.
-func _lesson_guns(delta: float, p: Vector3, d: float, l: Vector3) -> void:
-	var coming := not _tells.is_empty()
+## The lesson's fire, a stream: a hull gun's tell LESSON_EVERY s after the
+## last while fewer than LESSON_AIR of her balls and tells are coming at the
+## plane, the plane within LESSON_ARC of abeam and LESSON_RANGE (LESSON_FIRST
+## after mooring, until the plane first comes within LESSON_RANGE), and the
+## gun on screen (`in_view`, LESSON_SCREEN). The guns take turns (each rests
+## REST). Out of range the clock runs on, so the first ball comes as the plane
+## comes in.
+func _lesson_guns(_delta: float, p: Vector3, d: float, l: Vector3) -> void:
+	if quiet or _every > 0.0: return
+	var coming := _tells.size()
 	var pv: Vector3 = game.plane.velocity
 	for b: Dictionary in balls:
-		if not bool(b.done) and ((b.at as Vector3)-p).dot((b.v as Vector3)-pv) < 0.0: coming = true
-	if coming:
-		_lesson_gap = LESSON_GAP
-		return
-	_lesson_gap = maxf(_lesson_gap-delta,0.0)
-	if quiet or _every > 0.0 or _lesson_gap > 0.0: return
+		if not bool(b.done) and ((b.at as Vector3)-p).dot((b.v as Vector3)-pv) < 0.0: coming += 1
+	if coming >= LESSON_AIR: return
 	if not game.plane.weighted or not bool(game.hand_landing.flying()) or game.stage != null: return
+	if d <= LESSON_RANGE.y: _lesson_first = false
 	if absf(l.z) > absf(l.x)*tan(LESSON_ARC): return
 	if d < LESSON_RANGE.x or d > (LESSON_FIRST if _lesson_first else LESSON_RANGE.y): return
-	var to := position-p
-	if pv.dot(to) < cos(LESSON_FACING)*pv.length()*to.length(): return
 	var best := _pick("hull",signf(l.x),l.z)
-	if best.is_empty(): return
+	if best.is_empty() or not in_view(transform*(best.at as Vector3)): return
 	_every = LESSON_EVERY
-	_lesson_first = false
-	best.rest = minf(REST,LESSON_EVERY)
+	best.rest = REST
 	_tell(best)
+
+## The lesson: whether `at` (the world's; her middle if INF) is on the game's
+## screen within `share` of its half-width and half-height from the middle.
+func in_view(at := Vector3.INF, share := LESSON_SCREEN) -> bool:
+	var cam: Camera3D = game.get("camera")
+	if cam == null or not cam.is_inside_tree(): return true
+	if at == Vector3.INF: at = global_position
+	if cam.is_position_behind(at): return false
+	var size := cam.get_viewport().get_visible_rect().size
+	var s := cam.unproject_position(at)/size*2.0-Vector2.ONE
+	return absf(s.x) <= share and absf(s.y) <= share
 
 ## The lesson: at anchor again at `at` (her route's middle, as `setup`), turned
 ## `turn`, on water at `level`; her guns' tells called off and her clock
@@ -871,7 +880,6 @@ func moor(at: Vector2, turn: float, level: float) -> void:
 	for t: Dictionary in _tells: ((t.gun as Dictionary).flash as Node3D).visible = false
 	_tells.clear()
 	_every = 0.0
-	_lesson_gap = 0.0
 	_lesson_first = true
 	_plane_was = Vector3.INF
 	_pose()

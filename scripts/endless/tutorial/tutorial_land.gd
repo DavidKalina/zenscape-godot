@@ -27,10 +27,13 @@ extends Node
 ##                her beam), about LAKE_AT m out along the flight, broadside to
 ##                it; the land over its square is built again (LandStream
 ##                `restream` with `only`), its tree blocks planned again. She
-##                shows, and fires, once that land is in. A plane that leaves
-##                her behind or far off (SHIP_LOST) has her moored again on a
-##                new lake ahead the same way (PirateShip `moor`), so a ball is
-##                always coming. From GAUGE on she stays where she is, quiet.
+##                shows, and fires (a stream), once that land is in. Once
+##                she is out of her fire's view or far off (SHIP_LOST) a
+##                second ship takes over on a new lake ahead the same way,
+##                she going quiet where she is; from then on the two take
+##                turns, the one left behind moored ahead (PirateShip `moor`)
+##                once off the screen, so a ball is always coming. From GAUGE
+##                on they stay where they are, quiet.
 ##   the wall     at WALL the ruin hall (tutorial_hall.gd) stands HALL_AHEAD m
 ##                ahead of the plane, a cracked wall across its mouth, a
 ##                beam of light over it; flown away from past HALL_LOST m with
@@ -77,10 +80,13 @@ const SHIP_RETRY := 0.5
 ## She shows once the land over her lake is in, at the latest this long after
 ## she is put there (s).
 const SHIP_SHOW_MOST := 4.0
-## PARRY: she is moored again ahead once she has been behind the plane (past
-## PirateShip.LESSON_FACING off its way) or farther than [1] m off (flat) for
-## [0] s on end.
-const SHIP_LOST := Vector2(1.0,650.0)
+## PARRY: once the ship firing has been out of her fire's view (PirateShip
+## `in_view`, LESSON_SCREEN) or farther than [1] m off (flat) for [0] s on end,
+## the other ship takes over on a new lake ahead: built the first time, then
+## moored there (only once she is off the screen, so she never vanishes in
+## view; while she is on it the one firing is moored ahead instead, once she
+## is off it).
+const SHIP_LOST := Vector2(0.5,650.0)
 ## Moored again, her lake is wanted this far ahead (m; the first is the
 ## profile's LAKE_AT), nearer, so she is in range soon (the pond squares put
 ## it 380 to 650 m off; her first ball reaches PirateShip.LESSON_FIRST).
@@ -116,9 +122,11 @@ var _turf := 0.0
 var _skip_t := -1.0
 var _skip_white := 0.0
 var _skip_at := Vector3.INF
-## PARRY: the ship (pirate_ship.gd) and her lake (the profile's `stamp_lake`).
+## PARRY: the ship firing (pirate_ship.gd) and her lake (the profile's
+## `stamp_lake`); the other, quiet where she was left (her twin), or null.
 var ship: Node3D
 var lake := {}
+var spare: Node3D
 ## The hall being built ahead of WALL (tutorial_hall.gd `warm`).
 var _hall_next: Node3D
 ## Where it is to stand, fixed when WALL first asks for it ([at, way]).
@@ -188,6 +196,7 @@ func _process(delta: float) -> void:
 		if shown and not ship.visible: _replan_in(lake.rect)
 		ship.visible = shown
 		ship.quiet = stage != Stage.PARRY or not shown
+	if spare != null: spare.quiet = true
 	t0 = Time.get_ticks_usec()
 	if stage >= Stage.WALL and hall == null and not done and bool(game.get("walk_ready")): _place_hall()
 	FrameLog.add(&"tl_hall",(Time.get_ticks_usec()-t0)/1000.0)
@@ -314,14 +323,23 @@ func _ship_step(delta: float) -> void:
 	var ms_tr := (Time.get_ticks_usec()-t0)/1000.0
 	FrameLog.add(&"tl_replan",ms_tr)
 	t0 = Time.get_ticks_usec()
-	if ship == null: _sail(c,float(lake.angle))
+	if ship == null: ship = _sail(c,float(lake.angle))
+	elif spare == null:
+		spare = ship
+		ship = _sail(c,float(lake.angle),spare)
+	elif not _seen(spare) and not spare.busy():
+		var was := ship
+		ship = spare
+		spare = was
+		_moor(c,float(lake.angle))
 	else: _moor(c,float(lake.angle))
 	var ms_sail := (Time.get_ticks_usec()-t0)/1000.0
 	FrameLog.add(&"tl_sail",ms_sail)
 	print("tutorial land: PARRY parts ms: lake %.1f restream %.1f replan %.1f sail %.1f" % [ms_lake,ms_re,ms_tr,ms_sail])
 
-## The ship at anchor on the lake at `c`, her length along `ang` (rad, XZ).
-func _sail(c: Vector2, ang: float) -> void:
+## A ship at anchor on the lake at `c`, her length along `ang` (rad, XZ), the
+## twin of `first` (sharing its meshes) if one, hidden until the land is in.
+func _sail(c: Vector2, ang: float, first: Node3D = null) -> Node3D:
 	var level := float(game.water_at(Vector3(c.x,0.0,c.y)))
 	var s: Node3D = PirateShip.new()
 	s.lesson = true
@@ -335,26 +353,37 @@ func _sail(c: Vector2, ang: float) -> void:
 	var mid := c+Vector2(PirateShip.ROUTE_R*sin(turn),PirateShip.ROUTE_R*cos(turn))
 	var coast: Node3D = game.coast
 	coast.add_child(s)
-	s.setup(game,mid,"tutorial/ship",null,PirateShip.ROUTE_LEG,turn)
+	s.setup(game,mid,"tutorial/ship2" if first != null else "tutorial/ship",first,PirateShip.ROUTE_LEG,turn)
 	coast.add_ship(s)
 	s.visible = false
-	ship = s
-	print("tutorial land: the ship at anchor at %s, water %.2f" % [str(Vector2(s.position.x,s.position.z).round()),level])
+	_ship_t = 0.0
+	print("tutorial land: %s at anchor at %s, water %.2f" % ["the second ship" if first != null else "the ship",str(Vector2(s.position.x,s.position.z).round()),level])
+	return s
 
-## PARRY: whether the plane has left her behind or far off (SHIP_LOST) long
-## enough to moor her ahead again; not while she is hidden, a tell is on or a
-## parried ball is going home to her.
+## PARRY: whether the ship firing has been out of her fire's view or far off
+## (SHIP_LOST) long enough for a ship ahead; not while she is hidden. Moving
+## her herself (no spare off the screen) waits until she is off it too, no
+## tell is on and no parried ball is going home to her.
 func _left_behind(delta: float) -> bool:
 	if not ship.visible or ship.state != PirateShip.AFLOAT or not bool(game.hand_landing.flying()):
 		_ship_lost = 0.0
 		return false
 	var p: Vector3 = game.plane.position
-	var v: Vector3 = game.plane.velocity
 	var to := Vector2(ship.position.x-p.x,ship.position.z-p.z)
-	var way := Vector2(v.x,v.z)
-	var lost := to.length() > SHIP_LOST.y or (way.length() > 1.0 and absf(way.angle_to(to)) > PirateShip.LESSON_FACING)
+	var lost: bool = to.length() > SHIP_LOST.y or not bool(ship.in_view())
 	_ship_lost = _ship_lost+delta if lost else 0.0
-	return _ship_lost >= SHIP_LOST.x and not ship.busy()
+	if _ship_lost < SHIP_LOST.x: return false
+	if spare == null or (not _seen(spare) and not spare.busy()): return true
+	return not _seen(ship) and not ship.busy()
+
+## Whether any of ship `s` (her middle or either end) is in the camera's view.
+func _seen(s: Node3D) -> bool:
+	var cam: Camera3D = game.get("camera")
+	if cam == null: return true
+	var along: Vector3 = s.global_transform.basis.z.normalized()*PirateShip.LONG*0.5
+	for at: Vector3 in [s.global_position,s.global_position+along,s.global_position-along]:
+		if cam.is_position_in_frustum(at): return true
+	return false
 
 ## The ship moored again on the new lake at `c` (as `_sail`), hidden until
 ## the land over it is in.
