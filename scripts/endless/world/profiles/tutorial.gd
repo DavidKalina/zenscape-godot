@@ -190,7 +190,8 @@ func _reach_at(c: Vector2, a: float, half: float, impl: Object, r := REACH_R, de
 
 ## At PARRY, a wide reach for the pirate ship (pirate_ship.gd, 130 m long and
 ## 29 m across) laid across the flight ahead of `at` along `dir` (world XZ),
-## about LAKE_AT m out, broadside to the plane coming. Like every pond it
+## about `ahead` m out (LAKE_AT; the ship moored again asks nearer), broadside
+## to the plane coming. Like every pond it
 ## lies wholly in its own square (CELL m) with its reads' REACH, so its middle
 ## can only lie near a square's: the squares round the point wanted are
 ## tried, tier by tier (LAKE_TIERS), clear of `kept` (the land standing near
@@ -198,8 +199,8 @@ func _reach_at(c: Vector2, a: float, half: float, impl: Object, r := REACH_R, de
 ## pond; `Ponds.forget` drops what was kept of the square. Returns {centre,
 ## angle (of its length), half, r, square and rect (its reads' box; Rect2
 ## world XZ)}, or {}. Its level is the field's (`river_y`) once stamped.
-func stamp_lake(at: Vector2, dir: Vector2, kept: Array[Rect2]) -> Dictionary:
-	var want := at+dir*LAKE_AT
+func stamp_lake(at: Vector2, dir: Vector2, kept: Array[Rect2], ahead := LAKE_AT) -> Dictionary:
+	var want := at+dir*ahead
 	var home := Vector2i(floori(want.x/Ponds.CELL),floori(want.y/Ponds.CELL))
 	for tier: Array in LAKE_TIERS:
 		var half := float(tier[0])

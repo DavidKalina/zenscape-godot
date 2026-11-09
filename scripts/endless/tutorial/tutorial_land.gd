@@ -27,8 +27,10 @@ extends Node
 ##                her beam), about LAKE_AT m out along the flight, broadside to
 ##                it; the land over its square is built again (LandStream
 ##                `restream` with `only`), its tree blocks planned again. She
-##                shows, and fires, once that land is in. From GAUGE on she
-##                stays where she is, quiet.
+##                shows, and fires, once that land is in. A plane that leaves
+##                her behind or far off (SHIP_LOST) has her moored again on a
+##                new lake ahead the same way (PirateShip `moor`), so a ball is
+##                always coming. From GAUGE on she stays where she is, quiet.
 ##   the wall     at WALL the ruin hall (tutorial_hall.gd) stands HALL_AHEAD m
 ##                ahead of the plane, a cracked wall across its mouth, a
 ##                beam of light over it; flown away from past HALL_LOST m with
@@ -75,6 +77,14 @@ const SHIP_RETRY := 0.5
 ## She shows once the land over her lake is in, at the latest this long after
 ## she is put there (s).
 const SHIP_SHOW_MOST := 4.0
+## PARRY: she is moored again ahead once she has been behind the plane (past
+## PirateShip.LESSON_FACING off its way) or farther than [1] m off (flat) for
+## [0] s on end.
+const SHIP_LOST := Vector2(1.0,650.0)
+## Moored again, her lake is wanted this far ahead (m; the first is the
+## profile's LAKE_AT), nearer, so she is in range soon (the pond squares put
+## it 380 to 650 m off; her first ball reaches PirateShip.LESSON_FIRST).
+const SHIP_AGAIN := 380.0
 ## The hall's mouth ahead of the plane at WALL (m), and how far off it may be
 ## left before it stands ahead again.
 const HALL_AHEAD := 780.0
@@ -115,6 +125,7 @@ var _hall_next: Node3D
 var _hall_spot := []
 var _ship_wait := 0.0
 var _ship_t := 0.0
+var _ship_lost := 0.0
 
 func setup(g: Node3D) -> void:
 	name = "TutorialLand"
@@ -167,7 +178,7 @@ func _process(delta: float) -> void:
 	_step_skip(delta)
 	FrameLog.add(&"tl_skip",(Time.get_ticks_usec()-t0)/1000.0)
 	t0 = Time.get_ticks_usec()
-	if stage == Stage.PARRY and ship == null and not done: _ship_step(delta)
+	if stage == Stage.PARRY and not done and (ship == null or _left_behind(delta)): _ship_step(delta)
 	FrameLog.add(&"tl_ship",(Time.get_ticks_usec()-t0)/1000.0)
 	if ship != null:
 		_ship_t += delta
@@ -283,13 +294,16 @@ func _ship_step(delta: float) -> void:
 	var kept: Array[Rect2] = []
 	if land != null and land.has_method("kept_squares"): kept = land.kept_squares(KEEP_NEAR)
 	var t0 := Time.get_ticks_usec()
-	lake = world.stamp_lake(at,dir,kept)
+	var got: Dictionary = world.stamp_lake(at,dir,kept) if ship == null else world.stamp_lake(at,dir,kept,SHIP_AGAIN)
 	var ms_lake := (Time.get_ticks_usec()-t0)/1000.0
 	FrameLog.add(&"tl_lake",ms_lake)
-	if lake.is_empty():
+	if got.is_empty():
 		print("tutorial land: no room for the ship's lake ahead; again in %.1f s" % SHIP_RETRY)
 		return
+	lake = got
 	var c: Vector2 = lake.centre
+	_ship_wait = 0.0
+	_ship_lost = 0.0
 	print("tutorial land: a lake for the ship at %s, %.0f m ahead, %.0f by %.0f m (the meadow's ponds are narrower than she is)" % [str(c.round()),c.distance_to(at),(float(lake.half)+float(lake.r))*2.0,float(lake.r)*2.0])
 	t0 = Time.get_ticks_usec()
 	if land != null and land.has_method("restream"): land.restream(KEEP_NEAR,lake.square)
@@ -300,7 +314,8 @@ func _ship_step(delta: float) -> void:
 	var ms_tr := (Time.get_ticks_usec()-t0)/1000.0
 	FrameLog.add(&"tl_replan",ms_tr)
 	t0 = Time.get_ticks_usec()
-	_sail(c,float(lake.angle))
+	if ship == null: _sail(c,float(lake.angle))
+	else: _moor(c,float(lake.angle))
 	var ms_sail := (Time.get_ticks_usec()-t0)/1000.0
 	FrameLog.add(&"tl_sail",ms_sail)
 	print("tutorial land: PARRY parts ms: lake %.1f restream %.1f replan %.1f sail %.1f" % [ms_lake,ms_re,ms_tr,ms_sail])
@@ -325,6 +340,31 @@ func _sail(c: Vector2, ang: float) -> void:
 	s.visible = false
 	ship = s
 	print("tutorial land: the ship at anchor at %s, water %.2f" % [str(Vector2(s.position.x,s.position.z).round()),level])
+
+## PARRY: whether the plane has left her behind or far off (SHIP_LOST) long
+## enough to moor her ahead again; not while she is hidden, a tell is on or a
+## parried ball is going home to her.
+func _left_behind(delta: float) -> bool:
+	if not ship.visible or ship.state != PirateShip.AFLOAT or not bool(game.hand_landing.flying()):
+		_ship_lost = 0.0
+		return false
+	var p: Vector3 = game.plane.position
+	var v: Vector3 = game.plane.velocity
+	var to := Vector2(ship.position.x-p.x,ship.position.z-p.z)
+	var way := Vector2(v.x,v.z)
+	var lost := to.length() > SHIP_LOST.y or (way.length() > 1.0 and absf(way.angle_to(to)) > PirateShip.LESSON_FACING)
+	_ship_lost = _ship_lost+delta if lost else 0.0
+	return _ship_lost >= SHIP_LOST.x and not ship.busy()
+
+## The ship moored again on the new lake at `c` (as `_sail`), hidden until
+## the land over it is in.
+func _moor(c: Vector2, ang: float) -> void:
+	var level := float(game.water_at(Vector3(c.x,0.0,c.y)))
+	var turn := -ang
+	ship.moor(c+Vector2(PirateShip.ROUTE_R*sin(turn),PirateShip.ROUTE_R*cos(turn)),turn,level)
+	ship.visible = false
+	_ship_t = 0.0
+	print("tutorial land: the ship moored again at %s, water %.2f" % [str(Vector2(ship.position.x,ship.position.z).round()),level])
 
 ## Whether the land over the lake's square is built again (no chunk meeting
 ## it waits on its new build).
