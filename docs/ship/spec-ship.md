@@ -534,4 +534,26 @@ to end; a still of a ball coming in.
     on time (numbers in the commit); the full lesson end to end; rendered
     stills of the stream coming in, looked at; a frame log over PARRY with
     no new hitch. Then the user plays again.
+15b. Hitches in the user's flights since round 4 (the user: "We need to
+    fix them"). `scratch/f3.csv` (after the round 4 merge) and
+    `scratch/f4.csv` (after task 15) are the truth; `scratch/f2.csv`
+    (before round 4) had nothing over 50 ms. f4's worst: 2102 ms at
+    t=171.5 in the tutorial meadow (x 48655, z 1536; 29 pipelines),
+    1274 ms and 847 ms just after the swap to the wilderness (t=235-239,
+    34 and 5 pipelines), 300-360 ms frames around the swap, 217 ms at
+    t=183; f3's: 471 and 231 ms at t=131, 299 ms at t=41, 178 and 122 ms
+    at t=185. All are "outside tick" with pipelines compiling. The run
+    also printed the engine's "BUG, indexing did not unpair geometries
+    from light" twice (`scratch/play_f4.out`). Name each spike's cause
+    (which stage or event, what first appears: the guide lines, the
+    ships, balls, flashes, smoke, the second ship, a new lake, the hall,
+    the wilderness side), using `FrameLog.mark` and the logs' positions
+    and times, then fix it: warm the materials and pipelines before they
+    are first drawn, build ahead, spread work over frames. Find where the
+    engine error comes from. Target: no frame over 50 ms through the
+    whole tutorial and the swap on this Mac, rendered, on the user's
+    preset; prove with a driven rendered run of the full lesson, repeated
+    once (an A/B is believed only on a repeat), and say what a driven run
+    cannot show. Then the user flies again to a new log (AGENTS.md,
+    Stutter and frame rate).
 16. Handoff (round 4 appended to `handoff-ship.md`).
