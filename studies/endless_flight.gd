@@ -170,6 +170,7 @@ const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const Parry = preload("res://scripts/endless/parry.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
+const PlaneWind = preload("res://scripts/endless/plane_wind.gd")
 ## The Peak's ways up: the couloir's lift.
 const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
 const PeakStair = preload("res://scripts/endless/peak_stair.gd")
@@ -1361,6 +1362,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"glance")
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
+	plane.buffet_wind = PlaneWind.buffet(look)
 	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
 	FrameLog.mark(&"landing")
 	if events.has("lifted"): book.new_flight()

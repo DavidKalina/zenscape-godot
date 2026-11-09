@@ -406,6 +406,9 @@ func setup(land_seed: int) -> void:
 		wind = WindField.new()
 		_wind_clock = cycle.t
 		wind.setup(land_seed,land,LaunchArgs.user_args())
+		# The world's own wind past the field's land (the tutorial's meadow
+		# names a light breeze; else the mood's).
+		wind.beyond = float(world.paint.get("wind_beyond",-1.0))
 		if "--wind-map" in LaunchArgs.user_args():
 			wind_map = WindMap.new()
 			add_child(wind_map)
@@ -727,7 +730,8 @@ func _publish(delta: float) -> void:
 	_time += delta
 	# The wind wanders a little round its heading, its strength breathing.
 	var angle := _wind_angle+0.35*sin(_time*0.013)
-	var strength := _wind*(0.85+0.15*sin(_time*0.21)*sin(_time*0.077))
+	var own := _wind if wind == null or wind.beyond < 0.0 else wind.beyond
+	var strength := own*(0.85+0.15*sin(_time*0.21)*sin(_time*0.077))
 	if wind != null:
 		# The field's: the hour, the day's temper, the place under the eye.
 		_wind_clock += delta
@@ -742,8 +746,10 @@ func _publish(delta: float) -> void:
 		_wind_here = here if _wind_here < 0.0 else lerpf(_wind_here,here,ease)
 		strength = _wind_here
 		# The breeze the near plants lean in (the near tufts, flowers, spruce):
-		# the field's at the eye; a light day's (zs_breeze's own) past its land.
-		var breeze := lerpf(BREEZE,WindField.breeze_of(at_eye),reach)
+		# the field's at the eye; past its land a light day's (zs_breeze's own),
+		# or the world's own wind's when it names one.
+		var far := BREEZE if wind.beyond < 0.0 else WindField.breeze_of(wind.beyond)
+		var breeze := lerpf(far,WindField.breeze_of(at_eye),reach)
 		_breeze_here = breeze if _breeze_here < 0.0 else lerpf(_breeze_here,breeze,ease)
 		RenderingServer.global_shader_parameter_set("zs_breeze",_breeze_here)
 		_publish_field()
@@ -785,7 +791,7 @@ func _publish_field() -> void:
 			RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
 	if _wind_texture == null and wind.n >= 2: RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
 	var fixed := wind.fixed if wind.mode == "fixed" else -1.0
-	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now,wind.come_in() if _wind_texture != null else 0.0,fixed,1.0))
+	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now,wind.come_in() if _wind_texture != null else 0.0,fixed,2.0 if wind.beyond >= 0.0 else 1.0))
 	for i in 5:
 		RenderingServer.global_shader_parameter_set("zs_wind_patch_%d" % i,wind.blobs[i] if i < wind.blobs.size() else Vector4(0.0,0.0,1.0,0.0))
 	var near := wind.spots_near(_eye.x,_eye.z)
