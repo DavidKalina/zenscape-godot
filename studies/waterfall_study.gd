@@ -1,16 +1,17 @@
 extends Node3D
 ## The waterfall look study: a 40 m rock wall with a dark 20 x 15 m opening,
-## a curtain fall (shaders/waterfall_sheet.gdshader) pouring from a lip and
-## hanging a few metres out, covering the opening, and a pool at the base.
-## Keys 1 front, 2 angle, 3 close; mouse drag orbits, wheel zooms, WASD pans
-## the look-at point, Q/E down/up. Flag: --view=front|angle|close.
+## a thick marched fall (shaders/waterfall_volume.gdshader) pouring over a lip
+## and covering the opening, and a pool at the base with a foam ring.
+## Keys 1 front, 2 angle, 3 close, 4 graze (low, along the wall), 5 base; mouse drag orbits, wheel zooms, WASD pans
+## the look-at point, Q/E down/up. Flag: --view=front|angle|close|graze|base.
 
 const WALL_H := 40.0
 const WALL_W := 70.0
 const OPEN_W := 20.0
 const OPEN_H := 15.0
 const HANG := 3.5
-const SHEET := Vector2(26.0, 39.6)
+const FRONT_Z := 4.0
+const BOX := Vector3(28.0, 42.5, 6.6)
 
 var _cam: Camera3D
 var _target := Vector3(0, 18, 0)
@@ -19,6 +20,7 @@ var _pitch := 0.15
 var _dist := 80.0
 var _drag := false
 var _mat: ShaderMaterial
+var _sun: DirectionalLight3D
 
 func _ready() -> void:
 	_build_env()
@@ -41,6 +43,16 @@ func _preset(v: String) -> void:
 			_yaw = deg_to_rad(48)
 			_pitch = 0.2
 			_dist = 70.0
+		"graze":
+			_target = Vector3(0, 14, 2.0)
+			_yaw = deg_to_rad(84)
+			_pitch = 0.02
+			_dist = 75.0
+		"base":
+			_target = Vector3(0, 2.0, 4.5)
+			_yaw = deg_to_rad(28)
+			_pitch = 0.14
+			_dist = 24.0
 		"close":
 			_target = Vector3(-6, 8, HANG)
 			_yaw = deg_to_rad(22)
@@ -73,6 +85,7 @@ func _build_env() -> void:
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
+	_sun = sun
 	sun.rotation_degrees = Vector3(-40, 25, 0)
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 200.0
@@ -130,16 +143,30 @@ func _build_land() -> void:
 
 func _build_fall() -> void:
 	_mat = ShaderMaterial.new()
-	_mat.shader = load("res://shaders/waterfall_sheet.gdshader")
-	_mat.set_shader_parameter("sheet_size", SHEET)
-	_mat.set_shader_parameter("fall_height", SHEET.y)
-	var q := QuadMesh.new()
-	q.size = SHEET
-	q.material = _mat
+	_mat.shader = load("res://shaders/waterfall_volume.gdshader")
+	_mat.set_shader_parameter("box_size", BOX)
+	_mat.set_shader_parameter("front_z", FRONT_Z)
+	_mat.set_shader_parameter("lip_y", WALL_H + 1.2)
+	_mat.set_shader_parameter("sun_dir", _sun.global_transform.basis.z)
+	var bm := BoxMesh.new()
+	bm.size = BOX
+	bm.material = _mat
 	var m := MeshInstance3D.new()
-	m.mesh = q
-	m.position = Vector3(0, 0.2 + SHEET.y * 0.5, HANG)
+	m.mesh = bm
+	m.position = Vector3(0, BOX.y * 0.5, BOX.z * 0.5)
+	m.custom_aabb = AABB(-BOX * 0.5, BOX)
 	add_child(m)
+	# The disturbed ring on the pool.
+	var pm := ShaderMaterial.new()
+	pm.shader = load("res://shaders/waterfall_pool.gdshader")
+	pm.set_shader_parameter("front_z", FRONT_Z)
+	var pl := PlaneMesh.new()
+	pl.size = Vector2(36, 22)
+	pl.material = pm
+	var pi := MeshInstance3D.new()
+	pi.mesh = pl
+	pi.position = Vector3(0, 0.09, HANG + 7.0)
+	add_child(pi)
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseButton:
@@ -161,6 +188,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_1: _preset("front")
 			KEY_2: _preset("angle")
 			KEY_3: _preset("close")
+			KEY_4: _preset("graze")
+			KEY_5: _preset("base")
 
 func _process(delta: float) -> void:
 	var f := (1.0 if Input.is_key_pressed(KEY_W) else 0.0) - (1.0 if Input.is_key_pressed(KEY_S) else 0.0)
