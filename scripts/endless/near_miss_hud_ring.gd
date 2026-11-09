@@ -518,7 +518,7 @@ func _draw_recap(s: float, c: Vector2, ring_px: float, t: float, alpha: float) -
 	var sum_px := 24.0*s
 	var sum_text := _grouped(points)
 	if mult > 1.001: sum_text = "%s × %s = %s" % [_grouped(float(line.raw)),String.num(mult,1),sum_text]
-	var money := "+%s" % _grouped(float(line.get("money",0)))
+	var money := "+"+Money.money(int(line.get("money",0)))
 	var coin := 22.0*s
 	var row2 := _width(_nums,sum_text,sum_px)+16.0*s+coin+4.0*s+_width(_nums,money,sum_px)
 	var stat_px := 15.0*s
@@ -624,7 +624,7 @@ func _draw_banner(s: float, c: Vector2, ring_px: float, t: float, alpha: float) 
 	var land_words := PackedStringArray()
 	for w: Variant in line.get("terrain",[]): land_words.append(str(w).to_upper())
 	var title := str(line.get("name","")).to_upper()
-	var money := "+%s" % _grouped(float(line.get("money",0)))
+	var money := "+"+Money.money(int(line.get("money",0)))
 	var seal := 26.0*s
 	var n := mini(glyphs.size(),READ_MOST)
 	var more := glyphs.size()-n

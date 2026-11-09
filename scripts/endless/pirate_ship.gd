@@ -45,6 +45,16 @@ extends Node3D
 ## near miss's `skim_scale` (`skim`, the most of them) and the eye (`watch`, newest
 ## sink).
 ##
+## The lesson's temper (`lesson`; tutorial_land.gd at PARRY, docs/ship/spec-ship.md
+## rounds 3 and 4): at anchor on a lake in the meadow (`speed` 0, `sea_y` the
+## lake's, `rock` 0), hull guns only, a stream of balls, a tell every LESSON_EVERY
+## s while the plane is in range and she is on screen (LESSON_SCREEN),
+## up to LESSON_AIR coming at once, slower (LESSON_BALL m/s), whistling, and turning onto
+## the plane as it comes (LESSON_HOME), a softer knock on a hit, no skim bonus
+## near her (it filled the gauge before GAUGE); `quiet` holds her fire; `moor`
+## puts her on another lake (the land, once the plane has left her behind);
+## sunk she stays gone.
+##
 ## Handles: `coast/ship` (the ship, moved by its route), `coast/ship-route` (the
 ## oval's middle; a move in the layout file carries the whole route); the second's
 ## are `coast/ship2` and `coast/ship2-route`. The relic is the finds row `ship-hold`,
@@ -312,6 +322,31 @@ const WATCH_OFF := 0.16
 const WATCH_FAR := 1300.0
 const WATCH_AHEAD: Array[float] = [1.5,3.0,4.5]
 const WATCH_ROOM := 10.0
+## The lesson's temper: a ball's speed (m/s; at least LESSON_OVER faster than
+## the plane, so a ball can always meet it); from one gun's tell to the next
+## (s); the most of her balls (and tells) coming at the plane at once; how far
+## off abeam she fires (rad), from how near to how far (m); a hit's speed
+## kept, shove (m/s) and turn (rad).
+const LESSON_BALL := 60.0
+const LESSON_OVER := 12.0
+const LESSON_EVERY := 1.5
+const LESSON_AIR := 4
+const LESSON_ARC := 1.3
+const LESSON_RANGE := Vector2(70.0,480.0)
+## After she is moored (`moor`, and at `setup`) her balls may go this far
+## (m) until the plane first comes within LESSON_RANGE: her lake lies where the
+## pond squares allow, often past LESSON_RANGE, and
+## a plane turning on the spot may never come nearer.
+const LESSON_FIRST := 680.0
+## She fires only with the gun's muzzle in the middle of the screen, this share
+## of its half-width and half-height out from the middle, so every ball is
+## seen coming from ahead; off it the land moors her ahead again.
+const LESSON_SCREEN := 0.8
+const LESSON_HIT := Vector3(0.95,4.0,0.08)
+## A lesson ball turns onto the plane as it comes, at most this fast (rad/s),
+## so a turn after the shot doesn't leave it wide: the lesson is the roll's
+## timing.
+const LESSON_HOME := 0.6
 ## Where --ship-start puts the plane: off the beam (m), over the sea (m).
 const START_OFF := 240.0
 const START_ALT := 16.0
@@ -333,6 +368,12 @@ enum {AFLOAT,SINKING,GONE}
 var game: Node3D
 ## Her name in the layout file, the way her route's is `handle`-route.
 var handle := "coast/ship"
+## The lesson's temper (see the top), and her fire held; set before `setup`.
+var lesson := false
+var quiet := false
+## The water she floats on (m) and her way along the route (m/s); set before `setup`.
+var sea_y := SEA_Y
+var speed := SPEED
 ## The other ship, or null: its meshes are hers, and she comes back clear of it.
 var twin: Node3D
 ## What she'd have the near miss's skim rate at this frame (CoastSites `before`).
@@ -394,6 +435,7 @@ var _tells: Array[Dictionary] = []
 ## The one tell every gun draws; null with --ship-blocks.
 var _flash_mesh: Mesh
 var _every := 0.0
+var _lesson_first := true
 var _lob_every := 0.0
 ## The guns' look (ship_guns.gd), and a lob's whistle (null when muted).
 var _fx: RefCounted
@@ -490,7 +532,7 @@ func setup(g: Node3D, at := ROUTE_AT, label := "coast/ship", first: Node3D = nul
 	if first != null: first.twin = self
 	wide = WorldScale.opening(TOY_WIDE)
 	high = WorldScale.opening(TOY_HIGH)
-	var middle := Transform3D(Basis(Vector3.UP,turn),Vector3(at.x,SEA_Y,at.y))
+	var middle := Transform3D(Basis(Vector3.UP,turn),Vector3(at.x,sea_y,at.y))
 	_route = LayoutOverrides.xform(handle+"-route",middle)
 	var marker := Node3D.new()
 	marker.name = "Route"
@@ -694,7 +736,7 @@ func before(delta: float) -> void:
 		_wait(delta)
 		return
 	if state == SINKING: sink_t += delta
-	along += SPEED*delta*(1.0 if state == AFLOAT else clampf(1.0-sink_t/SINK_WAY_S,0.0,1.0))
+	along += speed*delta*(1.0 if state == AFLOAT else clampf(1.0-sink_t/SINK_WAY_S,0.0,1.0))
 	_ride_step(delta)
 	_pose()
 	if _sails != null: _sails.step(delta,position,way,state == SINKING)
@@ -704,7 +746,7 @@ func before(delta: float) -> void:
 	_keep_off_walls()
 	var p: Vector3 = game.plane.position
 	var d := p.distance_to(position)
-	skim = SKIM_SCALE if state == AFLOAT and d < SKIM_NEAR else 1.0
+	skim = SKIM_SCALE if state == AFLOAT and d < SKIM_NEAR and not lesson else 1.0
 	if state == AFLOAT:
 		if _all_open() and not carries(): _sink()
 		elif d > RESEAL_FAR: _reseal()
@@ -773,6 +815,9 @@ func _guns_step(delta: float, p: Vector3, d: float) -> void:
 	_tells = left
 	_every = maxf(_every-delta,0.0)
 	_lob_every = maxf(_lob_every-delta,0.0)
+	if lesson:
+		_lesson_guns(delta,p,d,l)
+		return
 	if not game.plane.weighted or not bool(game.hand_landing.flying()) or game.stage != null: return
 	if absf(l.z) > absf(l.x)*tan(ARC): return
 	var side := signf(l.x)
@@ -788,6 +833,66 @@ func _guns_step(delta: float, p: Vector3, d: float) -> void:
 			_lob_every = LOB_EVERY
 			best.rest = LOB_REST
 			_tell(best)
+
+## The lesson's fire, a stream: a hull gun's tell LESSON_EVERY s after the
+## last while fewer than LESSON_AIR of her balls and tells are coming at the
+## plane, the plane within LESSON_ARC of abeam and LESSON_RANGE (LESSON_FIRST
+## after mooring, until the plane first comes within LESSON_RANGE), and the
+## gun on screen (`in_view`, LESSON_SCREEN). The guns take turns (each rests
+## REST). Out of range the clock runs on, so the first ball comes as the plane
+## comes in.
+func _lesson_guns(_delta: float, p: Vector3, d: float, l: Vector3) -> void:
+	if quiet or _every > 0.0: return
+	var coming := _tells.size()
+	var pv: Vector3 = game.plane.velocity
+	for b: Dictionary in balls:
+		if not bool(b.done) and ((b.at as Vector3)-p).dot((b.v as Vector3)-pv) < 0.0: coming += 1
+	if coming >= LESSON_AIR: return
+	if not game.plane.weighted or not bool(game.hand_landing.flying()) or game.stage != null: return
+	if d <= LESSON_RANGE.y: _lesson_first = false
+	if absf(l.z) > absf(l.x)*tan(LESSON_ARC): return
+	if d < LESSON_RANGE.x or d > (LESSON_FIRST if _lesson_first else LESSON_RANGE.y): return
+	var best := _pick("hull",signf(l.x),l.z)
+	if best.is_empty() or not in_view(transform*(best.at as Vector3)): return
+	_every = LESSON_EVERY
+	best.rest = REST
+	_tell(best)
+
+## The lesson: whether `at` (the world's; her middle if INF) is on the game's
+## screen within `share` of its half-width and half-height from the middle.
+func in_view(at := Vector3.INF, share := LESSON_SCREEN) -> bool:
+	var cam: Camera3D = game.get("camera")
+	if cam == null or not cam.is_inside_tree(): return true
+	if at == Vector3.INF: at = global_position
+	if cam.is_position_behind(at): return false
+	var size := cam.get_viewport().get_visible_rect().size
+	var s := cam.unproject_position(at)/size*2.0-Vector2.ONE
+	return absf(s.x) <= share and absf(s.y) <= share
+
+## The lesson: at anchor again at `at` (her route's middle, as `setup`), turned
+## `turn`, on water at `level`; her guns' tells called off and her clock
+## cleared, so the first ball comes once she is shown and the plane in range.
+## Her balls in the air fly on (they are the world's).
+func moor(at: Vector2, turn: float, level: float) -> void:
+	sea_y = level
+	along = 0.0
+	_route = Transform3D(Basis(Vector3.UP,turn),Vector3(at.x,sea_y,at.y))
+	for t: Dictionary in _tells: ((t.gun as Dictionary).flash as Node3D).visible = false
+	_tells.clear()
+	_every = 0.0
+	_lesson_first = true
+	_plane_was = Vector3.INF
+	_pose()
+
+## Whether moving her now would show: a gun's tell on, or a parried ball of
+## hers on its way home to her.
+func busy() -> bool:
+	if not _tells.is_empty(): return true
+	var pr: Variant = game.get("parry")
+	if pr == null: return false
+	for r: Dictionary in pr._returning:
+		if r.source == self: return true
+	return false
 
 ## The ready gun of `kind` on `side` nearest `z` along her (a deck gun only once
 ## it's laid), or {}.
@@ -807,7 +912,7 @@ func _tell(g: Dictionary) -> void:
 ## it's on their side and near enough; else back to rest. Look, and the lay a gun
 ## must have to fire: the ball itself is thrown by `_lob`, from where its muzzle is.
 func _lay(delta: float, p: Vector3, d: float, l: Vector3) -> void:
-	var live := state == AFLOAT and d <= LOB_RANGE.y*1.15 and bool(game.hand_landing.flying())
+	var live := state == AFLOAT and not lesson and d <= LOB_RANGE.y*1.15 and bool(game.hand_landing.flying())
 	for g: Dictionary in _guns:
 		if str(g.kind) != "deck": continue
 		var want := Vector2(0.0,DECK_REST)
@@ -887,7 +992,8 @@ func _fire(g: Dictionary) -> void:
 		shot = _lob(g,game.plane.position,(game.plane.position as Vector3).distance_to(position))
 	else:
 		var v: Vector3 = game.plane.velocity
-		var a := v.length_squared()-BALL_SPEED*BALL_SPEED
+		var speed_of := maxf(LESSON_BALL,v.length()+LESSON_OVER) if lesson else BALL_SPEED
+		var a := v.length_squared()-speed_of*speed_of
 		var b := 2.0*to.dot(v)
 		var c := to.length_squared()
 		var root := b*b-4.0*a*c
@@ -967,6 +1073,7 @@ func _balls_step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> 
 		var b: Dictionary = balls[i]
 		var a: Vector3 = b.at
 		var v: Vector3 = b.v
+		if lesson and not bool(b.done): v = _home(a,v,p,delta)
 		v += Vector3.DOWN*float(b.drop)*delta
 		var n: Vector3 = a+v*delta
 		b.v = v
@@ -1004,6 +1111,19 @@ func _balls_step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> 
 			balls.remove_at(i)
 	_whistle_step(p)
 
+## A lesson ball at `a` going `v` turned toward where the plane at `p` will be
+## when it gets there (the fall allowed for), at most LESSON_HOME rad/s, while
+## it is still closing and ahead of the plane (turned away from, it flies on).
+func _home(a: Vector3, v: Vector3, p: Vector3, delta: float) -> Vector3:
+	var pv: Vector3 = game.plane.velocity
+	if (a-p).dot(v-pv) >= 0.0 or pv.dot(a-p) <= 0.0: return v
+	var s := v.length()
+	var t := a.distance_to(p)/maxf(s,1.0)
+	var want := (p+pv*t-a)/maxf(t,0.01)+Vector3.UP*BALL_DROP*t*0.5
+	var turn := v.angle_to(want)
+	if turn < 0.0001: return v
+	return v.slerp(want.normalized()*s,minf(1.0,LESSON_HOME*delta/turn))
+
 ## The whistle on the lob coming down nearest the plane inside WHISTLE_NEAR m,
 ## higher the farther off, louder the nearer.
 func _whistle_step(p: Vector3) -> void:
@@ -1011,7 +1131,10 @@ func _whistle_step(p: Vector3) -> void:
 	var best: Dictionary = {}
 	var near := WHISTLE_NEAR
 	for b: Dictionary in balls:
-		if not bool(b.lob) or (b.v as Vector3).y >= 0.0 or not (b.node as Node3D).visible: continue
+		# A lob coming down; in the lesson every ball of hers still coming.
+		if lesson:
+			if bool(b.done) or not (b.node as Node3D).visible: continue
+		elif not bool(b.lob) or (b.v as Vector3).y >= 0.0 or not (b.node as Node3D).visible: continue
 		var d := (b.at as Vector3).distance_to(p)
 		if d < near:
 			near = d
@@ -1054,12 +1177,13 @@ func _struck(b: Dictionary, events: Dictionary) -> void:
 	var flat := Vector3(v.x,0.0,v.z)
 	flat = flat.normalized() if flat.length() > 0.1 else Vector3.ZERO
 	var fwd: Vector3 = plane.forward()
-	var turn := HIT_YAW*(1.0 if fwd.cross(flat).y >= 0.0 else -1.0)
-	var speed := float(plane.speed)
-	plane.knock(HIT_KEEP,flat*HIT_SHOVE+Vector3.UP*2.0,turn)
+	var hit := LESSON_HIT if lesson else Vector3(HIT_KEEP,HIT_SHOVE,HIT_YAW)
+	var turn := hit.z*(1.0 if fwd.cross(flat).y >= 0.0 else -1.0)
+	var speed_was := float(plane.speed)
+	plane.knock(hit.x,flat*hit.y+Vector3.UP*(2.0 if not lesson else 0.5),turn)
 	var lost: float = game.near.lose()
 	if lost > 0.0: events["lost"] = {"points":lost}
-	events["scrape"] = {"at":at,"normal":-v.normalized(),"what":"stone","into":HIT_SHOVE,"angle":0.5,"speed":speed,"keep":HIT_KEEP}
+	events["scrape"] = {"at":at,"normal":-v.normalized(),"what":"stone","into":hit.y,"angle":0.5,"speed":speed_was,"keep":hit.x}
 	game.debris.hit("stone",at,-v.normalized())
 	game.feel_hit(HIT_FEEL.x,HIT_FEEL.y)
 	game.sound.shot("crash",1.0,0.8)
@@ -1096,7 +1220,7 @@ func parry_landed(b: Dictionary, at: Vector3, hit: bool) -> void:
 	node.visible = false
 	_pool.append(node)
 	if not hit:
-		_splash(Vector3(at.x,SEA_Y,at.z),b.v,true)
+		_splash(Vector3(at.x,sea_y,at.z),b.v,true)
 		return
 	shot_back += 1
 	var l := local(at)
@@ -1112,8 +1236,8 @@ func parry_landed(b: Dictionary, at: Vector3, hit: bool) -> void:
 		c.scale = Vector3.ONE*randf_range(0.35,1.0)
 		c.visible = true
 		_chunks.append({"node":c,"v":out*randf_range(12.0,30.0)+spread*9.0+Vector3.UP*8.0,"t":2.0})
-	_plank(Vector3(at.x,SEA_Y,at.z)+out*4.0)
-	_plank(Vector3(at.x,SEA_Y,at.z)+out*7.0)
+	_plank(Vector3(at.x,sea_y,at.z)+out*4.0)
+	_plank(Vector3(at.x,sea_y,at.z)+out*7.0)
 	var d := at.distance_to(game.plane.position)
 	game.sound.shot("crash",1.4/(1.0+d/BOOM_HEARD),0.7,at,&"SFX",true)
 	game.sound.shot("thump",1.3/(1.0+d/BOOM_HEARD),0.55,at,&"SFX",true)
@@ -1289,8 +1413,8 @@ func _way_shut() -> bool:
 	var v: Vector3 = game.plane.velocity
 	for s: float in WATCH_AHEAD:
 		var q := p+v*s
-		if q.y < maxf(float(game.field.height(q.x,q.z)),SEA_Y)+WATCH_ROOM*(0.5 if v.y >= 0.0 else 1.0) and float(game.field.height(q.x,q.z)) > SEA_Y: return true
-		if v.y < -1.0 and q.y < SEA_Y+2.0: return true
+		if q.y < maxf(float(game.field.height(q.x,q.z)),sea_y)+WATCH_ROOM*(0.5 if v.y >= 0.0 else 1.0) and float(game.field.height(q.x,q.z)) > sea_y: return true
+		if v.y < -1.0 and q.y < sea_y+2.0: return true
 	return false
 
 ## A flat shot, softer with distance: 3D shots die at 70 m and she's 130 long.
@@ -1358,6 +1482,7 @@ func _gone() -> void:
 ## Gone: the clock, then the route tried for a spot out of sight. Only the wash on
 ## the water is left to step, and the balls fired before she went are long down.
 func _wait(delta: float) -> void:
+	if lesson: return
 	gone_t += delta
 	if gone_t < return_wait: return
 	_poll -= delta
@@ -1511,7 +1636,7 @@ func _wake_step(delta: float) -> void:
 		var t := float(w.t)
 		var down := maxf(t-PLANK_LIFE,0.0)*PLANK_SINK
 		# The swell's read for a few a frame: it's slow, and it isn't free.
-		if (i+Engine.get_process_frames())%PLANK_TURNS == 0: n.position.y = SEA_Y+float(game.sea_height(n.position))-0.05-down
+		if (i+Engine.get_process_frames())%PLANK_TURNS == 0: n.position.y = sea_y+float(game.sea_height(n.position))-0.05-down
 		n.rotation.x = 0.1*sin(t*0.9+float(w.seed))
 		n.rotation.z = 0.08*sin(t*0.7+float(w.seed)*2.0)
 		if down > 3.0:
@@ -1634,7 +1759,7 @@ func _bits_step(delta: float) -> void:
 		var n: MeshInstance3D = c.node
 		n.position += v*delta
 		n.rotate_x(delta*5.0)
-		if float(c.t) <= 0.0 or n.position.y < SEA_Y:
+		if float(c.t) <= 0.0 or n.position.y < sea_y:
 			n.visible = false
 			_chunk_pool.append(n)
 			_chunks.remove_at(i)
@@ -1642,6 +1767,7 @@ func _bits_step(delta: float) -> void:
 # --- Her look and solids -------------------------------------------------------
 
 func _build() -> void:
+	_warmed()
 	var all := solids(wide,high)
 	var blocks: bool = "--ship-blocks" in preload("res://scripts/launch_args.gd").user_args()
 	_fx = ShipGuns.new(get_parent(),twin._fx if twin != null else null)
@@ -1675,6 +1801,52 @@ func _build() -> void:
 		if blocks: plate["look"] = _plate(box,part)
 		else: _plug(plate,part)
 		plates[part] = plate
+
+## Built ahead of a ship (the tutorial asks at its land's setup, before
+## PARRY's ship), on a worker: her files loaded (the glb's meshes and textures
+## made there), each plate's merged plug (`_wholes`) and the guns' shared
+## meshes (ShipGuns `warm_shared`), so the frame she is built in has none of
+## it. A build joins it first (`_warmed`). The files loaded off the main
+## thread leave their load tokens to Godot's exit (4 "ObjectDB instances
+## leaked", RefCounted at count 0); the loader's own threads leave more.
+const WARM := [MODEL,BALL_MODEL,"res://assets/models/pirate_ship/wood.tres",PUFF_SHADER,WHISTLE]
+static var _warm_task := -1
+static var _warm_asked := false
+## Held so the cache keeps them (the puff's shader and the whistle are read
+## later, at her first shot).
+static var _warm_res: Array[Resource] = []
+
+static func warm() -> void:
+	if _warm_asked or not _wholes.is_empty(): return
+	_warm_asked = true
+	_warm_task = WorkerThreadPool.add_task(_warm_build,false,"pirate ship warm")
+
+static func _warm_build() -> void:
+	var res: Array[Resource] = []
+	for path: String in WARM: res.append(load(path))
+	var model: Node = (res[0] as PackedScene).instantiate()
+	for part: String in ["stern","bow"]:
+		var shards: Array[Dictionary] = []
+		for shard: Node in model.find_child("CrackPlug_"+part.capitalize(),true,false).get_children():
+			if not shard.name.begins_with("Cover"): shards.append({"node":shard,"home":(shard as Node3D).transform})
+		_wholes[part] = _merge(shards)
+	model.free()
+	ShipGuns.warm_shared = ShipGuns.make_shared()
+	_warm_res = res
+
+## A warm build in flight joined (before a ship reads what it made).
+static func _warmed() -> void:
+	if _warm_task == -1: return
+	WorkerThreadPool.wait_for_task_completion(_warm_task)
+	_warm_task = -1
+
+## What `warm` holds let go (the tutorial land leaving): its build joined.
+static func cool() -> void:
+	_warmed()
+	_warm_res.clear()
+	_wholes.clear()
+	ShipGuns.warm_shared = {}
+	_warm_asked = false
 
 ## The model on the moving node, its guns' muzzles read off its empties.
 func _dress() -> void:
@@ -1725,7 +1897,7 @@ static var _wholes := {}
 
 ## `shards` ({node, home}) merged, a surface a material, with LODs as the import
 ## makes them.
-func _merge(shards: Array[Dictionary]) -> Mesh:
+static func _merge(shards: Array[Dictionary]) -> Mesh:
 	var by := {}
 	for s: Dictionary in shards:
 		var mesh: Mesh = (s.node as MeshInstance3D).mesh

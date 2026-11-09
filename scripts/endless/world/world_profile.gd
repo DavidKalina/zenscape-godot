@@ -50,9 +50,10 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PROFILES := "res://scripts/endless/world/profiles/"
 ## The base tables' world, and the fallback for an unknown id.
 const DEFAULT := "wilderness"
-## The world endless flight plays with no --world=: one region at a time,
-## joined by doors (profiles/doors.gd).
-const PLAYS := "doors"
+## The world endless flight plays with no --world=: the wilderness alone
+## (the Steam build, docs/ship/spec-ship.md). --world=doors plays it joined to
+## the amberlands by doors (profiles/doors.gd).
+const PLAYS := "wilderness"
 
 var id := DEFAULT
 var title := "Wilderness"
@@ -75,6 +76,13 @@ func at(_x: float, _z: float) -> RefCounted:
 ## The profiles meeting at (x, z) and their weights (summing to 1).
 func weights_at(_x: float, _z: float) -> Dictionary:
 	return {self:1.0}
+
+## Whether the sea sheet may show with the eye at world XZ (x, z). A land
+## with no coast anywhere near (the tutorial's meadow) says no: its sheet
+## would lie only under dry ground, and kilometres off its depth ties the
+## land's, drawing waves over the grass.
+func sea_at(_x: float, _z: float) -> bool:
+	return true
 
 ## Whether dressing layer `layer` runs at (x, z).
 func layer_at(layer: StringName, x: float, z: float) -> bool:
@@ -148,11 +156,15 @@ static func current() -> RefCounted:
 	_lock.unlock()
 	return got
 
+## A world the game asks for when no --world= names one (the lesson's
+## `tutorial`, studies/endless_flight.gd); "" none.
+static var asked := ""
+
 ## The id `--world=` asks for.
 static func wanted_id() -> String:
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--world="): return a.get_slice("=",1)
-	return PLAYS
+	return asked if asked != "" else PLAYS
 
 ## A fresh profile by id (or a res:// path to a profile script, for a
 ## throwaway one in scratch/); an unknown id warns and plays wilderness.

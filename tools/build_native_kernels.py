@@ -7,14 +7,17 @@ import platform
 import subprocess
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--godot', required=True, help='Godot editor executable')
-parser.add_argument('--godot-cpp', required=True, type=Path, help='Official godot-cpp checkout')
+parser.add_argument('--godot', help='Godot editor executable')
+parser.add_argument('--godot-cpp', type=Path, help='Official godot-cpp checkout')
 parser.add_argument('--scons', default='scons', help='SCons executable')
 parser.add_argument('--target', choices=['template_debug', 'template_release'], default='template_debug')
 parser.add_argument('--arch', choices=['arm64', 'x86_64', 'universal'], help='Defaults to the host architecture; universal is macOS only')
 parser.add_argument('--platform', choices=['windows'], help='Cross-compile for Windows x86_64 with MinGW-w64 (e.g. Homebrew mingw-w64 on a Mac); the host otherwise')
+parser.add_argument('--descriptor-only', action='store_true', help='Only rewrite zenscape_kernels.gdextension for --arch (e.g. universal before a Mac export), no build')
 parser.add_argument('--jobs', type=int, default=min(8, max(1, (os.cpu_count() or 2)-2)))
 args = parser.parse_args()
+if not args.descriptor_only and (args.godot is None or args.godot_cpp is None):
+    parser.error('--godot and --godot-cpp are required to build')
 root = Path(__file__).resolve().parents[1]
 project = root / 'native' / 'terrain_kernels'
 api_dir = project / 'bin' / 'api'
@@ -32,6 +35,25 @@ if arch == 'universal' and system != 'macos':
     parser.error('--arch universal requires macOS')
 if system is None or arch is None:
     parser.error('Unsupported build host; invoke SCons directly for cross compilation.')
+
+
+def write_descriptor() -> None:
+    descriptor = (project/'zenscape_kernels.gdextension.in').read_text()
+    if arch == 'universal':
+        # Godot's universal exporter must package one library with both slices;
+        # per-arch macos lines make the export look for arm64/x86_64 files and
+        # ship no kernel.
+        lines = [line for line in descriptor.splitlines() if not line.startswith('macos.')]
+        for target in ['debug', 'release']:
+            lines.append(f'macos.{target} = "res://native/terrain_kernels/bin/libzenscape_kernels.macos.template_{target}.universal.dylib"')
+        descriptor = '\n'.join(lines) + '\n'
+    (project/'zenscape_kernels.gdextension').write_text(descriptor)
+
+
+if args.descriptor_only:
+    write_descriptor()
+    print(f'Wrote zenscape_kernels.gdextension for {system} {arch}.')
+    raise SystemExit(0)
 subprocess.run([args.godot, '--headless', '--log-file', str(api_dir/'dump.log'), '--path', str(api_dir), '--dump-extension-api'], check=True)
 subprocess.run([args.scons, '-C', str(project), f'platform={system}', f'arch={arch}', f'target={args.target}',
                 f'godot_cpp={args.godot_cpp.resolve()}', f'custom_api_file={api_dir / "extension_api.json"}',
@@ -47,13 +69,5 @@ if cross:
         (project/'zenscape_kernels.gdextension').write_text((project/'zenscape_kernels.gdextension.in').read_text())
     print(f'Built bin/zenscape_kernels.windows.{args.target}.x86_64.dll; copy it and zenscape_kernels.gdextension to the Windows checkout (docs/design/roguelike/native-isles-round1.md).')
     raise SystemExit(0)
-descriptor = (project/'zenscape_kernels.gdextension.in').read_text()
-if arch == 'universal':
-    # Godot's universal exporter must package one library with both slices.
-    lines = descriptor.splitlines()
-    lines = [line for line in lines if not line.startswith('macos.')]
-    for target in ['debug', 'release']:
-        lines.append(f'macos.{target} = "res://native/terrain_kernels/bin/libzenscape_kernels.macos.template_{target}.universal.dylib"')
-    descriptor = '\n'.join(lines) + '\n'
-(project/'zenscape_kernels.gdextension').write_text(descriptor)
+write_descriptor()
 print('Built native kernels; ordinary launches now use them automatically. Use --gdscript-kernels to compare the fallback.')

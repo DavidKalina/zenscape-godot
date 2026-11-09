@@ -65,6 +65,15 @@ const STRIP_OFF := 30.0
 
 static var _cache := {}
 static var _lock := Mutex.new()
+## A world's say over each square before it rolls (the tutorial's stages,
+## profiles/tutorial.gd `pond_gate`): Callable(seed, ci, cj, impl) -> null
+## (roll as ever), false (none for now, not kept) or the square's pond (kept).
+## A pond of 14 numbers is a straight reach: [12] half its length, [13] its
+## angle; its radius [2] is the half width round that line (`at`).
+static var gate := Callable()
+## Bumped by `forget`: every asking field's own cache (`local`) is dropped
+## when it sees a new one.
+static var epoch := 0
 
 ## The `--ponds=X` density (1; 0 none).
 static func wanted(default := 1.0) -> float:
@@ -80,12 +89,19 @@ static func _hash01(seed: int, i: int, j: int, salt: int) -> float:
 ## is first looked at); `local` is the asking LandField's own cache.
 static func cell_pond(impl: Object, seed: int, density: float, x: float, z: float, local: Dictionary) -> PackedFloat32Array:
 	var key := Vector2i(floori(x/CELL),floori(z/CELL))
+	if int(local.get(&"epoch",0)) != epoch:
+		local.clear()
+		local[&"epoch"] = epoch
 	var got: Variant = local.get(key)
 	if got != null: return got
 	var k4 := Vector4i(key.x,key.y,seed,int(density*1000.0))
 	_lock.lock()
 	got = _cache.get(k4)
 	_lock.unlock()
+	if got == null and gate.is_valid():
+		var said: Variant = gate.call(seed,key.x,key.y,impl)
+		if said is bool: return PackedFloat32Array()
+		got = said
 	if got == null:
 		got = _make(impl,seed,density,key.x,key.y)
 		_lock.lock()
@@ -93,6 +109,16 @@ static func cell_pond(impl: Object, seed: int, density: float, x: float, z: floa
 		_lock.unlock()
 	local[key] = got
 	return got
+
+## Square `key`'s pond forgotten (a world's `gate` now says otherwise, e.g.
+## the tutorial's lake at PARRY): out of the shared cache, and every field's
+## own cache dropped (`epoch`). The land standing over it must be built again.
+static func forget(key: Vector2i) -> void:
+	_lock.lock()
+	for k4: Vector4i in _cache.keys():
+		if k4.x == key.x and k4.y == key.y: _cache.erase(k4)
+	epoch += 1
+	_lock.unlock()
 
 ## Every pond whose reach meets the box (x0, z0)..(x1, z1).
 static func ponds_in(impl: Object, seed: int, density: float, x0: float, z0: float, x1: float, z1: float, local: Dictionary) -> Array:
@@ -113,6 +139,10 @@ static func at(p: PackedFloat32Array, x: float, z: float) -> Vector3:
 	var dz := z-p[1]
 	var far := p[11]+REACH
 	if absf(dx) > far or absf(dz) > far: return Vector3(INF,0.0,0.0)
+	if p.size() >= 14:
+		var along := clampf(dx*cos(p[13])+dz*sin(p[13]),-p[12],p[12])
+		var off := Vector2(dx-cos(p[13])*along,dz-sin(p[13])*along).length()
+		return Vector3(off-p[2],off,p[2]) if off < p[2]+REACH else Vector3(INF,0.0,0.0)
 	var r := sqrt(dx*dx+dz*dz)
 	if r > far: return Vector3(INF,0.0,0.0)
 	var edge := edge_at(p,atan2(dz,dx))

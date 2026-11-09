@@ -481,4 +481,22 @@ func _spot_array(m: ShaderMaterial, channel: String, key: String, base: Variant,
 			if own != null: v = own
 		arr[r] = _as(v,TYPE_VECTOR3) if v is Color or v is Vector3 else _as(base,TYPE_VECTOR3)
 	m.set_shader_parameter(key+"_r",arr)
-	if (_uniforms[rid] as Dictionary).has("region_paint_on"): m.set_shader_parameter("region_paint_on",true)
+	if (_uniforms[rid] as Dictionary).has("region_paint_on"):
+		m.set_shader_parameter("region_paint_on",true)
+		_fill_arrays(m,rid,key)
+
+## The material's other `<key>_r` arrays no region has written, each its base
+## four times: with region_paint_on they are read, and unset they are black
+## (a world whose regions all keep the carpet's own tones).
+func _fill_arrays(m: ShaderMaterial, rid: RID, but: String) -> void:
+	for n: String in (_uniforms[rid] as Dictionary):
+		if not n.ends_with("_r") or n == but+"_r": continue
+		var now: Variant = m.get_shader_parameter(n)
+		if now is PackedVector3Array and (now as PackedVector3Array).size() == 4: continue
+		var b: Variant = m.get_shader_parameter(n.trim_suffix("_r"))
+		if b == null: b = RenderingServer.shader_get_parameter_default(rid,n.trim_suffix("_r"))
+		if not (b is Color or b is Vector3): continue
+		var arr := PackedVector3Array()
+		arr.resize(4)
+		arr.fill(_as(b,TYPE_VECTOR3))
+		m.set_shader_parameter(n,arr)

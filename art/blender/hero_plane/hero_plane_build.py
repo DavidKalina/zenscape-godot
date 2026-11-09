@@ -1113,7 +1113,7 @@ def write_materials():
 	(TEX / "glass.tres").write_text(f'[gd_resource type="ShaderMaterial" format=3]\n\n[ext_resource type="Shader" path="{RES}/hero_glass.gdshader" id="1"]\n\n[resource]\nshader = ExtResource("1")\n')
 	# The imports: only the params; Godot fills in the rest on its first import.
 	subs = ",\n".join(f'"{n}": {{\n"use_external/enabled": true,\n"use_external/fallback_path": "{RES}/{n}.tres",\n"use_external/path": "{RES}/{n}.tres"\n}}' for n in ("hero", "glass", "wire"))
-	glb = TEX / "hero_plane.glb.import"
+	glb = TEX / (OUT.name + ".import")
 	if not glb.exists():
 		glb.write_text('[remap]\n\nimporter="scene"\n\n[params]\n\nmeshes/ensure_tangents=true\nmeshes/generate_lods=false\nmeshes/create_shadow_meshes=true\n_subresources={\n"materials": {\n' + subs + '\n}\n}\n')
 	for file, normal in (("hero_albedo.jpg", 0), ("hero_normal.jpg", 1), ("hero_mask.png", 0), ("hero_orm.png", 0)):
@@ -1142,4 +1142,6 @@ def main():
 	print(f"HERO PLANE {total} tris, {len(STATS)} nodes -> {OUT}")
 
 
-main()
+# A body built on this one (hero_plane_body.py) imports it and runs main itself.
+if __name__ == "__main__":
+	main()

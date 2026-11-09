@@ -33,6 +33,7 @@ extends Control
 ##   locks it on the moment's least with a pop and holds it GAP_HOLD s. Each
 ##   feed line carries its least too, between the kind and the points.
 
+const Money = preload("res://scripts/endless/money.gd")
 const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
 const Badges = preload("res://scripts/endless/near_badges.gd")
@@ -807,7 +808,7 @@ func _draw_readback(s: float) -> void:
 	var ly := float(READ_LAND[0])*s
 	var la := alpha*smoothstep(0.1,0.3,a)
 	var title := str(line.get("name","")).to_upper()
-	var money := "+%d" % int(line.get("money",0))
+	var money := "+"+Money.money(int(line.get("money",0)))
 	var npx := float(READ_NAME[1])*s
 	var nf := _word_font(npx,0.18)
 	var nw := _width(nf,title,npx) if title != "" else 0.0

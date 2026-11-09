@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://assets/models/hero_plane/hero_surface.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/models/highwing/highwing_albedo.jpg" id="2"]
+[ext_resource type="Texture2D" path="res://assets/models/highwing/highwing_normal.jpg" id="3"]
+[ext_resource type="Texture2D" path="res://assets/models/highwing/highwing_mask.png" id="4"]
+[ext_resource type="Texture2D" path="res://assets/models/highwing/highwing_orm.png" id="5"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/albedo_tex = ExtResource("2")
+shader_parameter/normal_tex = ExtResource("3")
+shader_parameter/mask_tex = ExtResource("4")
+shader_parameter/orm_tex = ExtResource("5")

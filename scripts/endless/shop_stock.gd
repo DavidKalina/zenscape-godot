@@ -1,11 +1,10 @@
 extends RefCounted
 ## What the shop sells (docs/design/endless-flight/spec-wild-loop.md, lane
 ## `shop`), and putting what is worn on the plane. A first stock, kept easy
-## to change: an item is one row of ITEMS, its slot one of SLOTS. Prices are
-## set against the pay (PilotBook `line_pay`, BeatRoutes' money; trunk 1):
-## decent flying earns about 5-7 a minute, a wild line 30 or more, so the
-## first paint (60) comes in about ten minutes, a ribbon (40-70) in five to
-## ten, and the dearest paint (180) in about half an hour.
+## to change: an item is one row of ITEMS, its slot one of SLOTS. Prices come
+## from PRICE, set against the pay (PilotBook `line_pay`, BeatRoutes' money):
+## decent flying earns about PER_MINUTE (6,000) a minute, so each tier is its
+## minutes of decent flying times that.
 ##
 ## Slots, each with its free first item (had by everyone, worn when the
 ## book names none):
@@ -13,34 +12,54 @@ extends RefCounted
 ##           (PlaneFigure `repaint`'s keys), repainted in place
 ##   ribbon  a streamer off the rudder's top, two colours: nothing on the
 ##           flight, only to look at
+##   plane   the body (PlaneFigure BODIES), swapped in place; first, so a
+##           paint goes on the body worn. Cosmetic: the same handling.
 ## The book (PilotBook) keeps owned ids and the worn id per slot.
 
+## Decent flying's money a minute at the book's scale (PilotBook MONEY_SCALE).
+const PER_MINUTE := 6_000
+## The price tiers, by name: each its minutes of decent flying times
+## PER_MINUTE (ribbons about five minutes, the first paint ten, the dearest
+## paint an hour, a plane body two, four and eight hours).
+const PRICE := {
+	"free": 0,
+	"ribbon_5m": 30_000, "ribbon_7m": 42_000, "ribbon_9m": 54_000,
+	"paint_10m": 60_000, "paint_15m": 90_000, "paint_22m": 132_000,
+	"paint_30m": 180_000, "paint_45m": 270_000, "paint_60m": 360_000,
+	"plane_2h": 720_000, "plane_4h": 1_440_000, "plane_8h": 2_880_000,
+}
+## The plane bodies' tiers in order of price (the `plane` slot's rows read
+## PLANE_TIERS[i]; the hero plane is free): two, four and eight hours.
+const PLANE_TIERS := [720_000, 1_440_000, 2_880_000]
 
-const SLOTS := ["paint","ribbon"]
+const SLOTS := ["plane","paint","ribbon"]
 ## Each slot's heading in the shop.
-const SLOT_NAMES := {"paint":"Paints","ribbon":"Ribbons"}
+const SLOT_NAMES := {"plane":"Planes","paint":"Paints","ribbon":"Ribbons"}
 
 const ITEMS := [
+	{"id":"plane/hero","slot":"plane","name":"Biplane","price":0,"body":"hero"},
+	{"id":"plane/highwing","slot":"plane","name":"High Wing","price":PRICE.plane_2h,"body":"highwing"},
+	{"id":"plane/racer","slot":"plane","name":"Racer","price":PRICE.plane_4h,"body":"racer"},
 	# The wanderer's own: terracotta, teal and cream (PlaneFigure's defaults).
 	{"id":"paint/home","slot":"paint","name":"Homestead","price":0,
 		"livery":{"body":Color("b9583b"),"dark":Color("2f4a4f"),"trim":Color("2f6670"),"wing":Color("ece2c8")}},
-	{"id":"paint/harbour","slot":"paint","name":"Harbour","price":60,
+	{"id":"paint/harbour","slot":"paint","name":"Harbour","price":PRICE.paint_10m,
 		"livery":{"body":Color("3f6e8c"),"dark":Color("26394a"),"trim":Color("e8d9a8"),"wing":Color("eef0ea")}},
-	{"id":"paint/moss","slot":"paint","name":"Moss","price":80,
+	{"id":"paint/moss","slot":"paint","name":"Moss","price":PRICE.paint_15m,
 		"livery":{"body":Color("5f7a45"),"dark":Color("33402a"),"trim":Color("d98e4a"),"wing":Color("f0ead8")}},
-	{"id":"paint/ochre","slot":"paint","name":"Ochre","price":100,
+	{"id":"paint/ochre","slot":"paint","name":"Ochre","price":PRICE.paint_22m,
 		"livery":{"body":Color("d3a23c"),"dark":Color("5e4526"),"trim":Color("8a3f2e"),"wing":Color("f3ecd9")}},
-	{"id":"paint/heather","slot":"paint","name":"Heather","price":120,
+	{"id":"paint/heather","slot":"paint","name":"Heather","price":PRICE.paint_30m,
 		"livery":{"body":Color("85587a"),"dark":Color("44303f"),"trim":Color("e6c48f"),"wing":Color("efe8e0")}},
-	{"id":"paint/chalk","slot":"paint","name":"Chalk","price":150,
+	{"id":"paint/chalk","slot":"paint","name":"Chalk","price":PRICE.paint_45m,
 		"livery":{"body":Color("e9e4d6"),"dark":Color("3a3a36"),"trim":Color("b8342a"),"wing":Color("f4f1e8")}},
-	{"id":"paint/night","slot":"paint","name":"Night Mail","price":180,
+	{"id":"paint/night","slot":"paint","name":"Night Mail","price":PRICE.paint_60m,
 		"livery":{"body":Color("262c3a"),"dark":Color("161a22"),"trim":Color("d6a84a"),"wing":Color("d9d3c2")}},
 	{"id":"ribbon/none","slot":"ribbon","name":"None","price":0,"colours":[]},
-	{"id":"ribbon/scarlet","slot":"ribbon","name":"Scarlet","price":40,"colours":[Color("c8352b"),Color("f2e8d2")]},
-	{"id":"ribbon/gilt","slot":"ribbon","name":"Gilt","price":50,"colours":[Color("ffd36b"),Color("8a5a1c")]},
-	{"id":"ribbon/sky","slot":"ribbon","name":"Sky","price":50,"colours":[Color("7fb6dc"),Color("f4f4ee")]},
-	{"id":"ribbon/ember","slot":"ribbon","name":"Ember","price":70,"colours":[Color("e0702a"),Color("2a2622")]},
+	{"id":"ribbon/scarlet","slot":"ribbon","name":"Scarlet","price":PRICE.ribbon_5m,"colours":[Color("c8352b"),Color("f2e8d2")]},
+	{"id":"ribbon/gilt","slot":"ribbon","name":"Gilt","price":PRICE.ribbon_7m,"colours":[Color("ffd36b"),Color("8a5a1c")]},
+	{"id":"ribbon/sky","slot":"ribbon","name":"Sky","price":PRICE.ribbon_7m,"colours":[Color("7fb6dc"),Color("f4f4ee")]},
+	{"id":"ribbon/ember","slot":"ribbon","name":"Ember","price":PRICE.ribbon_9m,"colours":[Color("e0702a"),Color("2a2622")]},
 ]
 
 ## Where the ribbon hangs on the figure (its own frame: -Z the nose), the
@@ -93,6 +112,7 @@ static func dress(figure: Node3D, book: RefCounted, try := {}) -> void:
 		if String(figure.get_meta("shop_"+slot,"")) == id: continue
 		figure.set_meta("shop_"+slot,id)
 		match slot:
+			"plane": if figure.has_method("set_body"): figure.set_body(String(item(id).get("body","hero")))
 			"paint": _paint(figure,item(id).get("livery",{}))
 			"ribbon": _ribbon(figure,item(id).get("colours",[]))
 

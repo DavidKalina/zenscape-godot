@@ -1,18 +1,20 @@
 # Audio attribution
 
-Wildlife recordings from Wikimedia Commons, processed (mono, trimmed,
-loudness-normalized) for ZenScape. CC BY-SA clips require this credit to
-ship with the game; the NPS public-domain clips are credited as a courtesy.
+Wildlife recordings from Wikimedia Commons and Freesound, processed (mono,
+trimmed, loudness-normalized) for ZenScape. Every recording here is public
+domain or CC0; none requires credit, and each is credited as a courtesy. The
+in-game credits (`scripts/endless/shell/credits_page.gd` `SOUNDS`) carry the
+same list, since an exported game ships without this file.
 
 | file | license | author | source |
 |---|---|---|---|
-| chickadee.mp3 | CC BY-SA 4.0 | Matthias Sirch | https://commons.wikimedia.org/wiki/File%3APoecile_gambeli_-_Mountain_Chickadee_XC395088.mp3 |
-| jay-1.mp3 | CC BY-SA 3.0 | Jonathon Jongsma | https://commons.wikimedia.org/wiki/File%3ACyanocitta_stelleri_-_Steller%27s_Jay_XC109654.mp3 |
-| jay-2.mp3 | CC BY-SA 3.0 | Jonathon Jongsma | https://commons.wikimedia.org/wiki/File%3ACyanocitta_stelleri_-_Steller%27s_Jay_XC110259.mp3 |
+| chickadee.mp3 | CC0 1.0 | *ngoomie (Black-capped Chickadee) | https://commons.wikimedia.org/wiki/File:Black-capped_Chickadee_201947598.wav |
+| jay-1.mp3 | Public domain | National Park Service (Steller's Jay) | https://commons.wikimedia.org/wiki/File:Steller%27s_Jay_-_National_Park_Service.ogg |
+| jay-2.mp3 | CC0 1.0 | nfrae (Steller's Jay) | https://freesound.org/people/nfrae/sounds/703255/ |
 | nutcracker.mp3 | Public domain | NPS / Shan Burson | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_Clark%E2%80%99s_Nutcracker_-_001.mp3 |
-| hermit-thrush.mp3 | CC BY-SA 4.0 | Leonardo Guzman Hernandez | https://commons.wikimedia.org/wiki/File%3ACatharus_guttatus_-_Hermit_Thrush_XC389885.mp3 |
-| kinglet.mp3 | CC BY-SA 4.0 | Jonathon Jongsma | https://commons.wikimedia.org/wiki/File%3ARegulus_calendula_-_Ruby-crowned_Kinglet_XC175095.mp3 |
-| owl.mp3 | CC BY-SA 4.0 | Michael & Katie LaTour | https://commons.wikimedia.org/wiki/File%3ABubo_virginianus_-_Great_Horned_Owl_XC450919.mp3 |
+| hermit-thrush.mp3 | Public domain | National Park Service, Yosemite (Hermit Thrush) | https://commons.wikimedia.org/wiki/File:Hermit_Thrush_Yosemite_National_Park.ogg |
+| kinglet.mp3 | Public domain | G. McGrane (Ruby-crowned Kinglet) | https://commons.wikimedia.org/wiki/File:Ruby-crowned_Kinglet.ogg |
+| owl.mp3 | CC0 1.0 | Felix Blume (Great Horned Owl) | https://freesound.org/people/felix.blume/sounds/612651/ |
 | raven.mp3 | Public domain | NPS/David Restivo | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_Common_Raven_-_001.mp3 |
 | bluebird.mp3 | Public domain | NPS & MSU Acoustic Atlas/Jennifer Jerrett | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_Mountain_Bluebird_-_001.mp3 |
 | robin.mp3 | Public domain | NPS & MSU Acoustic Atlas/Jennifer Jerrett | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_American_Robin_-_001.mp3 |
@@ -20,13 +22,17 @@ ship with the game; the NPS public-domain clips are credited as a courtesy.
 | thunder-2.mp3 | Public domain | stephan | https://commons.wikimedia.org/wiki/File:Thunderstorm_after_hot_summer_day_17_minutes_02_of_04.ogg |
 | thunder-3.mp3 | Public domain | stephan | https://commons.wikimedia.org/wiki/File:Thunderstorm_after_hot_summer_day_17_minutes_02_of_04.ogg |
 
-Wildlife and thunder edits copied unchanged from the Electron ZenScape project.
-CC BY-SA license texts: https://creativecommons.org/licenses/by-sa/3.0/ and
-https://creativecommons.org/licenses/by-sa/4.0/.
+The nutcracker, raven, bluebird, robin and thunder edits are copied unchanged
+from the Electron ZenScape project. The chickadee, jays, hermit thrush,
+kinglet and owl replaced CC BY-SA recordings in 2026-11; the Freesound ones
+are the site's HQ previews. CC0: https://creativecommons.org/publicdomain/zero/1.0/.
 
 Procedural stream, shore, cricket, frog and footstep WAVs are baked native
 adaptations of ZenScape audio.js. Regenerate with tools/generate_nature_audio.py.
-Existing wind, rain and waterfall beds are procedural ZenScape audio.
+Existing wind, rain and waterfall beds are procedural ZenScape audio, as is
+`edge-strain.wav` (tools/generate_nature_audio.py). The bore sounds (`bore/`,
+tools/generate_bore_audio.py) and the parry's ring, boom and clunk (`parry/`,
+baked from scripts/endless/parry.gd's old in-code makers) are synthesised too.
 
 Genesis sounds (genesis-rumble, genesis-thump, genesis-pour, genesis-fill,
 genesis-meadow, genesis-path, leaf-rustle-bed, plain-air-bed, fish-plop-1/2,

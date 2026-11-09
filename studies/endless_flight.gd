@@ -120,6 +120,7 @@ extends Node3D
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
+const Lesson = preload("res://scripts/endless/tutorial/lesson.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
@@ -169,6 +170,7 @@ const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const Parry = preload("res://scripts/endless/parry.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
+const PlaneWind = preload("res://scripts/endless/plane_wind.gd")
 ## The Peak's ways up: the couloir's lift.
 const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
 const PeakStair = preload("res://scripts/endless/peak_stair.gd")
@@ -197,6 +199,9 @@ const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
 const MenuSpot = preload("res://scripts/endless/menu_spot.gd")
 const MenuStage = preload("res://scripts/endless/menu_stage.gd")
 const MainMenu = preload("res://scripts/endless/main_menu.gd")
+## The menus: Pause, Settings, Controls, Credits (scripts/endless/shell/).
+const Shell = preload("res://scripts/endless/shell/shell.gd")
+const ShellSettings = preload("res://scripts/endless/shell/shell_settings.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -480,9 +485,15 @@ var crashes := 0
 ## The pilot's book (scripts/endless/pilot_book.gd): money, tallies, records,
 ## what was bought, kept between runs; its `flight` is this flight's own.
 var book: PilotBook
+## The lesson (scripts/endless/tutorial/lesson.gd), on a fresh book; else null.
+var lesson: Node
+## The land that teaches, in --world=tutorial (scripts/endless/tutorial/tutorial_land.gd).
+var tutorial_land: Node
 ## The overlay that holds the keys while it is up (the shop, the logbook,
 ## photo mode; null: none). One at a time: open one only when this is null.
 var overlay: Object = null
+## The menus (Pause, Settings, Controls, Credits; scripts/endless/shell/shell.gd).
+var shell: Shell
 ## Photo mode (scripts/endless/photo_mode.gd): O; the flight held while up.
 var photo: PhotoMode
 ## The book's counting hooks (scripts/endless/pilot_tallies.gd), stepped in
@@ -526,6 +537,7 @@ func _ready() -> void:
 	rr.apply(get_tree().root,rr.load_cap())
 	EndlessLook.reset_season_globals()
 	# The world: its shader globals over the reset, its start under the flags.
+	WorldProfile.asked = "tutorial" if Lesson.wanted(book) and ResourceLoader.exists(WorldProfile.PROFILES+"tutorial.gd") else ""
 	world = WorldProfile.current()
 	world.apply_globals()
 	_start = world.spawn.get("at",_start)
@@ -813,6 +825,14 @@ func _ready() -> void:
 	shops.name = "Shops"
 	add_child(shops)
 	shops.setup(self)
+	if world.id == "tutorial":
+		tutorial_land = preload("res://scripts/endless/tutorial/tutorial_land.gd").new()
+		add_child(tutorial_land)
+		tutorial_land.setup(self)
+	if Lesson.wanted(book):
+		lesson = Lesson.new()
+		add_child(lesson)
+		lesson.setup(self)
 	coast = preload("res://scripts/endless/coast_sites.gd").new()
 	coast.name = "Coast"
 	add_child(coast)
@@ -849,8 +869,17 @@ func _ready() -> void:
 		add_child(spindrift)
 		spindrift.setup(self,peak,Callable(field,"height"),towers,seed,Field.SEA_Y)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
+	shell = Shell.new()
+	add_child(shell)
+	shell.setup(self)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
+	# Every pipeline a flight will draw later, drawn once now under a cover
+	# (scripts/endless/pipeline_warm.gd).
+	if PipelineWarm.wanted():
+		var warm := PipelineWarm.new()
+		add_child(warm)
+		warm.setup(self)
 	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 ## The grass parted round the parked plane in the menu: out to PART_SPANS
@@ -901,9 +930,11 @@ func _park_for_menu(spots: Array) -> void:
 
 ## The menu's pick: Start hands off into the takeoff, Quit quits.
 func _menu_picked(what: String) -> void:
+	if shell != null and shell.title_pick(what): return
 	if what == "quit":
 		get_tree().quit()
 		return
+	if lesson != null and lesson.air_start(): return
 	if stage != null: stage.start()
 
 func _start_height() -> float:
@@ -993,7 +1024,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Z roll (full meter: surge roll)  ·  Q E knife edge  ·  F flaps  ·  J logbook  ·  O photo  ·  R up again  ·  B surge  ·  Tab (hold) race a plane  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  more: Controls in the menu"
 	layer.add_child(_hint)
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
@@ -1022,6 +1053,8 @@ func _build_ui() -> void:
 	layer.add_child(summary)
 	logbook = preload("res://scripts/endless/logbook_view.gd").new(self)
 	layer.add_child(logbook)
+	# The money in flight and the first shop's pointer (lane economy, spec-ship.md).
+	layer.add_child(preload("res://scripts/endless/money_hud.gd").new(self))
 	_fade = ColorRect.new()
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1335,6 +1368,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"glance")
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
+	plane.buffet_wind = PlaneWind.buffet(look)
 	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
 	FrameLog.mark(&"landing")
 	if events.has("lifted"): book.new_flight()
@@ -1389,6 +1423,7 @@ func tick(delta: float) -> void:
 		if not stage.running(): _menu_done()
 	if beats != null: beats.step(delta,self)
 	if lines != null: lines.step(delta,self)
+	if lesson != null: lesson.step(delta)
 	FrameLog.mark(&"lines")
 	if burrower != null: burrower.step(delta,self)
 	FrameLog.mark(&"burrower")
@@ -1852,7 +1887,7 @@ func _fly_input(_delta: float) -> Dictionary:
 	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
 	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
-	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,"lean":lean,
+	var input := {"turn":stick.x,"pitch":ShellSettings.stick_pitch(stick.y),"look":_fly_look,"lean":lean,
 		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
@@ -1902,10 +1937,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if photo.handle(event): return
 	# An overlay (the shop, the logbook, photo mode) takes the keys while up.
 	if overlay != null: return
+	# Esc or the pad's Menu: Pause (scripts/endless/shell/shell.gd).
+	if shell.wants(event): return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
-		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
+		else: _fly_look += ShellSettings.steer(Vector2(event.relative.x,-event.relative.y))*FLY_LOOK
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
@@ -1996,6 +2033,12 @@ func _show_region() -> void:
 			_region_id = str(r.id)
 			_region_caption.text = str(r.title)
 			_region_shown = now
+	# Not over the lesson's line, nor in its meadow: the wilderness's caption
+	# comes up as the plane comes out there.
+	if (lesson != null and lesson.running()) or (tutorial_land != null and not bool(tutorial_land.done)):
+		_region_shown = now
+		_region_caption.modulate.a = 0.0
+		return
 	var age := now-_region_shown
 	_region_caption.modulate.a = clampf(age/400.0,0.0,1.0)*clampf(1.0-float(age-REGION_HOLD)/REGION_FADE,0.0,1.0)
 	if _region_debug != null: _region_debug.text = world.describe(eye.x,eye.z)

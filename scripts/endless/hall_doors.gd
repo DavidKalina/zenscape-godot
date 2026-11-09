@@ -500,13 +500,13 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	var kept := func(x: float, z: float) -> bool:
 		if absf(x) < _foot-1.0 and z > -1.0: return true
 		return absf(absf(x)-TOWER_X) < 14.0 and absf(z-TOWER_Z) < 14.0
-	var seat := HallSeat.build(4400+i,0.75,back,_steps[i],land,kept,_room)
+	var seat := _seat(i,back,land,kept)
 	root.add_child(seat)
 	for mi: Node in seat.find_children("*","MeshInstance3D",true,false):
 		(mi as MeshInstance3D).layers = layers
 		(mi as MeshInstance3D).material_override = lit
 	for s: float in [-1.0,1.0]:
-		var tower := RuinKit_.piece("belfry_tower",4300+i*3+int(s),0.55)
+		var tower := _tower(4300+i*3+int(s))
 		tower.position = Vector3(s*TOWER_X,0.0,TOWER_Z)
 		tower.rotation.y = PI*0.5*(s+1.0)
 		root.add_child(tower)
@@ -563,6 +563,14 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	_spills.append(spill)
 	return root
 
+## Ruin `i`'s seat: the stone it stands on, down into `land` (frame heights).
+func _seat(i: int, back: float, land: Callable, kept: Callable) -> Node3D:
+	return HallSeat.build(4400+i,0.75,back,_steps[i],land,kept,_room)
+
+## A belfry tower of `seed_value`.
+func _tower(seed_value: int) -> Node3D:
+	return RuinKit_.piece("belfry_tower",seed_value,0.55)
+
 func _daylight() -> ShaderMaterial:
 	var sh := Shader.new()
 	sh.code = "shader_type spatial;\nrender_mode unshaded, fog_disabled, depth_draw_never, shadows_disabled, cull_disabled;\nuniform vec3 colour = vec3(1.0);\nuniform float strength = 1.0;\nuniform float show = 1.0;\nvoid fragment() {\n\tALBEDO = colour * strength * mix(1.0, 0.7, smoothstep(0.1, 0.9, UV.y));\n\tALPHA = show;\n}\n"
@@ -605,7 +613,7 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 		var fl: float = _frames[i].origin.y
 		# The stone under it all, the steps down round it.
 		var stone := HallSeat.top(l.x,l.z,_out+HallSeat.BACK,_steps[i])
-		if stone > -INF and (h == null or fl+stone > float(h)): h = fl+stone
+		if stone > -INF and (h == null or (not (h is Vector2) and fl+stone > float(h))): h = fl+stone
 		if absf(l.x) > TOWER_X+TOWER_SOLID+grow or l.z < -TOWER_SOLID or l.z > _out+4.0+grow: continue
 		if l.y > TOWER_TOP+4.0: continue
 		for s: float in [-1.0,1.0]:
@@ -822,8 +830,16 @@ func _set_world(on: bool) -> void:
 	if _figure_layers.is_empty():
 		for n: Node in fig.find_children("*","VisualInstance3D",true,false):
 			_figure_layers[n] = (n as VisualInstance3D).layers
+	# Each one hidden from the renderer round its layer change: hiding unpairs
+	# it from every light. Changed while paired with the hall's lights (whose
+	# cull mask is UNDER), the engine kept the pairs, and freeing the figure
+	# later printed "BUG, indexing did not unpair geometries from light".
 	for n: Node in _figure_layers:
-		if is_instance_valid(n): (n as VisualInstance3D).layers = int(_figure_layers[n]) if on else UNDER
+		if not is_instance_valid(n): continue
+		var vi := n as VisualInstance3D
+		RenderingServer.instance_set_visible(vi.get_instance(),false)
+		vi.layers = int(_figure_layers[n]) if on else UNDER
+		RenderingServer.instance_set_visible(vi.get_instance(),vi.is_visible_in_tree())
 
 func _cut_sky() -> void:
 	var lights: Array = get_tree().root.find_children("*","DirectionalLight3D",true,false)
