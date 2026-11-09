@@ -874,6 +874,12 @@ func _ready() -> void:
 	shell.setup(self)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
+	# Every pipeline a flight will draw later, drawn once now under a cover
+	# (scripts/endless/pipeline_warm.gd).
+	if PipelineWarm.wanted():
+		var warm := PipelineWarm.new()
+		add_child(warm)
+		warm.setup(self)
 	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 ## The grass parted round the parked plane in the menu: out to PART_SPANS

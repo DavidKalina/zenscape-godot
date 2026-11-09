@@ -830,8 +830,16 @@ func _set_world(on: bool) -> void:
 	if _figure_layers.is_empty():
 		for n: Node in fig.find_children("*","VisualInstance3D",true,false):
 			_figure_layers[n] = (n as VisualInstance3D).layers
+	# Each one hidden from the renderer round its layer change: hiding unpairs
+	# it from every light. Changed while paired with the hall's lights (whose
+	# cull mask is UNDER), the engine kept the pairs, and freeing the figure
+	# later printed "BUG, indexing did not unpair geometries from light".
 	for n: Node in _figure_layers:
-		if is_instance_valid(n): (n as VisualInstance3D).layers = int(_figure_layers[n]) if on else UNDER
+		if not is_instance_valid(n): continue
+		var vi := n as VisualInstance3D
+		RenderingServer.instance_set_visible(vi.get_instance(),false)
+		vi.layers = int(_figure_layers[n]) if on else UNDER
+		RenderingServer.instance_set_visible(vi.get_instance(),vi.is_visible_in_tree())
 
 func _cut_sky() -> void:
 	var lights: Array = get_tree().root.find_children("*","DirectionalLight3D",true,false)

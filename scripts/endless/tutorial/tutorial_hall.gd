@@ -212,7 +212,19 @@ func place(host: Node3D, at: Vector2, inward: Vector2, seed: int) -> void:
 	_build_overlay()
 	_make_lands()
 	_seal()
+	_calm = CALM
 	print("tutorial hall: its mouth at %s facing %s, out at %s, the hall %.0f m, the mouth %.1f m wide, %.1f m high" % [str(at.round()),str(inward.normalized()),str(_xz(0).round()),_len(),_room*2.0,_roof])
+
+## The far land's first steps wait CALM frames after `place`: on the frame
+## the hall goes up (its pieces and their pipelines) they made it ~60 ms.
+const CALM := 3
+var _calm := 0
+
+func _prewarm(p: Vector3) -> void:
+	if _calm > 0:
+		_calm -= 1
+		return
+	super(p)
 
 ## The cracked wall across the meadow mouth: a chamber as wide and high as the
 ## mouth, standing just outside it, its front facing out.
