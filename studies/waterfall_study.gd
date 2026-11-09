@@ -186,7 +186,7 @@ func _build_fall() -> void:
 	# The pool's foam starts where the churn mound ends (the fall's front at
 	# the foot, plus its lean, plus the mound's reach: the shader's defaults).
 	pm.set_shader_parameter("front_z", FRONT_Z + 1.4)
-	pm.set_shader_parameter("mound_reach", 2.4)
+	pm.set_shader_parameter("mound_reach", 2.6)
 	var pl := PlaneMesh.new()
 	pl.size = Vector2(44, 22)
 	pl.material = pm
@@ -217,6 +217,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_3: _preset("close")
 			KEY_4: _preset("graze")
 			KEY_5: _preset("base")
+			KEY_6: _preset("fly")
 
 func _process(delta: float) -> void:
 	if _fly:

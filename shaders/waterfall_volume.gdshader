@@ -7,8 +7,9 @@ render_mode cull_front, unshaded, shadows_disabled, depth_draw_always, blend_mix
 // (opaque, a hard silhouette). The noise is carried down the fall at a speed
 // that grows toward the foot, and it also changes as it goes, so strands tear,
 // merge and split instead of sliding by. Toward the foot the body widens,
-// frays and breaks into packets; at the foot it lands in a low churn mound
-// that pushes out over the pool.
+// frays and breaks into packets; at the foot it explodes into a low, wide
+// churn with a broken top and lobes thrown out and up, whose white runs on
+// into the pool's foam (shaders/waterfall_pool.gdshader).
 //
 // Depth: the hit is written to DEPTH and depth-tested by the hardware, so rock
 // in front hides it and later transparent things sort against it. It draws in
@@ -78,11 +79,13 @@ uniform float edge_break : hint_range(0.0, 4.0) = 1.8;
 // How far past the sides thin streams peel off (m at the foot).
 uniform float peel_reach : hint_range(0.0, 5.0) = 2.6;
 // Height (m) of the churn mound at the foot.
-uniform float churn_height : hint_range(0.0, 8.0) = 2.6;
+uniform float churn_height : hint_range(0.0, 8.0) = 2.4;
 // How far the churn mound pushes out past the front (m).
-uniform float churn_reach : hint_range(0.0, 6.0) = 2.4;
-// Short crisp spray thrown up at the impact (0 none).
-uniform float spray : hint_range(0.0, 1.0) = 0.5;
+uniform float churn_reach : hint_range(0.0, 6.0) = 3.2;
+// How many of the lobes thrown out of the churn fly (0 none, 1 every throw), and
+// how fast they leave it upward (m/s; a lobe rises speed^2/20 m).
+uniform float jets : hint_range(0.0, 1.0) = 0.8;
+uniform float jet_speed : hint_range(0.0, 10.0) = 6.0;
 // White to pale blue-grey: how far down the shading goes.
 uniform float shade_range : hint_range(0.0, 1.0) = 0.85;
 // How much the brightness flickers down the fall.
@@ -165,6 +168,46 @@ void flow(vec3 P, float lv, out float s, out float q, out float k) {
 	}
 }
 
+// Lobes of water thrown from the impact: one per cell along the foot, each
+// a short streak flying a ballistic arc out and up, thinning as it goes,
+// then launched again (a cell sits some throws out). A point looks at its
+// own cell and the nearer neighbour. Positive inside one.
+float jet_field(vec3 P, float zf) {
+	float best = -10.0;
+	float cwid = 1.0;
+	float fx = P.x / cwid;
+	float ci = floor(fx);
+	float side = fx - ci < 0.5 ? -1.0 : 1.0;
+	for (int o = 0; o < 2; o++) {
+		float c = ci + float(o) * side;
+		float r0 = h31(vec3(c, 3.1, 7.7));
+		float vy0 = jet_speed * (0.65 + 0.35 * r0);
+		float per = 2.0 * vy0 / 9.8 + 0.1;
+		float tt = TIME / per + r0 * 7.0;
+		float cyc = floor(tt);
+		float r2 = h31(vec3(c, cyc, 1.3));
+		float r3 = fract(r2 * 7.31 + r0 * 3.7);
+		if (r3 > jets) continue;
+		float age = fract(tt) * per;
+		float vy = vy0 * (0.75 + 0.5 * r2);
+		vec3 o0 = vec3((c + 0.15 + 0.7 * r2) * cwid, churn_height * 0.6, zf - 0.4 + 1.2 * r3);
+		vec3 v0 = vec3((r3 - 0.5) * 0.7, vy, 1.2 + 2.8 * fract(r2 * 3.17));
+		vec3 pos = o0 + v0 * age - vec3(0.0, 4.9 * age * age, 0.0);
+		vec3 vel = v0 - vec3(0.0, 9.8 * age, 0.0);
+		vec3 pa = P - pos + vel * 0.13;
+		vec3 ba = vel * 0.13;
+		float hh = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
+		float life = age / per;
+		float rad = (0.15 + 0.14 * r2) * (1.0 - 0.5 * life) * smoothstep(0.0, 0.08, life) * (0.45 + 0.55 * hh);
+		best = max(best, rad - length(pa - ba * hh));
+	}
+	// Ragged, not round.
+	if (best > -0.2) {
+		best += (vnoise(P * 6.0 + vec3(0.0, -TIME * 7.0, TIME * 2.0)) - 0.5) * 0.12;
+	}
+	return best;
+}
+
 // Positive inside the water. `full` adds the fine detail (streaks, spray)
 // that the shadow taps can do without.
 float field(vec3 P, bool full) {
@@ -207,6 +250,14 @@ float field(vec3 P, bool full) {
 		vec3 b = vec3(P.x * cx * 2.1 + 11.0, (sw - T * 1.25) * cx * 2.1 / st + 5.0, q * cx * 1.4 + 3.0 + Ev * 1.6);
 		float nb = vnoise(b);
 		float n = mix(na, nb, smoothstep(-2.4, -0.2, q));
+		// By the sides the ropes are stacked front to back instead, so the
+		// flank (seen from the side) is strands, not one smooth face.
+		float ew = 1.0 - smoothstep(0.0, edge_break + 0.8, e);
+		if (ew > 0.0) {
+			vec3 c = vec3(q * cx * 1.6 + 2.0, u * 0.9 * cx / st + 9.0, P.x * cx * 0.9 + Ev);
+			float ns = vnoise(c) * 0.65 + vnoise(c * vec3(2.3, 2.3, 1.7) + 4.0) * 0.35;
+			n = mix(n, ns, ew);
+		}
 		if (full) {
 			// Fine streaks: thin, long, fast; they fray the strand ends.
 			float f = vnoise(vec3(P.x * cx * 6.0, (sw - T * 1.15) * cx * 6.0 / (st * 2.2), Ev * 2.0 + q * 2.0));
@@ -217,8 +268,11 @@ float field(vec3 P, bool full) {
 		float pk = vnoise(vec3(P.x * cx * 0.45 + 31.0, (sw - T * 1.05) * 0.3, Ev * 0.7));
 
 		// Carving: near the front the noise must clear a bar; the band
-		// carved grows toward the foot. Over the lip it is smooth (glassy).
-		float thr = surface_relief * 0.7 * smoothstep(-carve, 0.0, q) * smoothstep(1.0, 7.0, s);
+		// carved grows toward the foot.
+		// Over the lip it is smooth (glassy), except near the sides, where a
+		// clean tube would show edge-on from the side.
+		float lipr = 0.4 * (1.0 - smoothstep(0.0, edge_break + 1.5, e));
+		float thr = surface_relief * 0.7 * smoothstep(-carve, 0.0, q) * mix(lipr, 1.0, smoothstep(1.0, 7.0, s));
 		thr += bk * (0.55 - pk) * 0.9 * smoothstep(-carve - 0.5, 0.0, q);
 		// Sides: strands thin out toward the edge.
 		thr = max(thr, 0.95 * (1.0 - smoothstep(0.0, max(edge_break, 0.01), e)));
@@ -248,34 +302,43 @@ float field(vec3 P, bool full) {
 		v = max(v, sv);
 	}
 
-	// The churn mound at the foot: low, tight, boiling out over the pool.
+	// The churn at the foot: a low, wide body of water exploding on impact.
+	// A core that keeps re-forming, a broken top of crisp pieces rising and
+	// pushed out, and lobes thrown out and up that fall back.
 	if (P.y < churn_height * 1.9 + 3.0) {
 		float zf = front_z + (lv + 0.5) * lip_unevenness * 0.8 + throw_out;
-		// The mound's outer edge wanders, so it does not meet the pool in a line.
-		float ro = (P.z - zf + 1.5) / max(churn_reach + 1.5, 0.1);
-		ro += 0.16 * sin(P.x * 1.7 + TIME * 1.3) + 0.1 * sin(P.x * 4.3 - TIME * 2.1);
+		// Out from the impact (0 a little behind the front, 1 the outer edge);
+		// the edge wanders, so it does not meet the pool in a line.
+		float ro = (P.z - zf + 1.2) / max(churn_reach + 1.2, 0.1);
+		ro += 0.12 * sin(P.x * 1.3 + TIME * 1.9) + 0.08 * sin(P.x * 3.7 - TIME * 2.6);
 		float cw = clamp(e + 1.0, 0.0, 1.0);
 		float rr = clamp(ro, 0.0, 1.0);
-		float hm = churn_height * (1.0 - rr * rr) * cw;
+		float hm = churn_height * cw * (1.0 - rr) * (1.0 - rr);
+		float top = hm * 1.55 + 0.05;
 		float mv = min((ro + 0.2) * 2.0, (1.05 - ro) * 2.0);
-		if (P.y > hm * 2.05 + 0.05 || mv < v) {
-			// Above the highest the mound reaches (or already in water).
-			mv = min(mv, (hm * 2.05 - P.y) * 0.6);
+		if (P.y > top || mv < v) {
+			mv = min(mv, (top - P.y) * 0.6);
 		} else {
-			float c1 = vnoise(vec3(P.x * 0.55, P.y * 0.7 - TIME * 1.8, P.z * 0.6 - TIME * 1.1));
-			float c2 = vnoise(vec3(P.x * 1.4 + 5.0, P.y * 1.5 - TIME * 3.0, P.z * 1.4 - TIME * 2.2));
-			float c3 = vnoise(vec3(P.x * 3.2 + 2.0, P.y * 3.0 - TIME * 4.0, P.z * 3.2 - TIME * 3.0));
-			mv = min(mv, (hm * (0.2 + 0.8 * c1 + 0.6 * c2 + 0.45 * c3) - P.y) * 0.6);
+			// Pieces rising fast at the impact, pushed out as they go.
+			// Ridged, so the pieces are thin sheets and crests, not lumps.
+			vec3 cp = vec3(P.x * 1.5, P.y * 0.85 - TIME * 3.2, P.z * 1.5 - TIME * 1.8);
+			float c1 = vnoise(cp);
+			float c2 = vnoise(cp * 2.3 + vec3(3.0, -TIME * 2.0, 1.0));
+			float n = (1.0 - abs(c1 * 2.0 - 1.0)) * 0.65 + c2 * 0.35;
+			// The core is solid to about half the height; above it the noise
+			// has to clear a bar that rises, so the top comes apart in pieces.
+			float h01 = clamp((P.y - hm * 0.45) / max(hm * 1.1, 0.05), 0.0, 1.0);
+			float pv = (n - (0.42 + 0.4 * h01)) * 0.7;
+			mv = min(mv, max(pv, (hm * (0.35 + 0.3 * c1) - P.y) * 0.6));
+			mv = min(mv, (top - P.y) * 0.6);
 		}
 		v = max(v, mv);
-		if (full && spray > 0.0 && ro > -0.2 && ro < 0.75 && cw > 0.2 && v < 0.0) {
-			// Spray: short-lived chunks thrown up and out at the impact.
-			vec3 sp = vec3(P.x * 1.6, P.y * 1.1 - TIME * 5.0, P.z * 1.6 - TIME * 3.0);
-			float sn = vnoise(sp) * 0.7 + vnoise(sp * 2.7) * 0.3;
-			float band = 1.0 - smoothstep(churn_height * 0.6, churn_height * 1.9 + 2.5, P.y);
-			float ring = 1.0 - abs(ro - 0.25) * 2.2;
-			float spv = (sn - (1.0 - 0.32 * spray)) * 1.2 + min(band, ring) * 0.25 - 0.25;
-			v = max(v, min(spv, cw - 0.2));
+		// Lobes thrown out and up from the impact, falling back.
+		// (Not in the shadow taps: too small to matter there.)
+		float jtop = churn_height * 0.6 + jet_speed * jet_speed * 0.08 + 0.4;
+		if (full && jets > 0.0 && P.y < jtop && ro > -0.3 && ro < 1.4 && cw > 0.1 && v < 0.0) {
+			float jf = jet_field(P, zf);
+			v = max(v, min(jf, cw - 0.1));
 		}
 	}
 	return v;
@@ -322,7 +385,7 @@ void fragment() {
 	// Inside the water: the stretch ahead of the eye is a dense medium.
 	float inside = 0.0;
 	float lin = 0.0;
-	if (t0 <= 0.0 && field(ro, false) > 0.0) {
+	if (t0 <= 0.0 && field(ro, true) > 0.0) {
 		float ti = 0.0;
 		float tl = 0.0;
 		bool out_w = false;
@@ -330,7 +393,7 @@ void fragment() {
 			tl = ti;
 			ti += 0.25;
 			if (ti >= t1) break;
-			if (field(ro + rd * ti, false) <= 0.0) {
+			if (field(ro + rd * ti, true) <= 0.0) {
 				out_w = true;
 				break;
 			}
@@ -339,7 +402,7 @@ void fragment() {
 		if (out_w) {
 			for (int j = 0; j < 5; j++) {
 				float tm = 0.5 * (tl + ti);
-				if (field(ro + rd * tm, false) > 0.0) tl = tm; else ti = tm;
+				if (field(ro + rd * tm, true) > 0.0) tl = tm; else ti = tm;
 			}
 		}
 		lin = ti;
@@ -366,7 +429,7 @@ void fragment() {
 		// Only when the steps are long (far, or along the fall), or by the
 		// sides where the strands are thin: elsewhere the plain steps are
 		// already finer than a strand.
-		if (v > -band && (stp > 0.3 || abs(ps.x) > half_width - edge_break - 0.5)) {
+		if (v > -band && (stp > 0.3 || abs(ps.x) > half_width - edge_break - 0.5 || ps.y < churn_height)) {
 			float h = (t - tp) / 3.0;
 			for (int j = 1; j < 3; j++) {
 				float tm = tp + h * float(j);
@@ -387,7 +450,7 @@ void fragment() {
 	float tw = lin;
 	if (hit) {
 		// Settle on the surface between the last miss and the first hit.
-		for (int j = 0; j < 4; j++) {
+		for (int j = 0; j < 3; j++) {
 			float tm = 0.5 * (tp + t);
 			if (field(ro + rd * tm, true) > 0.0) t = tm; else tp = tm;
 		}
@@ -421,30 +484,41 @@ void fragment() {
 		float Ev = TIME * churn_rate;
 		// Troughs: the deeper into the carved band, the darker.
 		float carve = mix(1.6, 2.8, k);
-		float trough = 1.0 - smoothstep(-carve, -0.15, q);
+		// Not on the flanks, where deep in is just the side of the body.
+		float trough = (1.0 - smoothstep(-carve, -0.15, q)) * smoothstep(0.0, edge_break + 1.0, half_width + spread * pow(k, 1.4) - abs(p.x));
 		// Brightness that flickers down the fall, and fine dark streaks.
 		float fl = vnoise(vec3(p.x * streak_scale * 1.3, (sw - T * 1.2) * 0.45, Ev * 1.5));
 		float fine = vnoise(vec3(p.x * streak_scale * 9.0, (sw - T * 1.1) * streak_scale * 9.0 / (streak_stretch * 2.5), Ev * 3.0));
 		float shade = (1.0 - lit) * 1.35 + trough * 0.55;
 		shade += (0.5 - fl) * flicker * 0.7 + smoothstep(0.55, 0.78, fine) * fine_streaks * 0.6 - 0.1;
-		float cb = 1.0 - smoothstep(0.0, churn_height * 1.3, p.y);
-		// The churn: no fall streaks, crevices between its lumps darker.
+		// The churn: whiter than the fall, no fall streaks, shaded only by its
+		// own shape; where it meets the pool it is the foam's white.
 		float zf = front_z + (lip_var(p.x) + 0.5) * lip_unevenness * 0.8 + throw_out;
-		float rr = clamp((p.z - zf + 1.5) / max(churn_reach + 1.5, 0.1), 0.0, 1.0);
-		float cav = 1.0 - smoothstep(0.2, 0.9, p.y / max(churn_height * (1.0 - rr * rr) * 1.1, 0.2));
-		shade = mix(shade, (1.0 - lit) * 1.3 + cav * 0.5, cb);
+		// Churn shading out in front of the fall's face, and at the very bottom.
+		float cb = max(smoothstep(0.1, 0.6, q) * (1.0 - smoothstep(churn_height * 0.6, churn_height * 1.3, p.y)),
+			1.0 - smoothstep(0.1, 0.6, p.y));
+		float cs = (1.0 - lit) * 1.1 * smoothstep(0.1, 0.7, p.y);
+		shade = mix(shade, cs, cb);
 		shade = clamp(shade * shade_range, 0.0, 1.0);
 		col = mix(white_color, shade_color, shade);
 	}
-	// The water between the eye and the surface, when the eye is in it.
-	if (inside > 0.0) {
+	// The water between the eye and the surface, when the eye is in it, and
+	// strands right at the eye when it is in the carved band at the front:
+	// there a surface a hand's width away would fill the screen with one
+	// flat shade (the rope noise blown up), so close hits fade into the
+	// whiteout by their distance.
+	float es, eq, ek;
+	flow(ro, lip_var(ro.x), es, eq, ek);
+	float eband = (1.0 - smoothstep(-0.2, 1.0, eq)) * step(abs(ro.x), half_width + spread + 1.0) * step(0.0, ro.y) * step(ro.y, lip_y);
+	float wclose = hit ? eband * (1.0 - smoothstep(0.4, 3.5, tw)) : 0.0;
+	if (inside > 0.0 || wclose > 0.0) {
 		// Falling streaks on the whiteout, darker where the water ahead is thin.
 		// (rd is in fall space: around the vertical, and up.)
 		float az = atan(rd.x, rd.z) * 12.0;
 		float wn = vnoise(vec3(az, rd.y * 2.0 + TIME * 4.0, 0.5));
 		float wf = vnoise(vec3(az * 3.5, rd.y * 4.0 + TIME * 7.0, 1.5));
 		vec3 ic = mix(white_color, shade_color, 0.1 + 0.3 * wn + 0.2 * smoothstep(0.55, 0.8, wf));
-		col = hit ? mix(col, ic, inside) : ic;
+		col = hit ? mix(col, ic, max(inside, wclose)) : ic;
 	}
 	ALBEDO = col;
 	ALPHA = hit ? 1.0 : inside;
