@@ -383,6 +383,9 @@ func _build(key: Vector3i, land_seed: int) -> void:
 		if not shape.is_empty(): made.shape = shape
 	_wall_normals(made)
 	_portal_holes(f,made,key,x0,z0,step)
+	# A placed curtain's cave mouths: its faces' triangles over them dropped
+	# (LandField.curtain_cut).
+	if f.has_method("curtain_cut"): f.curtain_cut(made,x0,z0,step,CELLS,made.indices if made.has("indices") else _indices,key.x == 0)
 	_crest_cut(f,made,key,x0,z0,s)
 	made.tops =_tops_of(key,made.get("heights",PackedFloat32Array()))
 	made.key = key

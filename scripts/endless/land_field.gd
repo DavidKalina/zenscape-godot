@@ -533,6 +533,18 @@ var ice_tunnel: RefCounted = null
 var _m_on := false
 ## The coast's islands (coast_isles.gd), or null: a stamp like the massif.
 const CoastIsles = preload("res://scripts/endless/coast_isles.gd")
+## The regions' placed sites' clear footprints (scripts/endless/
+## placed_list.gd): no slot hall's cut, split mountain's slot or tunnel's
+## box in one.
+const PlacedList = preload("res://scripts/endless/placed_list.gd")
+## The placed curtains' land (scripts/endless/kinds/curtain_land.gd): the
+## alcove, lip, stream and pool cut under each, after the splits. Their
+## shapes are kept per world and layout file (`_curtain_list`).
+const Curtains = preload("res://scripts/endless/kinds/curtain_land.gd")
+var _curtains: Array = []
+var _curtains_of: Array = [null,null]
+## Set by `surface` (main thread): the curtains' caves left out.
+var _cave_off := false
 var _isles: RefCounted = null
 ## The world's edge line (centre x, z, half side, corner radius), or half 0.
 var _edge := Vector4.ZERO
@@ -762,7 +774,7 @@ func sample(x: float, z: float) -> Vector2:
 	_p_on = false
 	_t_on = false
 	_m_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0 and not _curtain_near(x,z):
 		return _isle(_impl.sample(x,z) if _massif == null else _peak(_impl.sample(x,z),x,z),x,z)
 	# (The square's pond, tunnel, hall and split first: finding them samples
 	# the field.)
@@ -775,6 +787,7 @@ func sample(x: float, z: float) -> Vector2:
 	if not ts.is_empty(): got = _tunnel(ts,got,x,z)
 	if not s.is_empty(): got.x = Sites.carve(s,got.x,x,z)
 	if not sp.is_empty(): got.x = Splits.carve(sp,got.x,x,z)
+	got.x = _curtain(x,z,got.x)
 	if _massif != null: got = _peak(got,x,z)
 	return _isle(got,x,z)
 
@@ -849,6 +862,35 @@ func _peak_clear(x: float, z: float, r: float) -> bool:
 func off_peak(x: float, z: float, r := 0.0) -> bool:
 	return (_massif == null or _massif.clear(x,z,r)) and (_isles == null or _isles.clear(x,z,r))
 
+## Whether a site of reach `r` at (x, z) keeps out of every placed site's
+## clear footprint (placed_list.gd; the arches, the rocks and the trees ask
+## too).
+func off_placed(x: float, z: float, r := 0.0) -> bool:
+	return PlacedList.clear_of(world,x,z,r)
+
+## Whether slot hall `s` keeps its cut and rims (hall_sites.gd `on_cut`) out
+## of every placed site's clear.
+func _hall_off_placed(s: PackedFloat32Array) -> bool:
+	for c: Vector3 in PlacedList.clears(world):
+		if Sites.on_cut(s,c.x,c.y,c.z): return false
+	return true
+
+## Whether split mountain `s` keeps its slot (split_sites.gd `on_cut`) out of
+## every placed site's clear.
+func _split_off_placed(s: PackedFloat32Array) -> bool:
+	for c: Vector3 in PlacedList.clears(world):
+		if Splits.on_cut(s,c.x,c.y,c.z): return false
+	return true
+
+## Whether tunnel `t` keeps its box (all its massif and trenches touch) out of
+## every placed site's clear.
+func _tunnel_off_placed(t: RefCounted) -> bool:
+	var b: Rect2 = t.box
+	for c: Vector3 in PlacedList.clears(world):
+		var q := Vector2(clampf(c.x,b.position.x,b.end.x),clampf(c.y,b.position.y,b.end.y))
+		if q.distance_squared_to(Vector2(c.x,c.y)) < c.z*c.z: return false
+	return true
+
 ## Vector2(height, meadow) `got` with the tunnels' massifs and trenches at
 ## (x, z): the meadow fades with the lift; `_t_on` where it was lifted.
 func _tunnel(ts: Array, got: Vector2, x: float, z: float) -> Vector2:
@@ -866,36 +908,61 @@ func _tunnel(ts: Array, got: Vector2, x: float, z: float) -> Vector2:
 ## (tunnel_sites.gd's Site).
 func tunnels_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if tunnels <= 0.0: return []
-	if _tunnel_test: return Tunnels.sites_in(_tunnel_sites,x0,z0,x1,z1)
-	var all: Array = []
+	if _tunnel_test: return Tunnels.sites_in(_tunnel_sites+_placed_tunnels(),x0,z0,x1,z1)
+	var all: Array = _placed_tunnels().duplicate()
 	for cj in range(floori(z0/Tunnels.CELL),floori(z1/Tunnels.CELL)+1):
 		for ci in range(floori(x0/Tunnels.CELL),floori(x1/Tunnels.CELL)+1):
 			all.append_array(_peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,Vector2i(ci,cj),_tunnel_local)))
 	return Tunnels.sites_in(all,x0,z0,x1,z1)
 
-## Tunnel sites `ts` without those whose box meets the Peak's massif.
+## Tunnel sites `ts` without those whose box meets the Peak's massif or a
+## placed site's clear.
 func _peak_tunnels(ts: Array) -> Array:
-	if _massif == null or ts.is_empty(): return ts
+	if ts.is_empty() or (_massif == null and PlacedList.clears(world).is_empty()): return ts
 	return ts.filter(func(t: RefCounted) -> bool:
 		var b: Rect2 = t.box
-		return _peak_clear(b.get_center().x,b.get_center().y,b.size.length()*0.5))
+		return _peak_clear(b.get_center().x,b.get_center().y,b.size.length()*0.5) and _tunnel_off_placed(t))
 
 ## The tunnels that may touch (x, z): its square's (the last square's
 ## kept), or the test tunnel.
 func _tunnels_for(x: float, z: float) -> Array:
-	if _tunnel_test: return _tunnel_sites
 	var key := Tunnels.cell_of(x,z)
+	var placed := _placed_tunnels()
+	if not is_same(placed,_tunnel_placed_was):
+		_tunnel_placed_was = placed
+		_tunnel_cell = Vector2i(1 << 30,0)
 	if key != _tunnel_cell:
-		_tunnel_here = _peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,key,_tunnel_local))
+		_tunnel_here = _tunnel_sites if _tunnel_test else _peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,key,_tunnel_local))
+		# The placed sites' own tunnels whose box meets the square.
+		if not placed.is_empty():
+			var sq := Rect2(key.x*Tunnels.CELL,key.y*Tunnels.CELL,Tunnels.CELL,Tunnels.CELL)
+			var here := _tunnel_here.duplicate()
+			for t: RefCounted in placed:
+				if (t.box as Rect2).intersects(sq): here.append(t)
+			_tunnel_here = here
 		_tunnel_cell = key
 	return _tunnel_here
+
+## The tunnels the placed sites ask for (a placed curtain's `tunnel`:
+## curtain_land.gd `tunnels`, tunnel_sites.gd `placed_site`), every field
+## sharing one Site each; kept per world and layout file, as `_curtain_list`.
+func _placed_tunnels() -> Array:
+	if tunnels <= 0.0: return _NONE
+	if not is_same(_placed_tunnels_of[0],world) or not is_same(_placed_tunnels_of[1],Curtains.LayoutOverrides.data):
+		_placed_tunnel_list = Tunnels.placed_sites(_impl,Curtains.tunnels(world))
+		_placed_tunnels_of = [world,Curtains.LayoutOverrides.data]
+	return _placed_tunnel_list
+
+var _placed_tunnel_list: Array = []
+var _placed_tunnels_of: Array = [null,null]
+var _tunnel_placed_was: Array = []
 
 const _NONE: Array = []
 
 ## The fixed tunnels this field knows: the --tunnel-test one (streamed ones
 ## come from `tunnels_in`).
 func tunnel_sites() -> Array:
-	return _tunnel_sites
+	return _tunnel_sites+_placed_tunnels() if _tunnel_test else _tunnel_sites
 
 ## Whether the tunnels are the --tunnel-test one alone.
 func tunnel_test() -> bool:
@@ -908,7 +975,7 @@ func _hall_for(x: float, z: float) -> PackedFloat32Array:
 	if cx != _hall_cell.x or cz != _hall_cell.y:
 		_hall_here = Sites.cell_site(_impl,seed,halls,ponds,x,z,_hall_local)
 		if tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(x,z),_hall_here): _hall_here = PackedFloat32Array()
-		if not _hall_here.is_empty() and not _peak_clear(_hall_here[0],_hall_here[1],_hall_here[7]+_hall_here[8]): _hall_here = PackedFloat32Array()
+		if not _hall_here.is_empty() and not (_peak_clear(_hall_here[0],_hall_here[1],_hall_here[7]+_hall_here[8]) and _hall_off_placed(_hall_here)): _hall_here = PackedFloat32Array()
 		_hall_cell = Vector2i(cx,cz)
 	return _hall_here
 
@@ -918,6 +985,7 @@ func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if halls <= 0.0: return []
 	var got := Sites.sites_in(_impl,seed,halls,ponds,x0,z0,x1,z1,_hall_local)
 	if _massif != null: got = got.filter(func(s: PackedFloat32Array) -> bool: return _peak_clear(s[0],s[1],s[7]+s[8]))
+	if not PlacedList.clears(world).is_empty(): got = got.filter(_hall_off_placed)
 	if tunnels <= 0.0: return got
 	return got.filter(func(s: PackedFloat32Array) -> bool: return not Tunnels.blocks_hall(_tunnels_for(s[0],s[1]),s))
 
@@ -925,7 +993,7 @@ func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 func hall_info(key: Vector2i) -> Dictionary:
 	if halls <= 0.0: return {}
 	var got := Sites.site_info(_impl,seed,halls,ponds,key)
-	if not got.is_empty() and not _peak_clear(got.site[0],got.site[1],got.site[7]+got.site[8]): return {}
+	if not got.is_empty() and not (_peak_clear(got.site[0],got.site[1],got.site[7]+got.site[8]) and _hall_off_placed(got.site)): return {}
 	if not got.is_empty() and tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(got.site[0],got.site[1]),got.site): return {}
 	return got
 
@@ -943,7 +1011,7 @@ func _split_cell(key: Vector2i) -> PackedFloat32Array:
 	var s := Splits.cell_site(_impl,seed,splits,ponds,key,_split_local,split_mix)
 	if s.is_empty(): return s
 	var r := s[7]+s[8]
-	if not _peak_clear(s[0],s[1],r): return PackedFloat32Array()
+	if not _peak_clear(s[0],s[1],r) or not _split_off_placed(s): return PackedFloat32Array()
 	if tunnels > 0.0 and Tunnels.blocks_hall(tunnels_in(s[0]-r,s[1]-r,s[0]+r,s[1]+r),s): return PackedFloat32Array()
 	if halls > 0.0:
 		for h: PackedFloat32Array in Sites.sites_in(_impl,seed,halls,ponds,s[0]-r,s[1]-r,s[0]+r,s[1]+r,_hall_local):
@@ -1025,6 +1093,55 @@ func _pond(p: PackedFloat32Array, x: float, z: float, base: float, river: float)
 		_p_y = p[3]
 	return Ponds.carve(p,base,e) if e.x < Ponds.LIP.y else base
 
+## The placed curtains' shapes in this world (curtain_land.gd `shapes`), kept
+## until the world or the layout file changes.
+func _curtain_list() -> Array:
+	if not is_same(_curtains_of[0],world) or not is_same(_curtains_of[1],Curtains.LayoutOverrides.data):
+		_curtains = Curtains.shapes(world)
+		_curtains_of = [world,Curtains.LayoutOverrides.data]
+	return _curtains
+
+## Whether a placed curtain's land reaches (x, z).
+func _curtain_near(x: float, z: float) -> bool:
+	for c: PackedFloat32Array in _curtain_list():
+		if Curtains.reaches(c,x,z): return true
+	return false
+
+## The placed curtains whose land meets the box (x0, z0)..(x1, z1).
+func _curtains_in(x0: float, z0: float, x1: float, z1: float) -> Array:
+	return _curtain_list().filter(func(c: PackedFloat32Array) -> bool: return Curtains.meets(c,x0,z0,x1,z1))
+
+## Height `h` at (x, z) with the placed curtains' land cut in; their water's
+## reads set (`_p_*`) where it is nearer than the river.
+func _curtain(x: float, z: float, h: float) -> float:
+	for c: PackedFloat32Array in _curtain_list():
+		if not Curtains.reaches(c,x,z): continue
+		var e := Curtains.at(c,h,x,z,not _cave_off)
+		h = e[0]
+		if e[1] < Curtains.REACH and e[1] < last_river:
+			_p_on = true
+			_p_out = e[1]
+			_p_r = e[2]
+			_p_w = e[3]
+			_p_y = e[4]
+	return h
+
+## The land's height as its chunks draw it: `height`, but whole over a
+## placed curtain's cave (curtain_land.gd), which the flight's `height` has
+## as a trench. Main thread (the field's own state).
+func surface(x: float, z: float) -> float:
+	_cave_off = true
+	var h := height(x,z)
+	_cave_off = false
+	return h
+
+## A chunk's triangles on a placed curtain's cave faces dropped
+## (curtain_land.gd `cut_faces`), for land_stream.gd after the tunnels'
+## holes: `idx` its triangles now.
+func curtain_cut(made: Dictionary, x0: float, z0: float, step: float, cells: int, idx: PackedInt32Array, level0: bool) -> void:
+	var cs := _curtains_in(x0,z0,x0+cells*step,z0+cells*step)
+	if not cs.is_empty(): Curtains.cut_faces(cs,made,x0,z0,cells,idx,level0)
+
 ## The ponds whose reach meets the box (x0, z0)..(x1, z1) (land_ponds.gd's
 ## arrays), for the fish (EndlessFish).
 func ponds_in(x0: float, z0: float, x1: float, z1: float) -> Array:
@@ -1039,7 +1156,7 @@ func shape(x: float, z: float) -> Dictionary:
 	_p_on = false
 	_t_on = false
 	_m_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0 and not _curtain_near(x,z):
 		return _isle_shape(_impl.shape(x,z) if _massif == null else _peak_shape(_impl.shape(x,z),x,z),x,z)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
@@ -1062,6 +1179,13 @@ func shape(x: float, z: float) -> Dictionary:
 			s.river_r = 1000.0
 	if not h.is_empty(): s.height = Sites.carve(h,float(s.height),x,z)
 	if not sp.is_empty(): s.height = Splits.carve(sp,float(s.height),x,z)
+	if _curtain_near(x,z):
+		s.height = _curtain(x,z,float(s.height))
+		if _p_on:
+			s.river = _p_out
+			s.river_r = _p_r
+			s.river_w = _p_w
+			s.river_y = _p_y
 	if _massif != null: s = _peak_shape(s,x,z)
 	return _isle_shape(s,x,z)
 
@@ -1113,7 +1237,7 @@ func river_y(x: float, z: float) -> float:
 	if tunnels > 0.0:
 		sample(x,z)
 		if _t_on: return NAN
-	if ponds > 0.0:
+	if ponds > 0.0 or _curtain_near(x,z):
 		sample(x,z)
 		if _p_on: return _p_y if _p_out < 0.0 else NAN
 	return _impl.river_y(x,z)
@@ -1134,7 +1258,7 @@ func sea_calm(x: float, z: float) -> float:
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
 	if GroundTally.on: GroundTally.tick(&"field.height")
-	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
+	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0 or _curtain_near(x,z): return sample(x,z).x
 	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	if _isles != null and _isles.reaches(x,z): return sample(x,z).x
 	return _impl.height(x,z)
@@ -1172,6 +1296,8 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	if not ts.is_empty(): _tunnel_chunk(made,ts,x0,z0,step,cells,skirt_drop)
 	if not hs.is_empty(): Sites.apply_chunk(self,_impl,made,hs,x0,z0,step,cells,skirt_drop)
 	if not sps.is_empty(): Splits.apply_chunk(self,_impl,made,sps,x0,z0,step,cells,skirt_drop)
+	var cs := _curtains_in(x0,z0,x0+cells*step,z0+cells*step)
+	if not cs.is_empty(): Curtains.apply_chunk(self,_impl,made,cs,x0,z0,step,cells,skirt_drop)
 	if _massif != null and _massif.meets(x0,z0,x0+cells*step,z0+cells*step):
 		# Its colours off the region's own native field where the chunk (and its
 		# rim) lies in one: the same colours as the blend's, read in C++.
@@ -1318,6 +1444,8 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 	if not ts.is_empty(): Tunnels.apply_grid(got,ts,x0,z0,step,nx,nz,pad)
 	if not hs.is_empty(): Sites.apply_grid(got,hs,x0,z0,step,nx,nz,pad)
 	if not sps.is_empty(): Splits.apply_grid(got,sps,x0,z0,step,nx,nz,pad)
+	var cs := _curtains_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
+	if not cs.is_empty(): Curtains.apply_grid(got,cs,x0,z0,step,nx,nz,pad)
 	peak_grid(got,x0,z0,step,nx,nz,pad)
 	return got
 

@@ -144,6 +144,8 @@ const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const LandIceTunnel = preload("res://scripts/endless/land_ice_tunnel.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
+## The regions' hand-placed sites (scripts/endless/placed_sites.gd; --no-placed off).
+const PlacedSites = preload("res://scripts/endless/placed_sites.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
@@ -314,6 +316,8 @@ var tunnels: Node3D
 ## The ice tunnel in the Peak's shoulder (scripts/endless/land_ice_tunnel.gd;
 ## stands empty with --ice-tunnel=0).
 var ice: Node3D
+## The regions' hand-placed sites (scripts/endless/placed_sites.gd).
+var placed: Node3D
 ## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
 var trees: Node3D
 ## The birds flushed from the trees and the far flocks.
@@ -575,6 +579,9 @@ func _ready() -> void:
 	# The layout file first: the slot halls' sites read its moves when
 	# the land is first looked at (scripts/endless/hall_sites.gd).
 	LayoutOverrides.begin("endless_flight")
+	# The placed sites' clears after it (moved with their sites), made here
+	# on the main thread before the land's workers ask (placed_list.gd).
+	PlacedSites.PlacedList.clears(world)
 	field = Field.new(seed,world)
 	# --split-near-start: the start moved out of the nearest split
 	# mountain's lower mouth, heading in (scripts/endless/split_sites.gd).
@@ -705,6 +712,11 @@ func _ready() -> void:
 	ice.name = "IceTunnel"
 	add_child(ice)
 	ice.setup(field)
+	placed = PlacedSites.new()
+	placed.name = "Placed"
+	add_child(placed)
+	placed.setup(field,world)
+	placed.ground_material = look.ground if look != null else null
 	trees = LandTrees.new()
 	trees.name = "Trees"
 	add_child(trees)
@@ -770,6 +782,7 @@ func _ready() -> void:
 	halls.prime(eye)
 	tunnels.prime(eye)
 	ice.prime(eye)
+	placed.prime(eye)
 	trees.prime(eye)
 	debris = FlightDebris.new()
 	debris.name = "Debris"
@@ -1178,6 +1191,8 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null and m & GroundNative.STAIR: g = stair.ground(p,g,pad)
+	# The placed sites' pieces (PlacedSites `ground`).
+	g = placed.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
 ## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
@@ -1195,7 +1210,7 @@ func _blocked(p: Vector3) -> bool:
 	if GroundTally.on: GroundTally.tick(&"_blocked")
 	if doors != null and doors.holds(p): return false
 	var m := _stone_near(p)
-	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
+	return (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p)) or placed.inside(p)
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1220,6 +1235,8 @@ func water_at(p: Vector3, land_h := NAN) -> float:
 	if tunnels != null and tunnels.dry(p): return -INF
 	var level := Field.SEA_Y+sea_height(p,land_h)
 	var river: float = field.river_y(p.x,p.z)
+	# A stream or lake on the land over a bore the point is in: not its water.
+	if not is_nan(river) and tunnels != null and tunnels.under_water_over(p,river): river = NAN
 	return level if is_nan(river) else maxf(level,river)
 
 ## The top of the land, a river's water or the sea's swell under `p` (a
@@ -1252,7 +1269,7 @@ func _solid(p: Vector3) -> bool:
 	var m := _stone_near(p)
 	# The land's height read once: the eye's floor, the tunnels' rock and the sea ask it.
 	var land: float = field.height(p.x,p.z)
-	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	return p.y < _eye_over(p,land)+EYE_CLEAR*0.5 or (m & GroundNative.ARCHES and arches.inside(p)) or (m & GroundNative.ROCKS and rocks.inside(p)) or halls.inside(p) or tunnels.inside(p,land) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or placed.inside(p)
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1422,6 +1439,8 @@ func tick(delta: float) -> void:
 	tunnels.step(camera.global_position)
 	ice.step(camera.global_position)
 	FrameLog.mark(&"tunnels")
+	placed.step(camera.global_position)
+	FrameLog.mark(&"placed")
 	if doors != null: doors.late(camera.global_position)
 	FrameLog.mark(&"doors_late")
 	trees.step(camera.global_position,plane.position)
