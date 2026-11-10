@@ -313,6 +313,13 @@ uniform float river_calm = 0.85;
 // (`river_bank_foam`) draws the water's edge now.
 uniform vec2 river_bank = vec2(3.5, 1.4);
 uniform float river_edge = 0.55;
+// A wall in a river's plan footprint: the faces steep enough to keep dry above
+// the water (their normal's y, all steep to none), and how far over the
+// river's level (m) the paint may climb them: the waterline.
+uniform vec3 river_wall = vec3(0.7, 0.92, 0.25);
+// The wet rock over that waterline: its height (m, ragged about it) and how
+// much darker.
+uniform vec2 river_wall_damp = vec2(0.7, 0.35);
 // The water's level over the sea under which the sea takes it (the mouth,
 // with --river-mouth=0; else the drawn water sinks under the sea instead).
 uniform float river_mouth = 0.35;
@@ -940,6 +947,18 @@ void fragment() {
 	// to the bed as it sinks.)
 	float r_level = mix(smoothstep(river_mouth, river_mouth + 0.3, river.z - sea_y), smoothstep(-1.6, -0.3, over), river_mouth_blend);
 	float wet = r_here * r_level * (1.0 - smoothstep(-r_aa, r_aa, r_out));
+	// No water up a wall: the footprint above is a plan one, so where a wall
+	// stands in it (a river at a cliff's foot) its triangles, from a vertex
+	// lifted to the water up to one high on the rock, were painted wet metres
+	// up the face in saw-teeth. On steep ground the paint stops at the river's
+	// level, in a level line where the face meets the water. (The drawn water
+	// lies at its level, the vertex lift, so it is never over it. Not on gentle
+	// ground: a coarse chunk's or an upland river's water lies metres over its
+	// level, on its bed. Steep by the drawn normal: smooth across triangles, so
+	// the line has no teeth.)
+	float r_rise = p.y - river.z;
+	float r_steep = 1.0 - smoothstep(river_wall.x, river_wall.y, n.y);
+	wet *= 1.0 - r_steep * smoothstep(river_wall.z - 0.08, river_wall.z + 0.08, r_rise);
 	// How far into its mouth (0 upstream, 1 at the sea's level).
 	float r_mouth = r_here * river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_rise, river.z - sea_y));
 	// It takes on the sea's look over twice that, so the colour turns slowly.
@@ -1555,6 +1574,11 @@ void fragment() {
 	// The land's own shade past the sun's map (land_horizon.gdshaderinc, off
 	// unless --terrain-shadows): the sun's share, and the sky's fill below.
 	vec2 horizon = zs_horizon_light(p, distance(p, CAMERA_POSITION_WORLD));
+	// A wall the river runs against (r_steep above): the rock wet and darker a
+	// ragged hand's breadth over the waterline (r_ragged, the water's own
+	// ragged edge, so the band's top wanders).
+	float r_damp = r_steep * r_here * r_level * (1.0 - smoothstep(-r_aa, r_aa, r_out)) * (1.0 - smoothstep(0.0, river_wall_damp.x * (1.0 + r_ragged), r_rise - river_wall.z));
+	albedo *= 1.0 - river_wall_damp.y * r_damp;
 	ALBEDO = (albedo + ps_glit * snowy * ps_on) * (1.0 - shaded) * horizon.x;
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
 	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
@@ -1737,6 +1761,9 @@ void fragment() {
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
+		// (On a wall, the way in is the way under the waterline, so the water
+		// meets the rock with the banks' shallows and foam.)
+		d_in = mix(d_in, min(d_in, max(river_wall.z - r_rise, 0.0) * 4.0), r_steep);
 		// The depth swings down the river (bars and pools), shallower over a
 		// riffle, so the shallows' band never runs even.
 		float bars = mix(0.6, 1.45, ep_noise(p.xz / 37.0 + 3.7));
