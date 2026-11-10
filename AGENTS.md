@@ -149,11 +149,17 @@ Pick a subagent's model by what it makes:
   ticks.
 - **Sonnet**, assembly and looks: putting pieces that already exist together
   into a scene, layouts; shaders, materials, textures, reskins and
-  other surface changes that leave shape, motion and collision alone.
+  other surface changes that leave shape, motion and collision alone,
+  where the brief can already say what to change.
 - **Haiku**: names, labels and other small brainstorms, and code search:
   the `scout` agent (`.claude/agents/scout.md`).
 
-A task that mixes kinds goes to Opus.
+A task that mixes kinds goes to Opus. So does a task that starts with a
+diagnosis, whatever it makes: a rendering artifact, a look that goes wrong
+at one hour or distance, a stutter, anything where the cause must be found
+and proved before the fix. If a Sonnet lane reports a cause it guessed or a
+fix that covers the symptom, rerun that lane on Opus, briefed with what
+was ruled out.
 
 To learn the code before working, any agent sends `scout`s instead of
 reading files itself or using Explore: one narrow question per scout, and
