@@ -69,11 +69,13 @@ const WARP_GROW := 700.0
 const ROUGH := 9.0
 const ROUGH_SCALE := 90.0
 ## The flat at the top: its radius, its blend out (m), how far its centre
-## stands off the summit toward the flat's face and how far under `tall`.
-const FLAT_R := 70.0
-const FLAT_BLEND := 60.0
-const FLAT_OFF := 90.0
-const FLAT_UNDER := 150.0
+## stands off the summit toward the flat's face (out in front of the crown, so
+## the spires and their ribbons stand in view) and how far under the body
+## there it is cut.
+const FLAT_R := 62.0
+const FLAT_BLEND := 50.0
+const FLAT_OFF := 125.0
+const FLAT_UNDER := 12.0
 ## The crown's spires: [angle off the flat's face's way (degrees), distance
 ## from the summit (m), tip over `tall` (share of `spire`), girth (m)]. The
 ## first is the main one, behind the flat.
@@ -163,7 +165,7 @@ func _init(which: String, land_seed: int) -> void:
 	_gully.fractal_type = FastNoiseLite.FRACTAL_RIDGED
 	_gully.fractal_octaves = 3
 	flat_c = Vector2.from_angle(_phi[_flat_face])*FLAT_OFF
-	flat_y = tall-FLAT_UNDER
+	flat_y = _body(flat_c.x,flat_c.y).x-FLAT_UNDER
 
 ## The profile's share of the height at u (1 at the summit, 0 on the foot).
 func _prof(u: float, f: int) -> float:
@@ -174,6 +176,17 @@ func _prof(u: float, f: int) -> float:
 
 ## Vector3(height over the sea, cut 0..1, meadow) at (a, v).
 func h(a: float, v: float) -> Vector3:
+	var b := _body(a,v)
+	# The flat at the top.
+	var df := Vector2(a,v).distance_to(flat_c)
+	if df < FLAT_R+FLAT_BLEND:
+		var wf := 1.0-smoothstep(FLAT_R,FLAT_R+FLAT_BLEND,df)
+		b.x = lerpf(b.x,flat_y+1.5*_rough.get_noise_2d(a*3.0,v*3.0),wf)
+		b.y = maxf(b.y,wf)
+	return b
+
+## The body without the flat.
+func _body(a: float, v: float) -> Vector3:
 	var r := sqrt(a*a+v*v)
 	var th := atan2(v,a)
 	var grow := smoothstep(0.0,WARP_GROW,r)
@@ -239,12 +252,6 @@ func h(a: float, v: float) -> Vector3:
 		y = lerpf(y,hy,m)-k*m*(1.0-m)
 		var past := smoothstep(1.0,1.35,along/mouth)
 		c = maxf(c,(1.0-past)*(1.0-smoothstep(half+40.0,half+160.0,aw)))
-	# The flat at the top.
-	var df := Vector2(a,v).distance_to(flat_c)
-	if df < FLAT_R+FLAT_BLEND:
-		var wf := 1.0-smoothstep(FLAT_R,FLAT_R+FLAT_BLEND,df)
-		y = lerpf(y,flat_y+1.5*_rough.get_noise_2d(a*3.0,v*3.0),wf)
-		c = maxf(c,wf)
 	return Vector3(y,c,0.0)
 
 ## The crown in the frame: [{at (a, v), base (m over the sea), tip, lean

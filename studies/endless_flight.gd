@@ -58,6 +58,10 @@ extends Node3D
 ## --max-fps=N caps the frame rate at N (0 none; vsync stays on), a rate the
 ## machine holds every frame so it never jumps between the screen's rate and
 ## half of it (77 or 120 on a 154 Hz screen).
+## The Peak's candidate bodies (scripts/endless/peak_body.gd): --peak-shape=a|b|c
+## in place of the old profile (its tarn, ice, gorges and finds off),
+## --peak-start with it starts in the air off the mouth of the valley under
+## the flat at the top, heading up it.
 ## Split mountains (scripts/endless/split_sites.gd): --split-near-start starts
 ## 520 m out of the nearest one's lower mouth, heading in, 28 m up or more
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
