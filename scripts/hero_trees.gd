@@ -76,7 +76,7 @@ static func spruce_glb() -> String:
 ## crown lit as a volume, a blue spruce's blue and the world's painted
 ## patches and stepped light. Knobs (each `--spruce-<knob>=X`; `--spruce-paint=off`
 ## turns it all off to compare): round, blue, dabs, wrap, glow.
-const SPRUCE_PAINT := {"round":0.7, "blue":1.0, "dabs":1.0, "wrap":1.0, "glow":0.35, "fill":2.6, "warm":1.0, "flat":1.25, "fine":3.0, "farlift":2.0,
+const SPRUCE_PAINT := {"round":0.7, "blue":1.0, "dabs":1.0, "wrap":0.4, "glow":0.35, "fill":2.0, "warm":1.0, "flat":1.25, "fine":3.0, "farlift":2.0,
 	"steps":0.25, "soft":0.5, "speck":1.0, "floor":0.85, "olive":1.0, "hemiolive":0.85, "farblue":0.6, "farbaked":0.4, "texgain":1.0,
 	"value":1.0, "bfar":1.0, "midlift":0.965, "ringlift":0.965, "ringgain":1.0}
 ## The default texture b's own knobs over SPRUCE_PAINT (round 5): a little darker,
@@ -123,7 +123,7 @@ const SPRUCE_G := {"bshare":0.5, "bgrove":160.0, "blean":0.5, "bgreen":0.8, "inn
 ##   they come in from;
 ## - steps, soft: the sun's three painted steps made crisper (0.7 and 0.15; the
 ##   default look's are 0.25 and 0.5).
-const SPRUCE_BL := {"tilt":1.8, "band":1.0, "top":1.0, "coolshade":0.25, "warmlit":0.8, "fardab":2.0, "dabpx":5.0, "dabfrom":110.0,
+const SPRUCE_BL := {"tilt":1.8, "band":1.0, "top":1.0, "coolshade":0.7, "warmlit":0.8, "fardab":2.0, "dabpx":5.0, "dabfrom":110.0,
 	"steps":0.7, "soft":0.15, "texgain":0.55, "inner":0.6, "fresh":0.7}
 
 ## The look with no `--spruce-look=` flag: b, painterly (the user's pick,
