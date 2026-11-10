@@ -231,6 +231,13 @@ uniform vec2 turf_high = vec2(36.0, 58.0);
 // (Set: thinning out as the paint turns to tundra, its `alpine` from x to y,
 // in place of turf_high.)
 uniform vec2 turf_alpine = vec2(0.0);
+// The alpine tufts (endless_grass ALP_*, the native placement): short tufts
+// where the carpet thins out up high (its alpine mask turned round), on ground
+// whose normal's up is past x (full past y), z 1 while they grow (0: none, the
+// paint as before). turf_alp_top: they thin out from x to y m over the sea,
+// on the Peak (its zone) from z to w.
+uniform vec4 turf_alp = vec4(0.0);
+uniform vec4 turf_alp_top = vec4(79.0, 95.0, 140.0, 170.0);
 // The carpet's grain painted past its tufts (their speckle and gaps, at
 // their size, kept until a pixel is about that size), its strength.
 uniform float carpet_grain : hint_range(0.0, 2.0) = 0.6;
@@ -727,6 +734,28 @@ float zs_fade(vec2 p, float scale, float fp) {
 	return (zs_noise(p / scale) - 0.5) * keep;
 }
 
+// zs_fade's grain from gradient noise (quintic, a hash free of sin's
+// precision on big coordinates): no flat spot at the lattice's points, so no
+// cells show; scaled to about zs_fade's spread.
+vec2 gn_dir(vec2 i) {
+	vec3 p3 = fract(vec3(i.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	float a = fract((p3.x + p3.y) * p3.z) * 6.2831853;
+	return vec2(cos(a), sin(a));
+}
+float gn_fade(vec2 p, float scale, float fp) {
+	float keep = 1.0 - smoothstep(scale * 0.18, scale * 0.6, fp);
+	if (keep <= 0.0) return 0.0;
+	vec2 q = p / scale;
+	vec2 i = floor(q), f = fract(q);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	float a = dot(gn_dir(i), f);
+	float b = dot(gn_dir(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+	float c = dot(gn_dir(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+	float d = dot(gn_dir(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 0.75 * keep;
+}
+
 // The same as a patch with a defined edge (-0.5 or 0.5 either side), the
 // edge widening to a blur as the pixel grows, faded to its mean far off.
 float zs_patch(vec2 p, float scale, float fp) {
@@ -1127,11 +1156,26 @@ void fragment() {
 			* smoothstep(turf_beach.x, turf_beach.y, over);
 		// No carpet on a river's bank or in its water.
 		carpet_turf *= 1.0 - max(banked, wet);
-		float sheen = crest * (0.35 + 0.65 * grazing) + velvet * grazing * 0.6 * (1.0 - carpet_velvet_cut * carpet_turf);
+		// The alpine tufts where the carpet's thin out (endless_grass ALP_*,
+		// grass_cell.h probe_alpine): off the rock, the snow, the Peak's ice and
+		// scree. Their ground keys the carpet's paint as the carpet's does
+		// (tuft_turf); the meadow's own (its flowers' drifts, the high paint's
+		// washes) keys carpet_turf alone.
+		float carpet_alp = 0.0;
+		if (turf_alp.z > 0.0) {
+			float alp_top_x = mix(turf_alp_top.x, turf_alp_top.z, pk.x);
+			float alp_top_y = mix(turf_alp_top.y, turf_alp_top.w, pk.x);
+			carpet_alp = carpet_high * smoothstep(turf_alp.x, turf_alp.y, n.y) * (1.0 - smoothstep(alp_top_x, alp_top_y, over))
+				* (1.0 - max(banked, wet)) * (1.0 - snowy) * (1.0 - rocky) * (1.0 - max(pk.y, pk.z));
+			// (Off the Peak its high stone and scree, the `bare` below, take them.)
+			if (summit_mode > 0.5) carpet_alp *= 1.0 - smoothstep(alpine_from.x, alpine_from.y, alpine) * (1.0 - pk.x);
+		}
+		float tuft_turf = clamp(carpet_turf + carpet_alp, 0.0, 1.0);
+		float sheen = crest * (0.35 + 0.65 * grazing) + velvet * grazing * 0.6 * (1.0 - carpet_velvet_cut * tuft_turf);
 		vec3 sheen_colour = mix(grass, vec3(luma(grass)) * zs_warm(vec3(1.25, 1.22, 0.85), paint_follow), 0.55) * 1.55;
 		grass = mix(grass, sheen_colour, clamp(sheen * 0.42, 0.0, 0.8) * (1.0 - thin * 0.6));
 		// The carpet's tone past its tufts, and wherever none grow.
-		float turf = carpet_turf;
+		float turf = tuft_turf;
 		float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
 		float toned = mix(1.0, beyond, turf);
 		grass *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
@@ -1146,7 +1190,7 @@ void fragment() {
 		float wc_up = clamp(high_up, 0.0, 1.0) * wc_paint;
 		if (high_up > 0.0) {
 			// Broad patches of lighter and deeper, warmer and cooler meadow.
-			float hp = turf * high_up * (1.0 - smoothstep(200.0, 900.0, fp));
+			float hp = carpet_turf * high_up * (1.0 - smoothstep(200.0, 900.0, fp));
 			grass *= 1.0 + (broad * 0.30 + wide * 0.34 + mid * 0.16) * hp;
 			grass *= mix(vec3(1.0), wide > 0.0 ? zs_warm(vec3(1.07, 1.03, 0.86), paint_follow) : zs_cool(vec3(0.88, 0.98, 1.06), paint_follow), clamp(abs(wide) * 0.6, 0.0, 1.0) * hp);
 			// Soft streaks, long along the wind, as if combed.
@@ -1174,7 +1218,7 @@ void fragment() {
 			grass *= 1.0 - hollow * hp;
 		}
 		if (wc_up > 0.0) {
-			float wk = turf * (1.0 - thin) * (1.0 - alpine) * wc_up * (1.0 - smoothstep(300.0, 1200.0, fp));
+			float wk = carpet_turf * (1.0 - thin) * (1.0 - alpine) * wc_up * (1.0 - smoothstep(300.0, 1200.0, fp));
 			// The small patches (tuft, fine, mid, clump) melted out: the same
 			// colour from the broad scales alone.
 			float sunny_w = clamp((broad * 1.3 + wide * 1.5) * patch_strength, -1.0, 1.0);
@@ -1237,13 +1281,23 @@ void fragment() {
 		// stands over it, and its metre-sized blots at full strength read as a
 		// small noise magnified: there it keeps its finest specks, the blots
 		// mostly gone.
-		float tufted = 0.25 + 0.75 * carpet_turf;
+		float tufted = 0.25 + 0.75 * tuft_turf;
 		float grain_near = zs_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + zs_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7 * (0.5 + 0.5 * tufted)
 			+ zs_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5 * tufted;
+		// Up high off the carpet (under the sparser alpine tufts, and the bare
+		// high ground) the ground shows between the tufts, and the value noise's cells
+		// (flat at each lattice point) read as a checker: there the same grain
+		// from gradient noise, which has no cells. (With the alpine tufts on.)
+		float grain_soft = turf_alp.z > 0.0 ? carpet_high * (1.0 - carpet_turf) : 0.0;
+		if (grain_soft > 0.0 && fp < 0.8) {
+			float g_soft = gn_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + gn_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7 * (0.5 + 0.5 * tufted)
+				+ gn_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5 * tufted;
+			grain_near = mix(grain_near, g_soft, grain_soft);
+		}
 		grass *= 1.0 + grain_near * (1.0 - thin * 0.4) * (0.6 + 0.4 * tufted);
 		// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
 		if (carpet_near.y > 0.0) {
-			float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
+			float under = tuft_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
 			if (under > 0.0) {
 				float sunny_c = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * patch_strength, -1.0, 1.0);
 				vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
@@ -1275,13 +1329,13 @@ void fragment() {
 			float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
 			// From high up the paint's washes take over, but where the field's wind
 			// rolls the grass its swells keep reading (zs_wind_up_sheen).
-			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up * (1.0 - zs_wind_up_sheen_here(wind_h, rp_swell.x)));
+			float sheen_on = tuft_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up * (1.0 - zs_wind_up_sheen_here(wind_h, rp_swell.x)));
 			float sheen_s = 0.0;
 			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field_here(gxz, fp, rp_swell.x, wind_h);
 			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s * rp_swell.z, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
 			// The far grass as a fine lawn (far_lawn.gdshaderinc), from past the tufts.
 			if (grass_lawn.x > 0.0) {
-				float lawn_on = carpet_turf * smoothstep(grass_lawn.y, grass_lawn.z, sheen_d) * (1.0 - thin * 0.6);
+				float lawn_on = tuft_turf * smoothstep(grass_lawn.y, grass_lawn.z, sheen_d) * (1.0 - thin * 0.6);
 				if (lawn_on > 0.0) grass = zs_far_lawn(grass, gxz, normalize(p - CAMERA_POSITION_WORLD), fp, sheen_s, zs_key_irradiance, zs_cool(vec3(0.93, 0.90, 1.02), paint_follow), lawn_on);
 			}
 		}
@@ -1311,7 +1365,7 @@ void fragment() {
 			}
 		}
 		// Stirred by the wash, the walker or a gust (grass_react).
-		grass = zs_react_paint(grass, p.xz, CAMERA_POSITION_WORLD.xz - p.xz, carpet_turf * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
+		grass = zs_react_paint(grass, p.xz, CAMERA_POSITION_WORLD.xz - p.xz, tuft_turf * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
 	}
 
 	// --- Rock, sand, snow -----------------------------------------------------

@@ -402,6 +402,28 @@ struct Config {
 	float drift_x = 0.68f, drift_y = 0.82f, drift_z = 6.0f;
 	double drift_scale = 55.0;
 	float flower_lift_x = 0.8f, flower_lift_y = 1.3f;
+	// The alpine tufts (endless_grass ALP): short, sparse tufts on the high
+	// turf where the meadow's thin out (its alpine mask's complement), in a pass
+	// of their own after the carpet's (their own random numbers, their records
+	// after its), so the meadow's tufts and flowers stay where they were.
+	// alp_share: their candidates a square metre, a share of `tufts` (0: none).
+	double alp_share = 0.0, alp_tall = 0.5, alp_wide = 1.1;
+	Color alp_tone = Color(1, 1, 1); // over the tuft's colour (linear)
+	double alp_slope_x = 0.87, alp_slope_y = 0.93;
+	// The top (over the sea, m): gone from top_y, thinning from top_x; inside
+	// the Peak's zone (zone: x, z, radius, on; 600 m soft) its own top.
+	double alp_top_x = 79.0, alp_top_y = 95.0, alp_zone_top_x = 140.0, alp_zone_top_y = 170.0;
+	godot::Vector4 alp_zone;
+	// None on a proud crown (the summits' snow caps, the ground's land_shape.b)
+	// outside the Peak's zone.
+	bool alp_proud = false;
+	// The ground's high stone and scree off the Peak (endless_ground `bare`:
+	// alpine_from over its alpine; y 0: none).
+	double alp_bare_x = 0.25, alp_bare_y = 0.0;
+	// Ground they keep off (the Peak's ice, its rubble, its gorge's scree):
+	// capsules [ax, az, bx, bz, ra, rb], and the box round them all.
+	std::vector<float> alp_off;
+	godot::Vector4 alp_off_box;
 };
 
 // KitFlora constants.
@@ -416,6 +438,7 @@ struct Record {
 	int asset = -1;  // -1: the grass tuft; else Config::assets' index
 	double x = 0, z = 0, angle = 0, scale = 0, h = 0;
 	bool has_pose = false, has_tint = false;
+	bool alpine = false; // an alpine tuft (its colour times Config alp_tone)
 	Basis pose;
 	Color tint;
 };
@@ -513,6 +536,114 @@ public:
 		if (keep <= 0.0) return DNAN;
 		if (keep < 1.0 && hash_unit(p.x, p.y, 7.0) > keep) return DNAN;
 		return h - cfg.sink;
+	}
+	// The alpine tufts' probe: the drawn turf's height at p where an alpine
+	// tuft stands, or NaN. The same ground as `probe` reads, with the alpine
+	// mask turned round (they grow where the carpet's thin out), a stricter
+	// slope (they stop short of the high ground's broken rock), a top under
+	// the snow, and off the ground in `alp_off` and the proud crowns.
+	std::vector<float> proud; // ALP_PROUD_N^2 nodes ALP_PROUD_STEP m apart from (x0, z0); empty: none
+	static constexpr int ALP_PROUD_N = 9;
+	static constexpr double ALP_PROUD_STEP = 8.0;
+	double probe_alpine(const Vector2 &p) {
+		const double u = double(p.x) - x0 + pad;
+		const double v = double(p.y) - z0 + pad;
+		const int64_t i = clampi(floori(u), 1, n - 3);
+		const int64_t j = clampi(floori(v), 1, n - 3);
+		const double fx = clampf(u - double(i), 0.0, 1.0);
+		const double fz = clampf(v - double(j), 0.0, 1.0);
+		const int64_t k = j * n + i;
+		const double h00 = hs[k], h10 = hs[k + 1], h01 = hs[k + n], h11 = hs[k + n + 1];
+		const double h = fx + fz <= 1.0 ? h00 + fx * (h10 - h00) + fz * (h01 - h00) : h11 + (1.0 - fx) * (h01 - h11) + (1.0 - fz) * (h10 - h11);
+		const double over = h - cfg.sea_y;
+		if (over < Patch::ALPINE_FROM) return DNAN;
+		// The top: under the snow line, or on the Peak under its granite.
+		double zone = 0.0;
+		if (cfg.alp_zone.w > 0.5) {
+			const double d = double(Vector2(float(cfg.alp_zone.x), float(cfg.alp_zone.y)).distance_to(p));
+			zone = 1.0 - smoothstep(double(cfg.alp_zone.z) - 600.0, double(cfg.alp_zone.z), d);
+		}
+		const double top_x = lerpd(cfg.alp_top_x, cfg.alp_zone_top_x, zone), top_y = lerpd(cfg.alp_top_y, cfg.alp_zone_top_y, zone);
+		if (over >= top_y) return DNAN;
+		const int64_t c = (j + roundi(fz)) * n + i + roundi(fx);
+		if (double(rs[c]) < 12.0 && double(rs[c]) < Patch::river_bank(p.x, p.y) * 0.85) return DNAN;
+		double up = 2.0 / double(Vector3(dif(hs[c - 1], hs[c + 1]), 2.0f, dif(hs[c - n], hs[c + n])).length());
+		const double bx = clampf((double(p.x) - x0) / 64.0, 0.0, 1.0);
+		const double bz = clampf((double(p.y) - z0) / 64.0, 0.0, 1.0);
+		const double broad = lerpf(lerpf(b00, b10, bx), lerpf(b01, b11, bx), bz);
+		const double alpine = Patch::alpine_of(over, broad);
+		double w = cfg.alpine_y <= 0.0f ? smoothstep(cfg.high_x, cfg.high_y, over) : smoothstep(cfg.alpine_x, cfg.alpine_y, alpine);
+		// Off the Peak's zone the high ground goes to stone and scree (the
+		// ground's `bare`, alpine_from): none there.
+		if (cfg.alp_bare_y > 0.0) w *= 1.0 - smoothstep(cfg.alp_bare_x, cfg.alp_bare_y, alpine) * (1.0 - zone);
+		if (w <= 0.0) return DNAN;
+		if (up < cfg.rock_near) {
+			if (up < cfg.alp_slope_x - Patch::RAGGED_MOST) return DNAN;
+			if (std::isnan(ragged_d[c])) {
+				const Vector3 at(float(x0 + double(c % n) - pad), hs[c], float(z0 + double(c / n) - pad));
+				ragged_d[c] = Patch::rock_ragged(at);
+			}
+			up += ragged_d[c];
+		}
+		double keep = w * smoothstep(cfg.alp_slope_x, cfg.alp_slope_y, up) * (1.0 - smoothstep(top_x, top_y, over));
+		if (keep <= 0.0) return DNAN;
+		// Off the Peak's ice, rubble and scree.
+		const std::vector<float> &off = cfg.alp_off;
+		if (!off.empty() && p.x > cfg.alp_off_box.x && p.y > cfg.alp_off_box.y && p.x < cfg.alp_off_box.z && p.y < cfg.alp_off_box.w) {
+			for (size_t s = 0; s + 5 < off.size(); s += 6) {
+				const Vector2 a(off[s], off[s + 1]);
+				const Vector2 e = Vector2(off[s + 2], off[s + 3]) - a;
+				const double t = clampd(double((p - a).dot(e)) / maxf(double(e.length_squared()), 0.001), 0.0, 1.0);
+				const double r = lerpd(off[s + 4], off[s + 5], t);
+				const double dd = double(p.distance_to(a + e * float(t)));
+				if (dd < r) return DNAN;
+				keep *= smoothstep(r, r * 1.15 + 4.0, dd);
+			}
+		}
+		// Off the proud crowns' snow caps (outside the Peak's zone).
+		if (!proud.empty() && zone < 1.0) {
+			const double gu = clampd((double(p.x) - x0) / ALP_PROUD_STEP, 0.0, ALP_PROUD_N - 1.001);
+			const double gv = clampd((double(p.y) - z0) / ALP_PROUD_STEP, 0.0, ALP_PROUD_N - 1.001);
+			const int gi = int(gu), gj = int(gv);
+			const double gx = gu - gi, gz = gv - gj;
+			const float *q = proud.data() + gj * ALP_PROUD_N + gi;
+			const double b = lerpd(lerpd(q[0], q[1], gx), lerpd(q[ALP_PROUD_N], q[ALP_PROUD_N + 1], gx), gz);
+			const double capped = smoothstep(0.50, 0.58, b) * smoothstep(50.0, 85.0, over);
+			keep *= 1.0 - smoothstep(0.2, 0.6, capped) * (1.0 - zone);
+		}
+		if (keep <= 0.0) return DNAN;
+		if (keep < 1.0 && hash_unit(p.x, p.y, 11.0) > keep) return DNAN;
+		return h - cfg.sink;
+	}
+	// The alpine tufts: their own candidates after the carpet's, each a short,
+	// a little wider tuft.
+	void grow_alpine(int64_t grow_seed) {
+		if (cfg.alp_share <= 0.0) return;
+		if (ragged_d.size() != size_t(n * n)) ragged_d.assign(size_t(n * n), DNAN);
+		Pcg arng;
+		arng.seed(uint64_t(grow_seed) * 2654435761ULL + 0x5A17EULL);
+		const int64_t count = int64_t(64.0 * 64.0 * cfg.tufts * cfg.alp_share);
+		for (int64_t c = 0; c < count; ++c) {
+			const float px = arng.randf_range(float(x0), float(x0 + 64.0));
+			const float pz = arng.randf_range(float(z0), float(z0 + 64.0));
+			const double size = arng.randf_range(0.8f, 1.25f);
+			const double angle = double(arng.randf()) * TAU;
+			const Vector2 p(px, pz);
+			if (dithered_out(p)) continue;
+			const double h = probe_alpine(p);
+			if (std::isnan(h)) continue;
+			Record r;
+			r.asset = -1;
+			r.x = p.x;
+			r.z = p.y;
+			r.angle = angle;
+			r.scale = size;
+			r.h = h;
+			r.has_pose = true;
+			r.alpine = true;
+			r.pose = axis_angle(Vector3(0, 1, 0), angle).scaled(Vector3(float(size * cfg.alp_wide), float(size * cfg.alp_tall), float(size * cfg.alp_wide)));
+			records.push_back(r);
+		}
 	}
 	double foot(const Vector2 &p) {
 		const int64_t kx = floori(double(p.x) / SHAG_CELL), kz = floori(double(p.y) / SHAG_CELL);
@@ -807,8 +938,8 @@ protected:
 	}
 
 public:
-	// 2: grow_cell takes a band cell's dither.
-	int64_t version() const { return 2; }
+	// 2: grow_cell takes a band cell's dither. 3: the alpine tufts (config `alp`).
+	int64_t version() const { return 3; }
 
 	// The flower assets a cell's records index (the config's `assets`).
 	PackedStringArray assets() const { return cfg.assets; }
@@ -922,6 +1053,28 @@ public:
 		for (int64_t i = 0; i < bk.size(); ++i) cfg.bloom_kinds.push_back(bk[i]);
 		for (int64_t i = 0; i < bv.size(); ++i) cfg.bloom_variants.push_back(bv[i]);
 		cfg.wheat = int(d.get("wheat", -1));
+		const Dictionary alp = d.get("alp", Dictionary());
+		cfg.alp_share = num(alp, "share", 0.0);
+		cfg.alp_tall = num(alp, "tall", 0.5);
+		cfg.alp_wide = num(alp, "wide", 1.1);
+		cfg.alp_tone = alp.get("tone", Color(1, 1, 1));
+		const Vector2 als = alp.get("slope", Vector2(0.87, 0.93));
+		cfg.alp_slope_x = als.x;
+		cfg.alp_slope_y = als.y;
+		const Vector2 alt = alp.get("top", Vector2(79.0, 95.0));
+		cfg.alp_top_x = alt.x;
+		cfg.alp_top_y = alt.y;
+		const Vector2 alz = alp.get("zone_top", Vector2(140.0, 170.0));
+		cfg.alp_zone_top_x = alz.x;
+		cfg.alp_zone_top_y = alz.y;
+		cfg.alp_zone = alp.get("zone", Vector4());
+		cfg.alp_proud = bool(alp.get("proud", false));
+		const Vector2 alb = alp.get("bare", Vector2(0.25, 0.0));
+		cfg.alp_bare_x = alb.x;
+		cfg.alp_bare_y = alb.y;
+		const PackedFloat32Array off = alp.get("off", PackedFloat32Array());
+		cfg.alp_off.assign(off.ptr(), off.ptr() + off.size());
+		cfg.alp_off_box = alp.get("off_box", Vector4());
 		ring_base = Dictionary();
 		ring_base["lod"] = cfg.lod;
 		ring_base["share"] = far_share;
@@ -957,7 +1110,19 @@ public:
 				break;
 			}
 		}
-		if (!any) return out;
+		// The alpine tufts' turf (up to their top, the Peak's the highest).
+		bool alp_any = false;
+		bool alp_high = false;
+		if (cfg.alp_share > 0.0) {
+			const double alp_top = maxf(cfg.alp_top_y, cfg.alp_zone_top_y);
+			for (int64_t i = 0; i < hs_a.size(); ++i) {
+				const double over = double(hs[i]) - cfg.sea_y;
+				if (over > Patch::ALPINE_FROM && over < alp_top) alp_any = true;
+				if (over > 50.0) alp_high = true;
+				if (alp_any && alp_high) break;
+			}
+		}
+		if (!any && !alp_any) return out;
 		Cell cell(cfg, x0, z0, n, pad, hs, rs, ms);
 		const PackedFloat32Array dither_a = d.get("dither", PackedFloat32Array());
 		if (!dither_a.is_empty()) {
@@ -977,11 +1142,41 @@ public:
 			for (int tj = 0; tj < tg; ++tj)
 				for (int ti = 0; ti < tg; ++ti) cell.blooms[size_t(tj * tg + ti)] = cfg.patch.bloom(x0 + ti * cfg.tint_step, z0 + tj * cfg.tint_step);
 		}
-		cell.grow(grow_seed);
-		// The painted ground's patches on each tuft, off a TINT_STEP m grid.
-		std::vector<Color> tints(size_t(tg * tg));
+		// (A cell with no carpet turf grows none of it: the alpine tufts alone.)
+		if (any) cell.grow(grow_seed);
 		Object *field_obj = d.get("field", Variant());
 		ZenScapeLandField *field = Object::cast_to<ZenScapeLandField>(field_obj);
+		if (alp_any) {
+			// The proud crowns (rock_shape.gd `grid`'s 40 m radius: the node
+			// against the ring round it), off the field, or the cell's `ring`
+			// heights (ALP_PROUD_N + 10 a side, ALP_PROUD_STEP m apart, from
+			// x0 - 40, z0 - 40) where it has no native field.
+			const PackedFloat32Array ring = d.get("ring", PackedFloat32Array());
+			const int N = Cell::ALP_PROUD_N, R = 5, D = 4, M = N + 2 * R;
+			const double st = Cell::ALP_PROUD_STEP;
+			if (cfg.alp_proud && alp_high && (field != nullptr || ring.size() == M * M)) {
+				const double zx = double(cfg.alp_zone.x), zz = double(cfg.alp_zone.y), zr = double(cfg.alp_zone.z);
+				const bool all_zone = cfg.alp_zone.w > 0.5 && Vector2(float(x0 + 32.0 - zx), float(z0 + 32.0 - zz)).length() < zr - 600.0 - 50.0;
+				if (!all_zone) {
+					std::vector<float> g(size_t(M * M));
+					for (int jj = 0; jj < M; ++jj)
+						for (int ii = 0; ii < M; ++ii)
+							g[size_t(jj * M + ii)] = field != nullptr ? float(field->height(x0 + (ii - R) * st, z0 + (jj - R) * st)) : ring[jj * M + ii];
+					const double a = 0.7 / (R * st) * 0.0625;
+					cell.proud.resize(size_t(N * N));
+					for (int jj = 0; jj < N; ++jj) {
+						for (int ii = 0; ii < N; ++ii) {
+							const int q = (jj + R) * M + ii + R;
+							const double s = double(g[q]) * 8.0 - g[q - R] - g[q + R] - g[q - R * M] - g[q + R * M] - g[q - D - D * M] - g[q + D - D * M] - g[q - D + D * M] - g[q + D + D * M];
+							cell.proud[size_t(jj * N + ii)] = float(clampd(0.5 + s * a, 0.0, 1.0));
+						}
+					}
+				}
+			}
+			cell.grow_alpine(grow_seed);
+		}
+		// The painted ground's patches on each tuft, off a TINT_STEP m grid.
+		std::vector<Color> tints(size_t(tg * tg));
 		const PackedColorArray cols = d.get("colours", PackedColorArray());
 		for (int tj = 0; tj < tg; ++tj) {
 			for (int ti = 0; ti < tg; ++ti) {
@@ -1034,7 +1229,8 @@ public:
 					if (rec.asset >= 0) continue;
 					const Basis basis = rec.has_pose ? rec.pose : axis_angle(Vector3(0, 1, 0), rec.angle).scaled(Vector3(1, 1, 1) * float(rec.scale));
 					const Transform3D t = (Transform3D(basis, Vector3(float(rec.x), float(rec.h), float(rec.z))) * part.pose) * Transform3D();
-					const Color col = rec.has_tint && colored ? rec.tint : part.tint;
+					Color col = rec.has_tint && colored ? rec.tint : part.tint;
+					if (rec.alpine) col = Color(col.r * cfg.alp_tone.r, col.g * cfg.alp_tone.g, col.b * cfg.alp_tone.b, col.a);
 					const float row[16] = {t.basis.rows[0][0], t.basis.rows[0][1], t.basis.rows[0][2], t.origin.x,
 						t.basis.rows[1][0], t.basis.rows[1][1], t.basis.rows[1][2], t.origin.y,
 						t.basis.rows[2][0], t.basis.rows[2][1], t.basis.rows[2][2], t.origin.z,

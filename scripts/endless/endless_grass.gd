@@ -216,6 +216,34 @@ const ALPINE_TOP := 84.0
 ## left bare, dark hillsides and hollow sides in the carpet.
 const OLD_SLOPE := Vector2(0.905,0.95)
 const HIGH := Vector2(36.0,58.0)
+## The alpine tufts (native placement, ZenScapeGrass 3): short, sparser tufts
+## on the high turf where the carpet's thin out (ALPINE's complement), so the
+## high ground is grass too and not bare paint. ALP_SHARE of the carpet's
+## tufts a square metre, ALP_TALL their height and ALP_WIDE their spread (of a
+## carpet tuft's), on ground whose up is over ALP_SLOPE.x (full past .y: short
+## of the high ground's broken rock), thinning out under the snow: from
+## ALP_TOP.x to .y m under the snow line, on the Peak (its zone) from
+## ALP_ZONE_TOP.x to .y m over the sea (its granite from 170). None on the
+## Peak's ice, rubble or scree, nor on a proud crown's snow cap.
+## --grass-alpine=X sets the share (0 none); the GDScript placement grows none.
+const ALP_SHARE := 0.5
+const ALP_TALL := 0.5
+## Their colour over the carpet tuft's (linear; the ground's patches under
+## them as on the carpet's): toward the paint's dry olive up there.
+const ALP_TONE := Color(0.62,0.76,0.6)
+const ALP_WIDE := 1.1
+const ALP_SLOPE := Vector2(0.84,0.92)
+const ALP_TOP := Vector2(46.0,30.0)
+const ALP_ZONE_TOP := Vector2(140.0,170.0)
+var alp_share := ALP_SHARE
+## (--grass-alpine-tall=X, --grass-alpine-tone=r,g,b: by hand.)
+var alp_tall := ALP_TALL
+var alp_tone := ALP_TONE
+## The far ring's alpine tufts, a share of ALP_SHARE (--grass-alpine-far=X).
+const ALP_FAR := 0.6
+var alp_far := ALP_FAR
+## Whether the alpine tufts grow (the native placement takes them).
+var alp_on := false
 ## The masks as flown: SLOPE (--grass-slope=a,b), and ALPINE or (zero, old)
 ## HIGH.
 var slope := SLOPE
@@ -421,6 +449,12 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-sub="): sub = clampf(a.get_slice("=",1).to_float(),0.0,64.0)
 		elif a.begins_with("--grass-far-lod="): far_lod = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-prefetch="): prefetch = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--grass-alpine="): alp_share = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--grass-alpine-far="): alp_far = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--grass-alpine-tall="): alp_tall = clampf(a.get_slice("=",1).to_float(),0.1,2.0)
+		elif a.begins_with("--grass-alpine-tone="):
+			var t := a.get_slice("=",1).split_floats(",")
+			if t.size() >= 3: alp_tone = Color(t[0],t[1],t[2])
 	# The regions and drifts, set before any worker reads them.
 	Patch.offset = Patch.seed_offset(seed)
 	Patch.region_amount = regions
@@ -451,6 +485,14 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	far_layer.reach = lod.w
 	if fine: near_layer.site.tufts = s.tufts*share*_fine_share
 	far_layer.share = 1.0
+	# The alpine tufts: on the native placement only (ZenScapeGrass 3).
+	alp_on = alp_share > 0.0 and native_wanted() and int((ClassDB.instantiate(NATIVE_CLASS) as Object).version()) >= 3
+	if alp_on:
+		var alp := _alp_config()
+		near_layer.site.alp = alp
+		var far_alp := alp.duplicate()
+		far_alp.share = alp_share*alp_far
+		far_layer.site.alp = far_alp
 	if not world.uniform:
 		# Each region's carpet: its tufts' share, flowers and flower height, the flags over each.
 		for p: RefCounted in world.regions:
@@ -480,6 +522,11 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("turf_slope",slope)
 		ground.set_shader_parameter("turf_high",HIGH)
 		ground.set_shader_parameter("turf_alpine",alpine)
+		# Where the alpine tufts stand (none: the paint as before).
+		if alp_on:
+			var alp: Dictionary = near_layer.site.alp
+			ground.set_shader_parameter("turf_alp",Vector4(ALP_SLOPE.x,ALP_SLOPE.y,1.0,0.0))
+			ground.set_shader_parameter("turf_alp_top",Vector4(alp.top.x,alp.top.y,ALP_ZONE_TOP.x,ALP_ZONE_TOP.y))
 		ground.set_shader_parameter("carpet_tone_top",TONE_TOP)
 		ground.set_shader_parameter("carpet_tone_low",TONE_LOW)
 		ground.set_shader_parameter("region_offset",Patch.offset)
@@ -629,8 +676,8 @@ static func _join(parts: Array) -> Array:
 ## (--grass-native=0 or --gdscript-kernels: GDScript).
 const NATIVE_CLASS := &"ZenScapeGrass"
 ## The newest library this script knows (2: grow_cell takes a band cell's
-## dither); any from 1 places the tufts.
-const NATIVE_VERSION := 2
+## dither; 3: the alpine tufts, ALP_*); any from 1 places the tufts.
+const NATIVE_VERSION := 3
 static func native_wanted() -> bool:
 	var args := LaunchArgs.user_args()
 	if "--grass-native=0" in args or "--gdscript-kernels" in args: return false
@@ -639,6 +686,87 @@ static func native_wanted() -> bool:
 	var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
 	return probe.has_method("version") and probe.has_method("assets") and int(probe.version()) >= 1 and int(probe.version()) <= NATIVE_VERSION
 
+## The alpine tufts' settings for the native placement (Config `alp_*`): the
+## top under the ground's snow line, the Peak's zone and the ground they keep
+## off it, as capsules round the lines the ground paints its ice, rubble and
+## scree by (endless_ground peak_paint, peak_ice.gdshaderinc), wide enough for
+## their ragged edges.
+func _alp_config() -> Dictionary:
+	var g := ground
+	var snow := float(field.snow_line()) if field != null and field.has_method("snow_line") else 125.0
+	if g != null and g.get_shader_parameter("snow_line") != null: snow = float(g.get_shader_parameter("snow_line"))
+	var out := {"share":alp_share,"tall":alp_tall,"wide":ALP_WIDE,"tone":alp_tone,"slope":ALP_SLOPE,
+		"top":Vector2(snow-ALP_TOP.x,snow-ALP_TOP.y),"zone_top":ALP_ZONE_TOP,
+		"proud":"--summits=old" not in LaunchArgs.user_args()}
+	if g == null: return out
+	# Off the Peak the high ground's stone and scree (the ground's `bare`, with
+	# summit_mode on, as its snow caps).
+	var summits: Variant = g.get_shader_parameter("summit_mode")
+	var on := summits == null or float(summits) > 0.5
+	out.proud = out.proud and on
+	var from: Variant = g.get_shader_parameter("alpine_from")
+	if on: out.bare = from if from is Vector2 else Vector2(0.25,0.95)
+	var zone: Variant = g.get_shader_parameter("peak_zone")
+	if not zone is Vector4 or (zone as Vector4).w < 0.5: return out
+	out.zone = zone
+	var off := PackedFloat32Array()
+	var add := func(a: Vector2, b: Vector2, ra: float, rb: float) -> void:
+		off.append_array(PackedFloat32Array([a.x,a.y,b.x,b.y,ra,rb]))
+	var ice_on: Variant = g.get_shader_parameter("peak_ice_on")
+	var ice_count: Variant = g.get_shader_parameter("peak_ice_count")
+	if ice_on != null and float(ice_on) > 0.5 and ice_count != null and int(ice_count) > 1:
+		# The ice (half-width, a ragged edge to 1.45 of it) and its rubble
+		# (11 m past it, 80 on the tongue, its rag to 1.4 of that).
+		var line: Array = Array(g.get_shader_parameter("peak_ice_line"))
+		var more: Array = Array(g.get_shader_parameter("peak_ice_more"))
+		var r := func(i: int) -> float:
+			var tongue := smoothstep(0.16,0.24,float((more[i] as Vector2).y))
+			return float((line[i] as Vector4).z)*1.45+lerpf(11.0,80.0,tongue)*1.4
+		for i in mini(int(ice_count),line.size())-1:
+			add.call(Vector2(line[i].x,line[i].y),Vector2(line[i+1].x,line[i+1].y),r.call(i),r.call(i+1))
+	elif g.get_shader_parameter("peak_frame") is Vector4:
+		# The older ice: the valley's floor (peak_paint) from the icefall to the
+		# glacier's end, its ragged edge to 1.15 of its half-width.
+		var vs := func(k: String, fallback: Vector4) -> Vector4:
+			var v: Variant = g.get_shader_parameter(k)
+			return v if v is Vector4 else fallback
+		var fr: Vector4 = g.get_shader_parameter("peak_frame")
+		var st: Vector4 = vs.call("peak_stretch",Vector4(850.0,1250.0,2050.0,4050.0))
+		var hw: Vector4 = vs.call("peak_half",Vector4(200.0,240.0,260.0,330.0))
+		var bd: Vector4 = vs.call("peak_bend",Vector4(170.0,2.2,1250.0,4500.0))
+		var f := Vector2(fr.z,fr.w)
+		var side := Vector2(-f.y,f.x)
+		var at := func(a: float) -> Array:
+			var t := clampf((a-bd.z)/(bd.w-bd.z),0.0,1.0)
+			var mid := bd.x*sin(PI*bd.y*t)*smoothstep(0.0,0.25,t)
+			var half := hw.x
+			if a > st.y and a < st.z: half = lerpf(hw.x,hw.y,smoothstep(0.0,0.3,(a-st.y)/(st.z-st.y)))
+			elif a >= st.z: half = lerpf(hw.z,hw.w,clampf((a-st.z)/(st.w-st.z),0.0,1.0))
+			return [Vector2(fr.x,fr.y)+f*a+side*mid,half*1.15+8.0]
+		var a0 := st.x-60.0
+		var prev: Array = at.call(a0)
+		var a := a0
+		while a < st.w+60.0:
+			a = minf(a+50.0,st.w+60.0)
+			var next: Array = at.call(a)
+			add.call(prev[0],next[0],prev[1],next[1])
+			prev = next
+	var rock_count: Variant = g.get_shader_parameter("peak_rock_count")
+	if rock_count != null and int(rock_count) > 1:
+		# The rock gorge's scree (to 1.2 of its width, its rag to 1.45).
+		var rl: Array = Array(g.get_shader_parameter("peak_rock_line"))
+		for i in mini(int(rock_count),rl.size())-1:
+			add.call(Vector2(rl[i].x,rl[i].y),Vector2(rl[i+1].x,rl[i+1].y),float(rl[i].z)*1.45,float(rl[i+1].z)*1.45)
+	if off.is_empty(): return out
+	var box := Vector4(INF,INF,-INF,-INF)
+	for s in range(0,off.size(),6):
+		var reach := maxf(off[s+4],off[s+5])*1.15+4.0
+		box = Vector4(minf(box.x,minf(off[s],off[s+2])-reach),minf(box.y,minf(off[s+1],off[s+3])-reach),
+			maxf(box.z,maxf(off[s],off[s+2])+reach),maxf(box.w,maxf(off[s+1],off[s+3])+reach))
+	out.off = off
+	out.off_box = box
+	return out
+
 ## The native placement's settings for a layer: its site (`site_values`),
 ## its far share and rings, and every table grow_cell's Grow reads (the
 ## catalog's grass tuft, the meadow type's and the drifts' flower kinds).
@@ -646,7 +774,7 @@ static func native_config(site_values: Dictionary, far_share: float, rings: Vect
 	const MeadowTypes = preload("res://scripts/meadow_types.gd")
 	var data: Dictionary = SkyIslets.catalog().data
 	var c := {}
-	for k: String in ["tufts","tuft_bump","shag","contact","height_field","tilt","rim","variety","patches","flower_tall","slope","alpine"]:
+	for k: String in ["tufts","tuft_bump","shag","contact","height_field","tilt","rim","variety","patches","flower_tall","slope","alpine","alp"]:
 		if site_values.has(k): c[k] = site_values[k]
 	c.sub = site_values.get("sub",0.0)
 	c.flowers = bool(site_values.get("flowers",true)) and far_share < 1.0
@@ -1398,7 +1526,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
 	var patches: float = site_values.get("patches",1.0)
 	for k: String in site_values:
-		if not k in ["flowers","patches","flower_tall","slope","alpine","sub"]: site.set(k,site_values[k])
+		if not k in ["flowers","patches","flower_tall","slope","alpine","sub","alp"]: site.set(k,site_values[k])
 	site.plain = true
 	site.probe = probe
 	# The drifts (Patch `bloom`) read off a TINT_STEP m grid of the cell,
@@ -1515,6 +1643,16 @@ static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vec
 	# lies wholly in one; in the band the blend's colours, below).
 	var nf: Object = f.native_impl_in(x0-PAD,z0-PAD,x0+CELL+PAD,z0+CELL+PAD)
 	if nf != null: cell.field = nf
+	elif site_values.has("alp") and bool((site_values.alp as Dictionary).get("proud",false)):
+		# The alpine tufts' proud crowns read the land 40 m round the cell
+		# (Cell ALP_PROUD_*), here off the field; none needed well inside the
+		# Peak's zone (no snow caps there).
+		var zone: Vector4 = (site_values.alp as Dictionary).get("zone",Vector4.ZERO)
+		var inside := zone.w > 0.5 and Vector2(x0+CELL*0.5-zone.x,z0+CELL*0.5-zone.y).length() < zone.z-650.0
+		if not inside:
+			if not got.has("ring"): got.ring = f.grid(x0-40.0,z0-40.0,8.0,19,19,0).heights
+			cell.ring = got.ring
+	if nf != null: pass
 	elif got.has("colours"): cell.colours = got.colours
 	else:
 		# The ground's colour on the tint grid (the native field reads it itself).
