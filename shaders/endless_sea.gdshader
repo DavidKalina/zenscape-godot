@@ -1596,7 +1596,12 @@ void fragment() {
 	float mirrored = 0.0;
 	vec3 mirror = vec3(0.0);
 	if (mirror_steps > 0 && fresnel > 0.05) {
-		vec3 ray = reflect(-eye, normalize(mix(vec3(0.0, 1.0, 0.0), normal, mirror_calm)));
+			// The march's ray bends off the calmer normal, and straightens with range: the
+			// full chop's slope made rays hit and miss pixel by pixel, which cut the far
+			// shore and the cliffs' mirror into dark dashes and jagged blobs.
+			float ray_detail = 0.2;
+			float ray_share = mirror_calm * (1.0 - 0.8 * smoothstep(80.0, 500.0, distance_to));
+			vec3 ray = reflect(-eye, normalize(mix(vec3(0.0, 1.0, 0.0), normalize(vec3(-(calm_slope.x + detail.x * ray_detail), 1.0, -(calm_slope.y + detail.y * ray_detail))), ray_share)));
 		ray.y = abs(ray.y);
 		mat4 to_clip = PROJECTION_MATRIX * VIEW_MATRIX;
 		float step_length = mirror_march.x * (1.0 + distance_to * 0.01);
