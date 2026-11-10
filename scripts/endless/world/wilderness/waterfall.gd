@@ -156,7 +156,10 @@ static func dress(root: Node3D, sheet: Dictionary, site: Dictionary) -> void:
 	m.set_shader_parameter("wall_lean",Land.WALL)
 	m.set_shader_parameter("front_z",FRONT)
 	m.set_shader_parameter("half_width",half)
-	m.set_shader_parameter("spread",SPREAD)
+	# How far the sheet widens from the lip to the foot (m a side): a site
+	# with a tunnel mouth behind the foot spreads to cover it.
+	var spread := float((site.get("params",{}) as Dictionary).get("spread",SPREAD))
+	m.set_shader_parameter("spread",spread)
 	m.set_shader_parameter("throw_out",THROW)
 	m.set_shader_parameter("world_light",1.0)
 	m.set_shader_parameter("world_gain",LIGHT_GAIN)
@@ -169,6 +172,9 @@ static func dress(root: Node3D, sheet: Dictionary, site: Dictionary) -> void:
 	m.set_shader_parameter("thread_gaps",float(p.get("thread_gaps",THREAD_GAPS)))
 	m.set_shader_parameter("lip_notch",float(p.get("lip_notch",LIP_NOTCH)))
 	m.set_shader_parameter("lip_seed",float(p.get("lip_seed",float(hash(str(site.get("handle",""))) % 97))))
+	# Any other of the fall's uniforms, by name (params.fall).
+	var more: Dictionary = p.get("fall",{})
+	for name: String in more: m.set_shader_parameter(name,more[name])
 	# After the pool's foam (which writes no depth): the fall writes depth.
 	m.render_priority = 1
 	var bm := BoxMesh.new()
@@ -193,7 +199,7 @@ static func dress(root: Node3D, sheet: Dictionary, site: Dictionary) -> void:
 	pm.set_shader_parameter("fall_offset",at)
 	pm.set_shader_parameter("front_z",FRONT+THROW)
 	pm.set_shader_parameter("half_width",half)
-	pm.set_shader_parameter("spread",SPREAD)
+	pm.set_shader_parameter("spread",spread)
 	pm.set_shader_parameter("mound_reach",2.6)
 	pm.set_shader_parameter("world_light",1.0)
 	pm.set_shader_parameter("world_gain",LIGHT_GAIN)
