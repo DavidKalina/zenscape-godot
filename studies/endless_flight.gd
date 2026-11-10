@@ -1219,6 +1219,8 @@ func water_at(p: Vector3, land_h := NAN) -> float:
 	if tunnels != null and tunnels.dry(p): return -INF
 	var level := Field.SEA_Y+sea_height(p,land_h)
 	var river: float = field.river_y(p.x,p.z)
+	# A stream or lake on the land over a bore the point is in: not its water.
+	if not is_nan(river) and tunnels != null and tunnels.under_water_over(p,river): river = NAN
 	return level if is_nan(river) else maxf(level,river)
 
 ## The top of the land, a river's water or the sea's swell under `p` (a

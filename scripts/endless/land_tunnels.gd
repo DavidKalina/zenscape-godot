@@ -1191,6 +1191,18 @@ func sight_gd(from: Vector3, to: Vector3) -> float:
 	return 1.0
 
 ## True in a sunk tunnel's corridor, where the sea has no say.
+## Whether a water standing at `level` is over the roof of a bore that `p`
+## is in, under that roof: a stream or a lake on the land over a tunnel,
+## which is not the plane's water down in the bore. Found in play at the
+## falls' face mouth: the stream at the lip over it lifted the plane out
+## of the mouth onto the cliff's top (SkyGlide rides a water as the ground).
+func under_water_over(p: Vector3, level: float) -> bool:
+	for t: Tunnels.Site in _sites:
+		if not t.box.has_point(Vector2(p.x,p.z)): continue
+		var b := Tunnels.bore_at(t,p.x,p.z)
+		if not is_nan(b.x) and p.y < b.y and level > b.y: return true
+	return false
+
 func dry(p: Vector3) -> bool:
 	for t: Tunnels.Site in _sites:
 		if Tunnels.dry_at(t,p.x,p.z): return true
