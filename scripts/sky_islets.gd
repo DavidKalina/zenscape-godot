@@ -795,6 +795,18 @@ static func _tree_parts(variant: int) -> Array:
 	if _tree_meshes.is_empty(): _grow_trees()
 	return _tree_meshes[variant]
 
+## The spruce trunks' and snags' bark: the source's saturated orange eased to a
+## weathered brown (less chroma, a little darker), by the material's base colour.
+static func _weather_bark(material: ShaderMaterial) -> void:
+	var c: Color = material.get_shader_parameter("base_color") if material.get_shader_parameter("base_color") != null else Color.WHITE
+	var l := c.get_luminance()
+	var grey := Color(l*1.0,l*0.98,l*0.96)
+	var w := c.lerp(grey,BARK_WEATHER) * BARK_DARK
+	material.set_shader_parameter("base_color",Color(w.r,w.g,w.b,c.a))
+
+const BARK_WEATHER := 0.85
+const BARK_DARK := 0.9
+
 ## Every spruce variant's parts at once, from one read of the source
 ## geometry: done at take-off (`reset`), never mid-glide.
 static func _grow_trees() -> void:
@@ -809,6 +821,7 @@ static func _grow_trees() -> void:
 		material.set_shader_parameter("instance_birth_enabled",false)
 		material.set_shader_parameter("instance_fire_enabled",false)
 		material.set_shader_parameter("tree_tread",false)
+		if node_name == "mesh-8": _weather_bark(material)
 		materials.append(material)
 		originals.append(original.multimesh.mesh)
 		if node_name == "mesh-9" and original.multimesh.use_colors and original.multimesh.instance_count > 0:
