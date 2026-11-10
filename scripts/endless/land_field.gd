@@ -908,8 +908,8 @@ func _tunnel(ts: Array, got: Vector2, x: float, z: float) -> Vector2:
 ## (tunnel_sites.gd's Site).
 func tunnels_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if tunnels <= 0.0: return []
-	if _tunnel_test: return Tunnels.sites_in(_tunnel_sites,x0,z0,x1,z1)
-	var all: Array = []
+	if _tunnel_test: return Tunnels.sites_in(_tunnel_sites+_placed_tunnels(),x0,z0,x1,z1)
+	var all: Array = _placed_tunnels().duplicate()
 	for cj in range(floori(z0/Tunnels.CELL),floori(z1/Tunnels.CELL)+1):
 		for ci in range(floori(x0/Tunnels.CELL),floori(x1/Tunnels.CELL)+1):
 			all.append_array(_peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,Vector2i(ci,cj),_tunnel_local)))
@@ -926,19 +926,43 @@ func _peak_tunnels(ts: Array) -> Array:
 ## The tunnels that may touch (x, z): its square's (the last square's
 ## kept), or the test tunnel.
 func _tunnels_for(x: float, z: float) -> Array:
-	if _tunnel_test: return _tunnel_sites
 	var key := Tunnels.cell_of(x,z)
+	var placed := _placed_tunnels()
+	if not is_same(placed,_tunnel_placed_was):
+		_tunnel_placed_was = placed
+		_tunnel_cell = Vector2i(1 << 30,0)
 	if key != _tunnel_cell:
-		_tunnel_here = _peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,key,_tunnel_local))
+		_tunnel_here = _tunnel_sites if _tunnel_test else _peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,key,_tunnel_local))
+		# The placed sites' own tunnels whose box meets the square.
+		if not placed.is_empty():
+			var sq := Rect2(key.x*Tunnels.CELL,key.y*Tunnels.CELL,Tunnels.CELL,Tunnels.CELL)
+			var here := _tunnel_here.duplicate()
+			for t: RefCounted in placed:
+				if (t.box as Rect2).intersects(sq): here.append(t)
+			_tunnel_here = here
 		_tunnel_cell = key
 	return _tunnel_here
+
+## The tunnels the placed sites ask for (a placed curtain's `tunnel`:
+## curtain_land.gd `tunnels`, tunnel_sites.gd `placed_site`), every field
+## sharing one Site each; kept per world and layout file, as `_curtain_list`.
+func _placed_tunnels() -> Array:
+	if tunnels <= 0.0: return _NONE
+	if not is_same(_placed_tunnels_of[0],world) or not is_same(_placed_tunnels_of[1],Curtains.LayoutOverrides.data):
+		_placed_tunnel_list = Tunnels.placed_sites(_impl,Curtains.tunnels(world))
+		_placed_tunnels_of = [world,Curtains.LayoutOverrides.data]
+	return _placed_tunnel_list
+
+var _placed_tunnel_list: Array = []
+var _placed_tunnels_of: Array = [null,null]
+var _tunnel_placed_was: Array = []
 
 const _NONE: Array = []
 
 ## The fixed tunnels this field knows: the --tunnel-test one (streamed ones
 ## come from `tunnels_in`).
 func tunnel_sites() -> Array:
-	return _tunnel_sites
+	return _tunnel_sites+_placed_tunnels() if _tunnel_test else _tunnel_sites
 
 ## Whether the tunnels are the --tunnel-test one alone.
 func tunnel_test() -> bool:

@@ -1468,10 +1468,14 @@ func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 	noise.fractal_octaves = 4
 	noise.frequency = 1.0/LIP_BULGE_SIZE
 	var pr := Tunnels.profile(t,-1.0)
-	var half := Tunnels.BOWL_MOUTH+LIP_PAST
-	var cols := ceili(half*2.0/2.0)
 	var per := LIP_SPOKES+1
 	for m in 2:
+		# A mouth in a face (a placed site's cliff, Tunnels.in_face): no bowl
+		# round it, so the rock lies on the face itself (`_face_table`).
+		var face := Tunnels.in_face(t,m)
+		var half := FACE_HALF if face else Tunnels.BOWL_MOUTH+LIP_PAST
+		var cols := ceili(half*2.0/2.0)
+		var faces := _face_table(t,m,lf,half,cols) if face else PackedFloat32Array()
 		var base := v.size()
 		var tops := PackedFloat32Array()
 		for j in cols+1:
@@ -1518,6 +1522,10 @@ func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 				# The face curves back into the land at its sides.
 				a += LIP_CURVE*smoothstep(half*0.55,half,absf(off.x))
 				a -= settle*(lump*LIP_BULGE+ledge*LIP_LEDGE)
+				if face:
+					# Off the arch's rim onto the face, FACE_PROUD out of it.
+					var on := _face_a(faces,cols,half,off.x,y)-FACE_PROUD-settle*(lump*FACE_BULGE+ledge*FACE_LEDGE)
+					a = lerpf(-LIP_FRONT-settle*lump*FACE_BULGE,on,smoothstep(0.0,FACE_BLEND,r-inner))
 				var along := off.x+cross*LIP_WANDER*settle
 				var up := y+lump*LIP_WANDER*settle*0.7
 				# The feet go under the sinkhole's floor.
@@ -1560,6 +1568,48 @@ func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 	arrays[Mesh.ARRAY_INDEX] = idx
 	RockShape.bake(arrays)
 	return {"arrays":arrays,"tris":idx.size()/3}
+
+## A mouth in a face: the rock reaches FACE_HALF m across (past the land's
+## hole at the coarse chunks in sight), lies FACE_PROUD m out of the face
+## (the field's: the land's cliff where the hole is), its lumps FACE_BULGE m
+## and its beds FACE_LEDGE m (the land's own faces are plain),
+## and leaves the arch's rim for the face over FACE_BLEND m. The face is
+## found along the way in from FACE_FROM to FACE_TO m, every FACE_STEP.
+const FACE_HALF := 36.0
+const FACE_PROUD := 0.6
+const FACE_BULGE := 0.6
+const FACE_LEDGE := 0.4
+const FACE_BLEND := 6.0
+const FACE_FROM := -14.0
+const FACE_TO := 18.0
+const FACE_STEP := 1.0
+
+## The land along the way in at mouth `m`, per column 2 m across (`cols`+1
+## of them from -`half`): its heights from FACE_FROM to FACE_TO.
+func _face_table(t: Tunnels.Site, m: int, lf: RefCounted, half: float, cols: int) -> PackedFloat32Array:
+	var n := int((FACE_TO-FACE_FROM)/FACE_STEP)+1
+	var out := PackedFloat32Array()
+	out.resize((cols+1)*n)
+	for j in cols+1:
+		for i in n:
+			var q := Tunnels.portal_point(t,m,FACE_FROM+i*FACE_STEP,-half+j*2.0)
+			out[j*n+i] = float(lf.height(q.x,q.y))
+	return out
+
+## Where the face stands at `y` (world) `across` m off the way in (m along
+## it): the first point in from FACE_FROM where the land is that high.
+static func _face_a(table: PackedFloat32Array, cols: int, half: float, across: float, y: float) -> float:
+	var n := int((FACE_TO-FACE_FROM)/FACE_STEP)+1
+	var c := clampf((across+half)/2.0,0.0,float(cols)-0.001)
+	var j := int(c)
+	var w := c-j
+	var last := lerpf(table[j*n],table[(j+1)*n],w)
+	if last >= y: return FACE_FROM
+	for i in range(1,n):
+		var h := lerpf(table[j*n+i],table[(j+1)*n+i],w)
+		if h >= y: return FACE_FROM+(i-1+(y-last)/maxf(h-last,0.001))*FACE_STEP
+		last = h
+	return FACE_TO
 
 ## The lean of a mouth's top faces, which grass paint would cover but no blades
 ## grow on: past the ground shader's rock_up (0.8), toward the sun (else `out`),
