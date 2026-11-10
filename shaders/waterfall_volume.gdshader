@@ -79,6 +79,31 @@ uniform float spread : hint_range(0.0, 8.0) = 4.5;
 uniform float edge_wobble : hint_range(0.0, 3.0) = 0.9;
 // How uneven the lip is: the front bulges in tongues and the top dips (m).
 uniform float lip_unevenness : hint_range(0.0, 2.0) = 1.0;
+// The lip in channels: how much the water crosses the lip as a main chute and
+// thinner threads beside it, with rock between (1), rather than one even sheet
+// across the width (0: the old look; every other channel uniform then does
+// nothing). Where the water is thin it is a veil that holes, frays and turns
+// to spray as it falls; the thick parts stay heavy white columns to the foot.
+uniform float channels : hint_range(0.0, 1.0) = 1.0;
+// The main chute: its middle (-1..1 of half_width, from the left side to the
+// right) and its half width (share of half_width).
+uniform float chute_x : hint_range(-1.0, 1.0) = -0.22;
+uniform float chute_width : hint_range(0.05, 1.0) = 0.32;
+// The threads beside the chute: how thick the thickest is (0..1, the chute is
+// 1), how far apart they are (m), and how many places along the lip have none.
+uniform float threads : hint_range(0.0, 1.0) = 0.5;
+uniform float thread_spacing : hint_range(1.0, 10.0) = 3.4;
+uniform float thread_gaps : hint_range(0.0, 1.0) = 0.3;
+// Which threads: any number gives another lip (a fall placed in the world sets
+// its own).
+uniform float lip_seed = 0.0;
+// How fast thin water comes apart into spray as it falls (0 never: every
+// thread reaches the foot).
+uniform float veil_fade : hint_range(0.0, 3.0) = 1.3;
+// How far (m) the water's top over the lip sits lower in the chute than over
+// the threads (the rock edge is notched where the chute crosses it); the
+// threads' tops round down toward their sides by most of that too.
+uniform float lip_notch : hint_range(0.0, 4.0) = 1.6;
 // How far the front leans out from the lip to the foot (m).
 uniform float throw_out : hint_range(0.0, 8.0) = 3.0;
 // How far the middle of the fall stands out past its sides at the lip (m): a
@@ -265,16 +290,138 @@ float lip_var(float x) {
 	return 0.3 * sin(x * 0.31 + 1.7) + 0.14 * sin(x * 0.83 + 0.4) + 0.06 * sin(x * 2.1 + 2.2);
 }
 
+// The chute's broad weight at x (1 in its middle, falling off smoothly past
+// its sides): what stands out as the rounded column and sits in the notch.
+float chute_w(float x) {
+	float u = (x - chute_x * half_width) / max(chute_width * half_width * 1.4, 0.3);
+	return exp(-u * u);
+}
+
+// Below this the water of a channel is gone (its share of the chute's).
+const float CH_THIN = 0.06;
+
+// Channels across the lip (two at once): middles c, half widths w (lip
+// metres), how thick at the lip a0 (the chute 1). Their thickness k down the
+// fall is a0 less what has turned to spray (thin water goes first). Adds to
+// the most water at xl now (m), to the spray of what has come apart (sp: it
+// falls on a while in the channel's place, then thins out too), and to the
+// distance (lip metres) inside the nearest channel's edge (ep, negative
+// outside). The edge is where a channel is CH_THIN thick; one about gone has
+// its edge pulled in past its middle, so it leaves no sliver.
+void channels_at(float xl, float k, vec2 c, vec2 w, vec2 a0, inout float m, inout float sp, inout float ep) {
+	vec2 a = a0 - k * veil_fade * (1.0 - a0);
+	vec2 d = abs(xl - c);
+	vec2 u = d / max(w, vec2(0.05));
+	vec2 sh = max(1.0 - u * u, 0.0);
+	vec2 ms = a * sh;
+	m = max(m, max(ms.x, ms.y));
+	// (The spray spreads wider than the thread was, and soft at its sides, or
+	// a ray across it took too few steps in it and showed it in contours.)
+	vec2 u2 = d / max(w * 2.5, vec2(0.5));
+	vec2 sh2 = max(1.0 - u2 * u2, 0.0);
+	vec2 sps = sh2 * sh2 * clamp(a0 - max(a, 0.0), 0.0, 1.0) * clamp(1.0 + a / 0.25, 0.0, 1.0);
+	sp = max(sp, max(sps.x, sps.y));
+	vec2 we = w * sqrt(max(1.0 - CH_THIN / max(a, vec2(1e-3)), 0.0)) - 0.4 * (1.0 - smoothstep(CH_THIN, CH_THIN + 0.08, a));
+	vec2 es = we - d;
+	ep = max(ep, max(es.x, es.y));
+}
+
+// The two thread places nearest xl along the lip (one place every
+// thread_spacing): their threads' middles c, half widths w and thicknesses
+// a0 at the lip (0: none there). A thread from any other place has its edge
+// at least 0.35 spacings off.
+void threads_near(float xl, out vec2 c, out vec2 w, out vec2 a0) {
+	float S = thread_spacing;
+	float fx = xl / S;
+	float j = floor(fx);
+	vec2 jj = vec2(j, fract(fx) < 0.5 ? j - 1.0 : j + 1.0);
+	float sd = lip_seed * 7.13 + 0.5;
+	// (One hash a place, split.)
+	vec2 r1 = vec2(h21(vec2(jj.x, sd)), h21(vec2(jj.y, sd)));
+	vec2 r2 = fract(r1 * 13.71);
+	vec2 r3 = fract(r1 * 71.37);
+	vec2 r4 = fract(r1 * 157.13);
+	c = (jj + 0.5 + (r1 - 0.5) * 0.5) * S;
+	w = S * (0.16 + 0.24 * r2);
+	// Thinner away from the chute and toward the sides of the lip, none past
+	// them, so the fall tapers out to its sides instead of ending in a wall.
+	float cx = chute_x * half_width;
+	vec2 env = (1.0 - smoothstep(vec2(half_width * 0.45), half_width - w * 0.5, abs(c)))
+		* (1.0 - 0.55 * smoothstep(0.0, half_width * 0.9, abs(c - cx) - chute_width * half_width));
+	// Where the threads are and how thick runs in stretches along the lip
+	// (a few thick together, a run of thin ones, a bare stretch), not
+	// thread by thread, so any seed gives a lip that reads.
+	vec2 g = clamp(0.5 + 0.3 * sin(c * 0.23 + lip_seed * 1.7) + 0.2 * sin(c * 0.61 + lip_seed * 4.3) + 0.15 * (r4 - 0.5), 0.0, 1.0);
+	a0 = threads * env * (0.35 + 0.65 * mix(r3, g, 0.6)) * smoothstep(thread_gaps - 0.1, thread_gaps + 0.1, g);
+}
+
+// How much water crosses the lip at x (0..1, the chute's middle 1): the
+// profile at the lip alone, for the shape of the water's top.
+float lip_mass(float x) {
+	float m = 0.0;
+	float sp = 0.0;
+	float ep = -1e3;
+	vec2 c, w, a0;
+	threads_near(x, c, w, a0);
+	channels_at(x, 0.0, c, w, a0, m, sp, ep);
+	float u = (x - chute_x * half_width) / max(chute_width * half_width, 0.05);
+	return max(m, 1.0 - u * u);
+}
+// The lip's profile at x, k down the fall: how much water (m, 0..1: 1 the
+// chute's middle), the spray of thin water come apart (sp), and how far
+// inside the water's side (e, m: negative outside, between channels). `hw` is the fall's
+// half width here (it widens toward the foot: the channels spread with it),
+// `e_sheet` the even sheet's own distance to its side, which channels < 1
+// mixes back in. `u` the carried distance, so the channels sway with the water.
+void lip_profile(float x, float k, float hw, float u, float e_sheet, out float m, out float sp, out float e) {
+	float sc = hw / max(half_width, 0.1);
+	float xl = x / sc;
+	// The channels wander as they fall and the chute swells and narrows, more
+	// toward the foot, as the water comes down in surges (carried with it).
+	float wn = vn1(u * 0.045 + TIME * churn_rate * 0.05 + lip_seed * 2.3) - 0.5;
+	// (And each part of the lip flutters on its own a little.)
+	xl += edge_wobble * k * (1.6 * wn + 1.2 * (vn1(xl * 0.35 + u * 0.07 + lip_seed) - 0.5));
+	sp = 0.0;
+	float ep;
+	float cb = 1.0 + (0.15 + 0.35 * k) * wn * 2.0;
+	float cwid = max(chute_width * half_width * cb, 0.05);
+	float dc = abs(xl - chute_x * half_width);
+	float uc = dc / cwid;
+	m = max(1.0 - uc * uc, 0.0);
+	ep = cwid * 0.9695 - dc;
+	// Threads: the two places nearest (any further thread's edge is at least
+	// 0.35 spacings off, so the distance is kept to that). Well inside the
+	// chute they add nothing (it is thicker than any thread, and the distance
+	// kept is the chute's, short of the true one), so they are not worked out.
+	if (uc > 0.6) {
+		vec2 c, w, a0;
+		threads_near(xl, c, w, a0);
+		channels_at(xl, k, c, w, a0, m, sp, ep);
+		ep = max(ep, -0.35 * thread_spacing);
+	}
+	// The even sheet, mixed back in as channels goes to 0.
+	float as0 = 1.0 - channels;
+	float as = as0 - k * veil_fade * (1.0 - as0);
+	float cl = clamp(e_sheet, 0.0, 1.0);
+	m = max(m, as * cl);
+	float es = e_sheet - 30.0 * (1.0 - smoothstep(CH_THIN, CH_THIN + 0.1, as));
+	e = max(ep * sc, es);
+}
+
 // The water's own frame at a point: s metres along the flow from where it
 // leaves the wall, q metres out from the front surface (0 on it, negative
-// inside), k how far down the fall (0 at the lip, 1 at the foot).
+// inside), k how far down the fall (0 at the lip, 1 at the foot). `cs` the
+// chute's weight there (chute_w), `drop` how far (m) the top over the lip is
+// let down there (the threads' tops are rounded: lower toward their sides).
 // Horizontal over the lip, a quarter circle, then down, leaning out.
-void flow(vec3 P, float lv, out float s, out float q, out float k) {
+void flow(vec3 P, float lv, float cs, float drop, out float s, out float q, out float k) {
 	// Uneven only outward and upward, so the lip's rock never shows.
 	float xr = clamp(P.x / max(half_width, 0.1), -1.0, 1.0);
-	float rnd = plume_round * (1.0 - xr * xr);
+	// The column stands out most where the chute is.
+	float rnd = plume_round * mix(1.0 - xr * xr, cs, channels);
 	float fz = front_z + (lv + 0.5) * lip_unevenness * 0.8 + rnd;
-	float ly = lip_y + (lv + 0.5) * lip_unevenness * 0.5;
+	// The top sits lower in the chute's notch.
+	float ly = lip_y + (lv + 0.5) * lip_unevenness * 0.5 - channels * lip_notch * cs;
 	float yc = ly - curve_radius;
 	float zc = fz - curve_radius;
 	k = 0.0;
@@ -285,10 +432,10 @@ void flow(vec3 P, float lv, out float s, out float q, out float k) {
 		q = P.z - fz - throw_out * (1.0 - (1.0 - k) * (1.0 - k)) + rnd * k * k;
 	} else if (P.z <= zc) {
 		s = P.z - zc;
-		q = P.y - ly;
+		q = P.y - ly + drop;
 	} else {
 		vec2 d = vec2(P.z - zc, P.y - yc);
-		q = length(d) - curve_radius;
+		q = length(d) - curve_radius + drop * smoothstep(yc, ly, P.y);
 		s = curve_radius * (1.5707963 - atan(d.y, d.x));
 	}
 }
@@ -328,7 +475,7 @@ float surge_layer(float x, float u, float s, float w, float per, float seed, out
 // How far the front stands out (m) at a point of the fall: surges, veils,
 // clumps and gaps. `sh` the surge heads (0..1), `gp` the gaps (0..1), `dens`
 // how much surge water is there (0 between surges).
-float body_h(float x, float s, float sw, float k, float e, float q, bool full, out float sh, out float gp, out float dens) {
+float body_h(float x, float s, float sw, float k, float e, float q, float m, bool full, out float sh, out float gp, out float dens) {
 	float T = TIME * fall_speed;
 	float Ev = TIME * churn_rate;
 	float u = sw - T;
@@ -360,14 +507,16 @@ float body_h(float x, float s, float sw, float k, float e, float q, bool full, o
 	float l3 = surge_layer(xw + 7.3, ss - Ts * 1.45, s, packet_width, packet_width * 3.0, 29.0, h3);
 	sh = max(sh, h3 * 0.7);
 	float cl = l3 * 1.6 + (vn2(vec2(xw * 1.7 + 8.0, (ss - Ts * 1.15) * 0.7 + Ev * 0.4)) - 0.5) * 0.5;
-	// Short gaps, mostly low and by the sides.
-	float gw = breakup * max(smoothstep(0.3, 1.0, k), 1.0 - smoothstep(0.0, 4.0, e));
+	// Short gaps, mostly low and by the sides, and in thin water (the veils of
+	// the channels' threads and edges) all the way: there they go through.
+	float thin = channels * (1.0 - clamp(m, 0.0, 1.0));
+	float gw = max(breakup * max(smoothstep(0.3, 1.0, k), 1.0 - smoothstep(0.0, 4.0, e)), thin * smoothstep(0.0, 6.0, s));
 	if (gw > 0.02) {
 		float gn = vnoise(vec3(xw * 0.55 + 9.0, (ss - Ts * 1.15) * 0.3, Ev * 0.35 + 4.0)) * 0.75
 			+ vn2(vec2(x * 2.1, (ss - Ts * 1.2) * 1.1 + Ev * 0.5)) * 0.25;
 		gp = smoothstep(0.6, 0.85, gn) * gw;
 	}
-	return hc + grow * clump_bulge * cl * (0.6 + 0.4 * (l1 + l2)) - gp * 0.9;
+	return hc + grow * clump_bulge * cl * (0.6 + 0.4 * (l1 + l2)) - gp * (0.9 + 1.8 * thin);
 }
 
 // Lobes of water thrown from the impact: one per cell along the foot, each
@@ -419,12 +568,19 @@ float h_max() {
 // overstate it a little on steep lumps). `full` adds what the shadow tap does
 // without: the packets and the churn (whose envelope is not a solid: in the
 // tap it drew a thin dark line on the fall along the envelope's top).
-float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
+float field_i(vec3 P, bool full, out vec4 info, out vec4 mq) {
 	info = vec4(0.0, 0.0, 0.0, 1.0);
 	float ax = abs(P.x);
 	float lv = lip_var(P.x);
 	float s, q, k;
-	flow(P, lv, s, q, k);
+	float cs = chute_w(P.x);
+	// Over the lip the top follows the rock: notched for the chute, rounded
+	// over each thread (only worked out up there, where it shows).
+	float drop = 0.0;
+	if (channels > 0.0 && P.y > lip_y - curve_radius - lip_notch - 0.5) {
+		drop = channels * lip_notch * 0.6 * (1.0 - smoothstep(0.0, 0.45, lip_mass(P.x)));
+	}
+	flow(P, lv, cs, drop, s, q, k);
 	float sw = s < 0.0 ? s : warp(s);
 	float T = TIME * fall_speed;
 	float Ev = TIME * churn_rate;
@@ -434,6 +590,7 @@ float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
 	// and frays in lumps, more toward the foot (only worked out near a side).
 	float side = P.x < 0.0 ? 0.0 : 17.0;
 	float hw = half_width + spread * pow(k, 1.4);
+	float hw0 = hw;
 	float fr = edge_break * (0.2 + 0.8 * k) * smoothstep(0.0, 4.0, s);
 	if (ax > half_width - edge_wobble * 1.3 - fr - 0.5) {
 		hw += (vnoise(vec3(side, u * 0.16, Ev * 0.3)) - 0.5) * 2.0 * edge_wobble * (0.3 + k);
@@ -441,13 +598,37 @@ float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
 		hw += (fn - 0.5) * 2.0 * fr;
 	}
 	float e = hw - ax;
-
+	// The channels: how much water (m, 1 the chute's middle, and m0 at the
+	// lip), and its sides, between the channels too, frayed like the outer ones.
+	float m = 1.0;
+	float sp = 0.0;
+	// (Not worked out well in front of the water or behind it, where the
+	// front or the back is nearer than any side, unless the churn is there.)
 	float hm = h_max();
+	if (channels > 0.0 && ((q < hm + 2.0 && q > -thickness - 1.0) || P.y < churn_height * 1.9 + 3.0)) {
+		float ep;
+		lip_profile(P.x, k, hw0, u, e, m, sp, ep);
+		if (abs(ep) < fr + 1.5) {
+			ep += (vn1(P.x * 0.55 + q * 0.4 + u * 0.2 + Ev * 0.5 + 3.0) - 0.5) * 2.0 * (fr * 0.6 + 0.3);
+		}
+		// (Kept short of the true distance: the sway, the flutter and the
+		// fray tilt it, and a ray stepping by it overshot thin threads seen
+		// from the side, which then showed in terraces.)
+		e = min(e, ep * 0.6);
+	}
+	// Thin water is a thin veil, back to front.
+	float thk = thickness * mix(1.0, clamp(m * 1.6, 0.06, 1.0), channels);
+
 	// For the spray: how far inside a smooth sheath round the body (m, negative
 	// outside it), and how far down the fall.
 	// (Over the face it is thinner than at the sides: the water shows through.)
 	// Behind the body it ends too, so the space behind the fall is clear.
-	mq = vec2(min(min((hm * 0.6 - q) * 1.8, e + 0.3), q + thickness + 0.5), k);
+	mq = vec4(min(min((hm * 0.6 - q) * 1.8, e + 0.3), q + thickness + 0.5), k, 0.0, m);
+	// Where thin water has come apart, its spray falls on in its place.
+	if (sp > 0.0) {
+		float vb = clamp(1.0 + min((hm * 0.6 - q) * 1.2, q + thk + 1.5) * 0.5, 0.0, 1.0);
+		mq.z = sp * vb * smoothstep(0.03, 0.2, k);
+	}
 	float v;
 	if (q > hm) {
 		// In the air in front of the water. (Biased, so the march steps into
@@ -458,12 +639,12 @@ float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
 		v = 2.0;
 	} else {
 		float sh, gp, dn;
-		float hb = body_h(P.x, s, sw, k, e, q, full, sh, gp, dn);
+		float hb = body_h(P.x, s, sw, k, e, q, m, full, sh, gp, dn);
 		v = hb - q;
 		info = vec4(hb, sh, gp, dn);
 	}
 	v = min(v, e + 0.2);
-	v = min(v, thickness + q);
+	v = min(v, thk + q);
 	// Off the wall face below its top; over the top the water comes from
 	// behind (the river above).
 	v = min(v, P.z - (P.y > wall_top ? box_z0 - 50.0 : wall_gap + wall_lean * (1.0 - clamp(P.y / max(wall_top, 1.0), 0.0, 1.0))));
@@ -480,7 +661,7 @@ float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
 		ro += 0.12 * sin(P.x * 1.3 + TIME * 1.9) + 0.08 * sin(P.x * 3.7 - TIME * 2.6);
 		float cw = clamp(e + 1.0, 0.0, 1.0);
 		float rr = clamp(ro, 0.0, 1.0);
-		float hmd = churn_height * cw * (1.0 - rr) * (1.0 - rr);
+		float hmd = churn_height * cw * (1.0 - rr) * (1.0 - rr) * mix(1.0, 0.3 + 0.7 * clamp(m, 0.0, 1.0), channels);
 		float top = hmd * 1.55 + 0.05;
 		float mv = min((ro + 0.2) * 2.0, (1.05 - ro) * 2.0);
 		if (P.y > top || mv < v) {
@@ -516,38 +697,55 @@ float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
 
 float field(vec3 P, bool full) {
 	vec4 info;
-	vec2 mq;
+	vec4 mq;
 	return field_i(P, full, info, mq);
 }
 
 // Spray: its density (per metre) at a point. A soft skin round the body, in
 // billows falling slower than the water, thicker toward the foot; and a
-// cloud thrown up at the foot, rolling up and out over the pool. `coarse`
-// where the cloud is, so the march does not step over it.
-float mist_at(vec3 P, vec2 mq, out bool coarse, out float tone) {
+// cloud thrown up at the foot, rolling up and out over the pool, round and
+// heaviest under the chute; and the spray of thin water that came apart
+// (mq.z). `coarse` where the cloud is, so the march does not step over it.
+float mist_at(vec3 P, vec4 mq, out bool coarse, out float tone) {
 	coarse = false;
 	tone = 0.1;
 	float reach = mist_reach * (0.12 + 0.88 * mq.y);
 	// None over the lip and the water above it: the spray comes off the fall.
 	float band = mist > 0.0 ? clamp(1.0 + mq.x / reach, 0.0, 1.0) * smoothstep(0.02, 0.2, mq.y) : 0.0;
 	float zf = front_z + throw_out;
-	float bz = 1.0 - smoothstep(0.0, base_mist_reach, P.z - zf - churn_reach * 0.5);
+	float bx = clamp((half_width + spread + base_mist_side - abs(P.x)) / (base_mist_side + 1.0), 0.0, 1.0);
+	// With channels, where the water lands: a dome under the chute, and a low
+	// thin blanket under the threads beside it. It stands as high and rolls as
+	// far out as there is water above it, so it is round, not a box.
+	float hwf = half_width + spread;
+	float cu = (P.x - chute_x * hwf) / (chute_width * hwf + base_mist_side * 0.55);
+	float wx = max(1.0 - cu * cu, threads * 0.45 * clamp((hwf + base_mist_side * 0.3 - abs(P.x)) / (base_mist_side * 0.3 + 1.0), 0.0, 1.0));
+	wx = clamp(wx, 0.0, 1.0);
+	float rs = mix(1.0, 0.35 + 0.65 * sqrt(wx), channels);
+	float bz = 1.0 - smoothstep(0.0, base_mist_reach * rs, P.z - zf - churn_reach * 0.5);
 	// None behind the fall: the space between it and the wall stays clear.
 	float bback = smoothstep(zf - thickness - 0.5, zf - thickness + 2.0, P.z);
-	float bh = base_mist_height * (0.3 + 0.7 * bz);
+	float bh = base_mist_height * (0.3 + 0.7 * bz) * rs;
 	float by = 1.0 - clamp(P.y / max(bh, 0.1), 0.0, 1.0);
-	float bx = clamp((half_width + spread + base_mist_side - abs(P.x)) / (base_mist_side + 1.0), 0.0, 1.0);
-	float base = base_mist > 0.0 ? by * by * bz * bz * bx * bback : 0.0;
+	float base = base_mist > 0.0 ? by * by * bz * bz * mix(bx, wx, channels) * bback : 0.0;
 	// Short steps anywhere in the cloud's box (not only where it is thick, or
 	// its thin rim shows the steps as rings).
 	coarse = base_mist > 0.0 && P.y < base_mist_height + 0.8 && abs(P.x) < half_width + spread + base_mist_side + 0.8
 		&& P.z < zf + churn_reach * 0.5 + base_mist_reach + 0.8;
-	if (band <= 0.0 && base <= 0.0) return 0.0;
+	if (band <= 0.0 && base <= 0.0 && mq.z <= 0.0) return 0.0;
 	float n2 = vnoise(vec3(P.x * 0.8 + 5.0, P.y * 0.55 + TIME * fall_speed * 0.22, P.z * 0.8));
 	float d = 0.0;
 	if (band > 0.0) {
 		float n1 = vnoise(vec3(P.x * 0.3, P.y * 0.2 + TIME * fall_speed * 0.11, P.z * 0.3 + TIME * 0.1));
-		d += mist * band * band * smoothstep(0.3, 0.7, n1 * 0.65 + n2 * 0.35) * 1.2;
+		// (Thinner round the threads than round the chute. Not narrower: a
+		// narrow skin showed the steps through it in contours.)
+		float sk = mix(1.0, 0.12 + 0.88 * chute_w(P.x), channels);
+		d += mist * band * band * smoothstep(0.3, 0.7, n1 * 0.65 + n2 * 0.35) * 1.2 * sk;
+	}
+	if (mq.z > 0.0) {
+		// Finer and streakier than the skin: the veil's water falling apart.
+		float n4 = vnoise(vec3(P.x * 0.9, P.y * 0.3 + TIME * fall_speed * 0.15, P.z * 0.9));
+		d += mist * mq.z * smoothstep(0.3, 0.7, n4 * 0.6 + n2 * 0.4) * 1.5;
 	}
 	if (base > 0.0) {
 		// Big separate billows, not an even fog.
@@ -685,7 +883,7 @@ void fragment() {
 		if (i >= steps || t > t1 || macc > 5.0) break;
 		vec3 ps = ro + rd * t;
 		vec4 inf;
-		vec2 mq;
+		vec4 mq;
 		float v = field_i(ps, true, inf, mq);
 		if (v > 0.0) {
 			hit = true;
@@ -718,6 +916,11 @@ void fragment() {
 			float tn;
 			float md = mist_at(ps, mq, coarse, tn);
 			if (coarse) st = min(st, 0.8);
+			// (Through the skin the steps lengthen gradually above the cloud's
+			// box: cut off at its top, the long steps above took a different
+			// share of the skin than the short ones in it, a line across the
+			// fall there.)
+			else if (mq.z > 0.0 || mq.x > -mist_reach * (0.12 + 0.88 * mq.y)) st = min(st, 0.8 + 0.3 * (ps.y - base_mist_height));
 			if (md > 0.0) {
 				if (tmist < 0.0) tmist = t;
 				// What is nearer the eye counts for more of the colour.
@@ -746,13 +949,13 @@ void fragment() {
 		// Normal from the field's gradient (the big forms).
 		float ge = 0.1;
 		vec4 info;
-		vec2 mq0;
+		vec4 mq0;
 		float v0 = field_i(p, true, info, mq0);
 		vec3 g = vec3(field(p + vec3(ge, 0, 0), true) - v0, field(p + vec3(0, ge, 0), true) - v0, field(p + vec3(0, 0, ge), true) - v0);
 		vec3 n = -normalize(g + vec3(1e-5));
 
 		float s, q, k;
-		flow(p, lip_var(p.x), s, q, k);
+		flow(p, lip_var(p.x), chute_w(p.x), 0.0, s, q, k);
 		float sw = s < 0.0 ? s : warp(s);
 		float hb = info.x;
 		float sh = info.y;
@@ -817,6 +1020,9 @@ void fragment() {
 		float cr = 1.0 - abs(2.0 * ae0 - 1.0);
 		shade += smoothstep(0.7, 0.85, ae0) * aeration * 0.13 - cr * cr * cr * aeration * 0.1;
 		shade += (0.5 - fl) * flicker * 0.3;
+		// Thin water (the threads, the chute's edges) is a veil: greyer, the
+		// rock's shadow coming through it.
+		shade += channels * (1.0 - clamp(mq0.w, 0.0, 1.0)) * 0.15;
 		shade = max(shade, 0.0) * 0.9;
 		// The churn: whiter than the fall, no fall streaks, shaded only by its
 		// own shape; where it meets the pool it is the foam's white.
@@ -853,7 +1059,7 @@ void fragment() {
 	// surface a hand's width away would fill the screen with one flat shade,
 	// so close hits fade into the whiteout by their distance.
 	float es, eq, ek;
-	flow(ro, lip_var(ro.x), es, eq, ek);
+	flow(ro, lip_var(ro.x), chute_w(ro.x), 0.0, es, eq, ek);
 	float eband = (1.0 - smoothstep(-0.2, 1.0, eq)) * step(abs(ro.x), half_width + spread + 1.0) * step(0.0, ro.y) * step(ro.y, lip_y);
 	float wclose = hit ? eband * (1.0 - smoothstep(0.4, 3.5, tw)) : 0.0;
 	if (inside > 0.0 || wclose > 0.0) {

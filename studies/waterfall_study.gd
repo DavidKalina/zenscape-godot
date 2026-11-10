@@ -168,7 +168,7 @@ func _build_land() -> void:
 	var ground := StandardMaterial3D.new()
 	ground.albedo_color = Color(0.25, 0.27, 0.22)
 	ground.roughness = 1.0
-	_box(Vector3(0, -0.5, 200), Vector3(900, 1.0, 520), ground)
+	_box(Vector3(0, -0.5, 100), Vector3(1400, 1.0, 1400), ground)
 	var water := StandardMaterial3D.new()
 	water.albedo_color = Color(0.2, 0.42, 0.5)
 	water.roughness = 0.15
