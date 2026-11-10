@@ -139,9 +139,11 @@ uniform float mist : hint_range(0.0, 2.0) = 0.55;
 uniform float mist_reach : hint_range(0.2, 8.0) = 3.2;
 // The cloud of spray thrown up at the foot (0 none), how high it stands
 // against the fall (m) and how far out over the pool it rolls (m).
-uniform float base_mist : hint_range(0.0, 2.0) = 0.7;
-uniform float base_mist_height : hint_range(1.0, 25.0) = 12.0;
-uniform float base_mist_reach : hint_range(1.0, 25.0) = 10.0;
+uniform float base_mist : hint_range(0.0, 3.0) = 1.3;
+uniform float base_mist_height : hint_range(1.0, 30.0) = 19.0;
+uniform float base_mist_reach : hint_range(1.0, 25.0) = 16.0;
+// How far the cloud spreads past each side of the fall's foot (m).
+uniform float base_mist_side : hint_range(1.0, 15.0) = 8.0;
 // Inside the water: how opaque each metre of water ahead of the eye is.
 uniform float inside_density : hint_range(0.1, 10.0) = 1.4;
 // World direction toward the sun.
@@ -474,8 +476,9 @@ float field(vec3 P, bool full) {
 // billows falling slower than the water, thicker toward the foot; and a
 // cloud thrown up at the foot, rolling up and out over the pool. `coarse`
 // where the cloud is, so the march does not step over it.
-float mist_at(vec3 P, vec2 mq, out bool coarse) {
+float mist_at(vec3 P, vec2 mq, out bool coarse, out float tone) {
 	coarse = false;
+	tone = 0.1;
 	float reach = mist_reach * (0.12 + 0.88 * mq.y);
 	// None over the lip and the water above it: the spray comes off the fall.
 	float band = mist > 0.0 ? clamp(1.0 + mq.x / reach, 0.0, 1.0) * smoothstep(0.02, 0.2, mq.y) : 0.0;
@@ -485,8 +488,12 @@ float mist_at(vec3 P, vec2 mq, out bool coarse) {
 	float bback = smoothstep(zf - thickness - 0.5, zf - thickness + 2.0, P.z);
 	float bh = base_mist_height * (0.3 + 0.7 * bz);
 	float by = 1.0 - clamp(P.y / max(bh, 0.1), 0.0, 1.0);
-	float bx = clamp((half_width + spread + 4.0 - abs(P.x)) / 5.0, 0.0, 1.0);
+	float bx = clamp((half_width + spread + base_mist_side - abs(P.x)) / (base_mist_side + 1.0), 0.0, 1.0);
 	float base = base_mist > 0.0 ? by * by * bz * bz * bx * bback : 0.0;
+	// Short steps anywhere in the cloud's box (not only where it is thick, or
+	// its thin rim shows the steps as rings).
+	coarse = base_mist > 0.0 && P.y < base_mist_height + 0.8 && abs(P.x) < half_width + spread + base_mist_side + 0.8
+		&& P.z < zf + churn_reach * 0.5 + base_mist_reach + 0.8;
 	if (band <= 0.0 && base <= 0.0) return 0.0;
 	float n2 = vnoise(vec3(P.x * 0.8 + 5.0, P.y * 0.55 + TIME * fall_speed * 0.22, P.z * 0.8));
 	float d = 0.0;
@@ -495,10 +502,15 @@ float mist_at(vec3 P, vec2 mq, out bool coarse) {
 		d += mist * band * band * smoothstep(0.3, 0.7, n1 * 0.65 + n2 * 0.35) * 1.2;
 	}
 	if (base > 0.0) {
-		coarse = base > 0.02;
 		// Big separate billows, not an even fog.
 		float n3 = vnoise(vec3(P.x * 0.15, P.y * 0.2 - TIME * 0.6, P.z * 0.15 - TIME * 0.9));
-		d += base_mist * base * smoothstep(0.45, 0.75, n3 * 0.75 + n2 * 0.25) * 1.8;
+		float bn = n3 * 0.75 + n2 * 0.25;
+		float bd = base_mist * base * smoothstep(0.42, 0.72, bn) * 1.8;
+		// Shaded like a cloud: the hearts of the billows and its low parts
+		// are in shadow, their tops and edges white.
+		float bt = 0.12 + 0.5 * smoothstep(0.6, 0.9, bn) + 0.25 * by * by;
+		tone = (tone * d + bt * bd) / max(d + bd, 1e-4);
+		d += bd;
 	}
 	return d;
 }
@@ -571,8 +583,8 @@ void fragment() {
 	if (ib.y > ib.x) { t0 = min(t0, ib.x); t1 = max(t1, ib.y); }
 	if (ic.y > ic.x) { t0 = min(t0, ic.x); t1 = max(t1, ic.y); }
 	if (base_mist > 0.0) {
-		vec2 im = slab(ro, inv, vec3(-(half_width + spread + 4.0), 0.0, wall_gap),
-			vec3(half_width + spread + 4.0, base_mist_height, front_z + throw_out + churn_reach * 0.5 + base_mist_reach));
+		vec2 im = slab(ro, inv, vec3(-(half_width + spread + base_mist_side), 0.0, wall_gap),
+			vec3(half_width + spread + base_mist_side, base_mist_height, front_z + throw_out + churn_reach * 0.5 + base_mist_reach));
 		if (im.y > im.x) { t0 = min(t0, im.x); t1 = max(t1, im.y); }
 	}
 	t0 = max(t0, ab.x);
@@ -619,6 +631,7 @@ void fragment() {
 	bool hit = false;
 	// The spray passed through on the way: its optical depth, and where it began.
 	float macc = 0.0;
+	float mtone = 0.0;
 	float tmist = -1.0;
 	for (int i = 0; i < 128; i++) {
 		if (i >= steps || t > t1 || macc > 5.0) break;
@@ -654,11 +667,15 @@ void fragment() {
 		// The spray over this step (after the step is settled).
 		if (do_mist) {
 			bool coarse;
-			float md = mist_at(ps, mq, coarse);
+			float tn;
+			float md = mist_at(ps, mq, coarse, tn);
 			if (coarse) st = min(st, 0.8);
 			if (md > 0.0) {
 				if (tmist < 0.0) tmist = t;
-				macc += md * min(st, t1 - t);
+				// What is nearer the eye counts for more of the colour.
+				float w = md * min(st, t1 - t);
+				mtone += tn * w * exp(-macc);
+				macc += w;
 			}
 		}
 		tp = t;
@@ -773,7 +790,8 @@ void fragment() {
 		}
 	}
 	// The spray in front of it.
-	vec3 mc = mix(white_color, shade_color, 0.1);
+	float mt = macc > 0.0 ? mtone / max(1.0 - exp(-macc), 1e-3) : 0.1;
+	vec3 mc = mix(white_color, shade_color, clamp(mt, 0.0, 0.6));
 	col = hit ? mix(col, mc, am) : mc;
 	// The water between the eye and the surface, when the eye is in it, and
 	// the front right at the eye when it is in the band at the front: there a
