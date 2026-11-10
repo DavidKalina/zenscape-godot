@@ -62,7 +62,9 @@ The moving parts are their own nodes, each with its origin where code turns it:
 """
 import json
 import math
+import shutil
 import struct
+import subprocess
 import sys
 from pathlib import Path
 
@@ -74,6 +76,29 @@ ROOT = Path(__file__).resolve().parents[3]
 OUT = ROOT / "assets/models/train"
 RES = "res://assets/models/train"
 RENDERS = Path(__file__).resolve().parent / "renders"
+PARTS_JSON = Path(__file__).resolve().parent / "train_parts.json"
+
+
+def load_parts():
+	"""RailTrain's colliders and openings at the default sizes, the source of them
+	(rail_train.gd `_parts`, written by train_parts.gd): run that first, else read
+	the last one written."""
+	py = shutil.which("python3") or shutil.which("python")
+	if py:
+		r = subprocess.run([py, str(ROOT / "tools/godot.py"), "-s", "res://art/blender/train/train_parts.gd"],
+			cwd=str(ROOT), capture_output=True, text=True)
+		print(f"train_parts.gd: exit {r.returncode}")
+		if r.returncode != 0:
+			print("  using the last train_parts.json:", (r.stdout + r.stderr)[-800:])
+	return json.loads(PARTS_JSON.read_text())
+
+
+# Every car's solid boxes, plates, movers and holes (Godot frame: x0 y0 z0 x1 y1 z1).
+PARTS = load_parts()["kinds"]
+
+
+def _hole(kind, i=0):
+	return PARTS[kind]["holes"][i]["box"]
 
 # --- The numbers --------------------------------------------------------------
 
@@ -100,17 +125,19 @@ BOILER_Y = (-4.6, 6.8)    # into the cab, to the smokebox
 SMOKEBOX_R = 1.6
 SMOKEBOX_Y = (6.7, 9.9)
 STACK_Y = 8.2
-STACK_TOP = 8.5
-STACK_R = 1.0             # the funnel's lip
+STACK_TOP = 9.0           # the balloon stack's mesh dome (TALL)
+STACK_R = 1.25            # its lip
+LAMP_Y = (9.35, 10.75)    # the headlamp's box lantern, on its bracket over the smokebox's front
+LAMP_Z = (6.3, 7.55)
 BELL_Y = 5.6
 SAND_Y = 3.4
 DOME_Y = 0.8
-CAB_Y = (-11.0, -4.0)
+CAB_Y = (-10.6, -4.2)     # low and narrow, so the boiler and stack lead
 CAB_FLOOR = 2.3
-CAB_EAVE = 7.55
-CAB_TOP = 8.5
-CAB_HALF = 2.87           # the cab's sides (its trim stands 0.1 proud); the roof's eaves reach EAVE_HALF
-EAVE_HALF = 3.0
+CAB_EAVE = 6.95
+CAB_TOP = 7.7
+CAB_HALF = 2.45           # the cab's sides (its trim stands 0.1 proud); the roof's eaves reach EAVE_HALF
+EAVE_HALF = 2.72
 DRIVER_R = 1.45
 DRIVER_Y = (0.6, -2.5)    # front, rear axle
 LEAD_R = 0.6
@@ -143,13 +170,13 @@ BOGIE = 3.0
 CAR_HALF = 2.86
 CAR_TILE = 5.6            # the cars' boards: 0.35 m each
 PLANK_TILE = 8.0          # decks and floors: 0.5 m planks
-COUPLER_Z = 1.22
+COUPLER_Z = 1.18          # under FLOOR: clear of a corridor's floor, end to end
 BOX_LONG = 24.0           # box, doors, stock
 BOX_EAVE = 8.5
 BOX_RIDGE = 8.8
 BOX_TOP = 9.0             # the running board's top
-DOOR_LONG = 10.0          # the doorway: rail_train.gd door_wide (WorldScale.opening(TOY_DOOR)),
-DOOR_HIGH = 6.0           # door_high (TOY_DOOR_HIGH) up from FLOOR; the doors are half its length each
+DOOR_LONG = _hole("doors")[5] - _hole("doors")[2]   # the doorway: rail_train.gd door_wide, door_high
+DOOR_HIGH = _hole("doors")[4] - FLOOR               # up from FLOOR; the doors are half its length each
 DOOR_OVER = 0.3           # the doors stand this far over the doorway's head
 SLAT = 0.75               # the stock car's slats, one every SLAT up its walls (rail_train.gd SLAT)
 SLAT_GAP = 0.16
@@ -173,9 +200,9 @@ CUPOLA_TOP = 7.5
 
 # The special cars: spec-steam-train.md "Settled by lane cars" and the cars
 # lane's greybox (rail_train.gd _parts), which the models match block for block.
-LOGS_LONG = 20.0
+LOGS_LONG = PARTS["logs"]["long"]
 LOGS_TOP = 6.5            # each bundle solid across the car, DECK..LOGS_TOP
-LOG_GAP = 7.0             # between the bundles, along the car: rail_train.gd log_gap (TOY_THREAD)
+LOG_GAP = _hole("logs")[5] - _hole("logs")[2]   # between the bundles, along the car: rail_train.gd log_gap
 LOG_IN = 0.3              # each bundle this far in from the car's end (LOG_IN)
 LOG_R = 0.46              # the logs: LOG_ACROSS across, LOG_ROWS up, on bunks BUNK deep
 LOG_ACROSS = 6
@@ -203,8 +230,12 @@ COACH_RAIL = 2.1          # the railings' top: coach_rail (the gap's floor)
 HOOD = 0.4                # the roof's hoods over the platforms, this deep (the gap's head)
 RAIL_BAR = 0.15
 COACH_TRUCK = 6.25        # the coach's trucks' pivots off its middle: under the body, not the platforms
-SMASH_WIDE = 5.2          # the corridor: rail_train.gd smash_wide, smash_high (TOY_SMASH_WIDE, _HIGH)
-SMASH_HIGH = 7.0
+SMASH_WIDE = _hole("smash")[3] - _hole("smash")[0]   # the corridor: rail_train.gd smash_wide, smash_high
+SMASH_HIGH = _hole("smash")[4] - FLOOR                # (the run's and the smash car's, end to end)
+THRU_LONG = PARTS["thru"]["long"]       # the run's open-ended boxcar
+CULVERT_LONG = PARTS["culvert"]["long"]  # the culvert car: its sections' walls out to CULVERT_SIDE,
+CULVERT_SIDE = max(b[3] for b in PARTS["culvert"]["solid"] if b[0] > 0.0)   # their roof to CULVERT_TOP
+CULVERT_TOP = PARTS["culvert"]["tall"]
 SMASH_PLATE = 0.6         # each end's plate (its plug), this deep in from the car's end (PLATE)
 PLUG_BOARD = 0.52         # the plugs' boards across, thickness
 PLUG_THICK = 0.12
@@ -237,10 +268,13 @@ COL = {
 	"bark": "5b4330", "logend": "d6b783", "heart": "b9905c", "stake": "5e4834",
 	"girder": "5c676e", "crane": "7a2c22", "boom": "c08f2c", "coach": "1d4a30",
 	"smash": "93614b", "crack": "ff7a22", "raw": "c9a87c",
+	# The run's open-ended cars mustard, the gate's doors yellow on the barn red,
+	# the culverts' concrete.
+	"thru": "9c7430", "gate": "d9b13f", "concrete": "a7a39b",
 }
 
-TEX_SIZE = {"wood": 512, "metal": 256, "coal": 512}
-TILE = {"wood": 4.0, "metal": 4.0, "coal": 2.5}
+TEX_SIZE = {"wood": 512, "metal": 256, "coal": 512, "concrete": 256}
+TILE = {"wood": 4.0, "metal": 4.0, "coal": 2.5, "concrete": 3.0}
 
 # Each material: its shader, albedo, normal, then uniforms. The game takes no
 # ambient light, so these fill the shade from the sky's hemisphere as the land's
@@ -253,6 +287,7 @@ MATERIALS = {
 	"coal": ("surface", "train_coal", "train_coal_n", {"normal_depth": 1.4, "roughness_value": 0.55, "metallic_value": 0.1, "fill": 3.0, "rim": 0.2}),
 	"glass": ("surface", None, None, {"roughness_value": 0.12, "metallic_value": 0.3, "fill": 1.2, "rim": 0.5}),
 	"dark": ("surface", None, None, {"roughness_value": 0.95, "fill": 0.6, "rim": 0.0}),
+	"concrete": ("surface", "train_concrete", "train_concrete_n", {"normal_depth": 0.9, "roughness_value": 0.92, "fill": 4.0, "rim": 0.2}),
 	"lamp": ("lamp", None, None, {}),
 }
 MAT_NAMES = tuple(MATERIALS)
@@ -312,11 +347,12 @@ class Geo:
 		self.f.append(tuple(ids))
 		self.m.append(mat)
 
-	def poly(self, pts, mat, col, tile=None, rot=False, uvo=(0.0, 0.0)):
+	def poly(self, pts, mat, col, tile=None, rot=False, uvo=(0.0, 0.0), cols=None):
 		"""A flat polygon, its points anticlockwise seen from its front; uvs
 		projected on the box face it most looks along, in metres over the tile.
 		rot swaps u and v (the wood's seams run across instead of up); uvo is
-		added to them (to set a board's seams on its edges)."""
+		added to them (to set a board's seams on its edges). cols: a colour for
+		each point instead of col."""
 		pts = [Vector(p) for p in pts]
 		nrm = newell(pts)
 		t = tile or TILE.get(mat, 4.0)
@@ -330,13 +366,16 @@ class Geo:
 		if rot:
 			uvs = [(v, u) for u, v in uvs]
 		uvs = [(u + uvo[0], v + uvo[1]) for u, v in uvs]
-		self.face([self.vert(p, uv, col) for p, uv in zip(pts, uvs)], mat)
+		cols = cols or [col] * len(pts)
+		self.face([self.vert(p, uv, c) for p, uv, c in zip(pts, uvs, cols)], mat)
 
 	def facing(self, pts, out, mat, col, **kw):
 		"""poly, its points turned so it faces along `out`."""
 		pts = [Vector(p) for p in pts]
 		if newell(pts).dot(Vector(out)) < 0.0:
 			pts = pts[::-1]
+			if kw.get("cols"):
+				kw["cols"] = kw["cols"][::-1]
 		self.poly(pts, mat, col, **kw)
 
 	def box(self, xa, xb, ya, yb, za, zb, mat, col, skip="", **kw):
@@ -430,6 +469,127 @@ class Geo:
 		for j in range(len(ys) - 1):
 			for i in range(len(xs) - 1):
 				self.face([ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i]], mat)
+
+
+# --- Wear and small parts -----------------------------------------------------
+#
+# The paint worn board by board (each its own coat, faded toward its top, now
+# and then one patched fresher or older), rivets, the brake gear and steps
+# under a car. Fine parts are skipped in the far look.
+
+
+def faded(col, k):
+	"""col sun-bleached k of the way (negative: a fresher, deeper coat)."""
+	lum = 0.3 * col[0] + 0.55 * col[1] + 0.15 * col[2]
+	g = lum * 1.35 + 0.02
+	return tuple(max(0.0, c + (g - c) * k) for c in col)
+
+
+def board_tone(rng, col, vary=1.0):
+	"""A board's own paint (vary: how much they differ)."""
+	c = tone(col, 1.0 + rng.uniform(-0.14, 0.08) * vary)
+	if rng.random() < 0.08 * vary:
+		c = faded(c, -0.3) if rng.random() < 0.5 else faded(c, 0.35)
+	return c
+
+
+def boards(g, axis, at, a0, a1, z0, z1, out, col, rng, pitch=CAR_TILE / 16, fade=0.2, mat="wood", tile=CAR_TILE, vary=1.0):
+	"""A face of upright boards, each its own paint, faded toward its top: the face
+	at `axis` (0 x, 1 y) = at, a0..a1 along the other level axis, z0..z1 up,
+	facing `out` (+1 or -1 along `axis`); the boards' edges on the texture's seams
+	(every `pitch` from 0)."""
+	lo, hi = sorted((a0, a1))
+	o = (out, 0.0, 0.0) if axis == 0 else (0.0, out, 0.0)
+
+	def quad(b0, b1):
+		return [(at, b0, z0), (at, b1, z0), (at, b1, z1), (at, b0, z1)] if axis == 0 else [(b0, at, z0), (b1, at, z0), (b1, at, z1), (b0, at, z1)]
+	if FAR:
+		g.facing(quad(lo, hi), o, mat, col, tile=tile)
+		return
+	k0 = math.floor(lo / pitch + 1e-6)
+	k1 = math.ceil(hi / pitch - 1e-6)
+	for k in range(k0, k1):
+		b0, b1 = max(lo, k * pitch), min(hi, (k + 1) * pitch)
+		if b1 - b0 < 1e-4:
+			continue
+		c = board_tone(rng, col, vary)
+		top = faded(c, fade * rng.uniform(0.5, 1.5))
+		g.facing(quad(b0, b1), o, mat, c, tile=tile, cols=[c, c, top, top])
+
+
+def plank_box(g, x0, x1, y0, y1, z0, z1, col, rng, skip="", fade=0.2, mat="wood", tile=CAR_TILE):
+	"""A box whose upright faces are boards (`boards`); skip faces by letter as box."""
+	x0, x1 = sorted((x0, x1))
+	y0, y1 = sorted((y0, y1))
+	for k, axis, at, a0, a1, out in (("l", 0, x0, y0, y1, -1), ("r", 0, x1, y0, y1, 1), ("b", 1, y0, x0, x1, -1), ("f", 1, y1, x0, x1, 1)):
+		if k not in skip:
+			boards(g, axis, at, a0, a1, z0, z1, out, col, rng, fade=fade, mat=mat, tile=tile)
+	g.box(x0, x1, y0, y1, z0, z1, mat, col, skip="lrbf" + skip, tile=tile)
+
+
+def rivets(g, pts, normal, r=0.055, col=None, mat="metal"):
+	"""Round heads (four-sided studs) at pts on a face whose outward normal is `normal`."""
+	if FAR:
+		return
+	col = col or PAINT["black"]
+	n = Vector(normal).normalized()
+	a = Vector((1.0, 0.0, 0.0)) if abs(n.x) < 0.9 else Vector((0.0, 1.0, 0.0))
+	u = n.cross(a).normalized()
+	v = n.cross(u)
+	for p in pts:
+		p = Vector(p)
+		c = [p + (u * dx + v * dy) * r for dx, dy in ((1, 0), (0, 1), (-1, 0), (0, -1))]
+		tip = p + n * r * 0.7
+		for i in range(4):
+			e = (c[i] + c[(i + 1) % 4]) * 0.5
+			g.facing([c[i], c[(i + 1) % 4], tip], (e - p) + n * r, mat, col)
+
+
+def rivet_line(g, a, b, count, normal, **kw):
+	a, b = Vector(a), Vector(b)
+	rivets(g, [a + (b - a) * (k / max(count - 1, 1)) for k in range(count)], normal, **kw)
+
+
+def rivet_ring(g, o, R, count, y, r=0.055, col=None, a0=0.0, a1=math.tau, mat="metal"):
+	"""Rivets round a barrel along y (its axis through o's x, z) at y, R out."""
+	if FAR:
+		return
+	for k in range(count):
+		a = a0 + (a1 - a0) * (k + 0.5) / count
+		d = Vector((math.sin(a), 0.0, math.cos(a)))
+		rivets(g, [Vector((o[0], y, o[2])) + d * R], d, r=r, col=col, mat=mat)
+
+
+def brake_gear(g, H, ztop, iron=None):
+	"""Under a car's floor (its underside at ztop): the air reservoir and the brake
+	cylinder either side of the centre sill, the triple valve, the train line, the
+	levers and the rods out to the trucks."""
+	if FAR:
+		return
+	iron = iron or PAINT["iron"]
+	zc = ztop - 0.4
+	g.lathe((1.2, -2.2, zc), (0.0, 1.0, 0.0), [(0.0, -0.04), (0.2, -0.03), (0.26, 0.06), (0.26, 2.1), (0.2, 2.19), (0.0, 2.2)], "metal", iron, n=12)
+	g.lathe((-1.05, 0.7, zc), (0.0, 1.0, 0.0), [(0.0, 0.0), (0.27, 0.0), (0.27, 0.95), (0.2, 0.95), (0.2, 1.3), (0.0, 1.3)], "metal", iron, n=10)
+	g.box(-1.45, -0.7, -0.6, 0.0, zc - 0.18, zc + 0.24, "metal", tone(iron, 0.85))
+	g.beam((-1.05, 2.15, zc), (1.0, 2.35, zc), 0.08, 0.16, "iron", iron)
+	for sy in (-1, 1):
+		g.beam((0.35 * sy, sy * 2.25, zc - 0.05), (0.35 * sy, sy * (H - BOGIE - 1.2), zc - 0.12), 0.07, 0.07, "iron", iron)
+	g.beam((0.5, -H + 0.35, ztop - 0.36), (0.5, H - 0.35, ztop - 0.36), 0.08, 0.08, "iron", tone(iron, 0.8))
+
+
+def stirrups(g, H, w, ztop, iron=None):
+	"""A stirrup step under each corner of a car (its side at w, its floor's underside at ztop)."""
+	if FAR:
+		return
+	iron = iron or PAINT["iron"]
+	za = max(ztop - 0.62, RAIL_TOP - 0.1)
+	for sx in (-1, 1):
+		x = sx * (w + 0.06)
+		for sy in (-1, 1):
+			y = sy * (H - 0.5)
+			for dy in (-0.2, 0.2):
+				g.beam((x, y + dy, ztop + 0.02), (x, y + dy, za), 0.05, 0.05, "iron", iron)
+			g.beam((x, y - 0.22, za), (x, y + 0.22, za), 0.07, 0.05, "iron", iron)
 
 
 # --- To Blender ---------------------------------------------------------------
@@ -621,50 +781,110 @@ def build_engine(mats):
 	g = Geo()
 	blk, cab, brass, iron, steel = PAINT["black"], PAINT["cab"], PAINT["brass"], PAINT["iron"], PAINT["steel"]
 	ax_y = (0.0, 1.0, 0.0)
-	# Frames: two bars the length of her, and the deck under the cab.
+	dz = RAIL_TOP + DRIVER_R
+	# Frames: two bars the length of her inside the wheels, the deck under the cab.
 	for s in (-1, 1):
 		g.box(s * 0.85, s * 1.15, -H, 10.4, 1.3, 2.3, "metal", iron)
-	g.box(-CAB_HALF, CAB_HALF, CAB_Y[0], CAB_Y[1] + 0.6, 1.85, CAB_FLOOR, "metal", blk)
+	g.box(-CAB_HALF, CAB_HALF, CAB_Y[0] - 0.4, CAB_Y[1] + 0.6, 1.85, CAB_FLOOR, "metal", blk)
+	# Over each driver's axlebox in the frame's jaws, a leaf spring hung under the
+	# running board; an equaliser between the two springs on its fulcrum.
+	for s in (-1, 1):
+		x = s * 1.0
+		for dy in DRIVER_Y:
+			g.box(x - 0.22, x + 0.22, dy - 0.34, dy + 0.34, dz - 0.3, dz + 0.32, "metal", tone(iron, 0.85))
+			for k, (half, z0) in enumerate(((0.95, 2.66), (0.8, 2.73), (0.65, 2.8), (0.5, 2.87))):
+				g.box(x - 0.16, x + 0.16, dy - half, dy + half, z0, z0 + 0.065, "iron", tone(steel, 0.8 + 0.05 * k))
+			g.box(x - 0.12, x + 0.12, dy - 0.12, dy + 0.12, dz + 0.3, 2.66, "iron", iron)
+		g.beam((x, DRIVER_Y[0] - 0.95, 2.72), (x, DRIVER_Y[1] + 0.95, 2.72), 0.12, 0.18, "iron", iron)
+		g.box(x - 0.1, x + 0.1, sum(DRIVER_Y) * 0.5 - 0.12, sum(DRIVER_Y) * 0.5 + 0.12, 2.3, 2.66, "iron", iron)
+		# A brake shoe behind each driver on its tread, hung from the frame.
+		for dy in DRIVER_Y:
+			xs = s * (WHEEL_X + 0.08)
+			arc = [Vector((xs, dy + (DRIVER_R + 0.07) * math.cos(a), dz + (DRIVER_R + 0.07) * math.sin(a))) for a in (math.radians(150 + 12 * k) for k in range(6))]
+			for a, b in zip(arc, arc[1:]):
+				g.beam(a, b, 0.16, 0.12, "iron", iron, up=(1.0, 0.0, 0.0))
+			g.beam(arc[2], (s * 1.15, dy - DRIVER_R * 0.6, 2.3), 0.07, 0.07, "iron", iron)
 	# The buffer beam, red, and the deck before the smokebox.
 	g.box(-2.7, 2.7, 10.4, 11.0, 1.3, 2.45, "wood", PAINT["pilot"])
+	g.box(-2.7, 2.7, 10.38, 10.42, 2.38, 2.45, "brass", brass)
 	g.box(-2.2, 2.2, SMOKEBOX_Y[1] - 0.1, 10.4, 2.3, 2.45, "metal", blk)
-	# Firebox between the drivers.
+	rivet_line(g, (-2.5, 11.0, 1.45), (2.5, 11.0, 1.45), 14, (0, 1, 0), r=0.045)
+	# Firebox between the drivers, its ashpan under.
 	g.box(-1.1, 1.1, -4.3, -1.3, 2.0, 3.6, "metal", blk)
-	# Boiler, its brass bands, the smokebox and its door.
+	g.box(-0.95, 0.95, -4.1, -1.6, 1.55, 2.0, "metal", iron)
+	# Boiler: black lagging, brass bands each with its rivets; the smokebox and its door.
 	g.lathe((0.0, BOILER_Y[0], BOILER_Z), ax_y, [(BOILER_R, 0.0), (BOILER_R, BOILER_Y[1] - BOILER_Y[0])], "metal", blk, n=32)
-	for y in (-3.2, -0.9, 2.4, 4.7, 6.45):
+	for y in (-3.2, -0.9, 1.7, 4.0, 6.45):
 		g.lathe((0.0, y, BOILER_Z), ax_y, [(BOILER_R - 0.02, -0.07), (BOILER_R + 0.035, -0.06), (BOILER_R + 0.035, 0.06), (BOILER_R - 0.02, 0.07)], "brass", brass, n=32)
 	sb0, sb1 = SMOKEBOX_Y
 	g.lathe((0.0, sb0, BOILER_Z), ax_y, [(BOILER_R - 0.05, 0.0), (SMOKEBOX_R, 0.0), None, (SMOKEBOX_R, sb1 - sb0), None, (SMOKEBOX_R * 0.86, sb1 - sb0)], "metal", blk, n=32)
+	rivet_ring(g, (0.0, 0.0, BOILER_Z), SMOKEBOX_R, 28, sb0 + 0.12)
+	rivet_ring(g, (0.0, 0.0, BOILER_Z), SMOKEBOX_R, 28, sb1 - 0.12)
+	rivet_ring(g, (0.0, 0.0, BOILER_Z), BOILER_R, 24, BOILER_Y[0] + 1.0, r=0.045)
 	g.lathe((0.0, sb1, BOILER_Z), ax_y, [(SMOKEBOX_R * 0.86, 0.0), (SMOKEBOX_R * 0.84, 0.08), None, (SMOKEBOX_R * 0.8, 0.08), (SMOKEBOX_R * 0.6, 0.16), (0.0, 0.2)], "metal", blk, n=32)
 	g.lathe((0.0, sb1, BOILER_Z), ax_y, [(SMOKEBOX_R * 0.8, 0.0), (SMOKEBOX_R * 0.86, 0.03), (SMOKEBOX_R * 0.86, 0.1), (SMOKEBOX_R * 0.8, 0.12)], "brass", brass, n=32)
-	# The door's middle: a boss and its handle across, and the hinge straps.
-	g.lathe((0.0, sb1 + 0.18, BOILER_Z), ax_y, [(0.0, 0.0), (0.2, 0.0), (0.2, 0.12), (0.0, 0.16)], "brass", brass, n=14)
-	g.beam((-0.55, sb1 + 0.36, BOILER_Z + 0.05), (0.55, sb1 + 0.36, BOILER_Z - 0.05), 0.07, 0.07, "brass", brass, up=(0.0, 1.0, 0.0))
-	for dz in (-0.6, 0.6):
-		g.box(-SMOKEBOX_R * 0.75, 0.0, sb1 + 0.12, sb1 + 0.17, BOILER_Z + dz - 0.06, BOILER_Z + dz + 0.06, "iron", iron)
+	# The door: its brass number plate, the dogs round its rim, the hinge straps, a handle.
+	g.lathe((0.0, sb1 + 0.17, BOILER_Z + 0.1), ax_y, [(0.0, 0.0), (0.42, 0.0), (0.45, 0.04), (0.42, 0.08), (0.0, 0.09)], "brass", brass, n=20)
+	g.lathe((0.0, sb1 + 0.24, BOILER_Z + 0.1), ax_y, [(0.0, 0.0), (0.32, 0.0), (0.32, 0.03), (0.0, 0.03)], "metal", blk, n=20)
+	for k in range(8):
+		a = (k + 0.5) / 8 * math.tau
+		c = Vector((math.cos(a), 0.0, math.sin(a)))
+		p = Vector((0.0, sb1 + 0.12, BOILER_Z)) + c * (SMOKEBOX_R * 0.78)
+		g.box(p.x - 0.045, p.x + 0.045, p.y - 0.06, p.y + 0.06, p.z - 0.045, p.z + 0.045, "metal", tone(blk, 1.4))
+	g.beam((-0.4, sb1 + 0.3, BOILER_Z - 0.35), (0.4, sb1 + 0.3, BOILER_Z - 0.35), 0.07, 0.07, "brass", brass, up=(0.0, 1.0, 0.0))
+	for dz_ in (-0.7, 0.7):
+		g.box(-SMOKEBOX_R * 0.78, 0.0, sb1 + 0.12, sb1 + 0.17, BOILER_Z + dz_ - 0.07, BOILER_Z + dz_ + 0.07, "iron", iron)
+	# A handrail round the smokebox's front, on stanchions.
+	hr = SMOKEBOX_R + 0.14
+	arc = [Vector((hr * math.sin(a), sb1 - 0.25, BOILER_Z + hr * math.cos(a))) for a in (math.radians(-62 + 124 * k / 10) for k in range(11))]
+	for a, b in zip(arc, arc[1:]):
+		g.beam(a, b, 0.055, 0.055, "brass", brass, up=(0.0, 1.0, 0.0))
+	# Marker lamps on the smokebox's sides.
+	for s in (-1, 1):
+		g.box(s * 1.18, s * 1.5, sb1 - 0.5, sb1 - 0.15, BOILER_Z + 0.75, BOILER_Z + 1.15, "metal", blk)
+		g.facing([(s * 1.505, sb1 - 0.45, BOILER_Z + 0.82), (s * 1.505, sb1 - 0.2, BOILER_Z + 0.82), (s * 1.505, sb1 - 0.2, BOILER_Z + 1.08), (s * 1.505, sb1 - 0.45, BOILER_Z + 1.08)], (s, 0, 0), "lamp", srgb("8fe0a0"))
 	# The saddle down to the cylinders.
 	g.box(-1.6, 1.6, sb0 + 0.1, sb0 + 1.9, 1.9, BOILER_Z - 1.0, "metal", blk)
-	# The funnel stack: a column flaring to a wide lip, its mouth dark.
+	# The balloon stack: a column, a brass band, the flare to its rolled lip, the
+	# spark arrester's mesh domed over it.
 	top = STACK_TOP
 	base = BOILER_Z + SMOKEBOX_R - 0.05
 	g.lathe((0.0, STACK_Y, base), (0.0, 0.0, 1.0), [
-		(0.66, -0.3), (0.66, 0.12), None, (0.66, 0.2), (0.44, 0.32), None, (0.42, 0.32), (0.42, 0.95),
-		(0.5, 1.2), (0.72, 1.55), (0.9, 1.85), (STACK_R, top - base - 0.2), None, (STACK_R + 0.05, top - base - 0.2),
-		(STACK_R + 0.05, top - base), None, (STACK_R - 0.08, top - base), (STACK_R - 0.12, top - base - 0.25)], "metal", blk, n=28)
-	g.lathe((0.0, STACK_Y, base), (0.0, 0.0, 1.0), [(STACK_R - 0.12, top - base - 0.25), (0.0, top - base - 0.5)], "dark", PAINT["dark"], n=28)
-	g.lathe((0.0, STACK_Y, base), (0.0, 0.0, 1.0), [(0.425, 0.95), (0.45, 0.97), (0.45, 1.07), (0.44, 1.1)], "brass", brass, n=24)
-	# Headlamp: a big box lamp on a bracket over the smokebox's front.
-	lz = BOILER_Z + SMOKEBOX_R - 0.15
-	g.box(-0.42, 0.42, 9.15, 10.0, lz - 0.05, lz + 0.25, "metal", blk)
-	g.box(-0.62, 0.62, 9.0, 10.15, lz + 0.25, lz + 1.45, "metal", blk, skip="f")
-	g.box(-0.63, 0.63, 9.15, 10.0, lz + 0.42, lz + 1.28, "wood", cab)
-	g.box(-0.75, 0.75, 8.9, 10.3, lz + 1.45, lz + 1.56, "metal", blk)
-	g.lathe((0.0, 9.55, lz + 1.56), (0.0, 0.0, 1.0), [(0.14, 0.0), (0.14, 0.28), None, (0.24, 0.28), (0.24, 0.36), (0.0, 0.4)], "metal", blk, n=10)
-	lens_z = lz + 0.85
-	g.lathe((0.0, 10.15, lens_z), ax_y, [(0.58, 0.0), (0.58, 0.06), None, (0.44, 0.08), None, (0.42, 0.0)], "brass", brass, n=24)
-	g.lathe((0.0, 10.15, lens_z), ax_y, [(0.42, 0.0), (0.3, 0.04), (0.0, 0.06)], "lamp", PAINT["lamp"], n=24)
-	g.box(-0.6, 0.6, 10.12, 10.15, lz + 0.25, lz + 1.45, "metal", blk)
+		(0.72, -0.3), (0.72, 0.1), None, (0.78, 0.1), (0.78, 0.22), None, (0.6, 0.22), (0.55, 0.3), (0.55, 0.8), None,
+		(0.58, 0.95), (0.7, 1.2), (0.9, 1.5), (1.1, 1.85), (1.22, 2.15), (STACK_R - 0.02, 2.4)], "metal", blk, n=32)
+	g.lathe((0.0, STACK_Y, base), (0.0, 0.0, 1.0), [(0.55, 0.8), (0.6, 0.82), (0.6, 0.93), (0.57, 0.95)], "brass", brass, n=28)
+	g.lathe((0.0, STACK_Y, base), (0.0, 0.0, 1.0), [(STACK_R - 0.04, 2.4), (STACK_R + 0.06, 2.42), None, (STACK_R + 0.06, 2.56), None, (STACK_R - 0.04, 2.58)], "brass", brass, n=32)
+	g.lathe((0.0, STACK_Y, base), (0.0, 0.0, 1.0), [(STACK_R - 0.04, 2.58), (0.9, 2.72), (0.45, 2.81), (0.0, top - base)], "dark", tone(PAINT["iron"], 0.7), n=32)
+	for k in range(8):
+		a = k / 8 * math.tau
+		d = Vector((math.cos(a), math.sin(a), 0.0))
+		p0 = Vector((0.0, STACK_Y, 0.0)) + d * (STACK_R - 0.06)
+		p1 = Vector((0.0, STACK_Y, 0.0)) + d * 0.05
+		g.beam((p0.x, p0.y, base + 2.6), (p1.x, p1.y, top - 0.05), 0.04, 0.04, "metal", blk)
+	# The headlamp: a big box lantern on a bracket over the smokebox's front, a
+	# brass bezel round its lens, number boards either side, a peaked roof and
+	# its chimney.
+	lz0, lz1 = LAMP_Z
+	ly0, ly1 = LAMP_Y
+	g.box(-0.62, 0.62, ly0 - 0.05, ly1 + 0.05, base, lz0, "metal", blk)
+	g.beam((0.0, sb1 + 0.05, BOILER_Z + 0.9), (0.0, ly1 - 0.05, lz0 - 0.02), 0.14, 0.14, "metal", blk)
+	g.box(-0.72, 0.72, ly0, ly1, lz0, lz1, "metal", blk, skip="f")
+	for s in (-1, 1):
+		g.box(s * 0.72, s * 0.75, ly0 + 0.3, ly1 - 0.3, lz0 + 0.4, lz1 - 0.35, "glass", PAINT["glass"])
+		g.box(s * 0.7, s * 0.78, ly0, ly0 + 0.08, lz0, lz1, "brass", brass)
+		g.box(s * 0.7, s * 0.78, ly1 - 0.08, ly1, lz0, lz1, "brass", brass)
+	g.box(-0.72, 0.72, ly1 - 0.02, ly1, lz0, lz1, "metal", blk)
+	lc = (lz0 + lz1) * 0.5
+	g.lathe((0.0, ly1, lc), ax_y, [(0.66, 0.0), (0.66, 0.1), None, (0.56, 0.14), None, (0.53, 0.0)], "brass", brass, n=28)
+	g.lathe((0.0, ly1, lc), ax_y, [(0.53, 0.0), (0.38, 0.06), (0.0, 0.09)], "lamp", PAINT["lamp"], n=28)
+	for z in (lz0, lz1 - 0.06):
+		g.box(-0.76, 0.76, ly0 - 0.04, ly1 + 0.04, z, z + 0.06, "brass", brass)
+	for s in (-1, 1):
+		g.facing([(s * 0.82, ly0 - 0.1, lz1 + 0.05), (s * 0.82, ly1 + 0.1, lz1 + 0.05), (0.0, ly1 + 0.1, lz1 + 0.35), (0.0, ly0 - 0.1, lz1 + 0.35)], (s * 0.3, 0.0, 0.82), "metal", blk)
+	for y, f in ((ly0 - 0.1, -1), (ly1 + 0.1, 1)):
+		g.facing([(-0.82, y, lz1 + 0.05), (0.82, y, lz1 + 0.05), (0.0, y, lz1 + 0.35)], (0, f, 0), "metal", blk)
+	cy = (ly0 + ly1) * 0.5
+	g.lathe((0.0, cy, lz1 + 0.25), (0.0, 0.0, 1.0), [(0.13, 0.0), (0.13, 0.32), None, (0.24, 0.32), (0.24, 0.4), (0.0, 0.47)], "metal", blk, n=10)
 	# The bell in its yoke.
 	bz = BOILER_Z + BOILER_R - 0.05
 	for s in (-1, 1):
@@ -672,15 +892,18 @@ def build_engine(mats):
 	g.box(-0.6, 0.6, BELL_Y - 0.08, BELL_Y + 0.08, bz + 0.92, bz + 1.02, "brass", brass)
 	g.lathe((0.0, BELL_Y, bz), (0.0, 0.0, 1.0), [(0.47, 0.22), (0.47, 0.3), (0.38, 0.42), (0.3, 0.62), (0.26, 0.82), (0.2, 0.92), (0.0, 0.96)], "brass", brass, n=20)
 	g.lathe((0.0, BELL_Y, bz), (0.0, 0.0, 1.0), [(0.0, 0.25), (0.45, 0.25)], "dark", PAINT["dark"], n=20)
-	# Sand dome and steam dome, black with brass caps; the whistle.
+	# Sand dome and steam dome, black with brass caps; the safety valves on the
+	# steam dome, the whistle before the cab.
 	def dome(y, foot, rr, h, cap):
 		zfoot = BOILER_Z + math.sqrt(max(BOILER_R ** 2 - foot ** 2, 0.0)) - bz
 		g.lathe((0.0, y, bz), (0.0, 0.0, 1.0), [(foot, zfoot - 0.02), (foot * 0.95, 0.02), (rr, 0.2), (rr, cap)], "metal", blk, n=28)
 		g.lathe((0.0, y, bz), (0.0, 0.0, 1.0), [(rr + 0.03, cap - 0.02), (rr + 0.03, cap + 0.06), None, (rr, cap + 0.06), (rr * 0.88, h - 0.2), (rr * 0.6, h - 0.06), (0.0, h)], "brass", brass, n=28)
 	dome(SAND_Y, 0.9, 0.66, 0.92, 0.55)
 	dome(DOME_Y, 1.05, 0.8, 1.27, 0.78)
-	g.lathe((0.0, CAB_Y[1] + 0.35, bz - 0.15), (0.0, 0.0, 1.0), [(0.07, 0.0), (0.07, 0.4), None, (0.14, 0.4), (0.14, 0.8), (0.0, 0.85)], "brass", brass, n=12)
-	# Cylinders, their steam chests, the guide bars.
+	for dx in (-0.22, 0.22):
+		g.lathe((dx, DOME_Y - 0.1, bz + 1.12), (0.0, 0.0, 1.0), [(0.09, 0.0), (0.09, 0.18), (0.12, 0.2), (0.12, 0.26), (0.0, 0.3)], "brass", brass, n=10)
+	g.lathe((0.0, CAB_Y[1] + 0.3, bz - 0.15), (0.0, 0.0, 1.0), [(0.07, 0.0), (0.07, 0.38), None, (0.15, 0.38), (0.15, 0.78), (0.0, 0.84)], "brass", brass, n=12)
+	# Cylinders, their steam chests, the guide bars; drain cocks under them.
 	c0, c1 = CYL_Y
 	for s in (-1, 1):
 		x = s * CYL_X
@@ -690,23 +913,48 @@ def build_engine(mats):
 		g.box(x - 0.36, x + 0.36, c0 + 0.12, c1 - 0.12, CYL_Z + CYL_R - 0.05, CYL_Z + CYL_R + 0.38, "metal", blk)
 		g.box(x - 0.39, x + 0.39, c0 + 0.08, c1 - 0.08, CYL_Z + CYL_R + 0.38, CYL_Z + CYL_R + 0.44, "brass", brass)
 		g.box(s * 1.15, s * (CYL_X - 0.3), c0 + 0.3, c1 - 0.3, CYL_Z - 0.3, CYL_Z + 0.35, "metal", blk)
-		for dz in (-0.2, 0.2):
-			g.box(x - 0.06, x + 0.06, 4.0, c0, CYL_Z + dz - 0.05, CYL_Z + dz + 0.05, "iron", steel)
+		for dz_ in (-0.2, 0.2):
+			g.box(x - 0.06, x + 0.06, 4.0, c0, CYL_Z + dz_ - 0.05, CYL_Z + dz_ + 0.05, "iron", steel)
 		g.box(x - 0.1, x + 0.1, 3.95, 4.15, CYL_Z - 0.34, CYL_Z + 0.34, "iron", steel)
-	# Running boards over the drivers, their splashers, the handrails.
+		for yy in (c0 + 0.25, c1 - 0.25):
+			g.beam((x, yy, CYL_Z - CYL_R + 0.02), (x, yy - 0.05, CYL_Z - CYL_R - 0.32), 0.05, 0.05, "brass", brass)
+	# Running boards over the drivers, their red valance, the splashers, the
+	# handrails on stanchions down the boiler.
 	for s in (-1, 1):
 		x0, x1 = s * 1.4, s * 2.42
 		g.box(x0, x1, CAB_Y[1], c0 + 0.1, RUNNING_Z - 0.06, RUNNING_Z + 0.06, "metal", blk)
-		g.box(x1 - s * 0.04, x1, CAB_Y[1], c0 + 0.1, RUNNING_Z - 0.26, RUNNING_Z - 0.06, "wood", PAINT["pilot"])
+		g.box(x1 - s * 0.04, x1, CAB_Y[1], c0 + 0.1, RUNNING_Z - 0.3, RUNNING_Z - 0.06, "wood", PAINT["pilot"])
+		g.box(x1 - s * 0.045, x1 + s * 0.005, CAB_Y[1], c0 + 0.1, RUNNING_Z - 0.31, RUNNING_Z - 0.27, "brass", brass)
 		g.box(x0, x1, c0 + 0.1, SMOKEBOX_Y[1] - 0.1, CYL_Z + CYL_R + 0.44, CYL_Z + CYL_R + 0.52, "metal", blk)
 		for dy in DRIVER_Y:
 			splasher(g, s, dy)
 		hx = s * (BOILER_R + 0.16)
 		hz = BOILER_Z + 0.55
-		g.beam((hx, CAB_Y[1], hz), (hx, SMOKEBOX_Y[1] - 0.2, hz), 0.06, 0.06, "brass", brass)
-		for y in (CAB_Y[1] + 1.6, 1.8, 4.2, 7.6):
+		g.beam((hx, CAB_Y[1], hz), (hx, SMOKEBOX_Y[1] - 0.25, hz), 0.06, 0.06, "brass", brass)
+		for y in (CAB_Y[1] + 1.4, 1.2, 3.6, 6.2, 8.4):
 			g.beam((s * (BOILER_R - 0.05), y, hz), (hx, y, hz), 0.05, 0.05, "iron", steel)
-	# The pilot: red slats raked down from the beam to a V at the rails.
+		# The feed pipe from the cab along the boiler to its check valve.
+		pts = [(s * 1.6, CAB_Y[1], 3.75), (s * 1.62, -1.5, 3.75), (s * 1.62, 1.9, 3.95), (s * 1.52, 2.6, 4.35)]
+		for a, b in zip(pts, pts[1:]):
+			g.beam(a, b, 0.09, 0.09, "brass", tone(brass, 0.85))
+		g.box(s * 1.42, s * 1.6, 2.5, 2.75, 4.25, 4.5, "brass", brass)
+		# The sand pipes from the sand dome down the boiler to the rail before the
+		# front driver.
+		pts = [(s * 0.8, SAND_Y, bz + 0.25), (s * 1.2, SAND_Y - 0.05, BOILER_Z + 1.0), (s * 1.52, SAND_Y - 0.1, BOILER_Z + 0.3),
+			(s * 1.6, SAND_Y - 0.15, RUNNING_Z + 0.08), (s * 1.6, DRIVER_Y[0] + DRIVER_R + 0.3, RUNNING_Z - 0.1), (s * 1.55, DRIVER_Y[0] + DRIVER_R + 0.2, 1.05)]
+		for a, b in zip(pts, pts[1:]):
+			g.beam(a, b, 0.05, 0.05, "iron", tone(iron, 1.2))
+	# The air pump on the right by the cab, its pipe to the boiler; the reach rod
+	# on the left from the cab to the reversing arm.
+	ap = (2.0, -3.25)
+	g.lathe((ap[0], ap[1], RUNNING_Z + 0.06), (0.0, 0.0, 1.0), [(0.0, 0.0), (0.3, 0.0), (0.3, 0.75), None, (0.24, 0.75), (0.24, 0.9), None,
+		(0.3, 0.9), (0.3, 1.6), (0.2, 1.72), (0.0, 1.75)], "metal", blk, n=14)
+	for z in (RUNNING_Z + 0.1, RUNNING_Z + 0.8, RUNNING_Z + 1.55):
+		g.lathe((ap[0], ap[1], z), (0.0, 0.0, 1.0), [(0.32, 0.0), (0.32, 0.08)], "brass", brass, n=14)
+	g.beam((ap[0] - 0.2, ap[1], RUNNING_Z + 1.3), (1.45, ap[1] + 0.4, BOILER_Z + 0.4), 0.08, 0.08, "brass", tone(brass, 0.85))
+	g.beam((-1.7, CAB_Y[1], BOILER_Z - 0.3), (-1.7, -0.9, BOILER_Z - 0.55), 0.08, 0.1, "iron", steel)
+	# The pilot: red slats raked down from the beam to a V at the rails, an iron
+	# frame round them, the drawbar at its nose.
 	top_z, foot_z, back = 2.3, 0.98, 11.0
 	reach = PILOT_TIP - back
 	half = 2.6
@@ -717,8 +965,11 @@ def build_engine(mats):
 	for s in (-1, 1):
 		g.beam((s * half, back + 0.02, foot_z), (0.0, PILOT_TIP - 0.1, foot_z), 0.16, 0.14, "metal", iron)
 		g.beam((s * half, back + 0.05, top_z), (s * half, back + 0.05, foot_z), 0.14, 0.14, "metal", iron)
+		g.beam((s * half, back + 0.05, top_z), (0.0, PILOT_TIP - 0.12, foot_z + 0.5), 0.09, 0.09, "metal", iron)
 	g.beam((0.0, back, top_z), (0.0, PILOT_TIP - 0.08, foot_z), 0.16, 0.16, "metal", iron, up=(1.0, 0.0, 0.0))
 	g.box(-2.6, 2.6, back, back + 0.14, top_z - 0.12, top_z + 0.02, "metal", iron)
+	g.box(-0.18, 0.18, back + 0.1, PILOT_TIP - 0.25, 1.55, 1.7, "metal", iron)
+	g.box(-0.3, 0.3, PILOT_TIP - 0.45, PILOT_TIP - 0.2, 1.45, 1.78, "metal", iron)
 	build_cab(g)
 	emit("Body", g, mats, parent=root, group="engine body")
 	# The leading truck and its wheels.
@@ -802,54 +1053,92 @@ def splasher(g, s, ay):
 
 
 def build_cab(g):
-	"""The tall wooden cab: red boards, cream trim, dark glass, an arched roof."""
+	"""The wooden cab, low and narrow behind the boiler: red boards each its own
+	coat, a raised panel under the windows lined in cream with a brass number
+	plate, framed windows, the side's entry and the gangway at the back open on
+	the backhead and the fire's glow, an arched roof proud all round with its
+	ventilator and gutters."""
 	y0, y1 = CAB_Y
-	cab, cream, glass = PAINT["cab"], PAINT["cream"], PAINT["glass"]
+	cab, cream, glass, brass, dark = PAINT["cab"], PAINT["cream"], PAINT["glass"], PAINT["brass"], PAINT["dark"]
 	w = CAB_HALF
 	t = 0.14
-	# Walls: the sides, the front round the boiler, the back.
+	rng = np.random.default_rng(31)
+	wz0, wz1 = 4.75, 6.35
+	inner = tone(PAINT["inside"], 0.8)
+	# The walls: boards outside, dark inside. The sides; the front round the
+	# boiler; the back two posts and a header either side of the gangway.
 	for s in (-1, 1):
-		g.box(s * (w - t), s * w, y0, y1, CAB_FLOOR, CAB_EAVE, "wood", cab)
-	g.box(-w, w, y1 - t, y1, CAB_FLOOR, CAB_EAVE, "wood", cab, skip="b")
-	g.box(-w, w, y0, y0 + t, CAB_FLOOR, CAB_EAVE, "wood", cab, skip="f")
-	# Side windows: glass panes, cream frames, a sill band and the corner posts.
-	wz0, wz1 = 5.0, 6.85
+		plank_box(g, s * (w - t), s * w, y0, y1, CAB_FLOOR, CAB_EAVE, cab, rng, skip="ud" + ("l" if s > 0 else "r"), fade=0.15)
+		g.facing([(s * (w - t), y0, CAB_FLOOR), (s * (w - t), y1, CAB_FLOOR), (s * (w - t), y1, CAB_EAVE), (s * (w - t), y0, CAB_EAVE)], (-s, 0, 0), "dark", inner)
+	plank_box(g, -w, w, y1 - t, y1, CAB_FLOOR, CAB_EAVE, cab, rng, skip="udb", fade=0.15)
+	g.facing([(-w, y1 - t, CAB_FLOOR), (w, y1 - t, CAB_FLOOR), (w, y1 - t, CAB_EAVE), (-w, y1 - t, CAB_EAVE)], (0, -1, 0), "dark", inner)
+	gw = 1.5
+	for s in (-1, 1):
+		plank_box(g, s * gw, s * (w - t), y0, y0 + t, CAB_FLOOR, CAB_EAVE, cab, rng, skip="ud", fade=0.15)
+	plank_box(g, -gw, gw, y0, y0 + t, 6.1, CAB_EAVE, cab, rng, skip="u", fade=0.15)
+	# Inside: the deck, the backhead (the boiler's end) with its gauges and the
+	# fire door glowing, the reverser.
+	g.box(-w + t, w - t, y0, y1 - t, CAB_FLOOR - 0.05, CAB_FLOOR, "wood", PAINT["deck"], tile=PLANK_TILE, rot=True)
+	g.disc((0.0, BOILER_Y[0] + 0.02, BOILER_Z), (0.0, -1.0, 0.0), BOILER_R, "metal", tone(PAINT["black"], 1.3), n=24)
+	g.box(-0.55, 0.55, BOILER_Y[0] - 0.05, BOILER_Y[0] + 0.02, 2.75, 3.75, "metal", PAINT["black"])
+	g.facing([(-0.4, BOILER_Y[0] - 0.06, 2.9), (0.4, BOILER_Y[0] - 0.06, 2.9), (0.4, BOILER_Y[0] - 0.06, 3.6), (-0.4, BOILER_Y[0] - 0.06, 3.6)], (0, -1, 0), "lamp", PAINT["crack"])
+	for x in (-0.6, 0.6):
+		g.lathe((x, BOILER_Y[0] - 0.02, 5.35), (0.0, -1.0, 0.0), [(0.0, 0.0), (0.2, 0.0), (0.2, 0.06), (0.0, 0.08)], "brass", brass, n=12)
+	g.beam((-1.6, y1 - 0.6, CAB_FLOOR), (-1.45, y1 - 0.9, 3.6), 0.08, 0.08, "iron", PAINT["steel"])
+	# Each side: two framed windows, the entry aft (dark, framed), a raised panel
+	# lined in cream under the windows with the brass number plate, the sill and
+	# eave bands, corner posts, the grab iron at the entry.
 	for s in (-1, 1):
 		x = s * (w + 0.012)
-		for wy0, wy1 in ((-6.7, -5.0), (-8.8, -7.1)):
+		xf = s * (w + 0.04)
+		for wy0, wy1 in ((y1 - 1.75, y1 - 0.45), (y1 - 3.45, y1 - 2.15)):
 			q = [Vector((x, wy0, wz0)), Vector((x, wy1, wz0)), Vector((x, wy1, wz1)), Vector((x, wy0, wz1))]
 			g.poly(q if s > 0 else q[::-1], "glass", glass)
-			xf = s * (w + 0.04)
-			for a, b in (((wy0, wz0), (wy1, wz0)), ((wy0, wz1), (wy1, wz1)), ((wy0, wz0), (wy0, wz1)), ((wy1, wz0), (wy1, wz1)), (((wy0 + wy1) * 0.5, wz0), ((wy0 + wy1) * 0.5, wz1))):
-				g.beam((xf, a[0], a[1]), (xf, b[0], b[1]), 0.1, 0.1, "wood", cream, up=(1.0, 0.0, 0.0))
-		# The doorway aft, dark, framed.
-		q = [Vector((x, -10.65, CAB_FLOOR + 0.25)), Vector((x, -9.2, CAB_FLOOR + 0.25)), Vector((x, -9.2, wz1)), Vector((x, -10.65, wz1))]
-		g.poly(q if s > 0 else q[::-1], "dark", PAINT["dark"])
-		xf = s * (w + 0.04)
-		for a, b in (((-10.65, CAB_FLOOR + 0.25), (-10.65, wz1)), ((-9.2, CAB_FLOOR + 0.25), (-9.2, wz1)), ((-10.65, wz1), (-9.2, wz1))):
-			g.beam((xf, a[0], a[1]), (xf, b[0], b[1]), 0.12, 0.12, "wood", cream, up=(1.0, 0.0, 0.0))
-		# Sill band, eave band, corner posts.
-		g.box(s * w, s * (w + 0.05), y0, y1, wz0 - 0.32, wz0 - 0.18, "wood", cream)
+			for a, b in (((wy0, wz0), (wy1, wz0)), ((wy0, wz1), (wy1, wz1)), ((wy0, wz0), (wy0, wz1)), ((wy1, wz0), (wy1, wz1)), (((wy0 + wy1) * 0.5, wz0), ((wy0 + wy1) * 0.5, wz1)), ((wy0, (wz0 + wz1) * 0.5), (wy1, (wz0 + wz1) * 0.5))):
+				g.beam((xf, a[0], a[1]), (xf, b[0], b[1]), 0.09, 0.09, "wood", cream, up=(1.0, 0.0, 0.0))
+		ey0, ey1 = y0 + 0.25, y1 - 3.95
+		q = [Vector((x, ey0, CAB_FLOOR + 0.2)), Vector((x, ey1, CAB_FLOOR + 0.2)), Vector((x, ey1, wz1)), Vector((x, ey0, wz1))]
+		g.poly(q if s > 0 else q[::-1], "dark", dark)
+		for a, b in (((ey0, CAB_FLOOR + 0.2), (ey0, wz1)), ((ey1, CAB_FLOOR + 0.2), (ey1, wz1)), ((ey0, wz1), (ey1, wz1))):
+			g.beam((xf, a[0], a[1]), (xf, b[0], b[1]), 0.12, 0.1, "wood", cream, up=(1.0, 0.0, 0.0))
+		g.beam((s * (w + 0.08), ey0 + 0.15, CAB_FLOOR + 0.5), (s * (w + 0.08), ey0 + 0.15, wz1 - 0.3), 0.06, 0.06, "brass", brass)
+		g.beam((s * (w + 0.08), ey1 - 0.15, CAB_FLOOR + 0.5), (s * (w + 0.08), ey1 - 0.15, wz1 - 0.3), 0.06, 0.06, "brass", brass)
+		pz0, pz1, py0, py1 = CAB_FLOOR + 0.35, wz0 - 0.45, y1 - 3.45, y1 - 0.45
+		for a, b in (((py0, pz0), (py1, pz0)), ((py0, pz1), (py1, pz1)), ((py0, pz0), (py0, pz1)), ((py1, pz0), (py1, pz1))):
+			g.beam((s * (w + 0.02), a[0], a[1]), (s * (w + 0.02), b[0], b[1]), 0.05, 0.05, "wood", cream, up=(1.0, 0.0, 0.0))
+		cy, cz = (py0 + py1) * 0.5, (pz0 + pz1) * 0.5
+		for rr, xo, col, mat in ((1.0, 0.03, brass, "brass"), (0.8, 0.045, tone(PAINT["cab"], 0.55), "metal")):
+			pts = [Vector((s * (w + xo), cy + 0.62 * rr * math.cos(a), cz + 0.36 * rr * math.sin(a))) for a in (k / 16 * math.tau for k in range(16))]
+			g.facing(pts, (s, 0, 0), mat, col)
+		for k in range(5):
+			yy = cy - 0.3 + 0.15 * k
+			g.box(s * (w + 0.045), s * (w + 0.06), yy - 0.03, yy + 0.03, cz - 0.15, cz + 0.15, "brass", brass)
+		g.box(s * w, s * (w + 0.05), y0, y1, wz0 - 0.3, wz0 - 0.16, "wood", cream)
 		g.box(s * w, s * (w + 0.05), y0, y1, CAB_EAVE - 0.22, CAB_EAVE - 0.08, "wood", cream)
 		for y in (y0 + 0.07, y1 - 0.07):
 			g.box(s * (w - 0.02), s * (w + 0.05), y - 0.09, y + 0.09, CAB_FLOOR, CAB_EAVE, "wood", cream)
-	# Front windows either side of the boiler, and the back's.
-	for yf, face in ((y1 + 0.012, 1.0), (y0 - 0.012, -1.0)):
-		for s in (-1, 1):
-			xa, xb = sorted((s * 1.72, s * 2.55))
-			q = [Vector((xa, yf, 5.35)), Vector((xa, yf, 6.85)), Vector((xb, yf, 6.85)), Vector((xb, yf, 5.35))]
-			g.poly(q if face > 0 else q[::-1], "glass", glass)
-			yy = yf + face * 0.03
-			for a, b in (((xa, 5.35), (xb, 5.35)), ((xa, 6.85), (xb, 6.85)), ((xa, 5.35), (xa, 6.85)), ((xb, 5.35), (xb, 6.85))):
-				g.beam((a[0], yy, a[1]), (b[0], yy, b[1]), 0.1, 0.1, "wood", cream, up=(0.0, 1.0, 0.0))
-	# The roof: an arc through the eaves and the crown, a little proud all round.
+		# The steps under the entry.
+		for z in (1.05, 1.7):
+			g.box(s * (w - 0.35), s * (w + 0.05), y0 + 0.3, y0 + 0.85, z, z + 0.07, "wood", PAINT["deck"])
+		for y in (y0 + 0.32, y0 + 0.83):
+			g.box(s * (w - 0.02), s * (w + 0.03), y - 0.03, y + 0.03, 1.05, CAB_FLOOR - 0.45, "iron", PAINT["iron"])
+	# Front windows either side of the boiler.
+	yf = y1 + 0.012
+	for s in (-1, 1):
+		xa, xb = sorted((s * 1.62, s * 2.25))
+		q = [Vector((xa, yf, 5.2)), Vector((xa, yf, 6.4)), Vector((xb, yf, 6.4)), Vector((xb, yf, 5.2))]
+		g.poly(q, "glass", glass)
+		for a, b in (((xa, 5.2), (xb, 5.2)), ((xa, 6.4), (xb, 6.4)), ((xa, 5.2), (xa, 6.4)), ((xb, 5.2), (xb, 6.4))):
+			g.beam((a[0], yf + 0.03, a[1]), (b[0], yf + 0.03, b[1]), 0.09, 0.09, "wood", cream, up=(0.0, 1.0, 0.0))
+	# The roof: an arc through the eaves and the crown, proud all round, gutters
+	# along its eaves, the ventilator on its crown.
 	rise = CAB_TOP - CAB_EAVE
 	R = (EAVE_HALF ** 2 + rise ** 2) / (2.0 * rise)
 	cz = CAB_TOP - R
 	half_ang = math.asin(EAVE_HALF / R)
 	n = 14
-	ry0, ry1 = y0 - 0.3, y1 + 0.25
-	thick = 0.14
+	ry0, ry1 = y0 - 0.35, y1 + 0.3
+	thick = 0.12
 	top_pts, bot_pts = [], []
 	for k in range(n + 1):
 		a = -half_ang + 2.0 * half_ang * k / n
@@ -873,7 +1162,11 @@ def build_cab(g):
 	for k, sgn in ((0, -1.0), (n, 1.0)):
 		q = [Vector((top_pts[k].x, ry0, top_pts[k].z)), Vector((top_pts[k].x, ry1, top_pts[k].z)), Vector((bot_pts[k].x, ry1, bot_pts[k].z)), Vector((bot_pts[k].x, ry0, bot_pts[k].z))]
 		g.poly(q if sgn < 0 else q[::-1], "metal", roof)
-	# A gable under the arc front and back, red boards up to the roof.
+		x = top_pts[k].x
+		g.box(x - 0.07, x + 0.07, ry0, ry1, top_pts[k].z - 0.14, top_pts[k].z - 0.02, "metal", tone(roof, 0.8))
+	g.box(-0.55, 0.55, y0 + 2.2, y0 + 4.0, CAB_TOP - 0.06, CAB_TOP + 0.04, "metal", tone(roof, 1.15))
+	g.box(-0.65, 0.65, y0 + 2.1, y0 + 4.1, CAB_TOP + 0.04, CAB_TOP + 0.1, "metal", tone(roof, 1.25))
+	# A gable under the arc front and back, red up to the roof.
 	for y, sgn in ((y1, 1.0), (y0, -1.0)):
 		pts = [Vector((p.x * (w / EAVE_HALF), y, p.z - thick)) for p in top_pts]
 		mid = Vector((0.0, y, CAB_EAVE - 0.05))
@@ -923,8 +1216,23 @@ def build_tender(mats):
 	g.lathe((0.0, hy, TENDER_TANK_TOP), (0.0, 0.0, 1.0), [(0.66, 0.0), (0.66, 0.22), None, (0.7, 0.22), (0.7, 0.3), (0.5, 0.34), (0.0, 0.36)], "metal", blk, n=20)
 	g.lathe((0.0, hy, TENDER_TANK_TOP), (0.0, 0.0, 1.0), [(0.665, 0.12), (0.665, 0.2)], "brass", PAINT["brass"], n=20)
 	g.box(-0.08, 0.08, hy + 0.7, hy + 0.95, TENDER_TANK_TOP + 0.25, TENDER_TANK_TOP + 0.45, "brass", PAINT["brass"])
-	# The tank's top deck aft of the bunker.
+	# The tank's top deck aft of the bunker, its tool box, the back-up lamp, grab
+	# irons at the back corners; rivets down the tank's seams; the brake gear.
 	g.box(-w, w, -H + 0.08, COAL_BACK - 0.12, TENDER_TANK_TOP, TENDER_TANK_TOP + 0.04, "metal", iron)
+	g.box(-1.1, 1.1, -H + 0.25, -H + 0.95, TENDER_TANK_TOP + 0.04, TENDER_TANK_TOP + 0.55, "wood", tone(PAINT["black"], 1.6))
+	g.box(-1.15, 1.15, -H + 0.2, -H + 1.0, TENDER_TANK_TOP + 0.55, TENDER_TANK_TOP + 0.62, "metal", blk)
+	g.box(1.55, 2.05, -H + 0.12, -H + 0.55, TENDER_TANK_TOP + 0.04, TENDER_TANK_TOP + 0.6, "metal", blk)
+	g.lathe((1.8, -H + 0.12, TENDER_TANK_TOP + 0.32), (0.0, -1.0, 0.0), [(0.18, 0.0), (0.18, 0.04), None, (0.15, 0.05), (0.0, 0.06)], "lamp", PAINT["lamp"], n=14)
+	for s in (-1, 1):
+		g.beam((s * (w + 0.06), -H + 0.35, TENDER_SILL[1] + 0.3), (s * (w + 0.06), -H + 0.35, TENDER_TANK_TOP - 0.3), 0.05, 0.05, "brass", PAINT["brass"])
+		for z in (TENDER_SILL[1] + 0.12, TENDER_TANK_TOP - 0.2):
+			rivet_line(g, (s * (w + 0.005), -H + 0.25, z), (s * (w + 0.005), H - 0.3, z), 30, (s, 0, 0), r=0.045)
+		for y in (-H + 0.3, H - 0.35):
+			rivet_line(g, (s * (w + 0.005), y, TENDER_SILL[1] + 0.25), (s * (w + 0.005), y, TENDER_TANK_TOP - 0.3), 6, (s, 0, 0), r=0.045)
+	for z in (TENDER_SILL[1] + 0.12, TENDER_TANK_TOP - 0.2):
+		rivet_line(g, (-w + 0.2, -H + 0.08 - 0.005, z), (w - 0.2, -H + 0.08 - 0.005, z), 16, (0, -1, 0), r=0.045)
+	brake_gear(g, H, TENDER_SILL[0])
+	stirrups(g, H, w - 0.1, TENDER_SILL[0])
 	emit("Body", g, mats, parent=root, group="tender body")
 	# The coal: a heap in the bunker, lumpy, with loose lumps on top.
 	coal = Geo(dirt=0.0)
@@ -1131,31 +1439,39 @@ def corner_posts(g, half, ye, z0, z1, col, wide=0.2, proud=0.05):
 			g.box(sx * (half - wide), sx * (half + proud), sy * (ye - wide), sy * (ye + proud), z0, z1, "wood", col)
 
 
-def slats(g, x0, x1, y0, y1, z0, z1, col):
+def slats(g, x0, x1, y0, y1, z0, z1, col, rng=None):
 	"""Horizontal boards with gaps (SLAT apart) between z0 and z1 over the box
-	x0..x1, y0..y1; their seams along them. Returns the top of the last board."""
+	x0..x1, y0..y1; their seams along them, each its own coat (rng). Returns the
+	top of the last board."""
 	t = 16.0 * SLAT
 	z = z0
 	top = z0
 	while z + SLAT - SLAT_GAP <= z1 + 1e-6:
-		g.box(x0, x1, y0, y1, z, z + SLAT - SLAT_GAP, "wood", col, rot=True, tile=t, uvo=(0.08 / 16.0 - z0 / t, 0.0))
+		c = board_tone(rng, col) if rng is not None else col
+		g.box(x0, x1, y0, y1, z, z + SLAT - SLAT_GAP, "wood", c, rot=True, tile=t, uvo=(0.08 / 16.0 - z0 / t, 0.0))
 		top = z + SLAT - SLAT_GAP
 		z += SLAT
 	return top
 
 
-def car_door(name, mats, root, s, ya, yb, col, slatted=False, group=None):
+def car_door(name, mats, root, s, ya, yb, col, slatted=False, group=None, frame=None, seed=0):
 	"""A sliding door on side s (+1 the right) over ya..yb: boards (or slats on a
-	dark back) in a cream frame with a Z brace; its origin at its middle."""
+	dark back) in a frame (cream) with a Z brace, its rollers on the track over it
+	and a latch bar; its origin at its middle."""
 	g = Geo()
+	rng = np.random.default_rng(seed)
 	za, zb = FLOOR + 0.04, FLOOR + DOOR_HIGH + DOOR_OVER
 	x0, x1 = s * (CAR_HALF + 0.06), s * (CAR_HALF + 0.1)
 	if slatted:
 		g.box(x0, s * (CAR_HALF + 0.07), ya, yb, za, zb, "wood", PAINT["inside"])
-		slats(g, s * (CAR_HALF + 0.07), x1, ya, yb, za, zb, col)
+		slats(g, s * (CAR_HALF + 0.07), x1, ya, yb, za, zb, col, rng)
 	else:
-		g.box(x0, x1, ya, yb, za, zb, "wood", col, tile=CAR_TILE)
-	cream = PAINT["cream"]
+		plank_box(g, x0, x1, ya, yb, za, zb, col, rng, skip="l" if s > 0 else "r")
+	cream = frame or PAINT["cream"]
+	if not FAR:
+		for y in (ya + 0.5, yb - 0.5):
+			g.lathe((s * (CAR_HALF + 0.1), y, zb + 0.1), (s, 0.0, 0.0), [(0.0, 0.0), (0.13, 0.0), (0.13, 0.035), (0.0, 0.035)], "metal", PAINT["iron"], n=8)
+		g.box(s * (CAR_HALF + 0.11), s * (CAR_HALF + 0.14), (ya + yb) * 0.5 - 0.6, (ya + yb) * 0.5 + 0.6, FLOOR + 2.6, FLOOR + 2.7, "metal", PAINT["iron"])
 	xf0, xf1 = x1, s * (CAR_HALF + 0.135)
 	fw = 0.2
 	zm = (za + zb) * 0.5
@@ -1171,75 +1487,91 @@ def car_door(name, mats, root, s, ya, yb, col, slatted=False, group=None):
 
 def build_boxcar(mats, kind):
 	"""The boxcars: `box` its doors shut, `doors` slid open, `stock` slatted with
-	its doors open. The doorway (DOOR_LONG x DOOR_HIGH from FLOOR, across the car)
-	is clear on the open ones: its floor, the walls' faces and the head lined dark.
-	`smash`: a weathered boxcar, its doors shut, a corridor down its length
-	(smash_shell) and each end's plug of plank shards (smash_plug), its walls
-	cracked by each end."""
+	its doors open, `gate` its doors shut over the doorway (RailTrain slides them
+	open and shut: its movers). The doorway (DOOR_LONG x DOOR_HIGH from FLOOR,
+	across the car) is clear on the open ones: its floor, the walls' faces and the
+	head lined dark. `smash`: a weathered boxcar, its doors shut, a corridor down
+	its length (smash_shell) and each end's plug of plank shards (smash_plug), its
+	walls cracked by each end. `thru`: the run's open-ended boxcar, the corridor
+	open at both ends (thru_shell), its end doors swung back flat on its sides, a
+	slatted band high on its sides lighting the corridor, no side doors. Every
+	board its own coat of paint."""
 	root = empty(kind.capitalize(), (0.0, 0.0, 0.0))
-	H = BOX_LONG * 0.5
+	H = LONG[kind] * 0.5
 	w = CAR_HALF
-	paint = PAINT[{"stock": "stock", "smash": "smash"}.get(kind, "barn")]
+	paint = PAINT[{"stock": "stock", "smash": "smash", "thru": "thru"}.get(kind, "barn")]
 	cream, iron, inside = PAINT["cream"], PAINT["iron"], PAINT["inside"]
+	rng = np.random.default_rng({"box": 3, "doors": 4, "stock": 5, "gate": 6, "smash": 7, "thru": 8}[kind])
 	d = DOOR_LONG * 0.5
 	head = FLOOR + DOOR_HIGH
 	ye = H - 0.12
+	hollow = kind in ("smash", "thru")
 	g = Geo()
 	car_ends(g, H, 1.05, FLOOR, paint)
 	truss_rods(g, H, FLOOR)
-	spans = [(-ye, ye)] if kind in ("box", "smash") else [(-ye, -d), (d, ye)]
+	brake_gear(g, H, FLOOR)
+	stirrups(g, H, w, FLOOR)
+	spans = [(-ye, ye)] if kind in ("box", "smash", "thru") else [(-ye, -d), (d, ye)]
 	for ya, yb in spans:
 		if kind == "smash":
-			smash_shell(g, ye, paint)
+			smash_shell(g, ye, paint, rng)
+		elif kind == "thru":
+			thru_shell(g, ye, paint, rng)
 		elif kind == "stock":
 			t = 0.16
 			ia = ya + t if ya == -ye else ya
 			ib = yb - t if yb == ye else yb
 			g.box(-(w - t), w - t, ia, ib, FLOOR, BOX_EAVE, "wood", inside, skip="u" + ("f" if yb == -d else "") + ("b" if ya == d else ""))
 			for s in (-1, 1):
-				top = slats(g, s * (w - t), s * w, ya, yb, FLOOR, BOX_EAVE - 0.4, paint)
+				top = slats(g, s * (w - t), s * w, ya, yb, FLOOR, BOX_EAVE - 0.4, paint, rng)
 				g.box(s * (w - t), s * w, ya, yb, top + SLAT_GAP, BOX_EAVE, "wood", paint, tile=CAR_TILE)
 			for end in (ya, yb):
 				if abs(abs(end) - ye) < 1e-6:
 					f = 1 if end > 0 else -1
-					top = slats(g, -w, w, f * (ye - t), f * ye, FLOOR, BOX_EAVE - 0.4, paint)
+					top = slats(g, -w, w, f * (ye - t), f * ye, FLOOR, BOX_EAVE - 0.4, paint, rng)
 					g.box(-w, w, f * (ye - t), f * ye, top + SLAT_GAP, BOX_EAVE, "wood", paint, tile=CAR_TILE)
 		else:
 			skip = "u" + ("f" if yb == -d else "") + ("b" if ya == d else "")
-			g.box(-w, w, ya, yb, FLOOR, BOX_EAVE, "wood", paint, skip=skip, tile=CAR_TILE)
-	if kind in ("doors", "stock"):
-		g.box(-w, w, -d, d, FLOOR - 0.18, FLOOR, "wood", PAINT["floor"], skip="bf", tile=PLANK_TILE)
+			plank_box(g, -w, w, ya, yb, FLOOR, BOX_EAVE, paint, rng, skip=skip)
+	if kind in ("doors", "stock", "gate"):
+		deck_planks(g, -w, w, -d, d, FLOOR, PAINT["floor"], rng)
+		g.box(-w, w, -d, d, FLOOR - 0.18, FLOOR, "wood", PAINT["floor"], skip="bfu", tile=PLANK_TILE)
 		g.box(-w, w, -d, d, head, BOX_EAVE, "wood", paint, skip="bfud", tile=CAR_TILE)
 		iw = w - 0.16 if kind == "stock" else w
 		for y, f in ((-d, 1), (d, -1)):
-			g.facing([(-iw, y, FLOOR), (iw, y, FLOOR), (iw, y, head), (-iw, y, head)], (0, f, 0), "wood", inside)
+			boards(g, 1, y, -iw, iw, FLOOR, head, f, inside, rng, fade=0.0)
 		g.facing([(-w, -d, head), (w, -d, head), (w, d, head), (-w, d, head)], (0, 0, -1), "wood", inside)
 	# Trim: corner posts and an eave band in cream, an iron sill band, the door
-	# track, ladders by each end.
+	# track, ladders by each end (on the run's car, the end doors lie there).
 	corner_posts(g, w, ye, FLOOR, BOX_EAVE, cream)
 	for s in (-1, 1):
 		g.box(s * w, s * (w + 0.05), -ye, ye, BOX_EAVE - 0.38, BOX_EAVE - 0.08, "wood", cream, rot=True)
 		for ya, yb in spans:
 			g.box(s * w, s * (w + 0.05), ya, yb, FLOOR, FLOOR + 0.22, "metal", iron)
-		g.box(s * w, s * (w + 0.12), -2 * d - 0.3, 2 * d + 0.3, head + DOOR_OVER + 0.02, head + DOOR_OVER + 0.16, "metal", iron)
-		for sy in (-1, 1):
-			ya, yb = sorted((sy * (ye - 0.85), sy * (ye - 0.3)))
-			ladder(g, s * w, ya, yb, FLOOR + 0.55, BOX_EAVE - 0.6)
-	# The roof: tin over boards, ribbed, a running board along its ridge; the
-	# brake wheel over the back end.
+			rivet_line(g, (s * (w + 0.05), ya + 0.2, FLOOR + 0.11), (s * (w + 0.05), yb - 0.2, FLOOR + 0.11), int((yb - ya) / 0.6), (s, 0, 0), r=0.035, col=iron)
+		if kind != "thru":
+			g.box(s * w, s * (w + 0.12), -2 * d - 0.3, 2 * d + 0.3, head + DOOR_OVER + 0.02, head + DOOR_OVER + 0.16, "metal", iron)
+			for sy in (-1, 1):
+				ya, yb = sorted((sy * (ye - 0.85), sy * (ye - 0.3)))
+				ladder(g, s * w, ya, yb, FLOOR + 0.55, BOX_EAVE - 0.6)
+	# The roof: tin over boards, ribbed, a running board along its ridge on its
+	# saddles; the brake wheel over the back end (on the hollow cars beside the
+	# corridor's mouth).
 	roof = PAINT["roof"]
 	gable_roof(g, WIDE * 0.5 - 0.02, BOX_EAVE, BOX_RIDGE, -H + 0.02, H - 0.02, roof, gables=(-ye, ye), wall=paint, wall_half=w)
 	y = -H + 0.9
 	while y < H - 0.5:
+		rt = tone(roof, rng.uniform(0.85, 1.12))
 		for s in (-1, 1):
-			g.beam((s * (WIDE * 0.5 - 0.05), y, BOX_EAVE + 0.01), (0.0, y, BOX_RIDGE + 0.01), 0.09, 0.07, "metal", roof)
+			g.beam((s * (WIDE * 0.5 - 0.05), y, BOX_EAVE + 0.01), (0.0, y, BOX_RIDGE + 0.01), 0.09, 0.07, "metal", rt)
 		y += 1.5
-	for y in range(-10, 11, 4):
-		g.box(-0.3, 0.3, y - 0.08, y + 0.08, BOX_RIDGE - 0.04, BOX_TOP - 0.12, "wood", PAINT["deck"])
-	g.box(-0.42, 0.42, -H + 0.05, H - 0.05, BOX_TOP - 0.12, BOX_TOP, "wood", PAINT["deck"])
-	# (The smash car's staff stands beside its corridor's mouth, out of the way.)
-	by = -H - 0.14
-	bx = SMASH_WIDE * 0.5 + 0.05 if kind == "smash" else 0.9
+	yy = -H + 2.0
+	while yy < H - 1.0:
+		g.box(-0.3, 0.3, yy - 0.08, yy + 0.08, BOX_RIDGE - 0.04, BOX_TOP - 0.12, "wood", PAINT["deck"])
+		yy += 2.0
+	deck_planks(g, -0.42, 0.42, -H + 0.05, H - 0.05, BOX_TOP, PAINT["deck"], rng, depth=0.12)
+	by = -H + 0.2
+	bx = SMASH_WIDE * 0.5 + 0.05 if hollow else 0.9
 	g.beam((bx, by, FLOOR + 0.6), (bx, by, BOX_RIDGE + 0.03), 0.07, 0.07, "iron", iron)
 	g.lathe((bx, by, BOX_RIDGE), (0.0, 0.0, 1.0), [(0.26, 0.0), (0.34, 0.0), (0.34, 0.06), (0.26, 0.06), (0.26, 0.0)], "metal", iron, n=16)
 	for a in (0.0, math.pi / 3, 2 * math.pi / 3):
@@ -1252,16 +1584,97 @@ def build_boxcar(mats, kind):
 	if kind == "smash":
 		for tag, f, seed in (("F", 1, 5), ("B", -1, 9)):
 			smash_plug(mats, root, tag, f, ye, paint, seed)
-	# The doors: shut over the doorway, or slid open over the walls fore and aft.
-	for s, side in ((1, "R"), (-1, "L")):
-		spots = (("F", 0.0, d), ("B", -d, 0.0)) if kind in ("box", "smash") else (("F", d, 2 * d), ("B", -2 * d, -d))
-		for half, ya, yb in spots:
-			car_door(f"Door_{side}{half}", mats, root, s, ya, yb, paint, slatted=kind == "stock", group=f"{kind} body")
-	trucks(root, mats, H - BOGIE, f"{kind} running gear", low=kind == "smash")
+	# The doors: shut over the doorway, or slid open over the walls fore and aft;
+	# the gate's in yellow, shut (RailTrain opens them).
+	if kind != "thru":
+		for s, side in ((1, "R"), (-1, "L")):
+			# (The gate's far look has them open: it stands still, and its doorway stays clear.)
+			shut = kind in ("box", "smash") or (kind == "gate" and not FAR)
+			spots = (("F", 0.0, d), ("B", -d, 0.0)) if shut else (("F", d, 2 * d), ("B", -2 * d, -d))
+			for half, ya, yb in spots:
+				car_door(f"Door_{side}{half}", mats, root, s, ya, yb, PAINT["gate"] if kind == "gate" else paint, slatted=kind == "stock",
+					group=f"{kind} body", frame=PAINT["barn"] if kind == "gate" else cream, seed=hash((s, half, kind)) % 1000)
+	trucks(root, mats, H - BOGIE, f"{kind} running gear", low=hollow)
 	return root
 
 
-def flat_frame(g, H, paint, top=FLAT_TOP, end=SILL_END, belly=SILL_BELLY, deck_half=WIDE * 0.5 - 0.04, pockets=True):
+def deck_planks(g, x0, x1, y0, y1, z, col, rng, pitch=PLANK_TILE / 16, depth=0.0):
+	"""A deck's top at z of planks across the car, each its own tone (their seams
+	on the texture's, every `pitch` along y); `depth` > 0 also its sides."""
+	lo, hi = sorted((y0, y1))
+	if FAR:
+		g.box(x0, x1, lo, hi, z - max(depth, 0.02), z, "wood", col, skip="d" if depth else "dlrbf", tile=PLANK_TILE, rot=True)
+		return
+	k0, k1 = math.floor(lo / pitch + 1e-6), math.ceil(hi / pitch - 1e-6)
+	for k in range(k0, k1):
+		b0, b1 = max(lo, k * pitch), min(hi, (k + 1) * pitch)
+		if b1 - b0 < 1e-4:
+			continue
+		c = tone(col, rng.uniform(0.8, 1.12))
+		c = faded(c, rng.uniform(0.0, 0.25))
+		g.facing([(x0, b0, z), (x1, b0, z), (x1, b1, z), (x0, b1, z)], (0, 0, 1), "wood", c, tile=PLANK_TILE, rot=True)
+	if depth:
+		g.box(x0, x1, lo, hi, z - depth, z, "wood", col, skip="ud", tile=PLANK_TILE, rot=True)
+
+
+def thru_shell(g, ye, paint, rng):
+	"""The run's boxcar round its corridor (SMASH_WIDE x SMASH_HIGH from FLOOR, its
+	whole length, open at both ends): boards outside to a slatted band high up
+	(light through it into the corridor), lined dark inside with its posts and
+	carlines, a plank floor, each end a frame round the corridor's mouth, the
+	end doors swung back flat on the sides."""
+	w, iw, lid = CAR_HALF, SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH
+	inside, cream, iron = PAINT["inside"], PAINT["cream"], PAINT["iron"]
+	band = (6.45, BOX_EAVE - 0.55)
+	for s in (-1, 1):
+		boards(g, 0, s * w, -ye, ye, FLOOR, band[0], s, paint, rng)
+		g.box(s * iw, s * w, -ye, ye, band[1], BOX_EAVE, "wood", paint, skip="ld" if s > 0 else "rd", tile=CAR_TILE)
+		z = band[0]
+		while z + 0.28 <= band[1] + 1e-6:
+			slat_col = board_tone(rng, paint)
+			g.box(s * iw, s * w, -ye, ye, z, z + 0.28, "wood", slat_col, rot=True, tile=16 * 0.28)
+			z += 0.4
+		# Inside: the lining, darker posts every 2 m, the ceiling's carlines.
+		boards(g, 0, s * iw, -ye, ye, FLOOR, band[0], -s, inside, rng, fade=0.0)
+		y = -ye + 1.0
+		while y < ye - 0.5:
+			x = s * (iw - 0.004)
+			g.facing([(x, y - 0.1, FLOOR), (x, y + 0.1, FLOOR), (x, y + 0.1, lid), (x, y - 0.1, lid)], (-s, 0, 0), "wood", tone(inside, 0.6))
+			y += 2.0
+		g.facing([(s * iw, -ye, band[1]), (s * iw, ye, band[1]), (s * iw, ye, lid), (s * iw, -ye, lid)], (-s, 0, 0), "wood", inside)
+		g.facing([(s * iw, -ye, FLOOR), (s * w, -ye, FLOOR), (s * w, ye, FLOOR), (s * iw, ye, FLOOR)], (0, 0, -1), "wood", paint)
+		for f in (-1, 1):
+			boards(g, 1, f * ye, s * iw, s * w, FLOOR, BOX_EAVE, f, paint, rng)
+	for f in (-1, 1):
+		boards(g, 1, f * ye, -iw, iw, lid, BOX_EAVE, f, paint, rng)
+		# The mouth's frame, cream.
+		yf = f * (ye + 0.03)
+		for a, b in (((-iw - 0.06, FLOOR), (-iw - 0.06, lid + 0.06)), ((iw + 0.06, FLOOR), (iw + 0.06, lid + 0.06)), ((-iw - 0.06, lid + 0.06), (iw + 0.06, lid + 0.06))):
+			g.beam((a[0], yf, a[1]), (b[0], yf, b[1]), 0.12, 0.06, "wood", cream, up=(0.0, 1.0, 0.0))
+		# The end doors, each half the mouth, swung back on their hinges flat on the
+		# side, boards in a cream frame with a Z brace, iron straps.
+		for s in (-1, 1):
+			x0, x1 = s * (w + 0.05), s * (w + 0.09)
+			ya, yb = sorted((f * (ye - iw + 0.05), f * (ye + 0.1)))
+			za, zb = FLOOR + 0.1, lid - 0.05
+			g.box(x0, x1, ya, yb, za, zb, "wood", paint, tile=CAR_TILE)
+			xf = s * (w + 0.125)
+			for z in (za, (za + zb) * 0.5 - 0.1, zb - 0.2):
+				g.box(x1, xf, ya, yb, z, z + 0.2, "wood", cream, rot=True)
+			for yy in (ya, yb - 0.2):
+				g.box(x1, xf, yy, yy + 0.2, za, zb, "wood", cream)
+			for z in (za + 0.6, zb - 0.8):
+				g.box(x1, xf + s * 0.008, ya, yb, z, z + 0.08, "metal", iron)
+			g.beam(((x1 + xf) * 0.5, ya + 0.2, za + 0.2), ((x1 + xf) * 0.5, yb - 0.2, (za + zb) * 0.5 - 0.1), 0.16, abs(xf - x1), "wood", cream, up=(1.0, 0.0, 0.0))
+	deck_planks(g, -iw, iw, -ye, ye, FLOOR, PAINT["floor"], rng)
+	g.facing([(-iw, -ye, lid), (iw, -ye, lid), (iw, ye, lid), (-iw, ye, lid)], (0, 0, -1), "wood", inside, tile=CAR_TILE)
+	y = -ye + 0.75
+	while y < ye - 0.3:
+		g.facing([(-iw, y - 0.08, lid - 0.004), (iw, y - 0.08, lid - 0.004), (iw, y + 0.08, lid - 0.004), (-iw, y + 0.08, lid - 0.004)], (0, 0, -1), "wood", tone(inside, 0.6))
+		y += 1.5
+
+
+def flat_frame(g, H, paint, top=FLAT_TOP, end=SILL_END, belly=SILL_BELLY, deck_half=WIDE * 0.5 - 0.04, pockets=True, rng=None):
 	"""A flatcar's frame (the flat, and under the logs, the truss and the crane):
 	fishbelly sills, the end beams, the centre sill, a plank deck across the car to
 	`top` (deck_half each side), stake pockets down its sides. Returns the deck's
@@ -1271,7 +1684,8 @@ def flat_frame(g, H, paint, top=FLAT_TOP, end=SILL_END, belly=SILL_BELLY, deck_h
 	side_sills(g, H, base, paint, end=end, belly=belly)
 	car_ends(g, H, end - 0.15, base, paint, half=WIDE * 0.5 - 0.04)
 	g.box(-0.3, 0.3, -H + 0.3, H - 0.3, base - 0.5, base, "metal", iron)
-	g.box(-deck_half, deck_half, -H, H, base, top, "wood", PAINT["deck"], tile=PLANK_TILE, rot=True)
+	deck_planks(g, -deck_half, deck_half, -H, H, top, PAINT["deck"], rng if rng is not None else np.random.default_rng(int(H * 10)), depth=top - base)
+	stirrups(g, H, CAR_HALF, base)
 	for s in (-1, 1) if pockets else ():
 		y = -H + 1.0
 		while y < H - 0.5:
@@ -1357,9 +1771,11 @@ def build_van(mats):
 	w = VAN_HALF - 0.1
 	ye = H - VAN_PLATFORM
 	g = Geo()
+	rng = np.random.default_rng(22)
 	car_ends(g, H, 1.05, FLOOR, paint, half=w)
 	g.box(-0.3, 0.3, -H + 0.3, H - 0.3, FLOOR - 0.3, FLOOR, "metal", iron)
-	g.box(-w, w, -ye, ye, FLOOR, VAN_EAVE, "wood", paint, skip="u", tile=CAR_TILE)
+	brake_gear(g, H, FLOOR)
+	plank_box(g, -w, w, -ye, ye, FLOOR, VAN_EAVE, paint, rng, skip="u", fade=0.15)
 	corner_posts(g, w, ye, FLOOR, VAN_EAVE, cream, wide=0.16)
 	for s in (-1, 1):
 		g.box(s * w, s * (w + 0.05), -ye, ye, VAN_EAVE - 0.32, VAN_EAVE - 0.06, "wood", cream, rot=True)
@@ -1470,8 +1886,7 @@ def build_logs(mats):
 	for ya, yb in ((-ends, -gh), (gh, ends)):
 		# Stakes in the flat's pockets near the bundle's ends, a bunk across under
 		# the logs at each, two chains over the top down to the deck, a binder.
-		posts = [y for y in (-H + 1.0 + 2.0 * k for k in range(int(LOGS_LONG / 2))) if ya + 0.6 < y < yb - 0.6]
-		for y in (posts[0], posts[-1]):
+		for y in (ya + 0.4, yb - 0.4):
 			g.box(-w + 0.18, w - 0.18, y - 0.18, y + 0.18, FLAT_TOP, FLAT_TOP + BUNK, "wood", stake)
 			for s in (-1, 1):
 				g.box(s * (w - 0.16), s * w, y - 0.15, y + 0.15, base - 0.3, LOGS_TOP, "wood", stake)
@@ -1491,6 +1906,65 @@ def build_logs(mats):
 	emit("Body", g, mats, parent=root, group="logs body")
 	emit("Load", load, mats, parent=root, group="logs body")
 	trucks(root, mats, H - BOGIE, "logs running gear")
+	return root
+
+
+def build_culvert(mats):
+	"""The culvert car: a low well flat, its deck the corridor's floor (FLOOR, on low
+	trucks), carrying three-sided concrete box culverts end to end, their walls and
+	roofs RailTrain's solid round the run's corridor (rail_train.gd CULVERTS): each
+	chamfered along its top, its joint's collar at its front, lifting pockets on
+	its roof, a strap over its middle down to the deck's edge, timber blocking
+	along its feet."""
+	root = empty("Culvert", (0.0, 0.0, 0.0))
+	H = CULVERT_LONG * 0.5
+	rng = np.random.default_rng(12)
+	g = Geo()
+	base = flat_frame(g, H, PAINT["black"], top=FLOOR, end=0.98, belly=0.8, rng=rng)
+	emit("Body", g, mats, parent=root, group="culvert body")
+	c = Geo(dirt=0.35)
+	iw, lid = SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH
+	side, top, ch = CULVERT_SIDE - 0.04, CULVERT_TOP - 0.03, 0.2
+	con, iron = PAINT["concrete"], PAINT["iron"]
+	for b in sorted(PARTS["culvert"]["solid"], key=lambda b: b[2]):
+		if abs(b[0] + iw) > 1e-3 or abs(b[1] - lid) > 1e-3:
+			continue
+		ya, yb = -b[5], -b[2]
+		k = tone(con, rng.uniform(0.9, 1.06))
+		inner = tone(k, 0.72)
+		for s in (-1, 1):
+			boards(c, 0, s * side, ya, yb, FLOOR, top - ch, s, k, rng, pitch=1.5, fade=-0.1, mat="concrete", tile=3.0, vary=0.35)
+			c.facing([(s * iw, ya, FLOOR), (s * iw, yb, FLOOR), (s * iw, yb, lid), (s * iw, ya, lid)], (-s, 0, 0), "concrete", inner, tile=3.0)
+			c.facing([(s * side, ya, top - ch), (s * side, yb, top - ch), (s * (side - ch), yb, top), (s * (side - ch), ya, top)], (s, 0, 1), "concrete", tone(k, 1.05), tile=3.0)
+			# The timber blocking along its foot.
+			y = ya + 0.6
+			while y < yb - 0.3:
+				c.box(s * side, s * (side + 0.05), y - 0.25, y + 0.25, FLOOR, FLOOR + 0.22, "wood", PAINT["deck"])
+				y += 2.2
+		c.facing([(-side + ch, ya, top), (side - ch, ya, top), (side - ch, yb, top), (-side + ch, yb, top)], (0, 0, 1), "concrete", tone(k, 1.08), tile=3.0)
+		c.facing([(-iw, ya, lid), (iw, ya, lid), (iw, yb, lid), (-iw, yb, lid)], (0, 0, -1), "concrete", tone(inner, 0.85), tile=3.0)
+		for y, f in ((ya, -1), (yb, 1)):
+			end = [(-side, FLOOR), (-iw, FLOOR), (-iw, lid), (iw, lid), (iw, FLOOR), (side, FLOOR), (side, top - ch), (side - ch, top), (-side + ch, top), (-side, top - ch)]
+			for poly in ([end[0], end[1], end[2], end[9]], [end[4], end[5], end[6], end[3]], [end[9], end[2], end[3], end[6], end[7], end[8]]):
+				c.facing([(x, y, z) for x, z in poly], (0, f, 0), "concrete", tone(k, 0.95), tile=3.0)
+		# The joint's collar at its front end, proud all round.
+		if not FAR:
+			yc0, yc1 = yb - 0.3, yb - 0.04
+			for s in (-1, 1):
+				c.box(s * side, s * (side + 0.03), yc0, yc1, FLOOR + 0.22, top - ch, "concrete", tone(k, 0.9), skip="l" if s > 0 else "r", tile=3.0)
+			c.box(-side + ch, side - ch, yc0, yc1, top, top + 0.025, "concrete", tone(k, 0.9), skip="d", tile=3.0)
+			# Lifting pockets on the roof, the strap over its middle with its ratchet.
+			for yy in (ya + 1.2, yb - 1.5):
+				for xx in (-1.2, 1.2):
+					c.facing([(xx - 0.15, yy - 0.15, top + 0.004), (xx + 0.15, yy - 0.15, top + 0.004), (xx + 0.15, yy + 0.15, top + 0.004), (xx - 0.15, yy + 0.15, top + 0.004)], (0, 0, 1), "dark", PAINT["dark"])
+			ym = (ya + yb) * 0.5
+			c.box(-side + ch, side - ch, ym - 0.07, ym + 0.07, top, top + 0.025, "metal", iron, skip="d")
+			for s in (-1, 1):
+				c.beam((s * (side - ch), ym, top + 0.012), (s * (side + 0.012), ym, top - ch), 0.14, 0.025, "metal", iron, up=(s, 0.0, 1.0))
+				c.box(s * side, s * (side + 0.025), ym - 0.07, ym + 0.07, FLOOR, top - ch, "metal", iron, skip="l" if s > 0 else "r")
+			c.box(side - 0.02, side + 0.04, ym - 0.12, ym + 0.12, FLOOR + 1.2, FLOOR + 1.6, "metal", tone(iron, 1.3))
+	emit("Load", c, mats, parent=root, group="culvert body")
+	trucks(root, mats, H - BOGIE, "culvert running gear", low=True)
 	return root
 
 
@@ -1627,11 +2101,13 @@ def build_coach(mats):
 	eave = COACH_TOP - HOOD
 	paint, gold, cream, iron, brass = PAINT["coach"], PAINT["gold"], PAINT["cream"], PAINT["iron"], PAINT["brass"]
 	g = Geo()
+	rng = np.random.default_rng(21)
 	car_ends(g, H, 1.05, FLOOR, paint, half=w)
 	truss_rods(g, H, FLOOR, ty=COACH_TRUCK)
+	brake_gear(g, COACH_TRUCK + BOGIE, FLOOR)
 	for s in (-1, 1):
 		g.box(s * (w - 0.25), s * w, -H + 0.3, H - 0.3, FLOOR - 0.3, FLOOR, "metal", iron, skip="u")
-	g.box(-w, w, -ye, ye, FLOOR, eave, "wood", paint, skip="ud", tile=CAR_TILE)
+	plank_box(g, -w, w, -ye, ye, FLOOR, eave, paint, rng, skip="ud", fade=0.12)
 	corner_posts(g, w, ye, FLOOR, eave, tone(paint, 0.7), wide=0.14, proud=0.04)
 	for s in (-1, 1):
 		for z0, z1 in ((3.3, 3.5), (7.05, 7.2)):
@@ -1677,22 +2153,22 @@ def build_coach(mats):
 	return root
 
 
-def smash_shell(g, ye, paint):
+def smash_shell(g, ye, paint, rng):
 	"""The smash car's walls round its corridor (SMASH_WIDE x SMASH_HIGH from FLOOR,
 	its whole length): a boxcar's outside, lined dark inside, a plank floor, each
 	end's face a frame round its plug's hole."""
 	w, iw, lid = CAR_HALF, SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH
 	inside = PAINT["inside"]
 	for s in (-1, 1):
-		g.facing([(s * w, -ye, FLOOR), (s * w, ye, FLOOR), (s * w, ye, BOX_EAVE), (s * w, -ye, BOX_EAVE)], (s, 0, 0), "wood", paint, tile=CAR_TILE)
+		boards(g, 0, s * w, -ye, ye, FLOOR, BOX_EAVE, s, paint, rng, fade=0.3)
 		g.facing([(s * iw, -ye, FLOOR), (s * iw, ye, FLOOR), (s * iw, ye, lid), (s * iw, -ye, lid)], (-s, 0, 0), "wood", inside, tile=CAR_TILE)
 		g.facing([(s * iw, -ye, FLOOR), (s * w, -ye, FLOOR), (s * w, ye, FLOOR), (s * iw, ye, FLOOR)], (0, 0, -1), "wood", paint)
 		for f in (-1, 1):
 			y = f * ye
-			g.facing([(s * iw, y, FLOOR), (s * w, y, FLOOR), (s * w, y, BOX_EAVE), (s * iw, y, BOX_EAVE)], (0, f, 0), "wood", paint, tile=CAR_TILE)
+			boards(g, 1, y, s * iw, s * w, FLOOR, BOX_EAVE, f, paint, rng, fade=0.3)
 	for f in (-1, 1):
 		y = f * ye
-		g.facing([(-iw, y, lid), (iw, y, lid), (iw, y, BOX_EAVE), (-iw, y, BOX_EAVE)], (0, f, 0), "wood", paint, tile=CAR_TILE)
+		boards(g, 1, y, -iw, iw, lid, BOX_EAVE, f, paint, rng, fade=0.3)
 	g.facing([(-iw, -ye, lid), (iw, -ye, lid), (iw, ye, lid), (-iw, ye, lid)], (0, 0, -1), "wood", inside, tile=CAR_TILE)
 	yf = BOX_LONG * 0.5 - 0.3      # short of the end beams (their tops are FLOOR too)
 	g.facing([(-iw, -yf, FLOOR), (iw, -yf, FLOOR), (iw, yf, FLOOR), (-iw, yf, FLOOR)], (0, 0, 1), "wood", PAINT["floor"], tile=PLANK_TILE, rot=True)
@@ -1880,6 +2356,23 @@ def paint_metal(W):
 	return col, hgt
 
 
+def paint_concrete(W):
+	"""Precast concrete: a soft mottle, aggregate speckle, the form boards' lines
+	every fifth of the tile, a few drips down from them."""
+	rng = np.random.default_rng(61)
+	mott = spectral(W, W, 1.6, 62)
+	fine = spectral(W, W, 0.2, 63)
+	drip = spectral(W, W, 0.9, 64, sx=1.0, sy=10.0)
+	v = np.arange(W)[:, None] / W
+	lines = np.exp(-((((v * 2.0) % 1.0) - 0.5) * W / 2.0 / 1.0) ** 2)
+	base = 0.9 + 0.08 * (mott - 0.5) + 0.07 * (fine - 0.5) - 0.015 * lines - 0.05 * np.clip(drip - 0.6, 0.0, 1.0)
+	speck = rng.random((W, W)) < 0.012
+	base = np.where(speck, base * 0.82, base)
+	col = np.clip(np.stack((base, base * 0.99, base * 0.96), axis=-1), 0, 1)
+	hgt = 0.25 * (fine - 0.5) - 0.4 * lines - 0.2 * speck
+	return col, hgt
+
+
 def paint_coal(W):
 	"""Coal: lumps (each a dome round its seed point), dark, their tops glinting."""
 	rng = np.random.default_rng(51)
@@ -1991,7 +2484,7 @@ def write_materials():
 
 def make_mats(scale):
 	print("painting textures...")
-	for name, fn in (("wood", paint_wood), ("metal", paint_metal), ("coal", paint_coal)):
+	for name, fn in (("wood", paint_wood), ("metal", paint_metal), ("coal", paint_coal), ("concrete", paint_concrete)):
 		c, h = fn(int(TEX_SIZE[name] * scale))
 		save_tex(f"train_{name}", c)
 		save_tex(f"train_{name}_n", normal_from(h, 4.0 if name != "coal" else 6.0), data=True)
@@ -2181,56 +2674,79 @@ def node_points(doc, bin_):
 # pilot runs on ahead of its 22 m to PILOT_TIP (the train's nose), the crane's
 # boom back over its idler BOOM_OVER past its end; else nothing goes into the
 # gap's far half.
-LONG = {"engine": ENGINE_LONG, "tender": TENDER_LONG, "box": BOX_LONG, "doors": BOX_LONG, "stock": BOX_LONG,
-	"flat": FLAT_LONG, "open": OPEN_LONG, "van": VAN_LONG, "logs": LOGS_LONG, "truss": TRUSS_LONG,
-	"crane": CRANE_LONG, "coach": COACH_LONG, "smash": BOX_LONG}
+LONG = {k: v["long"] for k, v in PARTS.items()}
+LONG["engine"] = ENGINE_LONG
 REACH = {k: (L * 0.5 + GAP * 0.5,) * 2 for k, L in LONG.items()}
 REACH["engine"] = (PILOT_TIP, ENGINE_LONG * 0.5 + GAP * 0.5)
 BOOM_TIP = CRANE_LONG * 0.5 + GAP * 0.5 + BOOM_OVER
 REACH["crane"] = (CRANE_LONG * 0.5 + GAP * 0.5, BOOM_TIP)
-# Each kind's top over the bed: the spec's table (and rail_train.gd CARS).
-TOP = {"engine": STACK_TOP, "tender": COAL_TOP, "box": BOX_TOP, "doors": BOX_TOP, "stock": BOX_TOP,
-	"flat": FLAT_TOP, "open": OPEN_TOP + HEAP, "van": CUPOLA_TOP, "logs": LOGS_TOP, "truss": TRUSS_TOP,
-	"crane": BOOM_TOP, "coach": COACH_TOP, "smash": BOX_TOP}
-# The openings that must be clear (Godot frame: x0, y0, z0, x1, y1, z1), the
-# greybox's holes (rail_train.gd _parts): the doorway across the doors and stock
-# cars (door_wide x door_high); the log car's gap between its bundles, open above;
-# the truss's open middle panel and the sky over it between the struts; under the
-# crane's boom, over its own deck behind the house and its idler's to the boom's
-# tip; each coach's half of the gap between two coupled (its end wall to the gap's
-# middle, over the railings, under the hood); the smash car's corridor, end to end
-# (its plugs' shards and glow aside: they are its plates, CONTAIN).
+# Each kind's top over the bed: rail_train.gd CARS.
+TOP = {k: v["tall"] for k, v in PARTS.items()}
+TOP["open"] = OPEN_TOP + HEAP
+# The openings that must be clear (Godot frame: x0, y0, z0, x1, y1, z1): every
+# hole of rail_train.gd `_parts` (PARTS: the doorways, the log gap, the truss's
+# middle panel, under the crane's boom, each coach's half of the gap between two,
+# the run's and the smash car's corridors out to the coupling's middle), named
+# by the way it is flown; and the sky over the truss's middle panel.
 W2 = WIDE * 0.5
-DOORWAY = (-W2, FLOOR, -DOOR_LONG * 0.5, W2, FLOOR + DOOR_HIGH, DOOR_LONG * 0.5)
-COACH_WALL = COACH_LONG * 0.5 - COACH_PLATFORM
+OPENINGS = {k: {f"{h['way']} opening {i + 1}": tuple(h["box"]) for i, h in enumerate(v["holes"])} for k, v in PARTS.items()}
+OPENINGS["truss"]["sky over the middle panel"] = (-W2 + TRUSS_SIDE, TRUSS_TOP - CHORD, -TRUSS_PANEL * 0.5, W2 - TRUSS_SIDE, TALL, TRUSS_PANEL * 0.5)
+# Nodes an opening doesn't count: the smash car's plugs fill its corridor's ends
+# (its plates), the gate's doors its doorway when shut (its movers).
+OPEN_SKIP = {"smash": ("Shard_", "Cover_", "FarPlugs"), "gate": ("Door_",)}
+# Nodes that must lie inside a box (Godot frame): each plug in its plate
+# (rail_train.gd plates: the corridor's mouth, SMASH_PLATE deep), F the front;
+# each gate door in its leaf's mover, shut.
 SMASH_H = BOX_LONG * 0.5
-OPENINGS = {"doors": {"doorway": DOORWAY}, "stock": {"doorway": DOORWAY},
-	"logs": {"gap between the bundles": (-W2, FLAT_TOP, -LOG_GAP * 0.5, W2, TALL, LOG_GAP * 0.5)},
-	"truss": {"middle panel": (-W2, TRUSS_DECK, -TRUSS_PANEL * 0.5, W2, TRUSS_TOP - CHORD, TRUSS_PANEL * 0.5),
-		"sky over the middle panel": (-W2 + TRUSS_SIDE, TRUSS_TOP - CHORD, -TRUSS_PANEL * 0.5, W2 - TRUSS_SIDE, TALL, TRUSS_PANEL * 0.5)},
-	"crane": {"way under the boom": (-W2, FLAT_TOP, -CRANE_HOUSE[0], W2, BOOM_LOW, BOOM_TIP)},
-	"coach": {"gap ahead": (-W2, COACH_RAIL, -COACH_LONG * 0.5 - GAP * 0.5, W2, COACH_TOP - HOOD, -COACH_WALL),
-		"gap behind": (-W2, COACH_RAIL, COACH_WALL, W2, COACH_TOP - HOOD, COACH_LONG * 0.5 + GAP * 0.5)},
-	"smash": {"corridor": (-SMASH_WIDE * 0.5, FLOOR, -SMASH_H, SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH, SMASH_H)}}
-# Nodes an opening doesn't count: the smash car's plugs fill its corridor's ends.
-OPEN_SKIP = {"smash": ("Shard_", "Cover_", "FarPlugs")}
-# Nodes that must lie inside a box (Godot frame): each plug in its plate (rail_train.gd
-# plates: the corridor's mouth, SMASH_PLATE deep), F the front.
-PLATE_F = (-SMASH_WIDE * 0.5, FLOOR, -SMASH_H, SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH, -SMASH_H + SMASH_PLATE)
-PLATE_B = (-SMASH_WIDE * 0.5, FLOOR, SMASH_H - SMASH_PLATE, SMASH_WIDE * 0.5, FLOOR + SMASH_HIGH, SMASH_H)
+PLATE_F, PLATE_B = (tuple(b) for b in PARTS["smash"]["plates"])
 CONTAIN = {"smash": {"Shard_F": PLATE_F, "Cover_F": PLATE_F, "Shard_B": PLATE_B, "Cover_B": PLATE_B}}
+_movers = [m["box"] for m in PARTS["gate"]["movers"]]
+CONTAIN["gate"] = {name: tuple(min(b[i] for b in boxes) if i < 3 else max(b[i] for b in boxes) for i in range(6))
+	for name, boxes in (("Door_R", [b for b in _movers if b[0] > 0]), ("Door_L", [b for b in _movers if b[0] < 0]))}
 TRUCK_NODES = ("Truck_F", "Truck_R", "TruckFrame_F", "TruckFrame_R", "Wheels_F1", "Wheels_F2", "Wheels_R1", "Wheels_R2")
 DOOR_NODES = ("Door_RF", "Door_RB", "Door_LF", "Door_LB")
 WANT = {"engine": ("Body", "Driver_1", "Driver_2", "Lead_1", "Lead_2", "LeadTruck", "SideRod_R", "SideRod_L",
 		"MainRod_R", "MainRod_L", "Crosshead_R", "Crosshead_L", "StackMouth", "Steam_R", "Steam_L"),
 	"tender": ("Body", "Coal") + TRUCK_NODES,
 	"box": ("Body",) + DOOR_NODES + TRUCK_NODES, "doors": ("Body",) + DOOR_NODES + TRUCK_NODES,
-	"stock": ("Body",) + DOOR_NODES + TRUCK_NODES, "flat": ("Body",) + TRUCK_NODES,
+	"stock": ("Body",) + DOOR_NODES + TRUCK_NODES, "gate": ("Body",) + DOOR_NODES + TRUCK_NODES,
+	"flat": ("Body",) + TRUCK_NODES, "thru": ("Body",) + TRUCK_NODES, "culvert": ("Body", "Load") + TRUCK_NODES,
 	"open": ("Body", "Coal") + TRUCK_NODES, "van": ("Body",) + TRUCK_NODES,
 	"logs": ("Body", "Load") + TRUCK_NODES, "truss": ("Body", "Load") + TRUCK_NODES,
 	"crane": ("Body", "House", "Boom") + TRUCK_NODES, "coach": ("Body",) + TRUCK_NODES,
 	"smash": ("Body", "CrackPlug_F", "CrackPlug_B", "Cover_F", "Cover_B", "Shard_F01", "Shard_B01") + DOOR_NODES + TRUCK_NODES + ("FarPlugs",)}
 WANT = {k: v + ("Far",) for k, v in WANT.items()}
+# What you see is what you hit: every vertex of the model within SEEN_TOL m of
+# RailTrain's solid (its boxes, plates and movers shut and open), or under its
+# floor in the coupling's room (the couplers and drawgear, where nothing flies).
+SEEN_TOL = 0.15
+
+
+def seen_not_hit(kind, pts):
+	"""The nodes with vertices outside RailTrain's solid for `kind` (pts: node_points):
+	{name: (count, the worst one's distance off it, that vertex)}."""
+	K = PARTS[kind]
+	boxes = list(K["solid"]) + list(K["plates"])
+	for m in K["movers"]:
+		b, d = m["box"], m["slide"]
+		boxes += [b, [b[0] + d[0], b[1] + d[1], b[2] + d[2], b[3] + d[0], b[4] + d[1], b[5] + d[2]]]
+	h = LONG[kind] * 0.5 + GAP * 0.5
+	boxes.append([-1.2, -2.0, -max(h, REACH[kind][0]), 1.2, FLOOR, h])
+	B = np.array(boxes, dtype=np.float64)
+	lo, hi = B[:, :3] - SEEN_TOL, B[:, 3:] + SEEN_TOL
+	out = {}
+	for name, p in pts.items():
+		inside = np.zeros(len(p), dtype=bool)
+		for i in range(len(B)):
+			inside |= np.all((p >= lo[i]) & (p <= hi[i]), axis=1)
+		if inside.all():
+			continue
+		q = p[~inside]
+		d = np.full(len(q), np.inf)
+		for i in range(len(B)):
+			d = np.minimum(d, np.linalg.norm(np.maximum(np.maximum(lo[i] - q, q - hi[i]), 0.0), axis=1))
+		out[name] = (len(q), float(d.max()), q[int(d.argmax())])
+	return out
 
 
 def node_tris(doc, bin_):
@@ -2320,6 +2836,12 @@ def prove(kind):
 			bad = True
 		else:
 			print(f"  the {what} is clear: x {box[0]:.1f}..{box[3]:.1f}, y {box[1]:.1f}..{box[4]:.1f}, z {box[2]:.1f}..{box[5]:.1f}")
+	off = seen_not_hit(kind, parts)
+	for name, (n, worst, at) in sorted(off.items()):
+		print(f"FAIL {kind}: {name} is seen but not hit: {n} vertices off the solid, the worst {worst:.2f} m at ({at[0]:.2f}, {at[1]:.2f}, {at[2]:.2f})")
+		bad = True
+	if not off:
+		print(f"  every vertex within {SEEN_TOL} m of the solid (seen is hit)")
 	for prefix, box in CONTAIN.get(kind, {}).items():
 		inner = {n: p for n, p in parts.items() if n.startswith(prefix)}
 		out = [n for n, p in inner.items() if (p.min(0) < np.array(box[:3]) - 1e-3).any() or (p.max(0) > np.array(box[3:]) + 1e-3).any()]
@@ -2504,6 +3026,7 @@ def render(kinds):
 # --- Main ---------------------------------------------------------------------
 
 BUILDERS = {"engine": build_engine, "tender": build_tender, "box": lambda m: build_boxcar(m, "box"),
+	"gate": lambda m: build_boxcar(m, "gate"), "thru": lambda m: build_boxcar(m, "thru"), "culvert": build_culvert,
 	"doors": lambda m: build_boxcar(m, "doors"), "stock": lambda m: build_boxcar(m, "stock"),
 	"flat": build_flat, "open": build_open, "van": build_van, "logs": build_logs, "truss": build_truss,
 	"crane": build_crane, "coach": build_coach, "smash": lambda m: build_boxcar(m, "smash")}

@@ -17,7 +17,7 @@ extends Node3D
 ##   --train          every car of RailTrain.CARS, not just those with models
 ##   --line=a,b,...   these kinds in this order instead (sizes from RailTrain.CARS,
 ##                    else the spec's table: SIZES), e.g. --line=box,doors,stock,flat,open,van;
-##                    --line=24 the cars lane's 24-car train (TRAIN_24)
+##                    --line=24 the train as it runs (RailTrain.CARS)
 ##   --lod=near|far   the parts at every range (each Far hidden), or the far look
 ##                    at every range (train_import.gd sets where it starts)
 ##   --stats          print what the frame drew (draw calls, primitives, objects)
@@ -36,12 +36,8 @@ const LookPass = preload("res://scripts/look_pass.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const MODELS := "res://assets/models/train/%s.glb"
-## The spec's sizes (length, top) for the kinds RailTrain.CARS doesn't have yet
-## (lane `cars` adds them: spec-steam-train.md "The cars").
-## The cars lane's 24-car train (lane/train-cars, rail_train.gd CARS once it merges).
-const TRAIN_24 := ["engine","tender","box","logs","doors","open","stock","flat","box","truss","flat","doors",
-	"crane","flat","stock","logs","box","flat","flat","smash","flat","coach","coach","van"]
-const SIZES := {"stock":[24.0,9.0],"logs":[20.0,6.5],"truss":[24.0,8.5],"crane":[20.0,9.0],"coach":[24.0,8.5]}
+## Sizes (length, top) for a kind RailTrain.CARS doesn't run (else 20 x 9).
+const SIZES := {"box":[24.0,9.0]}
 ## The hours (scripts/shared/celestial.gd phase), as the gallery's: a late
 ## morning, and midnight.
 const DAY := 0.45
@@ -108,7 +104,9 @@ func _ready() -> void:
 	var lod := ""
 	for arg in LaunchArgs.user_args():
 		if arg == "--train": whole = true
-		elif arg == "--line=24": line = TRAIN_24.duplicate()
+		elif arg == "--line=24":
+			line = []
+			for row: Array in RailTrain.CARS: line.append(String(row[0]))
 		elif arg.begins_with("--line="): line = Array(arg.get_slice("=",1).split(","))
 		elif arg == "--solids": solids = true
 		elif arg.begins_with("--lod="): lod = arg.get_slice("=",1)
