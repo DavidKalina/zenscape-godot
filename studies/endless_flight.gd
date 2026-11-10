@@ -165,6 +165,7 @@ const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
+const Whale = preload("res://scripts/endless/whale.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const Parry = preload("res://scripts/endless/parry.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
@@ -324,6 +325,8 @@ var race: Node
 var shops: Node
 ## The lighthouse and the pirate ships on the coast (scripts/endless/coast_sites.gd).
 var coast: Node3D
+## The whale of the open sea, a rare moment (scripts/endless/whale.gd).
+var whale: Node3D
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -817,6 +820,11 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	if Whale.wanted():
+		whale = Whale.new()
+		whale.name = "Whale"
+		add_child(whale)
+		whale.setup(self,seed)
 	# The ground queries' broad phase over the arches, rocks and stair (scripts/endless/ground_native.gd).
 	ground_native = GroundNative.new()
 	ground_native.setup(arches,rocks,towers,stair,ice)
@@ -1427,6 +1435,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"finds")
 	if coast != null: coast.step(delta,self)
 	FrameLog.mark(&"coast")
+	if whale != null: whale.step(delta,self)
+	FrameLog.mark(&"whale")
 	if way != null: way.step(camera.global_position)
 	FrameLog.mark(&"way")
 	if grass != null:

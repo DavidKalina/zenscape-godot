@@ -287,6 +287,9 @@ uniform int swim_count = 0;
 // greener than red), and the depth (m) it fades over below that.
 uniform vec3 swim_see = vec3(0.65, 0.9, 0.95);
 uniform float swim_clear = 1.0;
+// 0: the swimmer has a body of its own under the water, drawn as any bed is (the
+// whale, scripts/endless/whale.gd); its hump, slick and shade stay.
+uniform float swim_body = 1.0;
 // 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover,
 // 6 (sea_foam 1): the lace's density, youth, buffer reach and churn, 7: the
 // foam worked out per crest everywhere (no buffer).
@@ -1410,6 +1413,7 @@ void fragment() {
 		swim_seen = zs_swim_hit(receiver, world_position.y, swim_at0, swim_body0);
 		if (swim_count > 1) swim_seen = max(swim_seen, zs_swim_hit(receiver, world_position.y, swim_at1, swim_body1));
 	}
+	swim_seen *= swim_body;
 	float swim_hit = swim_seen.x;
 
 	// The water's depth here: the map's where it reaches, else the bed seen.
