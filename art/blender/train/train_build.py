@@ -1454,7 +1454,7 @@ def slats(g, x0, x1, y0, y1, z0, z1, col, rng=None):
 	return top
 
 
-def car_door(name, mats, root, s, ya, yb, col, slatted=False, group=None, frame=None, seed=0):
+def car_door(name, mats, root, s, ya, yb, col, slatted=False, group=None, frame=None, seed=0, stripes=None):
 	"""A sliding door on side s (+1 the right) over ya..yb: boards (or slats on a
 	dark back) in a frame (cream) with a Z brace, its rollers on the track over it
 	and a latch bar; its origin at its middle."""
@@ -1482,6 +1482,15 @@ def car_door(name, mats, root, s, ya, yb, col, slatted=False, group=None, frame=
 	xm = (xf0 + xf1) * 0.5
 	for a, b in (((ya + fw, za + fw), (yb - fw, zm - fw * 0.5)), ((ya + fw, zm + fw * 0.5), (yb - fw, zb - fw))):
 		g.beam((xm, a[0], a[1]), (xm, b[0], b[1]), fw * 0.8, abs(xf1 - xf0), "wood", cream, up=(1.0, 0.0, 0.0))
+	# The gate's leaves: black chevrons down the edge they meet on (at y = stripes).
+	if stripes is not None and not FAR:
+		xs = s * (CAR_HALF + 0.137)
+		f = 1.0 if abs(stripes - ya) < abs(stripes - yb) else -1.0
+		z = za + 0.25
+		while z + 0.3 < zb - 0.2:
+			pts = [(xs, stripes, z), (xs, stripes + f * 0.55, z + 0.3), (xs, stripes + f * 0.55, z + 0.6), (xs, stripes, z + 0.3)]
+			g.facing(pts, (s, 0, 0), "metal", PAINT["black"])
+			z += 0.75
 	emit(name, g, mats, parent=root, origin=(s * (CAR_HALF + 0.09), (ya + yb) * 0.5, (za + zb) * 0.5), group=group)
 
 
@@ -1593,7 +1602,8 @@ def build_boxcar(mats, kind):
 			spots = (("F", 0.0, d), ("B", -d, 0.0)) if shut else (("F", d, 2 * d), ("B", -2 * d, -d))
 			for half, ya, yb in spots:
 				car_door(f"Door_{side}{half}", mats, root, s, ya, yb, PAINT["gate"] if kind == "gate" else paint, slatted=kind == "stock",
-					group=f"{kind} body", frame=PAINT["barn"] if kind == "gate" else cream, seed=hash((s, half, kind)) % 1000)
+					group=f"{kind} body", frame=PAINT["barn"] if kind == "gate" else cream, seed=(3 if s > 0 else 7) * 10 + (1 if half == "F" else 2) + 100 * len(kind),
+					stripes=0.0 if kind == "gate" and shut else None)
 	trucks(root, mats, H - BOGIE, f"{kind} running gear", low=hollow)
 	return root
 
