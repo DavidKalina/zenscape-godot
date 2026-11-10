@@ -12,11 +12,14 @@ render_mode cull_front, unshaded, shadows_disabled, depth_draw_always, blend_mix
 //   Heads are the whitest; between surges the water is a little darker and
 //   its streaks show more, so pulses read as bands travelling down;
 // - veils: a broad slow bulge and lag across the face;
-// - clumps: lumps a metre or so across on those;
+// - packets: small surges a metre or so wide on those, falling faster, the
+//   face falling away below each over a long run (no ledge, no round lumps);
 // - a few short gaps, mostly toward the foot and the sides.
 // The streaking and the aerated roughness are shading only (a detail height
-// that bends the normal, and the tone), not carved geometry; the fine parts
-// fade with distance so they never alias into hatching.
+// that bends the normal, and the tone), not carved geometry: short streaks
+// of three widths and a fine streaked grain, so the face reads as broken
+// falling water, not as long combed lines. The fine parts fade with distance
+// so they never alias into hatching.
 // Over the lip the water is smooth and glassy and turns white within a few
 // metres. The sides fray into lumps, more toward the foot. At the foot it
 // explodes into a low, wide churn with a broken top and lobes thrown out and
@@ -78,12 +81,13 @@ uniform float thickness : hint_range(0.5, 8.0) = 5.0;
 // behind its leading points (in piece widths: the chevrons).
 uniform float surge_width : hint_range(1.0, 12.0) = 5.0;
 uniform float surge_spacing : hint_range(3.0, 30.0) = 11.0;
-uniform float surge_bulge : hint_range(0.0, 3.0) = 1.4;
+uniform float surge_bulge : hint_range(0.0, 3.0) = 1.0;
 uniform float surge_chevron : hint_range(0.0, 3.0) = 0.8;
 // The broad bulge and lag across the face (m).
 uniform float veil_bulge : hint_range(0.0, 3.0) = 0.5;
-// Lumps on the surges (m).
-uniform float clump_bulge : hint_range(0.0, 1.0) = 0.4;
+// Packets on the surges: how far they stand out (m) and how wide one is (m).
+uniform float clump_bulge : hint_range(0.0, 1.0) = 0.3;
+uniform float packet_width : hint_range(0.5, 4.0) = 1.5;
 // Metres per second the water falls at the lip.
 uniform float fall_speed : hint_range(0.0, 30.0) = 9.0;
 // How much faster it falls at the foot (pattern speed x (1 + fall_accel)).
@@ -123,7 +127,7 @@ uniform vec3 sun_dir = vec3(0.3, 0.7, 0.65);
 uniform vec3 white_color : source_color = vec3(0.98, 0.99, 1.0);
 uniform vec3 shade_color : source_color = vec3(0.50, 0.63, 0.76);
 // The smooth water over the lip, before it whitens.
-uniform vec3 glass_color : source_color = vec3(0.30, 0.44, 0.50);
+uniform vec3 glass_color : source_color = vec3(0.17, 0.31, 0.38);
 
 varying vec3 v_local;
 varying vec3 v_cam;
@@ -227,7 +231,7 @@ float surge_layer(float x, float u, float s, float w, float per, float seed, out
 	float ln = vn2(vec2(x * 0.55 / w + seed, Ev * 0.06 + seed * 0.3));
 	float pn = vn2(vec2(x * 1.3 / w + seed * 2.0, Ev * 0.08 + seed + 1.0));
 	float lag = surge_chevron * w * (abs(2.0 * ln - 1.0) + 0.7 * (1.0 - pn))
-		+ 0.8 * vn2(vec2(x * 0.6 + seed, Ev * 0.2 + 2.0));
+		+ 0.9 * vn2(vec2(x * 1.1 + seed, Ev * 0.25 + 2.0));
 	float y = (u + lag) / per + seed * 0.37;
 	float cyc = floor(y);
 	float ph = fract(y);
@@ -239,10 +243,11 @@ float surge_layer(float x, float u, float s, float w, float per, float seed, out
 	float s0 = bn * 40.0 - 16.0;
 	float len = 18.0 + 24.0 * h31(vec3(cyc, seed, 4.0));
 	float life = smoothstep(s0, s0 + 4.0, s) * (1.0 - smoothstep(s0 + len - 6.0, s0 + len, s));
-	float along = smoothstep(0.0, 0.84, ph);
-	float hd = 1.0 - smoothstep(0.8, 1.0, ph);
+	// No ledge under a head: the face falls away below it over a long run.
+	float along = smoothstep(0.0, 0.7, ph);
+	float hd = 1.0 - smoothstep(0.6, 1.0, ph);
 	float g = amp * life;
-	head = g * smoothstep(0.6, 0.84, ph) * hd;
+	head = g * smoothstep(0.4, 0.7, ph) * hd;
 	return g * along * sqrt(along) * hd;
 }
 
@@ -271,13 +276,16 @@ float body_h(float x, float s, float sw, float k, float e, float q, bool full, o
 	gp = 0.0;
 	float hc = grow * (surge_bulge * (l1 + 0.75 * l2) + veil_bulge * veil * 2.0);
 	// The most the clumps add; well clear of that, they need no working out.
-	float clmax = grow * clump_bulge * 1.6 * (0.5 + l1 + l2);
+	float clmax = grow * clump_bulge * 2.0;
 	if (!full || hc + clmax - q < -0.3) {
 		return hc + (full ? clmax : 0.0);
 	}
-	// Clumps, a metre or so, carried on the surges.
-	float cl = vnoise(vec3(xw * 0.8 + 3.0, (ss - Ts * 1.1) * 0.5, Ev * 0.45)) - 0.5;
-	cl += (vn2(vec2(xw * 1.7 + 8.0, (ss - Ts * 1.15) * 1.0 + Ev * 0.4)) - 0.5) * 0.6;
+	// Packets: small surges a metre or so wide, falling faster than the big
+	// ones, each with a sharp underside and a short tail (not round lumps).
+	float h3;
+	float l3 = surge_layer(xw + 7.3, ss - Ts * 1.45, s, packet_width, packet_width * 3.0, 29.0, h3);
+	sh = max(sh, h3 * 0.7);
+	float cl = l3 * 1.6 + (vn2(vec2(xw * 1.7 + 8.0, (ss - Ts * 1.15) * 0.7 + Ev * 0.4)) - 0.5) * 0.5;
 	// Short gaps, mostly low and by the sides.
 	float gw = breakup * max(smoothstep(0.3, 1.0, k), 1.0 - smoothstep(0.0, 4.0, e));
 	if (gw > 0.02) {
@@ -285,7 +293,7 @@ float body_h(float x, float s, float sw, float k, float e, float q, bool full, o
 			+ vn2(vec2(x * 2.1, (ss - Ts * 1.2) * 1.1 + Ev * 0.5)) * 0.25;
 		gp = smoothstep(0.6, 0.85, gn) * gw;
 	}
-	return hc + grow * clump_bulge * cl * 2.0 * (0.5 + l1 + l2) - gp * 0.9;
+	return hc + grow * clump_bulge * cl * (0.6 + 0.4 * (l1 + l2)) - gp * 0.9;
 }
 
 // Lobes of water thrown from the impact: one per cell along the foot, each
@@ -314,11 +322,11 @@ float jet_field(vec3 P, float zf) {
 		vec3 v0 = vec3((r3 - 0.5) * 0.7, vy, 1.2 + 2.8 * fract(r2 * 3.17));
 		vec3 pos = o0 + v0 * age - vec3(0.0, 4.9 * age * age, 0.0);
 		vec3 vel = v0 - vec3(0.0, 9.8 * age, 0.0);
-		vec3 pa = P - pos + vel * 0.13;
-		vec3 ba = vel * 0.13;
+		vec3 pa = P - pos + vel * 0.2;
+		vec3 ba = vel * 0.2;
 		float hh = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
 		float life = age / per;
-		float rad = (0.15 + 0.14 * r2) * (1.0 - 0.5 * life) * smoothstep(0.0, 0.08, life) * (0.45 + 0.55 * hh);
+		float rad = (0.11 + 0.1 * r2) * (1.0 - 0.5 * life) * smoothstep(0.0, 0.08, life) * (0.45 + 0.55 * hh);
 		best = max(best, rad - length(pa - ba * hh));
 	}
 	// Ragged, not round.
@@ -334,8 +342,9 @@ float h_max() {
 }
 
 // Positive inside the water; about the distance to the surface (it may
-// overstate it a little on steep lumps). `full` adds what the shadow taps can
-// do without (the thrown lobes).
+// overstate it a little on steep lumps). `full` adds what the shadow tap does
+// without: the packets and the churn (whose envelope is not a solid: in the
+// tap it drew a thin dark line on the fall along the envelope's top).
 float field_i(vec3 P, bool full, out vec4 info) {
 	info = vec4(0.0, 0.0, 0.0, 1.0);
 	float ax = abs(P.x);
@@ -384,7 +393,7 @@ float field_i(vec3 P, bool full, out vec4 info) {
 	// The churn at the foot: a low, wide body of water exploding on impact.
 	// A core that keeps re-forming, a broken top of crisp pieces rising and
 	// pushed out, and lobes thrown out and up that fall back.
-	if (P.y < churn_height * 1.9 + 3.0) {
+	if (full && P.y < churn_height * 1.9 + 3.0) {
 		float zf = front_z + (lv + 0.5) * lip_unevenness * 0.8 + throw_out;
 		// Out from the impact (0 a little behind the front, 1 the outer edge);
 		// the edge wanders, so it does not meet the pool in a line.
@@ -396,7 +405,10 @@ float field_i(vec3 P, bool full, out vec4 info) {
 		float top = hmd * 1.55 + 0.05;
 		float mv = min((ro + 0.2) * 2.0, (1.05 - ro) * 2.0);
 		if (P.y > top || mv < v) {
-			mv = min(mv, (top - P.y) * 0.6);
+			// Kept clear of zero: the envelope's top is not a surface, and a
+			// ray skimming it at tiny steps ran out of them (a dotted dark
+			// line on the fall along the top of the churn).
+			mv = min(mv, (top - P.y) * 0.6 - 0.2);
 		} else {
 			// Pieces rising fast at the impact, pushed out as they go.
 			// Ridged, so the pieces are thin sheets and crests, not lumps.
@@ -415,7 +427,7 @@ float field_i(vec3 P, bool full, out vec4 info) {
 		// Lobes thrown out and up from the impact, falling back.
 		// (Not in the shadow taps: too small to matter there.)
 		float jtop = churn_height * 0.6 + jet_speed * jet_speed * 0.08 + 0.4;
-		if (full && jets > 0.0 && P.y < jtop && ro > -0.3 && ro < 1.4 && cw > 0.1 && v < 0.0) {
+		if (jets > 0.0 && P.y < jtop && ro > -0.3 && ro < 1.4 && cw > 0.1 && v < 0.0) {
 			float jf = jet_field(P, zf);
 			v = max(v, min(jf, cw - 0.1));
 		}
@@ -441,9 +453,9 @@ float streak_x(float x, float sw) {
 float detail(float xw, float x, float sw, float q, float dist, out vec3 tex) {
 	float T = TIME * fall_speed;
 	float Ev = TIME * churn_rate;
-	float b = vn2(vec2(xw * 4.3 + 3.0, (sw - T * 1.15) * 0.5 + Ev * 0.6));
-	float f = vn2(vec2(xw * 11.0 + 5.0, (sw - T * 1.2) * 1.2 + Ev * 1.0));
-	float c = vn2(vec2(x * 8.0 + 7.0, (sw - T * 1.05) * 5.0 + Ev * 1.5 + q * 3.0));
+	float b = vn2(vec2(xw * 4.3 + 3.0, (sw - T * 1.15) * 0.85 + Ev * 0.6));
+	float f = vn2(vec2(xw * 11.0 + 5.0, (sw - T * 1.2) * 2.0 + Ev * 1.0));
+	float c = vn2(vec2(xw * 15.0 + 7.0, (sw - T * 1.3) * 2.6 + Ev * 1.5 + q * 3.0));
 	// Far off the fine parts fade to their mean (no shimmer, no hatching).
 	float wf = 1.0 - smoothstep(12.0, 30.0, dist);
 	float wb = 1.0 - smoothstep(25.0, 60.0, dist);
@@ -599,7 +611,7 @@ void fragment() {
 		float xw = streak_x(xd, sw);
 		float d0 = detail(xw, xd, sw, q, t, tx0);
 		// The streak tone: broad streaks and the middle ones, at any distance.
-		float st0 = vn2(vec2(xw * 1.7, (sw - TIME * fall_speed * 1.1) * 0.22 + TIME * churn_rate * 0.3)) * 0.6 + tx0.x * 0.4;
+		float st0 = vn2(vec2(xw * 1.7, (sw - TIME * fall_speed * 1.1) * 0.38 + TIME * churn_rate * 0.3)) * 0.6 + tx0.x * 0.4;
 		float fs0 = tx0.y;
 		float ae0 = tx0.z;
 		float dd = 0.06;
@@ -624,7 +636,7 @@ void fragment() {
 		float occ = 0.0;
 		vec3 so = p + n * 0.15;
 		occ += 2.0 * smoothstep(-0.3, 0.3, field(so + Lf * 1.2, false));
-		float sun = clamp(dot(nw, L) * 1.1 - 0.05, 0.0, 1.0) * (1.0 - 0.25 * occ);
+		float sun = clamp(dot(nw, L) * 0.8 + 0.22, 0.0, 1.0) * (1.0 - 0.2 * occ);
 		float sky = 0.5 + 0.5 * nw.y;
 		float lit = clamp(sun * 0.8 + sky * 0.25, 0.0, 1.0);
 
@@ -636,7 +648,7 @@ void fragment() {
 		float fl = vnoise(vec3(p.x * 0.25, (sw - T * 1.2) * 0.12, Ev * 0.6));
 		float shade = (1.0 - lit) * 1.0;
 		// Between the lobes the water lies back and darker.
-		shade += (1.0 - smoothstep(-0.2, surge_bulge * 0.8, hb)) * 0.25;
+		shade += (1.0 - smoothstep(-0.2, surge_bulge * 0.8, hb)) * 0.12;
 		shade += gp * 0.2 + clamp(-hb, 0.0, 1.5) * 0.12;
 		// Between surges the water is thinner: a little darker, its streaks
 		// show more. Surge heads are the whitest.
@@ -645,7 +657,7 @@ void fragment() {
 		// only as a gentle tone.
 		float far = smoothstep(15.0, 50.0, t);
 		float dk = smoothstep(0.6, 0.72, mix(fs0, st0, far)) * mix(smoothstep(0.3, 0.6, st0), 1.0, far);
-		shade += dk * streaks * (0.38 - 0.22 * dens) + (st0 - 0.5) * streaks * mix(0.25, 0.6, smoothstep(15.0, 60.0, t));
+		shade += dk * streaks * (mix(0.38, 0.5, far) - 0.22 * dens) + (st0 - 0.5) * streaks * mix(0.25, 0.9, smoothstep(15.0, 60.0, t));
 		float cr = 1.0 - abs(2.0 * ae0 - 1.0);
 		shade += smoothstep(0.7, 0.85, ae0) * aeration * 0.13 - cr * cr * cr * aeration * 0.1;
 		shade += (0.5 - fl) * flicker * 0.3;
