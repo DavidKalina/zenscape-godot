@@ -19,7 +19,10 @@ extends RefCounted
 ##
 ## Behind the sheet a cave can run through the hill to an exit in a gully
 ## down its flank (curtain_land.gd lays it out, curtain_cave.gd builds its
-## rock); params cave false: none, the face solid.
+## rock); params cave false: none, the face solid. Or the mountain tunnels
+## bore one (params tunnel: {seed, turn, length, s, in, floor}; curtain_land.gd
+## `tunnels`, tunnel_sites.gd `placed_site`), its mouth in the back wall's
+## foot, its exit a sinkhole's; the flight knows it as any tunnel.
 ##
 ## Params (m; curtain_land.gd has the defaults and their meaning): y, back,
 ## lip, half_back, half_front, round, flare (the amphitheatre's rim), ledge,
@@ -27,7 +30,8 @@ extends RefCounted
 ## which the stream widens to over its last `fan` m; 0: it keeps its own),
 ## stream, outflow ([[s, f, level, half], ...]), lake ({level, shore}), out_under,
 ## throw (the sheet's speed off the lip, m/s), cave (false: none), cave_in,
-## cave_r, cave_turn (degrees), cave_out.
+## cave_r, cave_turn (degrees), cave_out, tunnel; the skin's own (waterfall.gd:
+## chute_width, thread_gaps, lip_notch, lip_seed).
 
 const Land = preload("res://scripts/endless/kinds/curtain_land.gd")
 const Cave = preload("res://scripts/endless/kinds/curtain_cave.gd")
