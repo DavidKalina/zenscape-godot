@@ -23,8 +23,9 @@ extends RefCounted
 ##
 ## Params (m; curtain_land.gd has the defaults and their meaning): y, back,
 ## lip, half_back, half_front, round, flare (the amphitheatre's rim), ledge,
-## pool_r, pool_rf, pool_depth, lip_half (the stream's half-width at the lip:
-## the sheet's), stream, outflow ([[s, f, level, half], ...]), out_under,
+## pool_r, pool_rf, pool_depth, lip_half (the sheet's half-width at the lip,
+## which the stream widens to over its last `fan` m; 0: it keeps its own),
+## stream, outflow ([[s, f, level, half], ...]), lake ({level, shore}), out_under,
 ## throw (the sheet's speed off the lip, m/s), cave (false: none), cave_in,
 ## cave_r, cave_turn (degrees), cave_out.
 

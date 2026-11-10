@@ -15,7 +15,10 @@ extends RefCounted
 ## lip, a stream comes over: a winding channel from higher ground behind
 ## (`stream`: its points with their water levels, the land's own under them,
 ## so it never stands over its ground), cut as a gorge where the land is
-## higher than its water. At the face's foot an uneven plunge pool; from it a
+## higher than its water; it runs faster (white) where its level falls, and
+## its banks are bare rock. Behind, a lake (`lake`, LAKE_*) can fill the
+## land's own hollow to a level, the stream its outlet. At the face's foot
+## an uneven plunge pool; from it a
 ## winding outflow to the river in front (`outflow`). The floor and the
 ## pool's rim are bare (`at`'s bare: no grass, the ground's rock colour).
 ## The cut only lowers the land. A wet skin (the waterfall) has water in the
@@ -77,7 +80,14 @@ const I_STREAM_AT := 34
 const I_STREAM_N := 35
 const I_OUT_AT := 36
 const I_OUT_N := 37
-const SIZE := 38
+const I_FAN := 38
+const I_LAKE_Y := 39
+const I_LAKE_S0 := 40
+const I_LAKE_F0 := 41
+const I_LAKE_NS := 42
+const I_LAKE_NF := 43
+const I_LAKE_AT := 44
+const SIZE := 45
 const PT := 5
 ## The paths' pieces are this long at most (m).
 const SMOOTH := 7.0
@@ -176,7 +186,10 @@ const OUT_DEPTH := 1.1
 ## The water's run (m/s): the stream's (more over its last FAN m), the
 ## outflow's; the pool's stirred out from the fall. Packed at +-FLOW_MAX (land_stream.gd
 ## RIVER_FLOW_MAX).
-const STREAM_FLOW := 2.2
+const STREAM_FLOW := 1.0
+## The stream runs faster where it falls: STREAM_FLOW_GRADE m/s more for
+## each m it falls a m (a step's white water; the ground shader's rapids).
+const STREAM_FLOW_GRADE := 8.0
 const OUT_FLOW := 1.2
 const POOL_FLOW := 0.6
 const FLOW_MAX := 4.0
@@ -200,6 +213,24 @@ const DRY_OVER := 1.2
 ## POOL_BARE m from its water.
 const BARE_PAD := 3.0
 const POOL_BARE := 9.0
+## The stream's banks are bare rock to STREAM_BARE m from its water.
+const STREAM_BARE := 3.0
+## The lake (param `lake`): still water filling the land's own hollow behind
+## the lip, to `level` m over the foot, inside its `shore` (a ring of site
+## points round the hollow and its banks, so no other low ground nearby takes
+## its water), kept as a mask of LAKE_CELL m cells. Its ground is the land's
+## own; its water's distance from its edge (its reads' `out`) comes from the
+## ground's height: LAKE_IN m of depth a m in (the ground shader's own depth
+## per m, river_depth.x, so its colour shows the true depth), LAKE_OUT m a m
+## up its banks. Drawn as a water LAKE_W m wide (the ground shader lifts the
+## whole bed of a still water that wide to its level, however deep).
+const LAKE_CELL := 3.0
+const LAKE_SOFT := 4
+## Past its shore's soft edge its reads fade out: up to LAKE_FADE m more out.
+const LAKE_FADE := 14.0
+const LAKE_IN := 0.8
+const LAKE_OUT := 0.15
+const LAKE_W := 400.0
 
 ## Site `s`'s shape, the coded site (placed_list.gd `site_of`) at `xform`.
 ## Params `stream` and `outflow`: [[s, f, level over the foot, half-width],
@@ -242,11 +273,54 @@ static func shape_of(s: Dictionary, xform: Transform3D) -> PackedFloat32Array:
 		stream = [[0.0,-c[I_BACK]-STREAM_LONG,c[I_LIP]-foot+STREAM_RISE,STREAM_HALF],[0.0,-c[I_BACK],c[I_LIP]-foot,c[I_LIP_HALF]]]
 	c[I_STREAM_AT] = c.size()
 	c[I_STREAM_N] = _put_path(c,stream,foot)
-	# The lip's point is the lip, whatever the list says.
+	# The lip's point is on the lip (across it where the list says), at its
+	# height.
 	var last := int(c[I_STREAM_AT])+(int(c[I_STREAM_N])-1)*PT
-	c[last] = 0.0
 	c[last+1] = -c[I_BACK]
 	c[last+2] = c[I_LIP]
+	c[I_FAN] = float(p.get("fan",FAN))
+	# The lake: its level and its shore's mask.
+	var lake: Dictionary = p.get("lake",{})
+	var shore: Array = lake.get("shore",[])
+	if shore.size() >= 3:
+		var ring := PackedVector2Array()
+		for q: Array in shore: ring.append(Vector2(float(q[0]),float(q[1])))
+		var lo := Vector2(INF,INF)
+		var hi := Vector2(-INF,-INF)
+		for q: Vector2 in ring:
+			lo = lo.min(q)
+			hi = hi.max(q)
+		var ns := ceili((hi.x-lo.x)/LAKE_CELL)
+		var nf := ceili((hi.y-lo.y)/LAKE_CELL)
+		c[I_LAKE_Y] = foot+float(lake.get("level",0.0))
+		c[I_LAKE_S0] = lo.x
+		c[I_LAKE_F0] = lo.y
+		c[I_LAKE_NS] = ns
+		c[I_LAKE_NF] = nf
+		c[I_LAKE_AT] = c.size()
+		var mask := PackedFloat32Array()
+		mask.resize(ns*nf)
+		for j in nf:
+			for i in ns:
+				var q := lo+Vector2((i+0.5)*LAKE_CELL,(j+0.5)*LAKE_CELL)
+				mask[j*ns+i] = 1.0 if Geometry2D.is_point_in_polygon(q,ring) else 0.0
+		# Softened in from the shore line over LAKE_SOFT cells, so the reads
+		# fade out toward it (no straight edge where it crosses low ground).
+		var soft := mask.duplicate()
+		for pass_k in LAKE_SOFT:
+			var next := soft.duplicate()
+			for j in nf:
+				for i in ns:
+					var k := j*ns+i
+					if soft[k] <= 0.0: continue
+					var m := 1.0
+					for o: Vector2i in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]:
+						var ii := i+o.x
+						var jj := j+o.y
+						m = minf(m,soft[jj*ns+ii] if ii >= 0 and jj >= 0 and ii < ns and jj < nf else 0.0)
+					next[k] = minf(soft[k],m+1.0/LAKE_SOFT)
+			soft = next
+		c.append_array(soft)
 	# The outflow, from the pool to the river.
 	var outflow: Array = p.get("outflow",[])
 	if outflow.size() < 2: outflow = [[0.0,c[I_POOL_F],0.0,OUT_HALF],[0.0,OUT_F,0.0,OUT_HALF]]
@@ -314,6 +388,10 @@ static func _box(c: PackedFloat32Array) -> void:
 	for k in int(c[I_OUT_N]):
 		var i := int(c[I_OUT_AT])+k*PT
 		pts.append(Vector3(c[i],c[i+1],c[i+3]*(1.0+HALF_WANDER)+maxf(OUT_CAP,REACH)))
+	if c[I_LAKE_NS] > 0.0:
+		for k in 4:
+			var q := Vector2(c[I_LAKE_S0]+(c[I_LAKE_NS]*LAKE_CELL if k % 2 == 1 else 0.0),c[I_LAKE_F0]+(c[I_LAKE_NF]*LAKE_CELL if k >= 2 else 0.0))
+			pts.append(Vector3(q.x,q.y,0.0))
 	if has_cave(c):
 		var gully := cave_length(c)+EXIT_LONG+FRONT
 		var end: Vector2 = cave_point(c,gully)[0]
@@ -498,7 +576,7 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 	var back := c[I_BACK]
 	# The amphitheatre: `inside` m inside its floor's edge (< 0 outside), the
 	# edge's own wander and ribs off the back wall behind the water.
-	if f < FRONT:
+	if f < FRONT and f > -back-RIM_PAST-WANDER*2.0-ROUGH*2.0:
 		var fc := -back+c[I_ROUND]
 		var g := f-fc
 		var inside := 0.0
@@ -597,9 +675,12 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 		var along := lerpf(c[i+4],c[i+PT+4],t)
 		var long := c[int(c[I_STREAM_AT])+(ns-1)*PT+4]
 		var half := lerpf(c[i+3],c[i+PT+3],t)*(1.0+HALF_WANDER*2.0*(_n1(along/13.0+seed)-0.5))
-		half = lerpf(half,c[I_LIP_HALF],smoothstep(long-FAN,long,along))
+		var fan := c[I_FAN]
+		var fanned := smoothstep(long-fan,long,along) if fan > 0.0 else 0.0
+		half = lerpf(half,c[I_LIP_HALF],fanned)
 		var level := lerpf(c[i+2],c[i+PT+2],t)
 		var out := d-half
+		bare = maxf(bare,clampf((STREAM_BARE-out)/2.0,0.0,1.0)*float(f < -back+0.5))
 		# Its banks: a low one, then a gorge's walls where the land is high.
 		var rise := STREAM_BANK*(0.75+0.6*_n2(x/14.0+seed,z/14.0+3.0))
 		var bed := _bowl(level,STREAM_DEPTH,out,half,rise)
@@ -608,7 +689,8 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 		# Its water only behind the lip (the face and the pool are theirs),
 		# running down its way.
 		if f < -back+0.5:
-			var fl := _way(c,i)*lerpf(STREAM_FLOW,STREAM_FLOW*1.6,smoothstep(long-FAN,long,along))
+			var grade := (c[i+2]-c[i+PT+2])/maxf(c[i+PT+4]-c[i+4],0.5)
+			var fl := _way(c,i)*minf(lerpf(STREAM_FLOW,STREAM_FLOW*1.6,fanned)+maxf(grade,0.0)*STREAM_FLOW_GRADE,FLOW_MAX)
 			waters.append(PackedFloat32Array([out,d*best_s.w,half,level,fl.x,fl.y]))
 	if best_o.x < INF:
 		var i := int(best_o.y)
@@ -621,6 +703,21 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 		h = minf(h,_bowl(level,OUT_DEPTH,out,half,OUT_BANK,OUT_CAP))
 		var fl := _way(c,i)*OUT_FLOW
 		waters.append(PackedFloat32Array([out,d*best_o.w,half,level,fl.x,fl.y]))
+	# The lake: still water wherever its ground is under its level, inside
+	# its shore.
+	if c[I_LAKE_NS] > 0.0:
+		var soft := _lake_soft(c,s,f)
+		if soft > 0.0:
+			var dh := h-c[I_LAKE_Y]
+			# (Its banks' reads fade out toward its shore line, its water only
+			# at the line itself: ground under its level there is a dry
+			# hollow, not lifted to it (the shader lifts the grid under a
+			# water's edge).)
+			var out := dh/LAKE_OUT+(1.0-soft)*LAKE_FADE
+			if dh <= 0.0:
+				out = dh/LAKE_IN+maxf(0.5-soft,0.0)*2.0*LAKE_FADE
+				if out > 0.0: out = maxf(out,1.1)
+			if out < REACH: waters.append(PackedFloat32Array([out,LAKE_W+out,LAKE_W,c[I_LAKE_Y],0.0,0.0]))
 	if has_cave(c):
 		var tu := cave_at(c,q)
 		if not is_nan(tu.x):
@@ -640,10 +737,37 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 			got[6] = w[4]
 			got[7] = w[5]
 		# As drawn: on its banks too (over its water), so the shader's
-		# reads go smoothly out past its edge, not to a neighbour's nothing.
-		if w[0] < got[8] and (w[0] < 0.0 or h > w[3]-0.05):
+		# reads go smoothly out past its edge, not to a neighbour's nothing;
+		# ground standing over DRY_OVER m above it reads as out of it, so a
+		# wall over the water (the face round the pool) isn't painted wet
+		# down from its foot.
+		var o := maxf(w[0],h-w[3]-DRY_OVER)
+		if o < got[8] and (o < 0.0 or h > w[3]-0.05):
 			for k in 6: got[8+k] = w[k]
+			if o > w[0]:
+				got[8] = o
+				got[9] = (w[2]+o)*(-1.0 if w[1] < 0.0 else 1.0)
 	return got
+
+## Shape `c`'s lake mask at site point (s, f), 0 outside its shore to 1 well
+## in, between its cells' middles straight.
+static func _lake_soft(c: PackedFloat32Array, s: float, f: float) -> float:
+	var ns := int(c[I_LAKE_NS])
+	var nf := int(c[I_LAKE_NF])
+	var u := (s-c[I_LAKE_S0])/LAKE_CELL-0.5
+	var v := (f-c[I_LAKE_F0])/LAKE_CELL-0.5
+	if u < -1.0 or v < -1.0 or u > ns or v > nf: return 0.0
+	var i := floori(u)
+	var j := floori(v)
+	var at := int(c[I_LAKE_AT])
+	var k := PackedFloat32Array([0.0,0.0,0.0,0.0])
+	for n in 4:
+		var ii := i+(n & 1)
+		var jj := j+(n >> 1)
+		if ii >= 0 and jj >= 0 and ii < ns and jj < nf: k[n] = c[at+jj*ns+ii]
+	var a := u-i
+	var b := v-j
+	return lerpf(lerpf(k[0],k[1],a),lerpf(k[2],k[3],a),b)
 
 ## The world way (x, z) down shape `c`'s path segment from point index `i`.
 static func _way(c: PackedFloat32Array, i: int) -> Vector2:
