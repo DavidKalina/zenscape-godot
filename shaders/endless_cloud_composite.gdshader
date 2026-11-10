@@ -51,6 +51,9 @@ const float UNDER_ROSE_SHARE = 0.5;
 // The valley fog's light scaled (1 as the first pass drew it).
 uniform float fog_gain = 1.0;
 
+// How far the midday cloud moves toward cleaner cream and a cooler shade.
+const float CLEAN_DAY = 0.45;
+
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
 }
@@ -71,6 +74,12 @@ void fragment() {
 	vec3 c_shade;
 	float lining;
 	zs_cumulus_palette(rd, sun, sun_hue, c_sun, c_shade, lining);
+	// High sun, a cleaner cloud: the lit side a warm cream (a share of the way
+	// to white, a touch of blue let in), the shade giving up its brown to the
+	// sky's cool. Fades out as the sun drops, so golden hour keeps its own.
+	float clean = smoothstep(0.2, 0.5, sun.y) * CLEAN_DAY;
+	c_sun = mix(c_sun, vec3(1.0, 0.975, 0.93) * max(c_sun.r, max(c_sun.g, c_sun.b)), clean);
+	c_shade *= mix(vec3(1.0), vec3(0.88, 0.97, 1.12), clean);
 	float toward_sun = max(dot(rd, sun), 0.0);
 	vec4 terms = a / cloud_a;
 	float fog_share = clamp(terms.w, 0.0, 1.0);
