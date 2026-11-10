@@ -10,22 +10,27 @@ extends RefCounted
 ## `voice()` ({clip, gain, pitch}: the fall's loop, played by the kind).
 ##
 ## The land under it is the kind's too (curtain_land.gd, a layer over the
-## land field keyed to the site): an alcove cut back into the slope to a face
-## `back` m behind the foot, the lip on its top edge `lip` m over the foot, a
-## pool at its foot, a stream over the lip from a tarn behind. A curtain
-## names its foot's height (params.y): the land under it is its own to cut.
+## land field keyed to the site): an amphitheatre cut back into the slope to a
+## face `back` m behind the foot, the lip on its top edge `lip` m over the
+## foot, an uneven pool at its foot with an outflow from it, a stream over the
+## lip from the ground behind. Boulders round the pool and at the walls' foot
+## (curtain_rocks.gd). A curtain names its foot's height (params.y): the land
+## under it is its own to cut.
 ##
-## Behind the sheet a cave runs through the hill to an exit in a gully down
-## its flank (curtain_land.gd lays it out, curtain_cave.gd builds its rock).
+## Behind the sheet a cave can run through the hill to an exit in a gully
+## down its flank (curtain_land.gd lays it out, curtain_cave.gd builds its
+## rock); params cave false: none, the face solid.
 ##
-## Params (m; curtain_land.gd has the defaults): y, back, lip, half_back,
-## half_front, pool_r, pool_depth, tarn (Vector3: s, f, radius), tarn_over_lip,
-## lip_half (the stream's half-width at the lip: the sheet's), out_f, out_under,
+## Params (m; curtain_land.gd has the defaults and their meaning): y, back,
+## lip, half_back, half_front, round, flare (the amphitheatre's rim), ledge,
+## pool_r, pool_rf, pool_depth, lip_half (the stream's half-width at the lip:
+## the sheet's), stream, outflow ([[s, f, level, half], ...]), out_under,
 ## throw (the sheet's speed off the lip, m/s), cave (false: none), cave_in,
 ## cave_r, cave_turn (degrees), cave_out.
 
 const Land = preload("res://scripts/endless/kinds/curtain_land.gd")
 const Cave = preload("res://scripts/endless/kinds/curtain_cave.gd")
+const Rocks = preload("res://scripts/endless/kinds/curtain_rocks.gd")
 const Punch = preload("res://scripts/endless/kinds/curtain_punch.gd")
 const SKINS := {
 	"waterfall": preload("res://scripts/endless/world/wilderness/waterfall.gd"),
@@ -38,9 +43,11 @@ static func build(site: Dictionary) -> Node3D:
 	var sheet := sheet_of(site)
 	var skin := str(site.get("skin",""))
 	if SKINS.has(skin): (SKINS[skin] as GDScript).dress(root,sheet,site)
-	# The space behind: the cave through the hill (curtain_cave.gd).
+	# The space behind: the cave through the hill (curtain_cave.gd), if any.
 	var c := Land.shape_of(site,site.xform)
 	Cave.build(root,site,c)
+	# The boulders at its foot (curtain_rocks.gd).
+	Rocks.build(root,site,c)
 	# The punch through the sheet and the fall's voice (curtain_punch.gd).
 	var punch := Punch.new()
 	punch.name = "Punch"

@@ -6,25 +6,34 @@ extends RefCounted
 ## the layout file, so every machine stands the same land. --no-placed: none.
 ##
 ## In the site's frame (f along its heading, + toward what it faces; s to its
-## right; the foot at f = 0): an alcove cut back into the slope to a face at
-## f = -back, its floor at the foot; on the face's top edge a notch, the lip,
-## where a stream comes over from a tarn on the land behind; at the face's
-## foot a plunge pool; from the pool an outflow to the river in front. The
-## cut only lowers the land. A wet skin (the waterfall) has water in the
-## tarn, the stream, the pool and the outflow: they read as a pond does
-## (LandField `_p_*`: the river's reads, the ground shader's water).
+## right; the foot at f = 0): an amphitheatre cut back into the slope, its
+## floor at the foot: a rounded plan (an ellipse behind its middle, sides
+## opening out to the foot) whose edge wanders and is ribbed, so no wall is a
+## straight line. Behind the water its back wall is one face from the lip
+## down to the floor over WALL m; round the sides a lower cliff, a ledge and
+## an upper cliff to the land's own top. On the back wall's top edge, the
+## lip, a stream comes over: a winding channel from higher ground behind
+## (`stream`: its points with their water levels, the land's own under them,
+## so it never stands over its ground), cut as a gorge where the land is
+## higher than its water. At the face's foot an uneven plunge pool; from it a
+## winding outflow to the river in front (`outflow`). The floor and the
+## pool's rim are bare (`at`'s bare: no grass, the ground's rock colour).
+## The cut only lowers the land. A wet skin (the waterfall) has water in the
+## stream, the pool and the outflow: they read as a pond does (LandField
+## `_p_*`: the river's reads, the ground shader's water).
 ##
-## Behind the face, a cave (`cave_at`): its mouth at the face's foot behind
-## the sheet, straight in CAVE_IN m, a bend of CAVE_R m turning CAVE_TURN to
-## the +s side, then CAVE_OUT m to its exit, a mouth in the back wall of a cut
-## (the exit's gully) that runs out and down the hill's flank. The land field
-## (the flight's crash test) has the cave as a trench down to its floor with
-## walls at its half-width; the chunks draw the hill whole over it (`cave`
-## false: LandField.surface), with holes in the two faces (`hole_mask`), and
-## the curtain's piece draws the cave's rock and holds its roof
-## (curtain.gd `cave`).
+## Behind the face, a cave (`cave_at`; params cave false: none): its mouth at
+## the face's foot behind the sheet, straight in CAVE_IN m, a bend of CAVE_R
+## m turning CAVE_TURN to the +s side, then CAVE_OUT m to its exit, a mouth
+## in the back wall of a cut (the exit's gully) that runs out and down the
+## hill's flank. The land field (the flight's crash test) has the cave as a
+## trench down to its floor with walls at its half-width; the chunks draw the
+## hill whole over it (`cave` false: LandField.surface), with holes in the two
+## faces (`hole_mask`), and the curtain's piece draws the cave's rock and
+## holds its roof (curtain.gd `cave`).
 ##
-## A shape is a PackedFloat32Array (see the I_ indices).
+## A shape is a PackedFloat32Array (see the I_ indices), its paths after
+## SIZE: PT floats a point (s, f, water level, half-width, m along).
 
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const PlacedList = preload("res://scripts/endless/placed_list.gd")
@@ -45,12 +54,12 @@ const I_POOL_F := 11
 const I_POOL_R := 12
 const I_POOL_Y := 13
 const I_POOL_DEPTH := 14
-const I_TARN_S := 15
-const I_TARN_F := 16
-const I_TARN_R := 17
-const I_TARN_Y := 18
+const I_POOL_RF := 15
+const I_LEDGE := 16
+const I_ROUND := 17
+const I_SEED := 18
 const I_LIP_HALF := 19
-const I_OUT_F := 20
+const I_FLARE := 20
 const I_OUT_Y := 21
 const I_WET := 22
 const I_CAVE_HALF := 23
@@ -60,20 +69,66 @@ const I_CAVE_IN := 26
 const I_CAVE_R := 27
 const I_CAVE_TURN := 28
 const I_CAVE_OUT := 29
-const SIZE := 30
+const I_BOX_X0 := 30
+const I_BOX_Z0 := 31
+const I_BOX_X1 := 32
+const I_BOX_Z1 := 33
+const I_STREAM_AT := 34
+const I_STREAM_N := 35
+const I_OUT_AT := 36
+const I_OUT_N := 37
+const SIZE := 38
+const PT := 5
+## The paths' pieces are this long at most (m).
+const SMOOTH := 7.0
 
 ## The defaults (m), each a param of the same name (lip: over the foot).
 const BACK := 48.0
 const LIP := 61.5
+## The amphitheatre's rim (where its walls stand at the lip's height): its
+## half-width at its middle and at the foot, how far round its back is (the
+## ellipse's depth, its back the lip), how fast its sides open out past the
+## foot (m a m). Over the rim its walls rise TOP_CLIFF m a m to the land.
 const HALF_BACK := 24.0
 const HALF_FRONT := 36.0
+const ROUND := 20.0
+const FLARE := 0.6
+const TOP_CLIFF := 6.0
+## The rim's back: an ellipse squared to this power (2: a plain one).
+const SQUARE := 2.6
+## How far past the rim its walls can reach (m).
+const RIM_PAST := 24.0
+## The pool: its half-widths across and along (an ellipse, its edge wandering
+## by POOL_WANDER of them), its middle POOL_IN of its along radius in front
+## of the face's foot.
 const POOL_R := 14.0
+const POOL_RF := 10.0
 const POOL_DEPTH := 2.3
-const TARN := Vector3(-14.0,-70.0,8.0)
-const TARN_OVER_LIP := 4.0
+const POOL_WANDER := 0.2
+const POOL_IN := 0.7
 const LIP_HALF := 13.0
-const OUT_F := 36.0
 const OUT_Y_UNDER := 4.0
+## The ledge round the sides: its height a share of the face's (LEDGE, give
+## or take LEDGE_WANDER), LEDGE_W m deep; the cliff under it falls CLIFF_LOW
+## m a m in from it, the one over it CLIFF_HIGH from the rim. Behind the water (the sheet's half-width
+## and SHEET_PAD m) the back wall is one face, its edge plain.
+const LEDGE := 0.42
+const LEDGE_WANDER := 0.12
+const LEDGE_W := 9.0
+## The ledge falls LEDGE_FALL m a m toward the floor (so it sheds water and
+## doesn't read as a cut shelf); its depth wanders by 45%.
+const LEDGE_FALL := 0.35
+const CLIFF_LOW := 6.0
+const CLIFF_HIGH := 4.5
+const SHEET_PAD := 4.0
+const PLAIN_TO := 9.0
+## The plan's edge: lobes WANDER m (each about WANDER_LONG m along it), ribs
+## RIB m (about RIB_LONG m apart) and a finer roughness ROUGH m.
+const WANDER := 5.0
+const WANDER_LONG := 22.0
+const RIB := 2.2
+const RIB_LONG := 7.0
+const ROUGH := 1.6
 
 ## The cave: its width and height from their toy-era sizes (WorldScale
 ## `opening`, AGENTS.md Sizes: 22 m by 16 m at plane 2), its walls upright to
@@ -100,28 +155,57 @@ const EXIT_LONG := 34.0
 const HOLE_PAD := 1.0
 
 ## The face runs from its top edge to the floor over WALL m (a cliff); the
-## alcove fades out over FRONT m past the foot.
+## amphitheatre fades out over FRONT m past the foot.
 const WALL := 4.0
 const FRONT := 10.0
-## The pool's and tarn's banks rise BANK (rise over run) off the water; the
-## stream's and the tarn's hollow sides HOLLOW; the outflow's banks OUT_BANK.
-const BANK := 0.14
-const HOLLOW := 1.0
+## The pool's banks rise BANK (rise over run) off the water to the floor; the stream's
+## banks STREAM_BANK (give or take a third: a gorge where the land is high);
+## the outflow's OUT_BANK.
+const BANK := 0.45
+const STREAM_BANK := 1.3
+## The stream's low bank runs BANK_RUN m; past it a gorge's wall rises GORGE.
+const BANK_RUN := 4.0
+const GORGE := 3.2
 const OUT_BANK := 0.35
-## The stream's water half-width at the tarn (it fans to LIP_HALF at the lip)
-## and its depth; the outflow's half-width and depth.
-const STREAM_HALF := 3.5
+## The stream's depth; its water widens to the lip's half-width over its last
+## FAN m; its half-width wanders by HALF_WANDER of itself. The outflow's depth.
 const STREAM_DEPTH := 1.0
-const OUT_HALF := 4.0
+const FAN := 30.0
+const HALF_WANDER := 0.25
 const OUT_DEPTH := 1.1
+## The water's run (m/s): the stream's (more over its last FAN m), the
+## outflow's; the pool's stirred out from the fall. Packed at +-FLOW_MAX (land_stream.gd
+## RIVER_FLOW_MAX).
+const STREAM_FLOW := 2.2
+const OUT_FLOW := 1.2
+const POOL_FLOW := 0.6
+const FLOW_MAX := 4.0
+## With no `stream` param: a straight one STREAM_LONG m back, STREAM_HALF
+## wide, its water STREAM_RISE over the lip at its head.
+const STREAM_LONG := 60.0
+const STREAM_HALF := 3.5
+const STREAM_RISE := 3.0
+## With no `outflow` param: straight out OUT_F m, OUT_HALF wide.
+const OUT_F := 36.0
+const OUT_HALF := 4.0
 ## The outflow's banks reach OUT_CAP m past its water, no further.
 const OUT_CAP := 8.0
-## How far past a shape's water its cut and reads carry (m); its reads stop
-## where the ground stands DRY_OVER m over the water.
+## How far past a shape's water its reads carry (m); its reads stop where the
+## ground stands DRY_OVER m over the water. The stream's cut reaches up to
+## STREAM_REACH m past its water (a gorge's sides).
 const REACH := 30.0
+const STREAM_REACH := 48.0
 const DRY_OVER := 1.2
+## The floor is bare, and its walls to BARE_PAD m up; the pool's rim to
+## POOL_BARE m from its water.
+const BARE_PAD := 3.0
+const POOL_BARE := 9.0
 
 ## Site `s`'s shape, the coded site (placed_list.gd `site_of`) at `xform`.
+## Params `stream` and `outflow`: [[s, f, level over the foot, half-width],
+## ...] (site frame) from the head down; the stream's last point is the lip
+## (its level the lip's), the outflow's levels are the pool's at its head
+## and `out_under` under the foot at its end, between them by length.
 static func shape_of(s: Dictionary, xform: Transform3D) -> PackedFloat32Array:
 	var p: Dictionary = s.params
 	var c := PackedFloat32Array()
@@ -129,31 +213,49 @@ static func shape_of(s: Dictionary, xform: Transform3D) -> PackedFloat32Array:
 	var fwd := -xform.basis.z
 	fwd.y = 0.0
 	fwd = fwd.normalized()
+	var foot := xform.origin.y
 	c[I_X] = xform.origin.x
 	c[I_Z] = xform.origin.z
-	c[I_Y] = xform.origin.y
+	c[I_Y] = foot
 	c[I_FX] = fwd.x
 	c[I_FZ] = fwd.z
 	c[I_BACK] = float(p.get("back",BACK))
-	c[I_LIP] = xform.origin.y+float(p.get("lip",LIP))
+	c[I_LIP] = foot+float(p.get("lip",LIP))
 	c[I_HALF_BACK] = float(p.get("half_back",HALF_BACK))
 	c[I_HALF_FRONT] = float(p.get("half_front",HALF_FRONT))
-	c[I_FLOOR] = xform.origin.y
+	c[I_ROUND] = float(p.get("round",ROUND))
+	c[I_FLARE] = float(p.get("flare",FLARE))
+	c[I_LEDGE] = float(p.get("ledge",LEDGE))
+	c[I_FLOOR] = foot
 	c[I_POOL_R] = float(p.get("pool_r",POOL_R))
-	c[I_POOL_F] = -c[I_BACK]+c[I_POOL_R]+2.0
-	c[I_POOL_Y] = xform.origin.y-0.6
+	c[I_POOL_RF] = float(p.get("pool_rf",POOL_RF))
+	c[I_POOL_F] = -c[I_BACK]+WALL+c[I_POOL_RF]*POOL_IN
+	c[I_POOL_Y] = foot-0.6
 	c[I_POOL_DEPTH] = float(p.get("pool_depth",POOL_DEPTH))
-	var tarn: Vector3 = p.get("tarn",TARN)
-	c[I_TARN_S] = tarn.x
-	c[I_TARN_F] = tarn.y
-	c[I_TARN_R] = tarn.z
-	c[I_TARN_Y] = c[I_LIP]+float(p.get("tarn_over_lip",TARN_OVER_LIP))
 	c[I_LIP_HALF] = float(p.get("lip_half",LIP_HALF))
-	c[I_OUT_F] = float(p.get("out_f",OUT_F))
-	c[I_OUT_Y] = xform.origin.y-float(p.get("out_under",OUT_Y_UNDER))
+	c[I_OUT_Y] = foot-float(p.get("out_under",OUT_Y_UNDER))
 	c[I_WET] = 1.0 if str(s.get("skin","")) == "waterfall" else 0.0
-	var tarn_far := Vector2(tarn.x,tarn.y).length()+tarn.z+REACH
-	c[I_REACH] = maxf(maxf(tarn_far,c[I_OUT_F]+OUT_HALF+REACH),c[I_BACK]+c[I_HALF_FRONT]+REACH)
+	c[I_SEED] = float(hash(str(s.get("handle",""))) % 997)
+	# The stream, from its head to the lip.
+	var stream: Array = p.get("stream",[])
+	if stream.size() < 2:
+		stream = [[0.0,-c[I_BACK]-STREAM_LONG,c[I_LIP]-foot+STREAM_RISE,STREAM_HALF],[0.0,-c[I_BACK],c[I_LIP]-foot,c[I_LIP_HALF]]]
+	c[I_STREAM_AT] = c.size()
+	c[I_STREAM_N] = _put_path(c,stream,foot)
+	# The lip's point is the lip, whatever the list says.
+	var last := int(c[I_STREAM_AT])+(int(c[I_STREAM_N])-1)*PT
+	c[last] = 0.0
+	c[last+1] = -c[I_BACK]
+	c[last+2] = c[I_LIP]
+	# The outflow, from the pool to the river.
+	var outflow: Array = p.get("outflow",[])
+	if outflow.size() < 2: outflow = [[0.0,c[I_POOL_F],0.0,OUT_HALF],[0.0,OUT_F,0.0,OUT_HALF]]
+	c[I_OUT_AT] = c.size()
+	c[I_OUT_N] = _put_path(c,outflow,foot)
+	var o := int(c[I_OUT_AT])
+	var long := c[o+(int(c[I_OUT_N])-1)*PT+4]
+	for k in int(c[I_OUT_N]):
+		c[o+k*PT+2] = lerpf(c[I_POOL_Y],c[I_OUT_Y],c[o+k*PT+4]/maxf(long,0.01))
 	if bool(p.get("cave",true)):
 		c[I_CAVE_HALF] = WorldScale.opening(TOY_CAVE)*0.5
 		c[I_CAVE_TALL] = WorldScale.opening(TOY_CAVE_TALL)
@@ -162,10 +264,79 @@ static func shape_of(s: Dictionary, xform: Transform3D) -> PackedFloat32Array:
 		c[I_CAVE_R] = float(p.get("cave_r",CAVE_R))
 		c[I_CAVE_TURN] = deg_to_rad(float(p.get("cave_turn",CAVE_TURN)))
 		c[I_CAVE_OUT] = float(p.get("cave_out",CAVE_OUT))
+	_box(c)
+	return c
+
+## The path `pts` ([s, f, level over `foot`, half]) onto `c`'s end, through
+## its points on a Catmull-Rom curve in pieces of SMOOTH m or less (level
+## and half-width straight between the points), with each piece's length
+## along. Returns how many points it put.
+static func _put_path(c: PackedFloat32Array, pts: Array, foot: float) -> int:
+	var along := 0.0
+	var put := 0
+	var last := Vector2.ZERO
+	var n := pts.size()
+	for k in n:
+		var q: Array = pts[k]
+		var p1 := Vector2(float(q[0]),float(q[1]))
+		if k == n-1:
+			along += p1.distance_to(last) if k > 0 else 0.0
+			c.append_array(PackedFloat32Array([p1.x,p1.y,foot+float(q[2]),float(q[3]),along]))
+			put += 1
+			break
+		var q0: Array = pts[maxi(k-1,0)]
+		var q2: Array = pts[k+1]
+		var q3: Array = pts[mini(k+2,n-1)]
+		var p0 := Vector2(float(q0[0]),float(q0[1]))
+		var p2 := Vector2(float(q2[0]),float(q2[1]))
+		var p3 := Vector2(float(q3[0]),float(q3[1]))
+		var parts := maxi(1,ceili(p1.distance_to(p2)/SMOOTH))
+		for m in parts:
+			var t := float(m)/parts
+			var at := 0.5*(2.0*p1+(p2-p0)*t+(2.0*p0-5.0*p1+4.0*p2-p3)*t*t+(3.0*p1-p0-3.0*p2+p3)*t*t*t)
+			if put > 0: along += at.distance_to(last)
+			last = at
+			c.append_array(PackedFloat32Array([at.x,at.y,foot+lerpf(float(q[2]),float(q2[2]),t),lerpf(float(q[3]),float(q2[3]),t),along]))
+			put += 1
+	return put
+
+## The world box (I_BOX_*) the shape's cut reaches, and I_REACH: its
+## furthest from the foot.
+static func _box(c: PackedFloat32Array) -> void:
+	var pts: Array[Vector3] = []
+	var side := maxf(c[I_HALF_FRONT],c[I_HALF_BACK])+c[I_FLARE]*FRONT+WANDER+RIB+ROUGH+RIM_PAST
+	pts.append(Vector3(0.0,FRONT,side))
+	pts.append(Vector3(0.0,-c[I_BACK],side))
+	pts.append(Vector3(0.0,c[I_POOL_F],maxf(c[I_POOL_R],c[I_POOL_RF])*(1.0+POOL_WANDER)+REACH))
+	for k in int(c[I_STREAM_N]):
+		var i := int(c[I_STREAM_AT])+k*PT
+		pts.append(Vector3(c[i],c[i+1],maxf(c[i+3],c[I_LIP_HALF])*(1.0+HALF_WANDER)+STREAM_REACH))
+	for k in int(c[I_OUT_N]):
+		var i := int(c[I_OUT_AT])+k*PT
+		pts.append(Vector3(c[i],c[i+1],c[i+3]*(1.0+HALF_WANDER)+maxf(OUT_CAP,REACH)))
+	if has_cave(c):
 		var gully := cave_length(c)+EXIT_LONG+FRONT
 		var end: Vector2 = cave_point(c,gully)[0]
-		c[I_REACH] = maxf(c[I_REACH],end.length()+c[I_CAVE_HALF]+EXIT_PAD+EXIT_SPREAD*gully+REACH)
-	return c
+		pts.append(Vector3(end.x,end.y,c[I_CAVE_HALF]+EXIT_PAD+EXIT_SPREAD*gully+REACH))
+		pts.append(Vector3(0.0,-c[I_BACK],cave_length(c)+REACH))
+	var lo := Vector2(INF,INF)
+	var hi := Vector2(-INF,-INF)
+	var far := 0.0
+	for q: Vector3 in pts:
+		var w := world(c,Vector2(q.x,q.y))
+		lo = Vector2(minf(lo.x,w.x-q.z),minf(lo.y,w.y-q.z))
+		hi = Vector2(maxf(hi.x,w.x+q.z),maxf(hi.y,w.y+q.z))
+		far = maxf(far,Vector2(q.x,q.y).length()+q.z)
+	c[I_BOX_X0] = lo.x
+	c[I_BOX_Z0] = lo.y
+	c[I_BOX_X1] = hi.x
+	c[I_BOX_Z1] = hi.y
+	c[I_REACH] = far
+
+## World (x, z) of site-frame `q` (s, f) in shape `c`.
+static func world(c: PackedFloat32Array, q: Vector2) -> Vector2:
+	var fwd := Vector2(c[I_FX],c[I_FZ])
+	return Vector2(c[I_X],c[I_Z])+Vector2(-fwd.y,fwd.x)*q.x+fwd*q.y
 
 ## Whether shape `c` has a cave.
 static func has_cave(c: PackedFloat32Array) -> bool:
@@ -271,11 +442,11 @@ static func xform_of(s: Dictionary) -> Transform3D:
 
 ## Whether shape `c` reaches (x, z).
 static func reaches(c: PackedFloat32Array, x: float, z: float) -> bool:
-	return absf(x-c[I_X]) < c[I_REACH] and absf(z-c[I_Z]) < c[I_REACH]
+	return x > c[I_BOX_X0] and x < c[I_BOX_X1] and z > c[I_BOX_Z0] and z < c[I_BOX_Z1]
 
 ## Whether shape `c` meets the box (x0, z0)..(x1, z1).
 static func meets(c: PackedFloat32Array, x0: float, z0: float, x1: float, z1: float) -> bool:
-	return c[I_X]+c[I_REACH] > x0 and c[I_X]-c[I_REACH] < x1 and c[I_Z]+c[I_REACH] > z0 and c[I_Z]-c[I_REACH] < z1
+	return c[I_BOX_X1] > x0 and c[I_BOX_X0] < x1 and c[I_BOX_Z1] > z0 and c[I_BOX_Z0] < z1
 
 ## (s, f) of world (x, z) in shape `c`'s frame.
 static func local(c: PackedFloat32Array, x: float, z: float) -> Vector2:
@@ -283,62 +454,171 @@ static func local(c: PackedFloat32Array, x: float, z: float) -> Vector2:
 	var dz := z-c[I_Z]
 	return Vector2(-dx*c[I_FZ]+dz*c[I_FX],dx*c[I_FX]+dz*c[I_FZ])
 
+## The segments of shape `c`'s stream and outflow (indices into their
+## points: k for k..k+1, the outflow's past the stream's count) whose cut can
+## reach the world box (x0, z0)..(x1, z1), for `at`.
+static func segments_near(c: PackedFloat32Array, x0: float, z0: float, x1: float, z1: float) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var corners: Array[Vector2] = [local(c,x0,z0),local(c,x1,z0),local(c,x0,z1),local(c,x1,z1)]
+	var lo := Vector2(INF,INF)
+	var hi := Vector2(-INF,-INF)
+	for q: Vector2 in corners:
+		lo = Vector2(minf(lo.x,q.x),minf(lo.y,q.y))
+		hi = Vector2(maxf(hi.x,q.x),maxf(hi.y,q.y))
+	var ns := int(c[I_STREAM_N])
+	for k in ns+int(c[I_OUT_N]):
+		if k == ns-1 or k == ns+int(c[I_OUT_N])-1: continue
+		var i := int(c[I_STREAM_AT])+k*PT if k < ns else int(c[I_OUT_AT])+(k-ns)*PT
+		var pad := (maxf(maxf(c[i+3],c[i+PT+3]),c[I_LIP_HALF])*(1.0+HALF_WANDER)+STREAM_REACH) if k < ns else c[i+3]*(1.0+HALF_WANDER)+maxf(OUT_CAP,REACH)
+		if minf(c[i],c[i+PT])-pad > hi.x or maxf(c[i],c[i+PT])+pad < lo.x: continue
+		if minf(c[i+1],c[i+PT+1])-pad > hi.y or maxf(c[i+1],c[i+PT+1])+pad < lo.y: continue
+		out.append(k)
+	if out.is_empty(): out.append(-1)
+	return out
+
 ## Shape `c` cut into the land's height `base` at (x, z): [height, water's
 ## out (m past its edge, < 0 on it; INF dry), r, w, level] (the pond's reads:
-## LandField `_pond`).
+## LandField `_pond`), bare (1: no grass, the rock's colour), the water's
+## flow (x, z m/s: the ground shader's current; still water grows lilies).
 ## With `cave` the cave's trench too (the field's), else the hill whole over
-## it (the chunks').
-static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := true) -> PackedFloat32Array:
+## it (the chunks'). `segs` (segments_near) the paths' segments to look at;
+## empty: all.
+static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := true, segs := PackedInt32Array()) -> PackedFloat32Array:
 	var q := local(c,x,z)
 	var s := q.x
 	var f := q.y
 	var h := base
+	var bare := 0.0
+	var seed := c[I_SEED]
 	# Each water's reads [out, r, w, level], kept at the end only where the
 	# ground holds it (DRY_OVER), so a face between two waters reads dry.
 	var waters: Array[PackedFloat32Array] = []
-	# The tarn and the stream from it to the lip.
-	var tarn := Vector2(c[I_TARN_S],c[I_TARN_F])
-	var lip := Vector2(0.0,-c[I_BACK])
-	var along := lip-tarn
-	var long := along.length()
-	var dir := along/long
-	var rel := q-tarn
-	var t := clampf(rel.dot(dir)/long,0.0,1.0)
-	var across := rel.x*dir.y-rel.y*dir.x
-	var off := absf(rel.x*dir.y-rel.y*dir.x) if rel.dot(dir) >= 0.0 and rel.dot(dir) <= long else (q-(tarn+along*t)).length()
-	var half := lerpf(STREAM_HALF,c[I_LIP_HALF],smoothstep(0.35,1.0,t))
-	var level := lerpf(c[I_TARN_Y]-0.15,c[I_LIP],t)
-	if f < -c[I_BACK]+0.5 and off < half+REACH:
-		var out := off-half
-		h = minf(h,_bowl(level,STREAM_DEPTH,out,half,HOLLOW))
-		var t_in := rel.dot(dir)/long
-		waters.append(PackedFloat32Array([out,across if t_in > 0.0 and t_in < 1.0 else off,half,level]))
-	var rt := (q-tarn).length()
-	if rt < c[I_TARN_R]+REACH:
-		var out := rt-c[I_TARN_R]
-		h = minf(h,_bowl(c[I_TARN_Y],STREAM_DEPTH*1.6,out,c[I_TARN_R],HOLLOW))
-		waters.append(PackedFloat32Array([out,rt,c[I_TARN_R],c[I_TARN_Y]]))
-	# The alcove: the face from its top edge down to the floor.
 	var back := c[I_BACK]
-	var side := lerpf(c[I_HALF_BACK],c[I_HALF_FRONT],clampf((f+back)/back,0.0,1.0))+maxf(f,0.0)
-	var inside := minf(f+back,side-absf(s))
-	if inside > 0.0:
-		var a := clampf(inside/WALL,0.0,1.0)*clampf(1.0-f/FRONT,0.0,1.0)
-		h = lerpf(h,minf(h,c[I_FLOOR]),a)
-	# The plunge pool at the face's foot.
-	var rp := Vector2(s,f-c[I_POOL_F]).length()
-	if rp < c[I_POOL_R]+REACH and f > -back:
-		var out := rp-c[I_POOL_R]
-		h = minf(h,_bowl(c[I_POOL_Y],c[I_POOL_DEPTH],out,c[I_POOL_R],BANK,(c[I_FLOOR]+0.3-c[I_POOL_Y])/BANK))
-		waters.append(PackedFloat32Array([out,rp,c[I_POOL_R],c[I_POOL_Y]]))
-	# The outflow from the pool to the river.
-	var f0 := c[I_POOL_F]+c[I_POOL_R]*0.6
-	if f > f0 and f < c[I_OUT_F]+OUT_HALF and absf(s) < OUT_HALF+REACH:
-		var u := clampf((f-f0)/(c[I_OUT_F]-f0),0.0,1.0)
-		var lv := lerpf(c[I_POOL_Y],c[I_OUT_Y],u)
-		var out := absf(s)-OUT_HALF
-		h = minf(h,_bowl(lv,OUT_DEPTH,out,OUT_HALF,OUT_BANK,OUT_CAP))
-		waters.append(PackedFloat32Array([out,s,OUT_HALF,lv]))
+	# The amphitheatre: `inside` m inside its floor's edge (< 0 outside), the
+	# edge's own wander and ribs off the back wall behind the water.
+	if f < FRONT:
+		var fc := -back+c[I_ROUND]
+		var g := f-fc
+		var inside := 0.0
+		var u := 0.0
+		if g <= 0.0:
+			var th := atan2(absf(s),-g)
+			var a := c[I_HALF_BACK]
+			var b := c[I_ROUND]
+			# A squared ellipse (SQUARE), so its back stays wide.
+			var ct := pow(cos(th)/b,SQUARE)
+			var st := pow(sin(th)/a,SQUARE)
+			inside = pow(ct+st,-1.0/SQUARE)-Vector2(s,g).length()
+			u = th*(a+b)*0.5
+		else:
+			var front := c[I_HALF_BACK]+(c[I_HALF_FRONT]-c[I_HALF_BACK])*clampf(g/maxf(-fc,1.0),0.0,1.0)+c[I_FLARE]*maxf(f,0.0)
+			inside = front-absf(s)
+			u = PI*0.25*(c[I_HALF_BACK]+c[I_ROUND])+g
+		u *= signf(s) if s != 0.0 else 1.0
+		var sheet := c[I_LIP_HALF]*0.85
+		var plain := smoothstep(sheet+SHEET_PAD,sheet+SHEET_PAD+PLAIN_TO,absf(s)) if g <= 0.0 else 1.0
+		var rough := _n2(x/9.0+seed,z/9.0)-0.5
+		inside += plain*(WANDER*2.0*(_n1(u/WANDER_LONG+seed)-0.5)+RIB*(absf(sin(u/RIB_LONG+3.0*_n1(u/31.0+seed*0.3)))-0.6)*2.0+ROUGH*2.0*rough)
+		if inside > -60.0:
+			var lip := c[I_LIP]
+			var floor_y := c[I_FLOOR]
+			var drop := lip-floor_y
+			var cut := lip-inside*TOP_CLIFF
+			if inside > 0.0:
+				# Behind the water one face; round the sides the upper cliff,
+				# the ledge and the lower cliff, each from the rim in.
+				var one := lip-inside*drop/WALL
+				var ledge := floor_y+drop*(c[I_LEDGE]+LEDGE_WANDER*2.0*(_n1(u/37.0+seed*0.7)-0.5))
+				var d1 := (lip-ledge)/CLIFF_HIGH
+				var steps := lip-inside*CLIFF_HIGH
+				var deep := LEDGE_W*(0.55+0.9*_n1(u/23.0+seed*1.3))
+				if inside > d1: steps = ledge-minf(inside-d1,deep)*LEDGE_FALL-maxf(inside-d1-deep,0.0)*CLIFF_LOW
+				cut = maxf(lerpf(one,steps,plain),floor_y)
+			var a := clampf(1.0-f/FRONT,0.0,1.0)
+			h = lerpf(h,minf(h,cut),a)
+			bare = maxf(bare,clampf(1.0-(cut-floor_y)/BARE_PAD,0.0,1.0)*a)
+	# The plunge pool at the face's foot: an ellipse, its edge wandering.
+	var pq := Vector2(s,f-c[I_POOL_F])
+	var rp := pq.length()
+	var pr := maxf(c[I_POOL_R],c[I_POOL_RF])*(1.0+POOL_WANDER)
+	if rp < pr+REACH and f > -back:
+		var dir := pq/maxf(rp,0.001)
+		var ra := dir.x/c[I_POOL_R]
+		var rb := dir.y/c[I_POOL_RF]
+		var edge := 1.0/sqrt(ra*ra+rb*rb)
+		edge *= 1.0+POOL_WANDER*2.0*(_n2(dir.x*1.7+seed,dir.y*1.7)-0.5)
+		var out := rp-edge
+		h = minf(h,_bowl(c[I_POOL_Y],c[I_POOL_DEPTH],out,edge,BANK,(c[I_FLOOR]+0.3-c[I_POOL_Y])/BANK))
+		# Its water stirred out from the fall's foot (no lilies under a fall).
+		var away := Vector2(s,f+back-WALL).normalized()
+		var fwd := Vector2(c[I_FX],c[I_FZ])
+		var fl := (Vector2(-fwd.y,fwd.x)*away.x+fwd*away.y)*POOL_FLOW
+		waters.append(PackedFloat32Array([out,rp,edge,c[I_POOL_Y],fl.x,fl.y]))
+		bare = maxf(bare,clampf((POOL_BARE-out)/3.0,0.0,1.0))
+	# The stream down to the lip and the outflow from the pool: each the
+	# nearest of its segments.
+	var ns := int(c[I_STREAM_N])
+	var no := int(c[I_OUT_N])
+	var best_s := Vector4(INF,0.0,0.0,0.0)
+	var best_o := Vector4(INF,0.0,0.0,0.0)
+	var all := segs.is_empty()
+	var count := ns+no if all else segs.size()
+	for n in count:
+		var k := n if all else segs[n]
+		if k < 0 or k == ns-1 or k >= ns+no-1: continue
+		var stream := k < ns
+		var i := int(c[I_STREAM_AT])+k*PT if stream else int(c[I_OUT_AT])+(k-ns)*PT
+		var pad := (STREAM_REACH+c[I_LIP_HALF]*1.3) if stream else (maxf(OUT_CAP,REACH)+c[i+3]*1.3)
+		var ax := c[i]
+		var az := c[i+1]
+		var bx := c[i+PT]
+		var bz := c[i+PT+1]
+		if s < minf(ax,bx)-pad or s > maxf(ax,bx)+pad or f < minf(az,bz)-pad or f > maxf(az,bz)+pad: continue
+		var dx := bx-ax
+		var dz := bz-az
+		var ll := dx*dx+dz*dz
+		var t := clampf(((s-ax)*dx+(f-az)*dz)/maxf(ll,0.0001),0.0,1.0)
+		var px := s-ax-dx*t
+		var pz := f-az-dz*t
+		var d2 := px*px+pz*pz
+		var cur := best_s if stream else best_o
+		if d2 >= cur.x: continue
+		# Signed: + to the right of the way down.
+		var side := signf(dx*pz-dz*px)
+		var got := Vector4(d2,float(i),t,side)
+		if stream: best_s = got
+		else: best_o = got
+	if best_s.x < INF:
+		var i := int(best_s.y)
+		var t := best_s.z
+		var d := sqrt(best_s.x)
+		var along := lerpf(c[i+4],c[i+PT+4],t)
+		var long := c[int(c[I_STREAM_AT])+(ns-1)*PT+4]
+		var half := lerpf(c[i+3],c[i+PT+3],t)*(1.0+HALF_WANDER*2.0*(_n1(along/13.0+seed)-0.5))
+		half = lerpf(half,c[I_LIP_HALF],smoothstep(long-FAN,long,along))
+		var level := lerpf(c[i+2],c[i+PT+2],t)
+		var out := d-half
+		# Its banks: a low one, then a gorge's walls where the land is high.
+		var rise := STREAM_BANK*(0.75+0.6*_n2(x/14.0+seed,z/14.0+3.0))
+		var bed := _bowl(level,STREAM_DEPTH,out,half,rise)
+		if out > BANK_RUN: bed += (out-BANK_RUN)*(GORGE-rise)
+		h = minf(h,bed)
+		# Its water only behind the lip (the face and the pool are theirs),
+		# running down its way.
+		if f < -back+0.5:
+			var fl := _way(c,i)*lerpf(STREAM_FLOW,STREAM_FLOW*1.6,smoothstep(long-FAN,long,along))
+			waters.append(PackedFloat32Array([out,d*best_s.w,half,level,fl.x,fl.y]))
+	if best_o.x < INF:
+		var i := int(best_o.y)
+		var t := best_o.z
+		var d := sqrt(best_o.x)
+		var along := lerpf(c[i+4],c[i+PT+4],t)
+		var half := lerpf(c[i+3],c[i+PT+3],t)*(1.0+HALF_WANDER*2.0*(_n1(along/9.0+seed+5.0)-0.5))
+		var level := lerpf(c[i+2],c[i+PT+2],t)
+		var out := d-half
+		h = minf(h,_bowl(level,OUT_DEPTH,out,half,OUT_BANK,OUT_CAP))
+		var fl := _way(c,i)*OUT_FLOW
+		waters.append(PackedFloat32Array([out,d*best_o.w,half,level,fl.x,fl.y]))
 	if has_cave(c):
 		var tu := cave_at(c,q)
 		if not is_nan(tu.x):
@@ -347,7 +627,7 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 			if cave and tu.x >= 0.0 and tu.x <= cave_length(c) and absf(tu.y) < c[I_CAVE_HALF]:
 				h = minf(h,c[I_CAVE_FLOOR])
 				waters.clear()
-	var got := PackedFloat32Array([h,INF,0.0,0.0,0.0])
+	var got := PackedFloat32Array([h,INF,0.0,0.0,0.0,bare,0.0,0.0])
 	if c[I_WET] <= 0.0: return got
 	for w: PackedFloat32Array in waters:
 		if w[0] < got[1] and (w[0] < 0.0 or h < w[3]+DRY_OVER):
@@ -355,7 +635,15 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 			got[2] = w[1]
 			got[3] = w[2]
 			got[4] = w[3]
+			got[6] = w[4]
+			got[7] = w[5]
 	return got
+
+## The world way (x, z) down shape `c`'s path segment from point index `i`.
+static func _way(c: PackedFloat32Array, i: int) -> Vector2:
+	var d := Vector2(c[i+PT]-c[i],c[i+PT+1]-c[i+1]).normalized()
+	var fwd := Vector2(c[I_FX],c[I_FZ])
+	return Vector2(-fwd.y,fwd.x)*d.x+fwd*d.y
 
 ## A water's ground at `out` m past its edge (< 0 on it), `half` m to its
 ## middle: a bed `depth` under `level` in the middle, the bank rising `rise`
@@ -366,6 +654,26 @@ static func _bowl(level: float, depth: float, out: float, half: float, rise: flo
 		var k := clampf(-out/maxf(half,0.01),0.0,1.0)
 		return level-depth*smoothstep(0.0,0.7,k)
 	return level+0.06+rise*out
+
+## Value noise in 0..1, smooth, about 1 a unit: along a line and over a plane.
+static func _n1(x: float) -> float:
+	var i := floorf(x)
+	var t := x-i
+	t = t*t*(3.0-2.0*t)
+	return lerpf(_hash(i,0.0),_hash(i+1.0,0.0),t)
+
+static func _n2(x: float, z: float) -> float:
+	var i := floorf(x)
+	var j := floorf(z)
+	var u := x-i
+	var v := z-j
+	u = u*u*(3.0-2.0*u)
+	v = v*v*(3.0-2.0*v)
+	return lerpf(lerpf(_hash(i,j),_hash(i+1.0,j),u),lerpf(_hash(i,j+1.0),_hash(i+1.0,j+1.0),u),v)
+
+static func _hash(i: float, j: float) -> float:
+	var h := sin(i*127.1+j*311.7)*43758.5453
+	return h-floorf(h)
 
 ## The pass over a chunk's arrays (LandField.build_chunk; its args), after
 ## the ponds, halls and splits.
@@ -381,17 +689,19 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array
 	moved.resize(n*n)
 	var touched := PackedByteArray()
 	touched.resize(n*n)
+	var bares := PackedFloat32Array()
+	bares.resize(n*n)
 	var any_moved := false
 	for c: PackedFloat32Array in cs:
-		var far := c[I_REACH]
-		var i0 := clampi(floori((c[I_X]-far-x0)/step),0,cells)
-		var i1 := clampi(ceili((c[I_X]+far-x0)/step),0,cells)
-		var j0 := clampi(floori((c[I_Z]-far-z0)/step),0,cells)
-		var j1 := clampi(ceili((c[I_Z]+far-z0)/step),0,cells)
+		var i0 := clampi(floori((c[I_BOX_X0]-x0)/step),0,cells)
+		var i1 := clampi(ceili((c[I_BOX_X1]-x0)/step),0,cells)
+		var j0 := clampi(floori((c[I_BOX_Z0]-z0)/step),0,cells)
+		var j1 := clampi(ceili((c[I_BOX_Z1]-z0)/step),0,cells)
+		var segs := segments_near(c,x0+i0*step,z0+j0*step,x0+i1*step,z0+j1*step)
 		for j in range(j0,j1+1):
 			for i in range(i0,i1+1):
 				var v := j*n+i
-				var got := at(c,heights[v],x0+i*step,z0+j*step,false)
+				var got := at(c,heights[v],x0+i*step,z0+j*step,false,segs)
 				var out_now := absf(river[v*3])-river[v*3+1]
 				if got[1] < REACH and got[1] < out_now:
 					# The distance takes the sign the river's had here, so
@@ -400,10 +710,14 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array
 					river[v*3] = absf(got[2])*(-1.0 if river[v*3] < 0.0 else 1.0)
 					river[v*3+1] = got[3]
 					river[v*3+2] = got[4]
-					carved[v*4+2] = 127
-					carved[v*4+3] = 127
+					carved[v*4+2] = _flow_byte(got[6])
+					carved[v*4+3] = _flow_byte(got[7])
 					touched[v] = 1
 				var y := got[0]
+				if got[5] > bares[v]:
+					bares[v] = got[5]
+					moved[v] = 1
+					any_moved = true
 				if absf(y-heights[v]) > 0.0005:
 					heights[v] = y
 					verts[v] = Vector3(verts[v].x,y,verts[v].z)
@@ -433,7 +747,10 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array
 				var normal := Vector3(hl-hr,2.0*step,hd-hu).normalized()
 				normals[v] = normal
 				var meadow := colours[v].a
-				var col: Color = impl.colour(x,z,heights[v],normal.y,meadow)
+				# The bare floor in the rock's colour (the land's own below
+				# its slope's `up`).
+				var up := lerpf(normal.y,minf(normal.y,0.62),bares[v])
+				var col: Color = impl.colour(x,z,heights[v],up,meadow)
 				col.a = meadow
 				colours[v] = col
 				touched[v] = 1
@@ -463,22 +780,31 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array
 	made.carved = carved
 	made.river = river
 
-## The pass over LandField.grid's arrays.
+## A flow (m/s) packed as the chunk's carve bytes have it (land_stream.gd
+## RIVER_FLOW_MAX either way).
+static func _flow_byte(v: float) -> int:
+	return clampi(roundi((clampf(v/FLOW_MAX,-1.0,1.0)*0.5+0.5)*255.0),0,255)
+
+## The pass over LandField.grid's arrays. Its river (how far outside a
+## water each sample is: the grass's bank test, endless_grass.gd) reads just
+## inside one where the floor is bare, so no grass grows there.
 static func apply_grid(got: Dictionary, cs: Array, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:
 	var hs: PackedFloat32Array = got.heights
 	var rs: PackedFloat32Array = got.get("river",PackedFloat32Array())
 	for c: PackedFloat32Array in cs:
-		var far := c[I_REACH]
-		var i0 := clampi(floori((c[I_X]-far-x0)/step)+pad,0,nx-1)
-		var i1 := clampi(ceili((c[I_X]+far-x0)/step)+pad,0,nx-1)
-		var j0 := clampi(floori((c[I_Z]-far-z0)/step)+pad,0,nz-1)
-		var j1 := clampi(ceili((c[I_Z]+far-z0)/step)+pad,0,nz-1)
+		var i0 := clampi(floori((c[I_BOX_X0]-x0)/step)+pad,0,nx-1)
+		var i1 := clampi(ceili((c[I_BOX_X1]-x0)/step)+pad,0,nx-1)
+		var j0 := clampi(floori((c[I_BOX_Z0]-z0)/step)+pad,0,nz-1)
+		var j1 := clampi(ceili((c[I_BOX_Z1]-z0)/step)+pad,0,nz-1)
+		var segs := segments_near(c,x0+(i0-pad)*step,z0+(j0-pad)*step,x0+(i1-pad)*step,z0+(j1-pad)*step)
 		for j in range(j0,j1+1):
 			for i in range(i0,i1+1):
 				var k := j*nx+i
-				var e := at(c,hs[k],x0+(i-pad)*step,z0+(j-pad)*step,false)
+				var e := at(c,hs[k],x0+(i-pad)*step,z0+(j-pad)*step,false,segs)
 				hs[k] = e[0]
-				if not rs.is_empty() and e[1] < rs[k]: rs[k] = e[1]
+				if rs.is_empty(): continue
+				if e[1] < rs[k]: rs[k] = e[1]
+				if e[5] > 0.5: rs[k] = minf(rs[k],-0.01)
 	got.heights = hs
 	if not rs.is_empty(): got.river = rs
 
