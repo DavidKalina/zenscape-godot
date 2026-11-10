@@ -45,8 +45,9 @@ extends Node3D
 ## graze over stone, under it or through a window as a passage, and the wing
 ## rays read every member as stone (NearMiss `_what`).
 ##
-## Built in PIECE m pieces, each a near mesh (to NEAR_END m) and a far one
-## without the small members (braces, rails, ring bands) past it.
+## Built in PIECE m pieces, each a near mesh (to NEAR_END m, casting
+## shadows) and a far one past it without the handrail's posts and mid rail
+## or the arches' ring bands, casting none.
 ##
 ## Seed 1's wilderness, with the bed (RailTrack.wanted); `--no-railroad`
 ## leaves it out. `setup(field, line)` takes another line (a driver's test
@@ -68,7 +69,7 @@ const PIECE := 64.0
 ## The near mesh to NEAR_END m, the far one from there to VISIBLE m;
 ## colliders within COLLIDE of the plane, freed past FREE_AT x that.
 const VISIBLE := 6000.0
-const NEAR_END := 750.0
+const NEAR_END := 900.0
 const COLLIDE := 120.0
 const FREE_AT := 1.25
 const SEA_Y := -40.0
@@ -182,9 +183,9 @@ const TIMBER_C := Color(0.50,0.39,0.29,0.85)
 const TIMBER_DARK := Color(0.40,0.31,0.24,0.85)
 const DECK_TOP_C := Color(0.48,0.41,0.33)
 const TRACK_C := Color(0.36,0.31,0.26)
-const STONE_C := Color(0.80,0.74,0.65,0.8)
-const STONE_LIGHT := Color(0.88,0.83,0.74,0.85)
-const STONE_DAMP := Color(0.64,0.62,0.56,0.8)
+const STONE_C := Color(0.80,0.74,0.65,0.65)
+const STONE_LIGHT := Color(0.88,0.83,0.74,0.7)
+const STONE_DAMP := Color(0.64,0.62,0.56,0.65)
 const IRON_C := Color(0.25,0.24,0.23)
 const TRACK_STRIP := 0.3
 const TRACK_UP := RailTrack.BALLAST_TOP-RailTrack.SLEEPER_BASE
@@ -254,6 +255,7 @@ var supports := 0
 var tris := 0
 var far_tris := 0
 var build_ms := 0.0
+var plan_ms := 0.0
 var kinds := PackedInt32Array([0,0,0])
 
 ## A level frame on the line at s: the bed's centre, along (level) and right.
@@ -299,6 +301,7 @@ func setup(land_field: RefCounted, a_line: RefCounted = null) -> void:
 			ARCH: _plan_arches(k,false)
 			VIADUCT: _plan_arches(k,true)
 		kinds[_kind[k]] += 1
+	plan_ms = (Time.get_ticks_usec()-t0)/1000.0
 	_build_all()
 	build_ms = (Time.get_ticks_usec()-t0)/1000.0
 
@@ -443,23 +446,33 @@ func _hull(k: int, ra: PackedVector3Array, rb: PackedVector3Array, fa: Fr, fb: F
 	for v: Vector3 in ra: cen += v
 	for v: Vector3 in rb: cen += v
 	cen /= float(2*n)
+	# One plane a face, in the faces' order (`_face`), a degenerate face's
+	# a zero normal (it bounds nothing).
 	_hp0.append(_hp.size()/4)
-	var np := 0
 	for fi in n+2:
-		var poly := _face(ra,rb,fi)
-		var nv := _newell(poly)
-		if nv.length_squared() < 1e-10: continue
-		nv = nv.normalized()
+		var nv := Vector3.ZERO
 		var pc := Vector3.ZERO
-		for v: Vector3 in poly: pc += v
-		pc /= float(poly.size())
-		var o := nv.dot(pc)
-		if nv.dot(cen) > o:
-			nv = -nv
-			o = -o
+		if fi < 2:
+			var ring := ra if fi == 0 else rb
+			nv = _newell(ring)
+			for v: Vector3 in ring: pc += v
+			pc /= float(n)
+		else:
+			var i := fi-2
+			var j := (i+1)%n
+			# A quad's normal across its diagonals (its mean plane's).
+			nv = (rb[j]-ra[i]).cross(rb[i]-ra[j])
+			pc = (ra[i]+ra[j]+rb[i]+rb[j])*0.25
+		var o := 0.0
+		if nv.length_squared() > 1e-10:
+			nv = nv.normalized()
+			o = nv.dot(pc)
+			if nv.dot(cen) > o:
+				nv = -nv
+				o = -o
+		else: nv = Vector3.ZERO
 		_hp.append_array([nv.x,nv.y,nv.z,o])
-		np += 1
-	_hpn.append(np)
+	_hpn.append(n+2)
 	# Its place: s and d on its frames, the XZ box.
 	var s_lo := INF
 	var s_hi := -INF
@@ -678,8 +691,8 @@ func _bent(k: int, s: float) -> Dictionary:
 			if y_top-yb < 2.5: continue
 			var inner := pb if bay == 0 else pa
 			var outer := pa if bay == 0 else pb
-			_beam(k,fr.at(_post_x(inner,under,y_top),y_top,bf),fr.at(_post_x(outer,under,yb),yb,bf),BRACE_W,BRACE_T,fr.f,fr,fr,TIMBER_C,NEAR_ONLY)
-			_beam(k,fr.at(_post_x(outer,under,y_top),y_top,-bf),fr.at(_post_x(inner,under,yb),yb,-bf),BRACE_W,BRACE_T,fr.f,fr,fr,TIMBER_C,NEAR_ONLY)
+			_beam(k,fr.at(_post_x(inner,under,y_top),y_top,bf),fr.at(_post_x(outer,under,yb),yb,bf),BRACE_W,BRACE_T,fr.f,fr,fr,TIMBER_C)
+			_beam(k,fr.at(_post_x(outer,under,y_top),y_top,-bf),fr.at(_post_x(inner,under,yb),yb,-bf),BRACE_W,BRACE_T,fr.f,fr,fr,TIMBER_C)
 		if not any: break
 		tiers.append(y)
 		j += 1
@@ -721,8 +734,8 @@ func _bay(k: int, a: Dictionary, b: Dictionary, tower: bool) -> void:
 			var p1 := fb.at(_post_x(pb[row],ub,bot_b)+sgn*off,bot_b)
 			var p2 := fa.at(_post_x(pa[row],ua,bot_a)+sgn*(off+BRACE_T),bot_a)
 			var p3 := fb.at(_post_x(pb[row],ub,top_b)+sgn*(off+BRACE_T),top_b)
-			_beam(k,p0,p1,BRACE_W,BRACE_T,hint,fa,fb,TIMBER_C,NEAR_ONLY)
-			_beam(k,p2,p3,BRACE_W,BRACE_T,hint,fa,fb,TIMBER_C,NEAR_ONLY)
+			_beam(k,p0,p1,BRACE_W,BRACE_T,hint,fa,fb,TIMBER_C)
+			_beam(k,p2,p3,BRACE_W,BRACE_T,hint,fa,fb,TIMBER_C)
 
 # --- Stone -----------------------------------------------------------------------------
 
@@ -910,7 +923,8 @@ func _bay_arches(k: int, bay: Dictionary, pa: Dictionary, pb: Dictionary, tall: 
 		_wall(k,sa,sb,float(bay.lo)-SINK,wb)
 		return
 	_arch(k,sa,sb,float(bay.spring),float(bay.crown),INF,wb,VIA_RING if tall else RING,STONE_C)
-	if not tall or (pa.is_empty() and pb.is_empty()): return
+	# Arcades only between two piers.
+	if not tall or pa.is_empty() or pb.is_empty(): return
 	var p_top := 0.0
 	var n := 0
 	for pr: Dictionary in [pa,pb]:
@@ -929,8 +943,10 @@ func _bay_arches(k: int, bay: Dictionary, pa: Dictionary, pb: Dictionary, tall: 
 		var a_spring := maxf(a_crown-(ab-aa)*0.5,base+SPRING_UP)
 		# Only over a fair opening (TOY_BAY) to fly under it.
 		if a_crown-base < WorldScale.opening(TOY_BAY) or a_crown-a_spring < 1.5: break
-		var aw := wb+VIA_BATTER_W*(p_top-top)-0.4
-		_arch(k,aa,ab,a_spring,a_crown,top,aw,BAND*0.6,STONE_C)
+		# Its faces plumb, flush with the piers' at its top, its ends into
+		# them so its top meets their galleries' sills.
+		var aw := wb+VIA_BATTER_W*(p_top-top)
+		_arch(k,aa-0.6,ab+0.6,a_spring,a_crown,top,aw,BAND*0.6,STONE_C)
 
 ## A wall from sa to sb, its foot at y0, to the deck's underside.
 func _wall(k: int, sa: float, sb: float, y0: float, wb: float) -> void:
@@ -947,8 +963,9 @@ func _wall(k: int, sa: float, sb: float, y0: float, wb: float) -> void:
 ## An arch from sa to sb along the line: its soffit a circle's segment
 ## through the springing at both ends and the crown, the spandrels filled
 ## from the soffit up to `top` (INF: the deck's underside), `half` m each side
-## of the line; its ring `ring` deep, the ring's bands proud of each face.
-func _arch(k: int, sa: float, sb: float, spring: float, crown: float, top: float, half: float, ring: float, col: Color) -> void:
+## of the line at its top (wider by `batter` a m down); its ring `ring`
+## deep, the ring's bands proud of each face.
+func _arch(k: int, sa: float, sb: float, spring: float, crown: float, top: float, half: float, ring: float, col: Color, batter := 0.0) -> void:
 	var c := (sb-sa)*0.5
 	var rise := crown-spring
 	var r := (c*c+rise*rise)/(2.0*rise)
@@ -967,16 +984,17 @@ func _arch(k: int, sa: float, sb: float, spring: float, crown: float, top: float
 		var yt := _deck_under(s) if top == INF else top
 		yo = minf(yo,yt)
 		if prev != null:
-			var ra := PackedVector3Array([prev.at(-half,prev_y),prev.at(half,prev_y),prev.at(half,prev_t),prev.at(-half,prev_t)])
-			var rb := PackedVector3Array([fr.at(-half,y),fr.at(half,y),fr.at(half,yt),fr.at(-half,yt)])
+			var hp := half+batter*(prev_t-prev_y)
+			var hy := half+batter*(yt-y)
+			var hpt := half
+			var ra := PackedVector3Array([prev.at(-hp,prev_y),prev.at(hp,prev_y),prev.at(hpt,prev_t),prev.at(-hpt,prev_t)])
+			var rb := PackedVector3Array([fr.at(-hy,y),fr.at(hy,y),fr.at(hpt,yt),fr.at(-hpt,yt)])
 			# Its top hidden under the deck; an arcade's is a gallery's floor.
 			_hull(k,ra,rb,prev,fr,Color(col.darkened(0.06),0.55),STONE,HIDE_A|HIDE_B|((SIDE << 2) if top == INF else 0))
 			# The ring's bands, proud of each face.
 			for sd: float in [-1.0,1.0]:
-				var d0 := sd*half
-				var d1 := sd*(half+BAND_OUT)
-				var ba := PackedVector3Array([prev.at(d0,prev_y),prev.at(d1,prev_y),prev.at(d1,prev_o),prev.at(d0,prev_o)])
-				var bb := PackedVector3Array([fr.at(d0,y),fr.at(d1,y),fr.at(d1,yo),fr.at(d0,yo)])
+				var ba := PackedVector3Array([prev.at(sd*hp,prev_y),prev.at(sd*(hp+BAND_OUT),prev_y),prev.at(sd*(half+batter*(prev_t-prev_o)+BAND_OUT),prev_o),prev.at(sd*(half+batter*(prev_t-prev_o)),prev_o)])
+				var bb := PackedVector3Array([fr.at(sd*hy,y),fr.at(sd*(hy+BAND_OUT),y),fr.at(sd*(half+batter*(yt-yo)+BAND_OUT),yo),fr.at(sd*(half+batter*(yt-yo)),yo)])
 				_hull(k,ba,bb,prev,fr,STONE_LIGHT,STONE,HIDE_A|HIDE_B|NEAR_ONLY)
 		prev = fr
 		prev_y = y
@@ -1086,17 +1104,16 @@ func _draw_hull(m: Array[_M], h: int) -> void:
 		cb += rb[q]
 	var ax := (cb-ca)
 	ax = ax.normalized() if ax.length_squared() > 1e-6 else Vector3.UP
-	var cen := (ca+cb)/float(2*n)
 	var mm: _M = m[_hmat[h]]
+	var at := _hp0[h]*4
 	for fi in n+2:
 		if fi == 0 and flags & HIDE_A: continue
 		if fi == 1 and flags & HIDE_B: continue
 		if fi >= 2 and flags & (SIDE << (fi-2)): continue
+		var q := at+fi*4
+		var nv := Vector3(_hp[q],_hp[q+1],_hp[q+2])
+		if nv == Vector3.ZERO: continue
 		var poly := _face(ra,rb,fi)
-		var nv := _newell(poly)
-		if nv.length_squared() < 1e-10: continue
-		nv = nv.normalized()
-		if nv.dot(poly[0]-cen) < 0.0: nv = -nv
 		var c := col
 		if nv.y < -0.3: c.a = minf(c.a,lerpf(1.0,UNDER_SHELTER,clampf(-nv.y,0.0,1.0)))
 		mm.poly(poly,nv,c,ax)
@@ -1325,7 +1342,7 @@ func land_y(p: Vector3, h: float) -> float:
 
 ## A line for a driver: what was built.
 func note() -> String:
-	return "%d spans (%d arch, %d trestle, %d viaduct), %d supports, %d members, %d pieces, %d tris (far %d), built in %.1f ms" % [_s0.size(),kinds[ARCH],kinds[TRESTLE],kinds[VIADUCT],supports,_hn.size(),_pc.size(),tris,far_tris,build_ms]
+	return "%d spans (%d arch, %d trestle, %d viaduct), %d supports, %d members, %d pieces, %d tris (far %d), built in %.1f ms (planned in %.1f)" % [_s0.size(),kinds[ARCH],kinds[TRESTLE],kinds[VIADUCT],supports,_hn.size(),_pc.size(),tris,far_tris,build_ms,plan_ms]
 
 ## A mesh in the making about an origin: flat-shaded triangles with vertex
 ## colours and a UV along each face's grain (m), its corners relative to `o`.
