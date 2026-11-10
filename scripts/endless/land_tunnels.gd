@@ -1472,7 +1472,9 @@ func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
 	for m in 2:
 		# A mouth in a face (a placed site's cliff, Tunnels.in_face): no bowl
 		# round it, so the rock lies on the face itself (`_face_table`).
-		var face := Tunnels.in_face(t,m)
+		# (A placed site's other mouth too: its sinkhole is cut in a slope,
+		# where the bowl's shelf stood out of the land as a ragged collar.)
+		var face := Tunnels.in_face(t,m) or Tunnels.in_face(t,1-m)
 		var half := FACE_HALF if face else Tunnels.BOWL_MOUTH+LIP_PAST
 		var cols := ceili(half*2.0/2.0)
 		var faces := _face_table(t,m,lf,half,cols) if face else PackedFloat32Array()
