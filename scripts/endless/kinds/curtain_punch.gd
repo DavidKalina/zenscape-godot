@@ -113,6 +113,11 @@ func _voice_step(p: Vector3, q: Vector3) -> void:
 		var tu := Land.cave_at(shape,Vector2(q.x,-q.z))
 		inside = tu.x >= 0.0 and tu.x <= Land.cave_length(shape) and absf(tu.y) < shape[Land.I_CAVE_HALF] \
 			and p.y < shape[Land.I_CAVE_FLOOR]+shape[Land.I_CAVE_TALL]+1.0
+	else:
+		# The site's tunnel (curtain_land.gd `tunnels`): in a bore's open
+		# tube (LandTunnels `tube`) behind the face's foot.
+		var tunnels: Variant = _game.get("tunnels")
+		if tunnels != null and q.z > float(sheet.back)-Land.WALL: inside = int(tunnels.tube(p)) == 0
 	if inside:
 		gain *= INSIDE_GAIN
 		pitch *= INSIDE_PITCH

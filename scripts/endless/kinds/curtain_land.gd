@@ -510,6 +510,38 @@ static var _shapes: Array = []
 static var _of: Array = []
 static var _lock := Mutex.new()
 
+## The tunnels the placed curtains ask for (param `tunnel`), for the
+## mountain tunnels (tunnel_sites.gd `placed_site`, LandField `tunnels_in`):
+## each {name, at, floor, yaw, seed, length}. Its mouth opens in the back
+## wall's foot behind the water (TUNNEL_IN m into it), `s` m across, its
+## floor `floor` m over the foot; its way in turned `turn` degrees from
+## straight into the face (+ to the left looking in, as a heading turns);
+## its path the sunk cave's rolled from `seed`, `length` m long.
+static func tunnels(profile: RefCounted) -> Array:
+	if profile == null or not PlacedList.wanted(): return []
+	var out: Array = []
+	for s: Dictionary in PlacedList.in_play(profile):
+		if str(s.kind) != "curtain" or LayoutOverrides.deleted(str(s.handle)): continue
+		var p: Dictionary = s.params
+		var spec: Variant = p.get("tunnel")
+		if not (spec is Dictionary): continue
+		var tp: Dictionary = spec
+		var xf := xform_of(s)
+		var into := xf.basis.z
+		into.y = 0.0
+		into = into.normalized()
+		var right := Vector3.UP.cross(into).normalized()
+		var foot := float(p.get("back",BACK))-WALL+float(tp.get("in",TUNNEL_IN))
+		var at := xf.origin+into*foot+right*float(tp.get("s",0.0))
+		var way := Basis(Vector3.UP,deg_to_rad(float(tp.get("turn",0.0))))*into
+		out.append({"name":str(s.handle)+"/tunnel","at":Vector2(at.x,at.z),"floor":xf.origin.y+float(tp.get("floor",0.0)),
+			"yaw":atan2(-way.z,way.x),"seed":int(tp.get("seed",1)),"length":float(tp.get("length",400.0))})
+	return out
+
+## A curtain's tunnel mouth stands this far behind the face's foot (m): the
+## face leans back WALL m over its height, so the arch's crown meets it.
+const TUNNEL_IN := 2.5
+
 ## Where curtain site `s` stands: its coded spot at params.y (a curtain names
 ## its foot's height: the land under it is its own to cut), turned to its
 ## heading, after the layout file's move.
