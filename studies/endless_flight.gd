@@ -148,6 +148,8 @@ const LandTrees = preload("res://scripts/endless/land_trees.gd")
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
 const EndlessFish = preload("res://scripts/endless/endless_fish.gd")
+## Hot air balloons drifting over the land (scripts/endless/endless_balloons.gd; --balloons=0 off).
+const EndlessBalloons = preload("res://scripts/endless/endless_balloons.gd")
 ## Other planes and their trails (--traffic=0 off).
 const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 ## The rival race against one of them (Tab / R3 held on a bracketed plane).
@@ -317,6 +319,7 @@ var trees: Node3D
 ## The birds flushed from the trees and the far flocks.
 var birds: Node3D
 var fish: Node3D
+var balloons: Node3D
 ## Other planes in the sky, or null under --traffic=0.
 var traffic: Node
 ## The rival race (scripts/endless/rival_race.gd), or null with no traffic.
@@ -716,6 +719,11 @@ func _ready() -> void:
 	birds.name = "Birds"
 	add_child(birds)
 	birds.setup(seed,field,trees)
+	if EndlessBalloons.wanted():
+		balloons = EndlessBalloons.new()
+		balloons.name = "Balloons"
+		add_child(balloons)
+		balloons.setup(seed)
 	if EndlessTraffic.wanted() > 0:
 		traffic = EndlessTraffic.new()
 		add_child(traffic)
@@ -1425,6 +1433,8 @@ func tick(delta: float) -> void:
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
 	if fish != null and fish.wake != null: fish.wake.step(delta,camera.global_position,plane)
 	FrameLog.mark(&"fish")
+	if balloons != null: balloons.step(delta,self)
+	FrameLog.mark(&"balloons")
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
 	FrameLog.mark(&"traffic")
 	if race != null: race.step(delta,self)
