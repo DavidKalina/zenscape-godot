@@ -152,8 +152,53 @@ uniform vec3 white_color : source_color = vec3(0.98, 0.99, 1.0);
 uniform vec3 shade_color : source_color = vec3(0.50, 0.63, 0.76);
 // The smooth water over the lip, before it whitens.
 uniform vec3 glass_color : source_color = vec3(0.17, 0.31, 0.38);
+// How much further out the wall stands at the foot than at its top (m): a face
+// that leans back (the flight's alcove). 0 a plumb wall (the study).
+uniform float wall_lean = 0.0;
+// The light: 0 the study's own (sun_dir, the tone white at full light); 1
+// the world's (the flight: its key light, the sun or the moon, and its sky
+// fill, from the shader globals celestial.gd publishes), so the fall follows
+// the day and is dark at night. The tone is the study's, painted for the
+// world's reference light (celestial.gd REF_SUN_HUE, REF_FILL_HUE at the
+// reference strengths below); the world's light now against that scales it,
+// the key on the faces it lights and the fill on the rest. `world_gain`
+// scales it all.
+uniform float world_light = 0.0;
+uniform float world_gain = 1.0;
+global uniform vec3 zs_key_direction;
+global uniform vec3 zs_key_irradiance;
+global uniform vec3 zs_hemi_sky;
+global uniform float zs_hemi_energy;
 
 varying vec3 v_local;
+
+// World direction toward the key light.
+vec3 key_dir() {
+	if (world_light > 0.5 && dot(zs_key_direction, zs_key_direction) > 1e-6) return normalize(zs_key_direction);
+	return normalize(sun_dir);
+}
+
+// The key's irradiance (luma) and the fill's (zs_hemi_sky luma x
+// zs_hemi_energy) at the reference light, and their hues there.
+const float REF_KEY = 3.3;
+const float REF_FILL = 0.146;
+const vec3 REF_SUN_HUE = vec3(1.432, 0.927, 0.454);
+const vec3 REF_FILL_HUE = vec3(0.801, 1.025, 1.336);
+
+// The world's key light against the reference (1 there).
+vec3 key_rel() {
+	return zs_key_irradiance / (REF_KEY * REF_SUN_HUE);
+}
+// The world's sky fill against the reference (1 there).
+vec3 fill_rel() {
+	return zs_hemi_sky * zs_hemi_energy / (REF_FILL * REF_FILL_HUE);
+}
+// The light on the tone, `sunk` of it the key's (1 in the study, whose light
+// is in the tone).
+vec3 world_lit(float sunk) {
+	if (world_light < 0.5) return vec3(1.0);
+	return mix(fill_rel(), key_rel(), clamp(sunk, 0.0, 1.0)) * world_gain;
+}
 varying vec3 v_cam;
 
 vec3 box_centre() {
@@ -418,7 +463,7 @@ float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
 	v = min(v, thickness + q);
 	// Off the wall face below its top; over the top the water comes from
 	// behind (the river above).
-	v = min(v, P.z - (P.y > wall_top ? box_z0 - 50.0 : wall_gap));
+	v = min(v, P.z - (P.y > wall_top ? box_z0 - 50.0 : wall_gap + wall_lean * (1.0 - clamp(P.y / max(wall_top, 1.0), 0.0, 1.0))));
 	v = min(v, P.y + 0.05);
 
 	// The churn at the foot: a low, wide body of water exploding on impact.
@@ -736,7 +781,7 @@ void fragment() {
 		n = normalize(n - (tx * dx + tf * ds) / dd * bend * 0.12);
 
 		vec3 nw = normalize(mat3(MODEL_MATRIX) * n);
-		vec3 L = normalize(sun_dir);
+		vec3 L = key_dir();
 		vec3 Lf = normalize(transpose(mat3(MODEL_MATRIX)) * L);
 
 		// Shadow: do the lobes and the lip's curve block the sun? One tap
@@ -775,7 +820,7 @@ void fragment() {
 		float cs = (1.0 - lit) * 1.1 * smoothstep(0.1, 0.7, p.y);
 		shade = mix(shade, cs, churn_w);
 		shade = clamp(shade * shade_range, 0.0, 1.0);
-		col = mix(white_color, shade_color, shade);
+		col = mix(white_color, shade_color, shade) * world_lit(sun * 0.8);
 
 		// Over the lip: smooth, glassy water reflecting the sky, whitening as
 		// it starts to fall.
@@ -784,14 +829,21 @@ void fragment() {
 			vec3 rf = reflect(vd, nw);
 			float fres = 0.15 + 0.85 * pow(1.0 - clamp(dot(-vd, nw), 0.0, 1.0), 4.0);
 			vec3 skyc = mix(vec3(0.7, 0.8, 0.9), vec3(0.45, 0.62, 0.88), clamp(rf.y, 0.0, 1.0));
-			vec3 gc = mix(glass_color * (0.75 + 0.35 * lit), skyc, fres) * (0.88 + 0.24 * st0);
-			gc += vec3(1.0) * pow(clamp(dot(rf, L), 0.0, 1.0), 40.0) * 0.6;
+			vec3 spec = vec3(1.0);
+			if (world_light > 0.5) {
+				// The world's sky (its fill's colour) and its key light.
+				skyc *= fill_rel() * world_gain;
+				spec = key_rel() * world_gain;
+			}
+			vec3 gc = mix(glass_color * (0.75 + 0.35 * lit) * world_lit(sun * 0.8), skyc, fres) * (0.88 + 0.24 * st0);
+			gc += spec * pow(clamp(dot(rf, L), 0.0, 1.0), 40.0) * 0.6;
 			col = mix(col, gc, glass * (1.0 - churn_w));
 		}
 	}
 	// The spray in front of it.
 	float mt = macc > 0.0 ? mtone / max(1.0 - exp(-macc), 1e-3) : 0.1;
-	vec3 mc = mix(white_color, shade_color, clamp(mt, 0.0, 0.6));
+	// (Spray scatters: lit from all round, the key light half on.)
+	vec3 mc = mix(white_color, shade_color, clamp(mt, 0.0, 0.6)) * world_lit(0.55);
 	col = hit ? mix(col, mc, am) : mc;
 	// The water between the eye and the surface, when the eye is in it, and
 	// the front right at the eye when it is in the band at the front: there a
@@ -807,7 +859,7 @@ void fragment() {
 		float az = atan(rd.x, rd.z) * 12.0;
 		float wn = vnoise(vec3(az, rd.y * 2.0 + TIME * 4.0, 0.5));
 		float wf = vnoise(vec3(az * 3.5, rd.y * 4.0 + TIME * 7.0, 1.5));
-		vec3 ic = mix(white_color, shade_color, 0.1 + 0.3 * wn + 0.2 * smoothstep(0.55, 0.8, wf));
+		vec3 ic = mix(white_color, shade_color, 0.1 + 0.3 * wn + 0.2 * smoothstep(0.55, 0.8, wf)) * world_lit(0.5);
 		col = hit ? mix(col, ic, max(inside, wclose)) : ic;
 	}
 	ALBEDO = col;

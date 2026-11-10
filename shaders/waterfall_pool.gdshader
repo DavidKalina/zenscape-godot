@@ -30,9 +30,22 @@ uniform float coverage : hint_range(0.0, 1.0) = 0.6;
 // Ripples carried out over the open water (0 none).
 uniform float ripples : hint_range(0.0, 1.0) = 0.5;
 uniform vec3 foam_color : source_color = vec3(0.95, 0.98, 1.0);
+// In the flight (scripts/endless/world/wilderness/waterfall.gd): the plane is
+// a child of the fall and its pattern is in the fall's frame (`in_fall`: the
+// mesh's own points plus `fall_offset`, its place in the fall), and it takes
+// the world's light (`world_light`: the key light and sky fill, as the fall's
+// shaders/waterfall_volume.gdshader does).
+uniform bool in_fall = false;
+uniform vec3 fall_offset = vec3(0.0);
+uniform float world_light = 0.0;
+uniform float world_gain = 1.0;
+global uniform vec3 zs_key_direction;
+global uniform vec3 zs_key_irradiance;
+global uniform vec3 zs_hemi_sky;
+global uniform float zs_hemi_energy;
 varying vec3 v_world;
 
-void vertex() { v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void vertex() { v_world = in_fall ? VERTEX + fall_offset : (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 
 float h21(vec2 p) {
 	vec3 q = fract(vec3(p.xyx) * 0.1031);
@@ -139,5 +152,13 @@ void fragment() {
 	float rip = smoothstep(0.9, 0.97, rp) * aa(0.18, gn(vec2(a * 0.9, sa * 0.4) + w * 1.3 + 11.0), 0.12);
 	rip *= ripples * smoothstep(-0.5, 1.5, d) * (1.0 - smoothstep(reach * 0.4, reach * 1.4, d));
 	ALBEDO = foam_color;
+	if (world_light > 0.5) {
+		// The world's light against its reference (the fall's
+		// world_lit: shaders/waterfall_volume.gdshader), the key's share by
+		// how high it stands.
+		vec3 key = zs_key_irradiance / (3.3 * vec3(1.432, 0.927, 0.454));
+		vec3 fill = zs_hemi_sky * zs_hemi_energy / (0.146 * vec3(0.801, 1.025, 1.336));
+		ALBEDO *= mix(fill, key, 0.7 * smoothstep(-0.05, 0.3, zs_key_direction.y)) * world_gain;
+	}
 	ALPHA = clamp(max(foam * 0.97, rip * 0.3), 0.0, 1.0);
 }
