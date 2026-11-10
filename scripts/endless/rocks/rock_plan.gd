@@ -175,11 +175,14 @@ static func _raw(field: RefCounted, cx: int, cz: int, densities: Dictionary) -> 
 	_raw_lock.unlock()
 	return out
 
-## Whether a group would stand on the Peak's massif, in or by a slot hall's
-## or split mountain's cut, a tunnel's site or an arch (arch_plan.gd's, for this land).
+## Whether a group would stand in a placed site's clear, on the Peak's
+## massif, in or by a slot hall's or split mountain's cut, a tunnel's site or
+## an arch (arch_plan.gd's, for this land).
 static func _crowded(field: RefCounted, spec: Dictionary) -> bool:
 	var pos: Vector3 = spec.pos
 	var reach := float(spec.reach)+CLEAR
+	# Not in a placed site's clear footprint (placed_list.gd), on the Peak too.
+	if field.has_method("off_placed") and not field.off_placed(pos.x,pos.z,float(spec.reach)): return true
 	if bool(spec.get("on_peak",false)): return false
 	if field.has_method("off_peak") and not field.off_peak(pos.x,pos.z,reach): return true
 	if field.has_method("hall_at") and not (field.hall_at(pos.x,pos.z,reach) as PackedFloat32Array).is_empty(): return true
