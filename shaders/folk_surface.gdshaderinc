@@ -70,6 +70,10 @@ uniform float stone_cap = 0.48;
 // The flying craft's grime (shaders/craft_grime.gdshaderinc).
 #include "res://shaders/craft_grime.gdshaderinc"
 #endif
+#ifdef ZS_TIMBER_GRAIN
+// The railroad's timber grain (shaders/rail_timber.gdshaderinc).
+#include "res://shaders/rail_timber.gdshaderinc"
+#endif
 varying vec3 gleam_world;
 #ifdef ZS_NIGHT_STONE
 // The ruins at night (night light round 2, docs/design/night-light/
@@ -147,6 +151,9 @@ void fragment() {
 	}
 #ifdef ZS_FOLK_VERTEX_COLOR
 	base *= COLOR.rgb;
+#endif
+#ifdef ZS_TIMBER_GRAIN
+	timber_grain(base, UV);
 #endif
 	vec3 face_normal = NORMAL;
 #ifdef ZS_STONE_TILE
