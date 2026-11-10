@@ -321,7 +321,10 @@ void channels_at(float xl, float k, vec2 c, vec2 w, vec2 a0, inout float m, inou
 	vec2 sh2 = max(1.0 - u2 * u2, 0.0);
 	vec2 sps = sh2 * sh2 * clamp(a0 - max(a, 0.0), 0.0, 1.0) * clamp(1.0 + a / 0.25, 0.0, 1.0);
 	sp = max(sp, max(sps.x, sps.y));
-	vec2 we = w * sqrt(max(1.0 - CH_THIN / max(a, vec2(1e-3)), 0.0)) - 0.4 * (1.0 - smoothstep(CH_THIN, CH_THIN + 0.08, a));
+	// (Once gone it drops well out of the distance, or rays through the spray
+	// it left crept along at the shortest step.)
+	vec2 we = w * sqrt(max(1.0 - CH_THIN / max(a, vec2(1e-3)), 0.0))
+		- (1.0 - smoothstep(CH_THIN, CH_THIN + 0.08, a)) * (0.4 + 30.0 * max(CH_THIN - a, 0.0));
 	vec2 es = we - d;
 	ep = max(ep, max(es.x, es.y));
 }
@@ -568,7 +571,8 @@ float h_max() {
 // overstate it a little on steep lumps). `full` adds what the shadow tap does
 // without: the packets and the churn (whose envelope is not a solid: in the
 // tap it drew a thin dark line on the fall along the envelope's top).
-float field_i(vec3 P, bool full, out vec4 info, out vec4 mq) {
+// `ex` how far inside the water's sides (m, negative between and past them).
+float field_i(vec3 P, bool full, out vec4 info, out vec4 mq, out float ex) {
 	info = vec4(0.0, 0.0, 0.0, 1.0);
 	float ax = abs(P.x);
 	float lv = lip_var(P.x);
@@ -692,22 +696,25 @@ float field_i(vec3 P, bool full, out vec4 info, out vec4 mq) {
 			v = max(v, min(jf, cw - 0.1));
 		}
 	}
+	ex = e;
 	return v;
 }
 
 float field(vec3 P, bool full) {
 	vec4 info;
 	vec4 mq;
-	return field_i(P, full, info, mq);
+	float ex;
+	return field_i(P, full, info, mq, ex);
 }
 
 // Spray: its density (per metre) at a point. A soft skin round the body, in
 // billows falling slower than the water, thicker toward the foot; and a
 // cloud thrown up at the foot, rolling up and out over the pool, round and
 // heaviest under the chute; and the spray of thin water that came apart
-// (mq.z). `coarse` where the cloud is, so the march does not step over it.
-float mist_at(vec3 P, vec4 mq, out bool coarse, out float tone) {
-	coarse = false;
+// (mq.z). `coarse` the longest step (m) where the cloud is, so the march does
+// not step over it (0 elsewhere).
+float mist_at(vec3 P, vec4 mq, out float coarse, out float tone) {
+	coarse = 0.0;
 	tone = 0.1;
 	float reach = mist_reach * (0.12 + 0.88 * mq.y);
 	// None over the lip and the water above it: the spray comes off the fall.
@@ -730,8 +737,12 @@ float mist_at(vec3 P, vec4 mq, out bool coarse, out float tone) {
 	float base = base_mist > 0.0 ? by * by * bz * bz * mix(bx, wx, channels) * bback : 0.0;
 	// Short steps anywhere in the cloud's box (not only where it is thick, or
 	// its thin rim shows the steps as rings).
-	coarse = base_mist > 0.0 && P.y < base_mist_height + 0.8 && abs(P.x) < half_width + spread + base_mist_side + 0.8
-		&& P.z < zf + churn_reach * 0.5 + base_mist_reach + 0.8;
+	// (With channels the box follows the dome: as high and as far out as the
+	// cloud can be over this x, and only where there is cloud across.)
+	bool inb = base_mist > 0.0 && P.y < base_mist_height * rs + 0.8 && abs(P.x) < half_width + spread + base_mist_side + 0.8
+		&& P.z < zf + churn_reach * 0.5 + base_mist_reach * rs + 0.8 && (channels < 1.0 || wx > 0.0);
+	// (Longer where it is only the thin blanket under the threads.)
+	coarse = inb ? 0.8 / mix(1.0, max(sqrt(wx), 0.5), channels) : 0.0;
 	if (band <= 0.0 && base <= 0.0 && mq.z <= 0.0) return 0.0;
 	float n2 = vnoise(vec3(P.x * 0.8 + 5.0, P.y * 0.55 + TIME * fall_speed * 0.22, P.z * 0.8));
 	float d = 0.0;
@@ -744,7 +755,7 @@ float mist_at(vec3 P, vec4 mq, out bool coarse, out float tone) {
 	}
 	if (mq.z > 0.0) {
 		// Finer and streakier than the skin: the veil's water falling apart.
-		float n4 = vnoise(vec3(P.x * 0.9, P.y * 0.3 + TIME * fall_speed * 0.15, P.z * 0.9));
+		float n4 = vn2(vec2(P.x * 0.9 + P.z * 0.5, P.y * 0.3 + TIME * fall_speed * 0.15));
 		d += mist * mq.z * smoothstep(0.3, 0.7, n4 * 0.6 + n2 * 0.4) * 1.5;
 	}
 	if (base > 0.0) {
@@ -884,7 +895,8 @@ void fragment() {
 		vec3 ps = ro + rd * t;
 		vec4 inf;
 		vec4 mq;
-		float v = field_i(ps, true, inf, mq);
+		float ex;
+		float v = field_i(ps, true, inf, mq, ex);
 		if (v > 0.0) {
 			hit = true;
 			break;
@@ -893,7 +905,8 @@ void fragment() {
 		float st = max(-v * 0.8, lo);
 
 		// (Only over the churn itself: the spray's cloud runs far out past it.)
-		if (ps.y < jtop && ps.z < chz + 0.5 && abs(ps.x) < chw) {
+		// (Not between the channels, where no churn stands: no water above.)
+		if (ps.y < jtop && ps.z < chz + 0.5 && abs(ps.x) < chw && ex > -1.5) {
 			st = min(st, max(lo * 2.0, v < -0.4 ? 0.3 : 0.2));
 			// Near a churn piece: look between the last two samples, so thin
 			// pieces at grazing angles are not stepped over.
@@ -912,15 +925,15 @@ void fragment() {
 		}
 		// The spray over this step (after the step is settled).
 		if (do_mist) {
-			bool coarse;
+			float coarse;
 			float tn;
 			float md = mist_at(ps, mq, coarse, tn);
-			if (coarse) st = min(st, 0.8);
+			if (coarse > 0.0) st = min(st, coarse);
 			// (Through the skin the steps lengthen gradually above the cloud's
 			// box: cut off at its top, the long steps above took a different
 			// share of the skin than the short ones in it, a line across the
 			// fall there.)
-			else if (mq.z > 0.0 || mq.x > -mist_reach * (0.12 + 0.88 * mq.y)) st = min(st, 0.8 + 0.3 * (ps.y - base_mist_height));
+			else if (mq.z > 0.0 || mq.x > -mist_reach * (0.12 + 0.88 * mq.y)) st = min(st, 0.8 + 0.3 * max(ps.y - base_mist_height, 0.0));
 			if (md > 0.0) {
 				if (tmist < 0.0) tmist = t;
 				// What is nearer the eye counts for more of the colour.
@@ -950,7 +963,8 @@ void fragment() {
 		float ge = 0.1;
 		vec4 info;
 		vec4 mq0;
-		float v0 = field_i(p, true, info, mq0);
+		float ex0;
+		float v0 = field_i(p, true, info, mq0, ex0);
 		vec3 g = vec3(field(p + vec3(ge, 0, 0), true) - v0, field(p + vec3(0, ge, 0), true) - v0, field(p + vec3(0, 0, ge), true) - v0);
 		vec3 n = -normalize(g + vec3(1e-5));
 
