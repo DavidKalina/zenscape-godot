@@ -1143,7 +1143,8 @@ func paint() -> Dictionary:
 		# or rock gorge.
 		return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
 			"peak_snow":SNOW_LINE,"peak_basalt":1.0 if dark_wanted() else 0.0,"peak_stretch":Vector4(1.0e6,1.0e6,1.0e6,1.0e6),
-			"peak_cirque_strip":Vector4(0.0,0.0,0.0,0.0),"peak_ice_on":0.0,"peak_rock_count":0}
+			"peak_cirque_strip":Vector4(0.0,0.0,0.0,0.0),"peak_ice_on":0.0,"peak_rock_count":0,
+			"peak_basalt_span":body.basalt_span(),"peak_basalt_rag":body.basalt_rag()}
 	return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
 		"peak_snow":SNOW_LINE,"peak_basalt":1.0 if dark_wanted() else 0.0,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
 		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y),

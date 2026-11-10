@@ -238,6 +238,19 @@ func _broken(ar: Dictionary,ridges: Array,land_seed: int) -> void:
 			var start := Vector2.from_angle(th)*run*rng.randf_range(0.28,0.5)
 			_spurs.append([start,Vector2.from_angle(th+off),run*rng.randf_range(0.3,0.45),rng.randf_range(samp.x,samp.y),rng.randf_range(90.0,130.0)])
 
+## The ground's dark rock on this body (shaders/endless_ground.gdshader
+## `peak_basalt_span`, m over the sea): it and its clearing haze come in low
+## on the body and together, so the body reads as one rock, not a dark top
+## stacked on a pale foot.
+func basalt_span() -> Vector4:
+	return Vector4(-100.0,450.0,-100.0,550.0)
+
+## How ragged its start is (m) and how much of that its haze's climb takes:
+## wide, and the haze with it, so it comes in as tongues rather than at one
+## height.
+func basalt_rag() -> Vector3:
+	return Vector3(400.0,120.0,1.0)
+
 ## The spirals on this crown: `axes` (PeakSpirals.on_towers, world, the crown's
 ## order) brought in to the rock and, on a court, rooted `ribbon_root` m over it
 ## so their coils stand in view from it, each kept 70 m off its edge

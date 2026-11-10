@@ -183,6 +183,13 @@ uniform float peak_granite = 0.07;
 // towers' own copy, which has those numbers already).
 uniform float peak_basalt = 0.0;
 const vec2 PEAK_BASALT = vec2(60.0, 680.0);
+// Where the basalt starts and is whole (.xy) and its haze's climb (.zw), m
+// over the sea: PEAK_BASALT and PEAK_BASALT_HAZE unless the Peak's paint says
+// otherwise (a candidate body, scripts/endless/peak_body.gd basalt_span).
+uniform vec4 peak_basalt_span = vec4(60.0, 680.0, 120.0, 760.0);
+// How ragged its start is (m, the 340 m and 90 m noises' spans), and how much
+// of that rag its haze's climb takes (0: none, a level line).
+uniform vec3 peak_basalt_rag = vec3(170.0, 70.0, 0.0);
 const vec3 PEAK_BASALT_TINT = vec3(0.2, 0.2, 0.24);
 const float PEAK_BASALT_GRANITE = 0.012;
 // The towers' height haze, cut this far (.z) over a long climb (.x to .y m over
@@ -969,7 +976,11 @@ void fragment() {
 	}
 	float pk_rock = pk.x * smoothstep(170.0, 320.0, over);
 	float pk_dark = 0.0;
-	if (peak_basalt > 0.0 && pk.x > 0.0) pk_dark = peak_basalt * pk.x * smoothstep(PEAK_BASALT.x, PEAK_BASALT.y, over + (peak_noise(p.xz / 340.0) - 0.5) * 170.0 + (peak_noise(p.xz / 90.0) - 0.5) * 70.0);
+	float pk_rag = 0.0;
+	if (peak_basalt > 0.0 && pk.x > 0.0) {
+		pk_rag = (peak_noise(p.xz / 340.0) - 0.5) * peak_basalt_rag.x + (peak_noise(p.xz / 90.0) - 0.5) * peak_basalt_rag.y;
+		pk_dark = peak_basalt * pk.x * smoothstep(peak_basalt_span.x, peak_basalt_span.y, over + pk_rag);
+	}
 	if (pk.x > 0.0) {
 		float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
 		float pk_line = mix(snow_line, peak_snow, pk.x);
@@ -1846,7 +1857,7 @@ void fragment() {
 	// The basalt stands in the towers' own haze (their PAINT's haze_height).
 	if (pk_dark > 0.0) {
 		float land_up = smoothstep(haze_height.x, haze_height.x + haze_height.y, over + haze_height.w);
-		float dark_up = smoothstep(PEAK_BASALT_HAZE.x, PEAK_BASALT_HAZE.y, over + haze_height.w);
+		float dark_up = smoothstep(peak_basalt_span.z, peak_basalt_span.w, over + haze_height.w + pk_rag * peak_basalt_rag.z);
 		land_haze.a *= mix(1.0, (1.0 - dark_up * PEAK_BASALT_HAZE.z) / max(1.0 - land_up * haze_height.z, 0.01), pk_dark);
 	}
 	FOG = land_haze;
