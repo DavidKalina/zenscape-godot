@@ -603,6 +603,7 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 	if shape != "":
 		m.body = PeakBody.new(shape,land_seed)
 		m.pond = PackedFloat32Array()
+		m.body.bake_autumn(m.centre,m.facing,m.side)
 	if ground.is_valid() and not LaunchArgs.user_args().has("--peak-mask=0"): m._mask(land_seed,ground)
 	m._go_native(land_seed,ground)
 	return m

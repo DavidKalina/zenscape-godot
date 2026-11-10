@@ -61,7 +61,8 @@ extends Node3D
 ## The Peak's candidate bodies (scripts/endless/peak_body.gd): --peak-shape=a|b|c
 ## in place of the old profile (its tarn, ice, gorges and finds off),
 ## --peak-start with it starts in the air off the mouth of the valley under
-## the flat at the top, heading up it.
+## the flat at the top, heading up it; --shelf-start off the foot of the
+## shelf round shape a (PeakBody `shelf`), heading along it.
 ## Split mountains (scripts/endless/split_sites.gd): --split-near-start starts
 ## 520 m out of the nearest one's lower mouth, heading in, 28 m up or more
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
@@ -161,6 +162,7 @@ const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 const HallDoors = preload("res://scripts/endless/hall_doors.gd")
 ## The crown's spirals of cloud (scripts/endless/peak_spirals.gd; --spirals=0 none).
+const PeakBody = preload("res://scripts/endless/peak_body.gd")
 const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
 const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
 const SurgeSpray = preload("res://scripts/endless/surge_spray.gd")
@@ -596,12 +598,15 @@ func _ready() -> void:
 			_alt_given = true
 	# --peak-start: with a candidate Peak body (--peak-shape=), in the air off
 	# the mouth of the valley under its flat, heading up it.
+	# --shelf-start: off the foot of its shelf (shape a), heading along it.
 	var peak_start := false
-	if "--peak-start" in preload("res://scripts/launch_args.gd").user_args():
+	var shelf_start := "--shelf-start" in preload("res://scripts/launch_args.gd").user_args()
+	if shelf_start or "--peak-start" in preload("res://scripts/launch_args.gd").user_args():
 		var pk: RefCounted = field.peak()
-		if pk == null or not pk.shaped(): push_warning("--peak-start: needs --peak-shape=a|b|c")
+		if pk == null or not pk.shaped(): push_warning("--peak-start, --shelf-start: need --peak-shape=a|b|c")
+		elif shelf_start and pk.body.shelf.is_empty(): push_warning("--shelf-start: this shape has no shelf")
 		else:
-			var st: Vector3 = pk.body.start()
+			var st: Vector3 = pk.body.shelf_start() if shelf_start else pk.body.start()
 			_start = pk.world(st.x,st.y)
 			var way: Vector2 = pk.world(cos(st.z),sin(st.z))-pk.world(0.0,0.0)
 			_heading = atan2(-way.x,-way.y)
@@ -667,6 +672,11 @@ func _ready() -> void:
 			if PeakSnow.wanted(): PeakSnow.paint(look.ground,peak)
 		# The tarn's look (shaders/peak_tarn.gdshaderinc; --peak-tarn=0 off).
 		if peak != null and not peak.shaped() and look.ground != null: PeakTarn.apply(peak,look.ground)
+		# Autumn on a candidate body's shelf (PeakBody `autumn`,
+		# shaders/autumn_place.gdshaderinc); none without one.
+		var autumn_tex: Array = PeakBody.autumn_texture() if peak != null and peak.shaped() else []
+		RenderingServer.global_shader_parameter_set(&"zs_autumn_rect",autumn_tex[1] if not autumn_tex.is_empty() else Vector4.ZERO)
+		if not autumn_tex.is_empty(): RenderingServer.global_shader_parameter_set(&"zs_autumn_mask",autumn_tex[0])
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
