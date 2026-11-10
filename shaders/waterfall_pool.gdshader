@@ -153,12 +153,11 @@ void fragment() {
 	rip *= ripples * smoothstep(-0.5, 1.5, d) * (1.0 - smoothstep(reach * 0.4, reach * 1.4, d));
 	ALBEDO = foam_color;
 	if (world_light > 0.5) {
-		// The world's light against its reference (the fall's
-		// world_lit: shaders/waterfall_volume.gdshader), the key's share by
-		// how high it stands.
-		vec3 key = zs_key_irradiance / (3.3 * vec3(1.432, 0.927, 0.454));
-		vec3 fill = zs_hemi_sky * zs_hemi_energy / (0.146 * vec3(0.801, 1.025, 1.336));
-		ALBEDO *= mix(fill, key, 0.7 * smoothstep(-0.05, 0.3, zs_key_direction.y)) * world_gain;
+		// The world's light against its reference (the fall's world_lit:
+		// shaders/waterfall_volume.gdshader), the key more the higher it stands.
+		vec3 key = zs_key_irradiance / mix(vec3(1.0), vec3(1.432, 0.927, 0.454), 0.6);
+		vec3 fill = zs_hemi_sky * zs_hemi_energy / mix(vec3(1.0), vec3(0.801, 1.025, 1.336), 0.6);
+		ALBEDO *= (key * (0.55 + 0.65 * smoothstep(-0.05, 0.5, zs_key_direction.y)) + fill) / 3.446 * world_gain;
 	}
 	ALPHA = clamp(max(foam * 0.97, rip * 0.3), 0.0, 1.0);
 }

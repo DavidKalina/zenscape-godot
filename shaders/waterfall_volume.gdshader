@@ -158,11 +158,10 @@ uniform float wall_lean = 0.0;
 // The light: 0 the study's own (sun_dir, the tone white at full light); 1
 // the world's (the flight: its key light, the sun or the moon, and its sky
 // fill, from the shader globals celestial.gd publishes), so the fall follows
-// the day and is dark at night. The tone is the study's, painted for the
-// world's reference light (celestial.gd REF_SUN_HUE, REF_FILL_HUE at the
-// reference strengths below); the world's light now against that scales it,
-// the key on the faces it lights and the fill on the rest. `world_gain`
-// scales it all.
+// the day and is dark at dusk and at night. The tone is the study's, taken
+// as lit by the world's reference light (key REF_KEY, fill REF_FILL, near
+// its hues REF_SUN_HUE, REF_FILL_HUE); the world's light now against that
+// scales it. `world_gain` scales it all.
 uniform float world_light = 0.0;
 uniform float world_gain = 1.0;
 global uniform vec3 zs_key_direction;
@@ -171,6 +170,7 @@ global uniform vec3 zs_hemi_sky;
 global uniform float zs_hemi_energy;
 
 varying vec3 v_local;
+varying vec3 v_cam;
 
 // World direction toward the key light.
 vec3 key_dir() {
@@ -178,28 +178,31 @@ vec3 key_dir() {
 	return normalize(sun_dir);
 }
 
-// The key's irradiance (luma) and the fill's (zs_hemi_sky luma x
-// zs_hemi_energy) at the reference light, and their hues there.
+// The key's irradiance and the fill's (zs_hemi_sky x zs_hemi_energy), luma,
+// at the reference light, their hues there and how much of those hues the
+// tone already holds (the rest of the light's colour shows on the water).
 const float REF_KEY = 3.3;
 const float REF_FILL = 0.146;
 const vec3 REF_SUN_HUE = vec3(1.432, 0.927, 0.454);
 const vec3 REF_FILL_HUE = vec3(0.801, 1.025, 1.336);
+const float REF_HUE_HELD = 0.6;
 
-// The world's key light against the reference (1 there).
+// The world's key light and sky fill, each as a fraction of the reference's
+// whole light (key and fill together: about 1 at the reference).
 vec3 key_rel() {
-	return zs_key_irradiance / (REF_KEY * REF_SUN_HUE);
+	return zs_key_irradiance / mix(vec3(1.0), REF_SUN_HUE, REF_HUE_HELD) / (REF_KEY + REF_FILL);
 }
-// The world's sky fill against the reference (1 there).
 vec3 fill_rel() {
-	return zs_hemi_sky * zs_hemi_energy / (REF_FILL * REF_FILL_HUE);
+	return zs_hemi_sky * zs_hemi_energy / mix(vec3(1.0), REF_FILL_HUE, REF_HUE_HELD) / (REF_KEY + REF_FILL);
 }
-// The light on the tone, `sunk` of it the key's (1 in the study, whose light
-// is in the tone).
+// The world's light on the tone: the key's light (scattered through the
+// water, so a face turned from it still takes most of it) more on the faces
+// `sunk` (0..1) turned to it, and the fill. 1 in the study, whose light is in
+// the tone.
 vec3 world_lit(float sunk) {
 	if (world_light < 0.5) return vec3(1.0);
-	return mix(fill_rel(), key_rel(), clamp(sunk, 0.0, 1.0)) * world_gain;
+	return (key_rel() * (0.55 + 0.65 * clamp(sunk, 0.0, 1.0)) + fill_rel()) * world_gain;
 }
-varying vec3 v_cam;
 
 vec3 box_centre() {
 	return vec3(0.0, box_size.y * 0.5, box_z0 + box_size.z * 0.5);
@@ -832,8 +835,8 @@ void fragment() {
 			vec3 spec = vec3(1.0);
 			if (world_light > 0.5) {
 				// The world's sky (its fill's colour) and its key light.
-				skyc *= fill_rel() * world_gain;
-				spec = key_rel() * world_gain;
+				skyc *= world_lit(1.0);
+				spec = key_rel() * (REF_KEY + REF_FILL) / REF_KEY * world_gain;
 			}
 			vec3 gc = mix(glass_color * (0.75 + 0.35 * lit) * world_lit(sun * 0.8), skyc, fres) * (0.88 + 0.24 * st0);
 			gc += spec * pow(clamp(dot(rf, L), 0.0, 1.0), 40.0) * 0.6;
