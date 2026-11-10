@@ -75,7 +75,7 @@ static func cells(peak: RefCounted) -> Dictionary:
 static func plan_cell(field: RefCounted, cx: int, cz: int, _density: float, _rng: RandomNumberGenerator) -> Array:
 	if not PeakIce.wanted or not field.has_method("peak"): return []
 	var peak: RefCounted = field.peak()
-	if peak == null or not cells(peak).has(Vector2i(cx,cz)): return []
+	if peak == null or peak.shaped() or not cells(peak).has(Vector2i(cx,cz)): return []
 	var cell: float = preload("res://scripts/endless/rocks/rock_plan.gd").CELL
 	var mine: Array = []
 	for b: Array in pieces(field,peak):

@@ -114,7 +114,7 @@ static func wanted() -> bool:
 ## The tunnel in `massif`'s frame (PeakMassif: `world(a, v)`), built once per
 ## frame; null without a massif or with `--ice-tunnel=0`.
 static func make(massif: RefCounted) -> RefCounted:
-	if massif == null or not wanted(): return null
+	if massif == null or not wanted() or massif.shaped(): return null
 	var c: Vector2 = massif.centre
 	var f: Vector2 = massif.facing
 	var key := "%.2f,%.2f,%.4f,%.4f" % [c.x,c.y,f.x,f.y]

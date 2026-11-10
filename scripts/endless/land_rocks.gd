@@ -83,7 +83,7 @@ func setup(land_seed: int, ground: Material = null, peak: RefCounted = null) -> 
 	densities = Plan.flags()
 	var peaked := false
 	for k: String in Plan.ON_PEAK:
-		if peak == null: densities[k] = 0.0
+		if peak == null or peak.shaped(): densities[k] = 0.0
 		elif float(densities.get(k,0.0)) > 0.0: peaked = true
 	if peaked:
 		for k: String in Plan.ON_PEAK:

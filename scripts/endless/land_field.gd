@@ -826,6 +826,7 @@ func _peak(got: Vector2, x: float, z: float) -> Vector2:
 		_p_on = false
 	# The tarn: a pond over the massif (its reads, its lip).
 	var tp: PackedFloat32Array = _massif.pond
+	if tp.is_empty(): return got
 	var e := Ponds.at(tp,x,z)
 	if e.x < Ponds.REACH:
 		_p_on = true
