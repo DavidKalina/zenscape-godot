@@ -22,20 +22,16 @@ extends RefCounted
 const SITES := [
 	# The escarpment over the river bend north-east of the start, facing the
 	# meadow in the bend (north-west). The wall stands 80-115 m over the
-	# river's terrace, with a long trough behind its crest and the land
-	# rising past that to 140 m; the trough's high point is behind the fall,
-	# so its stream can come from the high ground without crossing lower
-	# land. The waterfall (kinds/curtain.gd, its land curtain_land.gd): an
-	# amphitheatre cut 75 m back into the wall, the lip 81 m over the foot
-	# at the bottom of a notch through the crest; its stream winds 514 m
-	# down from a spring on the high ground behind (its levels the land's
-	# own: the lowest ground upstream of each point less 1.6 m, so a move
-	# in the layout file wants them again); an uneven pool
-	# at the face's foot, an outflow winding to the river. No cave. The clear
-	# takes the trees off the amphitheatre, its rim and the pool.
-	["wild/river_falls","curtain","waterfall",622.1,-764.0,45.0,{"clear":125.0,"y":-12.0,"cave":false,
-		"back":75.0,"lip":81.0,"half_back":62.0,"half_front":60.0,"round":45.0,"flare":0.3,"pool_r":22.0,"pool_rf":14.0,"pool_depth":1.4,
-		"lip_half":13.0,"out_under":6.3,
-		"stream":[[40,-565,123.3,1.2],[44,-551.5,119,2.2],[47.9,-537.7,119,3.0],[50,-525,119,3.9],[48.3,-512.3,119,4],[44.8,-500.4,107.3,4.1],[44.3,-488.3,103.7,4.2],[47.2,-474.6,103.7,4.3],[50.8,-462.7,103.7,4.4],[54.1,-451,103.7,4.5],[57.5,-439.1,103.7,4.6],[61,-427.5,103.7,4.7],[64,-415.9,98.9,4.8],[66.9,-404.1,98.9,4.9],[69.3,-392.2,98.9,5.1],[71.2,-380.2,98.9,5.2],[72.9,-368.1,98.9,5.3],[73.9,-355.9,98.9,5.4],[73.7,-343.7,98.9,5.5],[72.5,-331.3,98.9,5.6],[70,-318,88.6,5.7],[66.1,-305.4,88.3,5.8],[61,-293.9,87.3,6],[54.8,-283.2,87.2,6.1],[47.7,-273,87.2,6.2],[40.2,-263.3,87.2,6.4],[32.3,-254.2,87.2,6.5],[24.9,-244.3,87.2,6.6],[18.3,-233.9,84.3,6.7],[12.5,-222.3,81,6.9],[8.7,-209,81,7],[6.7,-195.3,81,7.1],[5.3,-182.3,81,7.2],[3.8,-168.9,81,7.2],[2.6,-155,81,7],[1.7,-142.6,81,7.1],[1,-130,81,7.5],[0.6,-117.1,81,8.5],[0.3,-102.9,81,9.9],[0.1,-89.4,81,11.4],[0,-77.3,81,12.8],[0,-75,81,13]],
-		"outflow":[[0,-58,0,3.0],[10,-44,0,3.2],[14,-30,0,3.4],[4,-18,0,3.6],[-10,-8,0,3.8],[-16,6,0,4.0],[-8,20,0,4.2],[6,30,0,4.4],[12,44,0,4.6],[6,58,0,4.8],[-2,72,0,5.0]]}],
+	# river's terrace; behind its crest a hollow in the high ground holds a
+	# lake (about 23,000 m2, 19 m at its deepest), its level just under the
+	# saddle where it would spill over the wall. The waterfall (kinds/
+	# curtain.gd, its land curtain_land.gd) stands under that saddle: a bay
+	# cut 42 m back into the wall, the lip 69.3 m over the foot; the lake
+	# leaves by a short outlet through a notch in the saddle, down two steps
+	# and a small rock pool to the lip (its levels under the land's own, so a
+	# move in the layout file wants them again, and the lake's shore: both are
+	# the hollow's). An uneven pool at the face's foot, an outflow winding to
+	# the river. No cave. The clear takes the trees off the bay, its rim and
+	# the pool; `clears` off the lake.
+	["wild/river_falls","curtain","waterfall",520.0,-654.0,45.0,{"clear":115.0,"y":-12.0,"cave":false,"back":42.0,"lip":69.3,"half_back":34.0,"half_front":40.0,"round":22.0,"flare":0.3,"pool_r":18.0,"pool_rf":12.0,"pool_depth":1.4,"lip_half":10.0,"fan":0.0,"out_under":5.4,"stream":[[6,-100,81.5,3.0],[3,-90,81.45,2.6],[1,-83,81.3,2.2],[-1,-80.5,80.9,2.3],[-2,-77.5,79.0,2.6],[-5,-73,78.8,4.2],[-4,-67,78.7,3.6],[-1,-62.5,78.5,2.2],[-2,-59.5,78.2,2.3],[-3,-55,76.5,2.5],[-3,-52.5,72.5,2.8],[-1,-49,70.6,3.0],[-3,-45.5,70.0,2.3],[-2,-42,69.3,2.5]],"outflow":[[0,-20,0,3.0],[7,-8,0,3.2],[3,4,0,3.4],[-8,14,0,3.6],[-11,26,0,3.8],[-3,37,0,4.0],[5,47,0,4.2],[3,58,0,4.6],[0,67,0,5.0]],"lake":{"level":81.5,"shore":[[-46.7,-198.7],[-70.0,-196.6],[-76.4,-190.2],[-87.0,-200.8],[-93.3,-198.7],[-99.7,-205.1],[-103.9,-200.8],[-112.4,-209.3],[-127.3,-194.5],[-118.8,-181.7],[-123.0,-177.5],[-112.4,-166.9],[-118.8,-156.3],[-112.4,-137.2],[-70.0,-82.0],[-63.6,-88.4],[-53.0,-82.0],[-27.6,-86.3],[-21.2,-79.9],[25.5,-79.9],[36.1,-107.5],[59.4,-92.6],[76.4,-96.9],[89.1,-118.1],[89.1,-126.6],[146.4,-175.4],[140.0,-181.7],[144.2,-190.2],[154.9,-192.3],[169.7,-207.2],[173.9,-219.9],[161.2,-232.6],[137.9,-226.3],[125.2,-239.0],[108.2,-243.2],[91.2,-230.5],[57.3,-256.0],[42.4,-249.6],[27.6,-272.9],[-17.0,-236.9],[-14.8,-230.5],[-27.6,-213.5],[-23.3,-200.8]]},"clears":[[42.4,-179.6,74.0],[-38.2,-141.4,61.1],[108.2,-194.5,38.3],[12.7,-94.8,18.2],[-91.2,-156.3,27.7]]}],
 ]
