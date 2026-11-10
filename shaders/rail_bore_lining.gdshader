@@ -93,8 +93,9 @@ void fragment() {
 		float n = fbm(uv * vec2(0.35, 0.6));
 		float cracks = 1.0 - smoothstep(0.0, 0.06 + fwidth(n) * 2.0, abs(fbm(uv * 0.5 + 9.0) - 0.5));
 		float streak = noise2(vec2(uv.x * 0.8, uv.y * 0.08));
-		shade = (n - 0.5) * 0.55 + (streak - 0.5) * 0.25;
-		jn = cracks * 0.35 * (1.0 - smoothstep(0.3, 1.2, length(fwidth(uv))));
+		float strata = noise2(vec2(uv.x * 0.04, uv.y * 0.55));
+		shade = (n - 0.5) * 0.45 + (streak - 0.5) * 0.2 + (strata - 0.5) * 0.35;
+		jn = cracks * 0.2 * (1.0 - smoothstep(0.3, 1.2, length(fwidth(uv))));
 	} else if (kind < 3.5) {
 		// Timber: grain along the beam (UV x runs round the set), knots.
 		float g = noise2(vec2(uv.x * 0.6, uv.y * 9.0));

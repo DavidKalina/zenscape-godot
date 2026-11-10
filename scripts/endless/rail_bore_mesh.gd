@@ -38,6 +38,8 @@ const C_WASH := Color(0.80,0.78,0.72)
 const SOOT_C := Color(0.08,0.07,0.065)
 ## Rings every RING m at most; the vault in VAULT_SEGS segments.
 const RING := 3.0
+## The lining's floor lies this far under the bed (the track's ballast on it).
+const FLOOR_UNDER := 0.06
 const VAULT_SEGS := 16
 ## Rough rock: pushed out up to ROUGH_OUT m.
 const ROUGH_OUT := 1.3
@@ -201,7 +203,7 @@ func ring(s: float, inset: float) -> Array:
 	var pts: PackedVector2Array = prof[0]
 	var outs: PackedVector2Array = prof[1]
 	var rough: float = plan.rough(s)
-	var c: Vector3 = line.centre(s)
+	var c: Vector3 = line.centre(s)+Vector3.DOWN*FLOOR_UNDER
 	var r := _right(s)
 	var w := PackedVector3Array()
 	var round := PackedFloat32Array()
@@ -258,7 +260,7 @@ func piece(s0: float, s1: float, day_in: float, ti: int) -> Dictionary:
 		var ins: float = plan.inset(mid)
 		var into := Plan.into_of(mid,ts0,ts1)
 		var m: M = out.day if into < day_in else out.under
-		var ra := ring(a,ins)
+		var ra := last_ring if last_inset == ins else ring(a,ins)
 		var rb := ring(b,ins)
 		# A rib's side, where the inset steps.
 		if is_nan(last_inset):
@@ -311,6 +313,12 @@ func _segment(m: M, ra: Array, rb: Array, sa: float, sb: float, rib: bool) -> vo
 	var axis_a: Vector3 = line.centre(sa)+Vector3.UP*4.0
 	var axis_b: Vector3 = line.centre(sb)+Vector3.UP*4.0
 	var mid := (sa+sb)*0.5
+	var pb: PackedVector2Array = rb[2]
+	var kd := int(plan.lining(mid))
+	var sc: Vector3 = plan.section(mid)
+	var soot_from := sc.y+sc.z*(1.0-CROWN_SOOT)
+	var soot_to := sc.y+sc.z
+	var soot_most := SOOT_MOST if kd in [Plan.ASHLAR,Plan.BRICK] else SOOT_MOST*0.6
 	var side_l: bool = plan.refuge_at(mid,-1.0) >= 0
 	var side_r: bool = plan.refuge_at(mid,1.0) >= 0
 	for q in np:
@@ -332,7 +340,7 @@ func _segment(m: M, ra: Array, rb: Array, sa: float, sb: float, rib: bool) -> vo
 		if floor_q: uvs = [Vector2(sa,pa[q].x),Vector2(sb,pa[q].x),Vector2(sb,pa[q1].x),Vector2(sa,pa[q1].x)]
 		var soot := Vector4.ZERO
 		if not floor_q:
-			soot = Vector4(_soot(sa,wa[q].y-line.centre(sa).y),_soot(sb,wb[q].y-line.centre(sb).y),_soot(sb,wb[q1].y-line.centre(sb).y),_soot(sa,wa[q1].y-line.centre(sa).y))
+			soot = Vector4(smoothstep(soot_from,soot_to,pa[q].y),smoothstep(soot_from,soot_to,pb[q].y),smoothstep(soot_from,soot_to,pb[q1].y),smoothstep(soot_from,soot_to,pa[q1].y))*soot_most
 		m.quad(p,face,col,uvs,kind,soot)
 
 ## The rib's side where the inset steps from `i0` to `i1` at s: between
