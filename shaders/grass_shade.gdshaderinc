@@ -11,7 +11,12 @@
 const float ZS_SHADE_KEEP = 0.14;
 // How cool the lift runs (0 the sun's colour, 1 the sky fill's hue).
 const float ZS_SHADE_COOL = 0.3;
-vec3 zs_grass_shade_lift(vec3 light_color, vec3 sky, float shade) {
+// At a low sun the lift keeps this share (whole hillsides stand in shade
+// then, and a full lift turned them brighter than the trees on them);
+// `sun_up` is the sun's height (the light's world y, 0 at the horizon).
+const float ZS_SHADE_LOW = 0.4;
+vec3 zs_grass_shade_lift(vec3 light_color, vec3 sky, float shade, float sun_up) {
+	shade *= mix(ZS_SHADE_LOW, 1.0, smoothstep(0.05, 0.45, sun_up));
 	float l = dot(light_color, vec3(0.2126, 0.7152, 0.0722));
 	vec3 cool = sky / max(dot(sky, vec3(0.2126, 0.7152, 0.0722)), 1.0e-3);
 	return mix(vec3(1.0), cool, ZS_SHADE_COOL) * l * ZS_SHADE_KEEP * shade / PI;

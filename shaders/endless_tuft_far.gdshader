@@ -207,7 +207,7 @@ void light() {
 	zs_grass_light(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, ROUGHNESS, 0.2, d, s);
 	DIFFUSE_LIGHT += d;
 	SPECULAR_LIGHT += s;
-	if (LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR, zs_hemi_sky, 1.0 - ATTENUATION * smoothstep(0.0, 0.2, dot(NORMAL, LIGHT)));
+	if (LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR, zs_hemi_sky, 1.0 - ATTENUATION * smoothstep(0.0, 0.2, dot(NORMAL, LIGHT)), (INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).y);
 	// The tips' backlight (BACKLIGHT, set in fragment), as the default adds it.
 	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * BACKLIGHT * max(-dot(NORMAL, LIGHT), 0.0) / PI;
 }
