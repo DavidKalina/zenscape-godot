@@ -22,12 +22,12 @@ const Land = preload("res://scripts/endless/kinds/curtain_land.gd")
 const FRONT := 4.0
 const THROW := 3.0
 const SPREAD := 3.0
-const OVER_LIP := 0.4
+const OVER_LIP := 0.15
 const ROCK_UNDER := 1.0
 ## The box the fall is marched in: its back BOX_BACK m behind the face's top
 ## (in the rock, so the stream's water can come over), its depth out from
 ## there, its width and how far over the lip it reaches (m).
-const BOX_BACK := -6.0
+const BOX_BACK := -2.5
 const BOX_DEPTH := 32.0
 const BOX_HALF := 27.0
 const BOX_OVER := 4.0
@@ -36,7 +36,7 @@ const BOX_OVER := 4.0
 const FOAM_SIZE := Vector2(56.0,30.0)
 const FOAM_OVER := 0.06
 ## The world's light on the fall and the foam (shaders: world_gain).
-const LIGHT_GAIN := 1.0
+const LIGHT_GAIN := 1.15
 
 ## The punch (curtain_punch.gd calls `punch`): the screen doused WET at the
 ## sheet's middle (times the punch's k, less at its sides), a splash heard
