@@ -302,6 +302,10 @@ uniform float river_edge = 0.55;
 // The water's level over the sea under which the sea takes it (the mouth,
 // with --river-mouth=0; else the drawn water sinks under the sea instead).
 uniform float river_mouth = 0.35;
+// A water drawn this wide (m) or more is a lake (curtain_land.gd LAKE_W): the
+// grid under it is lifted to its level however deep, where a river's or a
+// pond's bed lifts a few m at most.
+uniform float river_lake_w = 300.0;
 // The mouth (river-mouths-handoff.md; EndlessLook sets these from LandField
 // RIVER_MOUTH_*, and `river_mouth_blend` 0 with --river-mouth=0): over the
 // last `river_mouth_rise` m of its fall the water takes the sea's colour for
@@ -478,7 +482,10 @@ void vertex() {
 		// At a mouth the drawn water sinks under the sea's.
 		float drawn = CUSTOM1.z - river_mouth_sink.x * river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_sink.y, r_over));
 		float lift = drawn - world_position.y;
-		if (lift > 0.0 && lift < 3.0 + river_mouth_deep.y * river_mouth_blend) {
+		// A lake (a still water `river_lake_w` m or more wide) lifts its whole
+		// bed, however deep.
+		float lift_most = CUSTOM1.y >= river_lake_w ? 1e4 : 3.0 + river_mouth_deep.y * river_mouth_blend;
+		if (lift > 0.0 && lift < lift_most) {
 			VERTEX.y += lift;
 			world_position.y += lift;
 		}
