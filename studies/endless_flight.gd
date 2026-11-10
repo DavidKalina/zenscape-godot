@@ -861,7 +861,10 @@ func _ready() -> void:
 		spirals.name = "PeakSpirals"
 		add_child(spirals)
 		spirals.setup(self)
-		spirals.set_axes(PeakSpirals.on_towers(towers.axes() if towers != null else [],(float(peak.body.flat_y) if peak.shaped() else peak.PLATEAU_Y)+Field.SEA_Y+60.0))
+		var spiral_axes := PeakSpirals.on_towers(towers.axes() if towers != null else [],(float(peak.body.flat_y) if peak.shaped() else peak.PLATEAU_Y)+Field.SEA_Y+60.0)
+		# A candidate body's crown places its own (PeakBody `ribbons`).
+		if peak.shaped(): spiral_axes = peak.body.ribbons(spiral_axes,peak.world(peak.body.flat_c.x,peak.body.flat_c.y),float(peak.body.flat_y)+Field.SEA_Y)
+		spirals.set_axes(spiral_axes)
 	# Snow blowing off the crown's tips and high ridges (scripts/endless/peak_spindrift.gd).
 	if peak != null and not peak.shaped() and PeakSpindrift.wanted():
 		spindrift = PeakSpindrift.new()

@@ -39,13 +39,26 @@ const MOUTH_Y := 15.0
 ## top (the head's floor, share of `tall`), power, half (floor's half-width at
 ## head and mouth), wall (slope), bend}; `gully` (m, count round, m along);
 ## `flat_face` the face whose valley climbs to the flat (and the quick start).
+## `court` (optional): the flat on the top itself, cut level into the summit,
+## {r, blend, off (m toward the flat's face), ribbon (the spirals' radius as a
+## share of their own), ribbon_root (m over the court their roots), spires: [[on (the ridge it stands on, -1 behind the
+## court off the flat's way), m from the summit, tip (share of `spire`), girth,
+## lean in toward the court (girths)], ...] the main one first}; without it the
+## flat is a shelf out on the flat's face under the CROWN spires.
+## `arete` (optional): per ridge `steps` breaks (shoulders, notches, towers)
+## of `amp` m, and per face `spurs` side ridges of `spur_amp` m.
 const SHAPES := {
 	# Four ridges square round a horn: four valleys, one up each face.
-	"a": {"tall":1450.0,"spire":500.0,"twist":0.0,"warp":Vector2(0.10,0.10),
+	# The crown is a court on the top among a ring of spires (`court`); the
+	# ridges break into steps, notches and spurs (`arete`).
+	"a": {"tall":1450.0,"spire":600.0,"twist":0.0,"warp":Vector2(0.10,0.10),
 		"ridges":[[40.0,2150.0],[128.0,1950.0],[222.0,2250.0],[312.0,2050.0]],
-		"faces":[[1.5,0.3,0.5,true],[1.45,0.3,0.5,true],[1.55,0.3,0.5,true],[1.5,0.3,0.5,true]],"sag":0.15,"teeth":Vector2(28.0,110.0),
-		"valley":{"head":450.0,"top":0.30,"power":1.2,"half":Vector2(55.0,190.0),"wall":1.15,"bend":0.10},
-		"gully":Vector3(55.0,8.0,380.0),"flat_face":3},
+		"faces":[[1.5,0.42,0.42,true],[1.45,0.42,0.42,true],[1.55,0.42,0.42,true],[1.5,0.42,0.42,true]],"sag":0.15,"teeth":Vector2(28.0,110.0),
+		"valley":{"head":540.0,"top":0.30,"power":1.2,"half":Vector2(55.0,190.0),"wall":1.15,"bend":0.10},
+		"gully":Vector3(55.0,8.0,380.0),"flat_face":3,
+		"court":{"r":62.0,"blend":40.0,"off":0.0,"ribbon":0.62,"ribbon_root":15.0,
+			"spires":[[-1,255.0,1.0,135.0,0.9],[1,275.0,0.62,102.0,0.6],[2,285.0,0.55,96.0,0.55],[0,280.0,0.40,84.0,0.5],[3,275.0,0.34,78.0,0.5]]},
+		"arete":{"steps":3,"amp":Vector2(80.0,160.0),"spurs":2,"spur_amp":Vector2(80.0,150.0)}},
 	# A long ridge running out to one side against a sheer wall on the far
 	# side, between two short ridges; two big valleys either side of the long
 	# ridge.
@@ -86,8 +99,20 @@ const LEAN := 2.2
 
 var shape := ""
 var tall := 0.0
+## The landing flat: its centre, height (over the sea), radius and blend out.
 var flat_c := Vector2.ZERO
 var flat_y := 0.0
+var flat_r := FLAT_R
+var flat_blend := FLAT_BLEND
+## The shape's `court`, or empty.
+var _court: Dictionary = {}
+## The broken ridges, per ridge: [[r along, half-length along, amp, half-width
+## across, kind (0 a shoulder, 1 pointed)], ...]; the spurs: [start (q), way
+## out, length, amp, half-width].
+var _steps: Array = []
+## Where the crests' teeth start (m from the summit): past the court's rim.
+var _teeth_from := 80.0
+var _spurs: Array = []
 ## Each face's g: a point q (warped) has u = q.g, 0 at the summit, 1 on the foot.
 var _g := PackedVector2Array()
 var _k := PackedFloat32Array()
@@ -164,8 +189,70 @@ func _init(which: String, land_seed: int) -> void:
 	_gully.frequency = 1.0
 	_gully.fractal_type = FastNoiseLite.FRACTAL_RIDGED
 	_gully.fractal_octaves = 3
-	flat_c = Vector2.from_angle(_phi[_flat_face])*FLAT_OFF
-	flat_y = _body(flat_c.x,flat_c.y).x-FLAT_UNDER
+	if d.has("arete"): _broken(d.arete,ridges,land_seed)
+	_court = d.get("court",{})
+	if not _court.is_empty(): _teeth_from = 320.0
+	if _court.is_empty():
+		flat_c = Vector2.from_angle(_phi[_flat_face])*FLAT_OFF
+		flat_y = _body(flat_c.x,flat_c.y).x-FLAT_UNDER
+	else:
+		# The court: level with the lowest of the body over its disk, so it is
+		# only ever cut down into the top, never built out over a face.
+		flat_r = float(_court.r)
+		flat_blend = float(_court.blend)
+		flat_c = Vector2.from_angle(_phi[_flat_face])*float(_court.off)
+		var lo := INF
+		for ring: float in [0.0,0.35,0.7,1.0,1.08]:
+			for i in 32:
+				var p := flat_c+Vector2.from_angle(TAU*i/32.0)*flat_r*ring
+				lo = minf(lo,_body(p.x,p.y).x)
+		flat_y = lo-2.0
+
+## The ridges' breaks and the faces' spurs, placed by the seed.
+func _broken(ar: Dictionary,ridges: Array,land_seed: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([land_seed,"peak_body_arete",shape])
+	var amp: Vector2 = ar.amp
+	var n := ridges.size()
+	var count := int(ar.steps)
+	for f in n:
+		var run := float(ridges[f][1])
+		var list: Array = []
+		for i in count:
+			# Slots down the ridge from 0.16 to 0.7 of its run, jittered.
+			var at := run*lerpf(0.16,0.7,(float(i)+rng.randf_range(0.2,0.8))/count)
+			var a := rng.randf_range(amp.x,amp.y)
+			match (i+f)%3:
+				0: list.append([at,rng.randf_range(170.0,260.0),a,190.0,0])  # a shoulder
+				1: list.append([at,rng.randf_range(55.0,85.0),-0.7*a,130.0,1])  # a notch
+				_: list.append([at,rng.randf_range(50.0,80.0),0.8*a,110.0,1])  # a tower
+		_steps.append(list)
+	var samp: Vector2 = ar.spur_amp
+	for f in n:
+		for s in int(ar.spurs):
+			# Off ridge f or the next, into face f, down and out.
+			var from := f if s%2 == 0 else (f+1)%n
+			var run := float(ridges[from][1])
+			var th := deg_to_rad(float(ridges[from][0]))
+			var off := deg_to_rad(rng.randf_range(20.0,32.0))*(1.0 if from == f else -1.0)
+			var start := Vector2.from_angle(th)*run*rng.randf_range(0.28,0.5)
+			_spurs.append([start,Vector2.from_angle(th+off),run*rng.randf_range(0.3,0.45),rng.randf_range(samp.x,samp.y),rng.randf_range(90.0,130.0)])
+
+## The spirals on this crown: `axes` (PeakSpirals.on_towers, world, the crown's
+## order) brought in to the rock and, on a court, rooted `ribbon_root` m over it
+## so their coils stand in view from it, each kept 70 m off its edge
+## (`court`: its world centre; `court_y` its world height).
+func ribbons(axes: Array, court: Vector2, court_y: float) -> Array:
+	if _court.is_empty(): return axes
+	var root := court_y+float(_court.get("ribbon_root",0.0))
+	for ax: Dictionary in axes:
+		var b: Vector3 = ax.base
+		var t: Vector3 = ax.tip
+		if b.y > root and t.y > b.y: b = b.lerp(t,(root-b.y)/(t.y-b.y))
+		ax.base = b
+		var off := Vector2(b.x,b.z).distance_to(court)-flat_r-70.0
+		ax.radius = minf(float(ax.radius)*float(_court.ribbon),maxf(off,20.0))
+	return axes
 
 ## The profile's share of the height at u (1 at the summit, 0 on the foot).
 func _prof(u: float, f: int) -> float:
@@ -179,9 +266,11 @@ func h(a: float, v: float) -> Vector3:
 	var b := _body(a,v)
 	# The flat at the top.
 	var df := Vector2(a,v).distance_to(flat_c)
-	if df < FLAT_R+FLAT_BLEND:
-		var wf := 1.0-smoothstep(FLAT_R,FLAT_R+FLAT_BLEND,df)
-		b.x = lerpf(b.x,flat_y+1.5*_rough.get_noise_2d(a*3.0,v*3.0),wf)
+	if df < flat_r+flat_blend:
+		var wf := 1.0-smoothstep(flat_r,flat_r+flat_blend,df)
+		var fy := flat_y+1.5*_rough.get_noise_2d(a*3.0,v*3.0)
+		# The court only cuts down; the shelf is cut and built.
+		if _court.is_empty() or b.x > fy: b.x = lerpf(b.x,fy,wf)
 		b.y = maxf(b.y,wf)
 	return b
 
@@ -217,7 +306,38 @@ func _body(a: float, v: float) -> Vector3:
 	if _teeth.x > 0.0:
 		var dr := rw*sin(minf(near,0.5*PI))
 		var on := 1.0-smoothstep(0.0,90.0,dr)
-		if on > 0.0: y += on*_teeth.x*_gully.get_noise_2d(rw/_teeth.y,float(_ridge_th.size())*17.0+thw*3.0)*smoothstep(80.0,300.0,rw)*(1.0-smoothstep(0.45,0.8,bu))
+		if on > 0.0: y += on*_teeth.x*_gully.get_noise_2d(rw/_teeth.y,float(_ridge_th.size())*17.0+thw*3.0)*smoothstep(_teeth_from,_teeth_from+220.0,rw)*(1.0-smoothstep(0.45,0.8,bu))
+	# The ridges' breaks: shoulders (a level run, then a drop), notches and
+	# towers on the crest, spread across it so they cut the skyline.
+	for f in _steps.size():
+		var dth := absf(wrapf(thw-_ridge_th[f],-PI,PI))
+		if dth > 0.5*PI: continue
+		var dr := rw*sin(dth)
+		for st: Array in _steps[f]:
+			var wide := float(st[3])
+			if dr >= wide: continue
+			var x := rw-float(st[0])
+			var half := float(st[1])
+			if absf(x) >= half: continue
+			var s := 0.0
+			if int(st[4]) == 0:
+				s = (x+half)/(1.6*half) if x < 0.6*half else (half-x)/(0.4*half)
+				s = smoothstep(0.0,1.0,s)
+			else:
+				s = pow(1.0-absf(x)/half,1.4)
+			var across := 1.0-dr/wide
+			y += float(st[2])*s*across*across
+	# The spurs: side ridges off the main ones, down into the faces.
+	for sp: Array in _spurs:
+		var st: Vector2 = sp[0]
+		var t := (q-st).dot(sp[1])
+		var ln := float(sp[2])
+		if t < -60.0 or t > ln: continue
+		var wide := float(sp[4])
+		var d := (q-st-(sp[1] as Vector2)*t).length()
+		if d >= wide: continue
+		var across := 1.0-d/wide
+		y += float(sp[3])*pow(across,1.6)*(1.0-smoothstep(0.5*ln,ln,t))*smoothstep(-60.0,40.0,t)
 	# Gullies and ribs down the fall line, closing in toward the top.
 	var mid := clampf(bu,0.0,1.0)
 	var amt := _gully_amt.x*pow(sin(PI*minf(mid*1.15,1.0)),0.6)
@@ -259,6 +379,25 @@ func _body(a: float, v: float) -> Vector3:
 func crown() -> Array:
 	var out: Array = []
 	var way := _phi[_flat_face]
+	if not _court.is_empty():
+		# A ring round the court, each spire leaning in over it.
+		var k := 0
+		for row: Array in _court.spires:
+			var on := int(row[0])
+			var at := Vector2.from_angle(way+PI if on < 0 else _ridge_th[on])*float(row[1])
+			var girth := float(row[3])
+			var lean := (flat_c-at).normalized()*girth*float(row[4])
+			# Its foot at the lowest ground round it (within reason), so on a
+			# steep top it never stands out over the slope as a ledge.
+			var mid := h(at.x,at.y).x
+			var foot := mid
+			for i in 16:
+				var p := at+Vector2.from_angle(TAU*i/16.0)*girth*1.5
+				foot = minf(foot,h(p.x,p.y).x)
+			foot = maxf(foot,mid-450.0)
+			out.append({"at":at,"base":foot-10.0,"tip":tall+float(SHAPES[shape].spire)*float(row[2]),"lean":lean,"girth":girth,"seed":31+k*17})
+			k += 1
+		return out
 	var main_tip := Vector2.ZERO
 	for k in CROWN.size():
 		var row: Array = CROWN[k]

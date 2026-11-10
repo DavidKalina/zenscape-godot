@@ -1188,7 +1188,7 @@ const PLATEAU_UNDER := 25.0
 func on_plateau(p: Vector3) -> bool:
 	if body != null:
 		var fc := world(body.flat_c.x,body.flat_c.y)
-		return Vector2(p.x,p.z).distance_to(fc) < PeakBody.FLAT_R+PeakBody.FLAT_BLEND and p.y-SEA_Y > float(body.flat_y)-PLATEAU_UNDER
+		return Vector2(p.x,p.z).distance_to(fc) < float(body.flat_r)+float(body.flat_blend) and p.y-SEA_Y > float(body.flat_y)-PLATEAU_UNDER
 	return Vector2(p.x,p.z).distance_to(centre) < PLATEAU_BLEND and p.y-SEA_Y > PLATEAU_Y-PLATEAU_UNDER
 
 ## Gorge `g` (Split.ICE, Split.ROCK): {line (world points on its floor's middle,
