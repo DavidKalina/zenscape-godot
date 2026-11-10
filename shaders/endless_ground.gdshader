@@ -190,6 +190,9 @@ const float PEAK_BASALT_GRANITE = 0.012;
 // the sea): over the land's short span it stood as a band round the massif.
 const vec3 PEAK_BASALT_HAZE = vec3(120.0, 760.0, 0.86);
 const float PEAK_BEDS = 3.0;
+// The rock's snapped paint (er_rock_shaped's `ease`) eased fully to
+// smooth nearer the eye than x m, not at all past y m: see the call.
+const vec2 ROCK_EASE = vec2(50.0, 120.0);
 const float PEAK_SHEAR = 200.0;
 const float PEAK_FLOOR_STONES = 0.7;
 const float PEAK_FLOOR_PALE = 1.5;
@@ -860,6 +863,8 @@ void fragment() {
 	// samples a point sheared by height (gxz), and a pixel's size is its 3D one.
 	float fp3 = er_footprint(p);
 	float shear = old_rock ? 0.0 : smoothstep(0.93, 0.55, n.y);
+	// (The Peak's paint share, here for the shear below.)
+	vec4 pk = peak_paint(p);
 	// Sheared by the height over the sea, not the world's y: where the slope
 	// turns (a bank's lip) the shear changes across a triangle, and the point
 	// moves by that change times the height, so at y -37 the noise raced past
@@ -872,6 +877,12 @@ void fragment() {
 		float pk_near = 1.0 - smoothstep(peak_zone.z - 600.0, peak_zone.z, distance(p.xz, peak_zone.xy));
 		sheared_y = mix(sheared_y, abs(fract(sheared_y / PEAK_SHEAR) - 0.5) * PEAK_SHEAR, pk_near);
 	}
+	// On the Peak, even folded, the point still moves up to tens of metres as
+	// the shear turns with the normal, and the turf's thin patches (steep, but
+	// under the rock line) wore the paint in wavy contour rings. There the
+	// shear starts at the rock line: the turf keeps its plan, the rock and its
+	// edge keep the shear as it was.
+	shear *= 1.0 - pk.x * smoothstep(rock_up - 0.03, rock_up + 0.01, n.y);
 	vec2 gxz = p.xz + shear * vec2(sheared_y * 0.8, sheared_y * 0.55);
 	fp = max(fp, fp3 * shear);
 	float over = max(p.y - sea_y, DRY_LOW_OVER * dry_low);
@@ -946,7 +957,6 @@ void fragment() {
 	// the gullies, bare spurs up), the snow holding to steeper ground as it
 	// climbs; its granite above the land's own tops; ice and scree on the
 	// approach valley's floor (peak_paint).
-	vec4 pk = peak_paint(p);
 	// (Glacier ice, shaders/peak_ice.gdshaderinc: its mask on the ice's own line.)
 	vec4 ice_frame = vec4(0.0);
 	vec2 ice_flow = vec2(1.0, 0.0);
@@ -1220,9 +1230,14 @@ void fragment() {
 		// Two lattices turned against each other, so no grid shows.
 		vec2 turned = mat2(vec2(0.866, 0.5), vec2(-0.5, 0.866)) * gxz;
 		vec2 turned2 = mat2(vec2(0.342, -0.94), vec2(0.94, 0.342)) * gxz;
-		float grain_near = zs_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + zs_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7
-			+ zs_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5;
-		grass *= 1.0 + grain_near * (1.0 - thin * 0.4);
+		// Where no tufts grow (above the turf's height, the high tundra) nothing
+		// stands over it, and its metre-sized blots at full strength read as a
+		// small noise magnified: there it keeps its finest specks, the blots
+		// mostly gone.
+		float tufted = 0.25 + 0.75 * carpet_turf;
+		float grain_near = zs_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + zs_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7 * (0.5 + 0.5 * tufted)
+			+ zs_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5 * tufted;
+		grass *= 1.0 + grain_near * (1.0 - thin * 0.4) * (0.6 + 0.4 * tufted);
 		// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
 		if (carpet_near.y > 0.0) {
 			float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
@@ -1310,6 +1325,12 @@ void fragment() {
 	if (!old_rock && rocky > 0.002) {
 		// (The Peak's beds: the same paint on a coordinate stretched up and folded,
 		// so a smooth face wears big tilted bands, not a stack of even plates.)
+		// Near the eye the paint's snapped terms ease to smooth (ROCK_EASE): a
+		// steep wall on the land's 1-2 m height grid is long thin triangles
+		// whose normals swing column to column, and snapping that normal (the
+		// painted light's steps, the planes, the joints' run) cut a wall seen
+		// close into triangle-shaped tiles and stair-stepped bars. Further off
+		// a column is a few pixels and the snaps read as the facets they are.
 		vec3 bed_p = p;
 		if (pk.x > 0.0) {
 			float fold = 46.0 * sin(dot(p.xz, vec2(0.0041, 0.0029))) + 20.0 * sin(dot(p.xz, vec2(-0.011, 0.007)) + 1.3) + dot(p.xz, vec2(0.11, 0.14));
@@ -1318,7 +1339,7 @@ void fragment() {
 		// (A chunk baked only for the summits' snow has alpha under 0.9: no shape for the rock.)
 		vec4 rock_shape_in = land_shape;
 		if (land_shape.a < 0.9) rock_shape_in.a = 0.0;
-		rock = er_rock_shaped(bed_p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, rock_shape_in, lit_n, rock_glow);
+		rock = er_rock_shaped(bed_p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, rock_shape_in, 1.0 - smoothstep(ROCK_EASE.x, ROCK_EASE.y, distance(p, CAMERA_POSITION_WORLD)), lit_n, rock_glow);
 		// Its bounce glow at the sky fill's strength (ER_REF_FILL its luma at
 		// the reference light), so it eases with the fill.
 		float fill_level = clamp(luma(zs_hemi_sky) * zs_hemi_energy / ER_REF_FILL, 0.25, 2.0);
