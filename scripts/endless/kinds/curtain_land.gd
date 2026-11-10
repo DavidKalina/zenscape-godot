@@ -165,7 +165,7 @@ const BANK := 0.45
 const STREAM_BANK := 1.3
 ## The stream's low bank runs BANK_RUN m; past it a gorge's wall rises GORGE.
 const BANK_RUN := 4.0
-const GORGE := 3.2
+const GORGE := 2.0
 const OUT_BANK := 0.35
 ## The stream's depth; its water widens to the lip's half-width over its last
 ## FAN m; its half-width wanders by HALF_WANDER of itself. The outflow's depth.
@@ -479,7 +479,9 @@ static func segments_near(c: PackedFloat32Array, x0: float, z0: float, x1: float
 ## Shape `c` cut into the land's height `base` at (x, z): [height, water's
 ## out (m past its edge, < 0 on it; INF dry), r, w, level] (the pond's reads:
 ## LandField `_pond`), bare (1: no grass, the rock's colour), the water's
-## flow (x, z m/s: the ground shader's current; still water grows lilies).
+## flow (x, z m/s: the ground shader's current; still water grows lilies);
+## then the water as the chunks draw it: [out, r, w, level, flow x, z],
+## the nearest whose water it is or whose bank (the ground over its water).
 ## With `cave` the cave's trench too (the field's), else the hill whole over
 ## it (the chunks'). `segs` (segments_near) the paths' segments to look at;
 ## empty: all.
@@ -627,7 +629,7 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 			if cave and tu.x >= 0.0 and tu.x <= cave_length(c) and absf(tu.y) < c[I_CAVE_HALF]:
 				h = minf(h,c[I_CAVE_FLOOR])
 				waters.clear()
-	var got := PackedFloat32Array([h,INF,0.0,0.0,0.0,bare,0.0,0.0])
+	var got := PackedFloat32Array([h,INF,0.0,0.0,0.0,bare,0.0,0.0,INF,0.0,0.0,0.0,0.0,0.0])
 	if c[I_WET] <= 0.0: return got
 	for w: PackedFloat32Array in waters:
 		if w[0] < got[1] and (w[0] < 0.0 or h < w[3]+DRY_OVER):
@@ -637,6 +639,10 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 			got[4] = w[3]
 			got[6] = w[4]
 			got[7] = w[5]
+		# As drawn: on its banks too (over its water), so the shader's
+		# reads go smoothly out past its edge, not to a neighbour's nothing.
+		if w[0] < got[8] and (w[0] < 0.0 or h > w[3]-0.05):
+			for k in 6: got[8+k] = w[k]
 	return got
 
 ## The world way (x, z) down shape `c`'s path segment from point index `i`.
@@ -703,15 +709,15 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array
 				var v := j*n+i
 				var got := at(c,heights[v],x0+i*step,z0+j*step,false,segs)
 				var out_now := absf(river[v*3])-river[v*3+1]
-				if got[1] < REACH and got[1] < out_now:
+				if got[8] < REACH and got[8] < out_now:
 					# The distance takes the sign the river's had here, so
 					# the shader's interpolation to a neighbour left with the
 					# river's never crosses zero (a false strip of water).
-					river[v*3] = absf(got[2])*(-1.0 if river[v*3] < 0.0 else 1.0)
-					river[v*3+1] = got[3]
-					river[v*3+2] = got[4]
-					carved[v*4+2] = _flow_byte(got[6])
-					carved[v*4+3] = _flow_byte(got[7])
+					river[v*3] = absf(got[9])*(-1.0 if river[v*3] < 0.0 else 1.0)
+					river[v*3+1] = got[10]
+					river[v*3+2] = got[11]
+					carved[v*4+2] = _flow_byte(got[12])
+					carved[v*4+3] = _flow_byte(got[13])
 					touched[v] = 1
 				var y := got[0]
 				if got[5] > bares[v]:
