@@ -49,7 +49,7 @@ before; the parapet or handrail adds 1.1 m over each edge.
 ## See it
 
 - Mine trestle: `python3 tools/play.py --no-pull -- --no-title --pilot-file=/tmp/rail.json --at=-4669,105 --alt=30`
-- Bay viaduct: `--rail-start=bridge`, or `--at=-280,1000 --alt=-20` (the crest, galleries)
+- Bay viaduct: `--rail-start=bridge` (the meeting on its deck), or `--at=-300,1000 --alt=30` (by its crest, where the galleries are)
 - A creek bridge: `--at=-2777,-3199 --alt=4`
 
 ## Numbers
