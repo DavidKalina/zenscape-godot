@@ -20,6 +20,7 @@ shader_type spatial;
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
+#include "res://shaders/grass_shade.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 #include "res://shaders/land_horizon.gdshaderinc"
 #include "res://shaders/endless_patch.gdshaderinc"
@@ -1850,4 +1851,15 @@ void fragment() {
 		land_haze.a *= mix(1.0, (1.0 - dark_up * PEAK_BASALT_HAZE.z) / max(1.0 - land_up * haze_height.z, 0.01), pk_dark);
 	}
 	FOG = land_haze;
+}
+
+// Godot's own lighting as the default does it (a light() replaces it), with
+// the sun's shade lifted (grass_shade.gdshaderinc).
+void light() {
+	vec3 d;
+	vec3 s;
+	zs_grass_light(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, ROUGHNESS, 0.25, d, s);
+	DIFFUSE_LIGHT += d;
+	SPECULAR_LIGHT += s;
+	if (LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR, zs_hemi_sky, 1.0 - ATTENUATION * smoothstep(0.0, 0.2, dot(NORMAL, LIGHT)));
 }
