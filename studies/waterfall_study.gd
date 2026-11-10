@@ -3,9 +3,11 @@ extends Node3D
 ## a thick marched plume of a fall with its spray (shaders/waterfall_volume.gdshader)
 ## pouring over a lip and covering the opening, and a pool at the base with a foam ring.
 ## Keys 1 front, 2 angle, 3 close, 4 graze (low, along the wall), 5 base, 6 fly
-## (the camera flies through the fall into the opening, over and over); mouse
+## (the camera flies through the fall into the opening, over and over), 7 far
+## (300 m off, a little to the side: how it reads across a valley); mouse
 ## drag orbits, wheel zooms, WASD pans the look-at point, Q/E down/up.
-## Flag: --view=front|angle|close|graze|base|fly.
+## Flags: --view=front|angle|close|graze|base|fly|far;
+## --fall=name:value,name:value sets the fall shader's uniforms (floats).
 
 const WALL_H := 40.0
 const WALL_W := 70.0
@@ -161,7 +163,7 @@ func _build_land() -> void:
 	var ground := StandardMaterial3D.new()
 	ground.albedo_color = Color(0.25, 0.27, 0.22)
 	ground.roughness = 1.0
-	_box(Vector3(0, -0.5, 20), Vector3(220, 1.0, 160), ground)
+	_box(Vector3(0, -0.5, 200), Vector3(900, 1.0, 520), ground)
 	var water := StandardMaterial3D.new()
 	water.albedo_color = Color(0.2, 0.42, 0.5)
 	water.roughness = 0.15
@@ -182,6 +184,11 @@ func _build_fall() -> void:
 	# its spray would cut the foam behind it.
 	_mat.render_priority = 1
 	_mat.set_shader_parameter("sun_dir", _sun.global_transform.basis.z)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--fall="):
+			for kv in a.substr(7).split(","):
+				var p := kv.split(":")
+				if p.size() == 2: _mat.set_shader_parameter(p[0], float(p[1]))
 	var bm := BoxMesh.new()
 	bm.size = BOX
 	bm.material = _mat
@@ -215,7 +222,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif b.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_dist = maxf(3.0, _dist * 0.9)
 		elif b.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_dist = minf(250.0, _dist * 1.1)
+			_dist = minf(500.0, _dist * 1.1)
 		_place_cam()
 	elif e is InputEventMouseMotion and _drag:
 		var mm := e as InputEventMouseMotion
@@ -230,6 +237,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_4: _preset("graze")
 			KEY_5: _preset("base")
 			KEY_6: _preset("fly")
+			KEY_7: _preset("far")
 
 func _process(delta: float) -> void:
 	if _fly:

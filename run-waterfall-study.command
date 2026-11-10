@@ -11,7 +11,7 @@ if [[ ! -x "$GODOT_BIN" ]]; then
   exit 1
 fi
 
-print -r -- "Opening the waterfall study (keys 1 front, 2 angle, 3 close, 4 graze, 5 base, 6 fly through; drag to orbit, wheel to zoom, WASD/QE to move). Launch log: $LAUNCH_LOG"
+print -r -- "Opening the waterfall study (keys 1 front, 2 angle, 3 close, 4 graze, 5 base, 6 fly through, 7 far; drag to orbit, wheel to zoom, WASD/QE to move). Launch log: $LAUNCH_LOG"
 "$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/waterfall_study.tscn -- "$@" 2>&1 | tee "$LAUNCH_LOG"
 launch_status=${pipestatus[1]}
 # Godot can report script-load failures while returning a zero exit status.
