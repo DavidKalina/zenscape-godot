@@ -491,6 +491,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("river_frame", "made", "ring_r", "ring_w", "step", "cells"), &ZenScapeChunkPass::river_frame);
 		ClassDB::bind_method(D_METHOD("grid_heights", "field", "carves", "ponds", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeChunkPass::grid_heights);
 		ClassDB::bind_method(D_METHOD("any_steep", "normals", "count", "up"), &ZenScapeChunkPass::any_steep);
+		ClassDB::bind_method(D_METHOD("wall_normals", "made", "cells", "from", "full"), &ZenScapeChunkPass::wall_normals);
 		ClassDB::bind_method(D_METHOD("rock_layer", "shape", "hs", "c", "per", "k", "d", "gn", "a", "cells"), &ZenScapeChunkPass::rock_layer);
 		ClassDB::bind_method(D_METHOD("rock_finish", "shape", "cells"), &ZenScapeChunkPass::rock_finish);
 		ClassDB::bind_method(D_METHOD("portal_tris", "made", "mask", "cells", "faces"), &ZenScapeChunkPass::portal_tris);
@@ -857,6 +858,79 @@ public:
 			}
 		}
 		return hs;
+	}
+
+	// land_stream `_wall_normals_gd`: the walls' drawn normals. Where the
+	// slope's tangent passes `from`, a vertex keeps its steepness and turns its
+	// bearing toward the gradient averaged over a 5x5 binomial window (`from`
+	// to `full` blends it in); an edge vertex averages along its edge only, a
+	// corner keeps its own. The same bits as the GDScript.
+	void wall_normals(Dictionary made, int64_t cells, double from, double full) const {
+		PackedVector3Array nm = made["normals"];
+		const int64_t n = cells + 1;
+		if (nm.size() < n * n + 4 * n) return;
+		std::vector<double> gx(size_t(n * n)), gz(size_t(n * n)), mag(size_t(n * n));
+		const Vector3 *p = nm.ptr();
+		bool any = false;
+		for (int64_t v = 0; v < n * n; ++v) {
+			const double a = double(p[v].x) / double(p[v].y);
+			const double b = double(p[v].z) / double(p[v].y);
+			gx[size_t(v)] = a;
+			gz[size_t(v)] = b;
+			mag[size_t(v)] = std::sqrt(a * a + b * b);
+			if (mag[size_t(v)] > from) any = true;
+		}
+		if (!any) return;
+		static const double wt[5] = { 1.0, 4.0, 6.0, 4.0, 1.0 };
+		PackedVector3Array out = nm;
+		Vector3 *op = out.ptrw();
+		for (int64_t j = 0; j < n; ++j) {
+			for (int64_t i = 0; i < n; ++i) {
+				const int64_t v = j * n + i;
+				const double s = mag[size_t(v)];
+				if (s <= from) continue;
+				const bool on_i = i == 0 || i == cells;
+				const bool on_j = j == 0 || j == cells;
+				if (on_i && on_j) continue;
+				double sx = 0.0, sz = 0.0;
+				for (int64_t dj = -2; dj <= 2; ++dj) {
+					const int64_t jj = j + dj;
+					if (jj < 0 || jj > cells) continue;
+					if (on_j && dj != 0) continue;
+					for (int64_t di = -2; di <= 2; ++di) {
+						const int64_t ii = i + di;
+						if (ii < 0 || ii > cells) continue;
+						if (on_i && di != 0) continue;
+						const double w = wt[dj + 2] * wt[di + 2];
+						sx += w * gx[size_t(jj * n + ii)];
+						sz += w * gz[size_t(jj * n + ii)];
+					}
+				}
+				const double gl = std::sqrt(sx * sx + sz * sz);
+				if (gl < 1e-9) continue;
+				double t = (s - from) / (full - from);
+				t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+				t = t * t * (3.0 - 2.0 * t);
+				const double ux = gx[size_t(v)] / s;
+				const double uz = gz[size_t(v)] / s;
+				const double dx = ux + (sx / gl - ux) * t;
+				const double dz = uz + (sz / gl - uz) * t;
+				const double dl = std::sqrt(dx * dx + dz * dz);
+				if (dl < 1e-6) continue;
+				const double ax = dx / dl * s;
+				const double az = dz / dl * s;
+				const double l = std::sqrt(ax * ax + 1.0 + az * az);
+				op[v] = Vector3(float(ax / l), float(1.0 / l), float(az / l));
+			}
+		}
+		// The skirt: its edge's normals.
+		for (int e = 0; e < 4; ++e) {
+			for (int64_t t = 0; t < n; ++t) {
+				const int64_t from_v = e == 0 ? t : (e == 1 ? t * n + cells : (e == 2 ? cells * n + t : t * n));
+				op[n * n + e * n + t] = op[from_v];
+			}
+		}
+		made["normals"] = out;
 	}
 
 	bool any_steep(const PackedVector3Array &normals, int64_t count, double up) const {

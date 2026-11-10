@@ -191,8 +191,11 @@ const float PEAK_BASALT_GRANITE = 0.012;
 const vec3 PEAK_BASALT_HAZE = vec3(120.0, 760.0, 0.86);
 const float PEAK_BEDS = 3.0;
 // The rock's snapped paint (er_rock_shaped's `ease`) eased fully to
-// smooth nearer the eye than x m, not at all past y m: see the call.
-const vec2 ROCK_EASE = vec2(50.0, 120.0);
+// smooth nearer the eye than x m, not at all past y m: see the call. (Walls'
+// normals no longer swing column to column (land_stream `_wall_normals`), so
+// this only keeps a wall at arm's length from breaking into triangle shards;
+// it was 50-120 m before that pass.)
+const vec2 ROCK_EASE = vec2(25.0, 70.0);
 const float PEAK_SHEAR = 200.0;
 const float PEAK_FLOOR_STONES = 0.7;
 const float PEAK_FLOOR_PALE = 1.5;
@@ -1326,11 +1329,10 @@ void fragment() {
 		// (The Peak's beds: the same paint on a coordinate stretched up and folded,
 		// so a smooth face wears big tilted bands, not a stack of even plates.)
 		// Near the eye the paint's snapped terms ease to smooth (ROCK_EASE): a
-		// steep wall on the land's 1-2 m height grid is long thin triangles
-		// whose normals swing column to column, and snapping that normal (the
-		// painted light's steps, the planes, the joints' run) cut a wall seen
-		// close into triangle-shaped tiles and stair-stepped bars. Further off
-		// a column is a few pixels and the snaps read as the facets they are.
+		// steep wall on the land's 1-2 m height grid is long thin triangles,
+		// and snapping their interpolated normal (the painted light's steps,
+		// the planes, the joints' run) cut a wall seen close into triangle-
+		// shaped shards. Further off the snaps read as the facets they are.
 		vec3 bed_p = p;
 		if (pk.x > 0.0) {
 			float fold = 46.0 * sin(dot(p.xz, vec2(0.0041, 0.0029))) + 20.0 * sin(dot(p.xz, vec2(-0.011, 0.007)) + 1.3) + dot(p.xz, vec2(0.11, 0.14));
