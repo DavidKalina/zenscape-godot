@@ -837,6 +837,9 @@ static func _hash(i: float, j: float) -> float:
 	var h := sin(i*127.1+j*311.7)*43758.5453
 	return h-floorf(h)
 
+## The up of a bare vertex's normal: under the ground shader's rock_up (0.8).
+const BARE_UP := 0.7
+
 ## The pass over a chunk's arrays (LandField.build_chunk; its args), after
 ## the ponds, halls and splits.
 static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array, x0: float, z0: float, step: float, cells: int, skirt_drop: float) -> void:
@@ -907,7 +910,17 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, cs: Array
 				var hd: float = heights[v-n] if j > 0 else field.height(x,z-step)
 				var hu: float = heights[v+n] if j < cells else field.height(x,z+step)
 				var normal := Vector3(hl-hr,2.0*step,hd-hu).normalized()
-				normals[v] = normal
+				# The bare floor leans past the ground shader's rock_up (it
+				# paints turf or rock by the normal's up alone), as the
+				# tunnels' mouth rock does (land_tunnels.gd `_rock_lean`).
+				if bares[v] > 0.0 and normal.y > BARE_UP:
+					var side := Vector2(normal.x,normal.z)
+					side = side.normalized() if side.length() > 0.02 else Vector2(0.7071,0.7071)
+					var up_to := lerpf(normal.y,BARE_UP,bares[v])
+					var flat := sqrt(maxf(1.0-up_to*up_to,0.0))
+					normals[v] = Vector3(side.x*flat,up_to,side.y*flat)
+				else:
+					normals[v] = normal
 				var meadow := colours[v].a
 				# The bare floor in the rock's colour (the land's own below
 				# its slope's `up`).
