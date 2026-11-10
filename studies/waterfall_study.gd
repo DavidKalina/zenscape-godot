@@ -1,7 +1,7 @@
 extends Node3D
 ## The waterfall look study: a 40 m rock wall with a dark 20 x 15 m opening,
-## a thick marched fall (shaders/waterfall_volume.gdshader) pouring over a lip
-## and covering the opening, and a pool at the base with a foam ring.
+## a thick marched plume of a fall with its spray (shaders/waterfall_volume.gdshader)
+## pouring over a lip and covering the opening, and a pool at the base with a foam ring.
 ## Keys 1 front, 2 angle, 3 close, 4 graze (low, along the wall), 5 base, 6 fly
 ## (the camera flies through the fall into the opening, over and over); mouse
 ## drag orbits, wheel zooms, WASD pans the look-at point, Q/E down/up.
@@ -13,7 +13,11 @@ const OPEN_W := 20.0
 const OPEN_H := 15.0
 const HANG := 3.5
 const FRONT_Z := 4.0
-const BOX := Vector3(42.0, 43.0, 16.0)
+const BOX := Vector3(54.0, 44.0, 32.0)
+# The fall's shape (the shaders' own defaults, set on both so they agree).
+const HALF_W := 11.5
+const SPREAD := 4.5
+const THROW := 3.0
 # The box runs back into the rock (hidden there) so the water can come over
 # the wall top from behind; below the top it keeps 0.3 m off the wall face.
 const BOX_Z0 := -6.0
@@ -161,7 +165,7 @@ func _build_land() -> void:
 	var water := StandardMaterial3D.new()
 	water.albedo_color = Color(0.2, 0.42, 0.5)
 	water.roughness = 0.15
-	_box(Vector3(0, 0.02, HANG + 7.0), Vector3(44, 0.1, 22), water)
+	_box(Vector3(0, 0.02, HANG + 12.0), Vector3(56, 0.1, 32), water)
 
 func _build_fall() -> void:
 	_mat = ShaderMaterial.new()
@@ -171,6 +175,12 @@ func _build_fall() -> void:
 	_mat.set_shader_parameter("wall_top", WALL_H)
 	_mat.set_shader_parameter("front_z", FRONT_Z)
 	_mat.set_shader_parameter("lip_y", WALL_H + 1.2)
+	_mat.set_shader_parameter("half_width", HALF_W)
+	_mat.set_shader_parameter("spread", SPREAD)
+	_mat.set_shader_parameter("throw_out", THROW)
+	# After the pool's foam (which writes no depth): the fall writes depth, and
+	# its spray would cut the foam behind it.
+	_mat.render_priority = 1
 	_mat.set_shader_parameter("sun_dir", _sun.global_transform.basis.z)
 	var bm := BoxMesh.new()
 	bm.size = BOX
@@ -185,14 +195,16 @@ func _build_fall() -> void:
 	pm.shader = load("res://shaders/waterfall_pool.gdshader")
 	# The pool's foam starts where the churn mound ends (the fall's front at
 	# the foot, plus its lean, plus the mound's reach: the shader's defaults).
-	pm.set_shader_parameter("front_z", FRONT_Z + 1.4)
+	pm.set_shader_parameter("front_z", FRONT_Z + THROW)
+	pm.set_shader_parameter("half_width", HALF_W)
+	pm.set_shader_parameter("spread", SPREAD)
 	pm.set_shader_parameter("mound_reach", 2.6)
 	var pl := PlaneMesh.new()
-	pl.size = Vector2(44, 22)
+	pl.size = Vector2(56, 32)
 	pl.material = pm
 	var pi := MeshInstance3D.new()
 	pi.mesh = pl
-	pi.position = Vector3(0, 0.09, HANG + 7.0)
+	pi.position = Vector3(0, 0.09, HANG + 12.0)
 	add_child(pi)
 
 func _unhandled_input(e: InputEvent) -> void:

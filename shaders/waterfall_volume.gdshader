@@ -20,6 +20,13 @@ render_mode cull_front, unshaded, shadows_disabled, depth_draw_always, blend_mix
 // of three widths and a fine streaked grain, so the face reads as broken
 // falling water, not as long combed lines. The fine parts fade with distance
 // so they never alias into hatching.
+// The whole is a plume, not a sheet: the middle stands out past the sides at
+// the lip (a rounded column), it is thrown out from the wall as it falls and
+// widens toward the foot. Spray rides on it: a soft skin of billows over the
+// solid body, falling slower than the water, that feathers the silhouette and
+// fills between the lobes, and a cloud thrown up at the foot. The spray is
+// gathered along the same march (its optical depth), drawn over the surface
+// hit, or on its own where the ray misses the body.
 // Over the lip the water is smooth and glassy and turns white within a few
 // metres. The sides fray into lumps, more toward the foot. At the foot it
 // explodes into a low, wide churn with a broken top and lobes thrown out and
@@ -30,6 +37,8 @@ render_mode cull_front, unshaded, shadows_disabled, depth_draw_always, blend_mix
 // slopes gentle), so the march steps by it and lands in a few steps; only in
 // the churn, whose pieces are thin, does it keep to short steps.
 //
+// (Spray alone writes the depth of where it begins: a transparent thing drawn
+// after the fall and behind its spray is cut by it, so draw the fall last.)
 // Depth: the hit is written to DEPTH and depth-tested by the hardware, so rock
 // in front hides it and later transparent things sort against it. It draws in
 // the transparent pass: one march per pixel, and the inside-the-water alpha
@@ -61,17 +70,20 @@ uniform float wall_gap = 0.3;
 // Half the width of the fall at the lip (m), the water's top over the lip (m
 // up from the foot), the front of the falling water at the lip (m out from
 // the wall).
-uniform float half_width = 13.0;
+uniform float half_width = 11.5;
 uniform float lip_y = 41.2;
 uniform float front_z = 4.0;
 // How much wider each side is at the foot than at the lip (m).
-uniform float spread : hint_range(0.0, 6.0) = 2.6;
+uniform float spread : hint_range(0.0, 8.0) = 4.5;
 // How far the sides wander in and out as the water falls (m).
 uniform float edge_wobble : hint_range(0.0, 3.0) = 0.9;
 // How uneven the lip is: the front bulges in tongues and the top dips (m).
 uniform float lip_unevenness : hint_range(0.0, 2.0) = 1.0;
 // How far the front leans out from the lip to the foot (m).
-uniform float throw_out : hint_range(0.0, 4.0) = 1.4;
+uniform float throw_out : hint_range(0.0, 8.0) = 3.0;
+// How far the middle of the fall stands out past its sides at the lip (m): a
+// rounded column, not a flat sheet. It flattens out toward the foot.
+uniform float plume_round : hint_range(0.0, 6.0) = 2.2;
 // Radius (m) of the curve where the water bends over the lip.
 uniform float curve_radius : hint_range(0.5, 6.0) = 2.2;
 // How deep the body is behind its front (m).
@@ -79,9 +91,9 @@ uniform float thickness : hint_range(0.5, 8.0) = 5.0;
 // Surges: how wide a piece of a surge front is (m), how far apart the fronts
 // come down (m), how far out a full surge bulges (m), and how far a front lags
 // behind its leading points (in piece widths: the chevrons).
-uniform float surge_width : hint_range(1.0, 12.0) = 5.0;
+uniform float surge_width : hint_range(1.0, 12.0) = 6.0;
 uniform float surge_spacing : hint_range(3.0, 30.0) = 11.0;
-uniform float surge_bulge : hint_range(0.0, 3.0) = 1.0;
+uniform float surge_bulge : hint_range(0.0, 3.0) = 1.4;
 uniform float surge_chevron : hint_range(0.0, 3.0) = 0.8;
 // The broad bulge and lag across the face (m).
 uniform float veil_bulge : hint_range(0.0, 3.0) = 0.5;
@@ -89,7 +101,7 @@ uniform float veil_bulge : hint_range(0.0, 3.0) = 0.5;
 uniform float clump_bulge : hint_range(0.0, 1.0) = 0.3;
 uniform float packet_width : hint_range(0.5, 4.0) = 1.5;
 // Metres per second the water falls at the lip.
-uniform float fall_speed : hint_range(0.0, 30.0) = 9.0;
+uniform float fall_speed : hint_range(0.0, 30.0) = 11.0;
 // How much faster it falls at the foot (pattern speed x (1 + fall_accel)).
 uniform float fall_accel : hint_range(0.0, 4.0) = 1.6;
 // How fast the shapes change as they fall.
@@ -120,6 +132,16 @@ uniform float flicker : hint_range(0.0, 1.0) = 0.5;
 uniform float step_len : hint_range(0.02, 1.0) = 0.1;
 uniform float lod_distance = 35.0;
 uniform int steps : hint_range(8, 128) = 64;
+// Spray carried with the fall: a soft skin over the solid body that feathers
+// its edges and fills between its lobes (0 none: the hard body alone), and
+// how far out from the body it reaches at the foot (m; less toward the lip).
+uniform float mist : hint_range(0.0, 2.0) = 0.55;
+uniform float mist_reach : hint_range(0.2, 8.0) = 3.2;
+// The cloud of spray thrown up at the foot (0 none), how high it stands
+// against the fall (m) and how far out over the pool it rolls (m).
+uniform float base_mist : hint_range(0.0, 2.0) = 0.7;
+uniform float base_mist_height : hint_range(1.0, 25.0) = 12.0;
+uniform float base_mist_reach : hint_range(1.0, 25.0) = 10.0;
 // Inside the water: how opaque each metre of water ahead of the eye is.
 uniform float inside_density : hint_range(0.1, 10.0) = 1.4;
 // World direction toward the sun.
@@ -199,7 +221,9 @@ float lip_var(float x) {
 // Horizontal over the lip, a quarter circle, then down, leaning out.
 void flow(vec3 P, float lv, out float s, out float q, out float k) {
 	// Uneven only outward and upward, so the lip's rock never shows.
-	float fz = front_z + (lv + 0.5) * lip_unevenness * 0.8;
+	float xr = clamp(P.x / max(half_width, 0.1), -1.0, 1.0);
+	float rnd = plume_round * (1.0 - xr * xr);
+	float fz = front_z + (lv + 0.5) * lip_unevenness * 0.8 + rnd;
 	float ly = lip_y + (lv + 0.5) * lip_unevenness * 0.5;
 	float yc = ly - curve_radius;
 	float zc = fz - curve_radius;
@@ -208,7 +232,7 @@ void flow(vec3 P, float lv, out float s, out float q, out float k) {
 		float d = yc - P.y;
 		k = clamp(d / max(yc, 1.0), 0.0, 1.0);
 		s = curve_radius * 1.5707963 + d;
-		q = P.z - fz - throw_out * (1.0 - (1.0 - k) * (1.0 - k));
+		q = P.z - fz - throw_out * (1.0 - (1.0 - k) * (1.0 - k)) + rnd * k * k;
 	} else if (P.z <= zc) {
 		s = P.z - zc;
 		q = P.y - ly;
@@ -345,7 +369,7 @@ float h_max() {
 // overstate it a little on steep lumps). `full` adds what the shadow tap does
 // without: the packets and the churn (whose envelope is not a solid: in the
 // tap it drew a thin dark line on the fall along the envelope's top).
-float field_i(vec3 P, bool full, out vec4 info) {
+float field_i(vec3 P, bool full, out vec4 info, out vec2 mq) {
 	info = vec4(0.0, 0.0, 0.0, 1.0);
 	float ax = abs(P.x);
 	float lv = lip_var(P.x);
@@ -369,6 +393,11 @@ float field_i(vec3 P, bool full, out vec4 info) {
 	float e = hw - ax;
 
 	float hm = h_max();
+	// For the spray: how far inside a smooth sheath round the body (m, negative
+	// outside it), and how far down the fall.
+	// (Over the face it is thinner than at the sides: the water shows through.)
+	// Behind the body it ends too, so the space behind the fall is clear.
+	mq = vec2(min(min((hm * 0.6 - q) * 1.8, e + 0.3), q + thickness + 0.5), k);
 	float v;
 	if (q > hm) {
 		// In the air in front of the water. (Biased, so the march steps into
@@ -437,7 +466,41 @@ float field_i(vec3 P, bool full, out vec4 info) {
 
 float field(vec3 P, bool full) {
 	vec4 info;
-	return field_i(P, full, info);
+	vec2 mq;
+	return field_i(P, full, info, mq);
+}
+
+// Spray: its density (per metre) at a point. A soft skin round the body, in
+// billows falling slower than the water, thicker toward the foot; and a
+// cloud thrown up at the foot, rolling up and out over the pool. `coarse`
+// where the cloud is, so the march does not step over it.
+float mist_at(vec3 P, vec2 mq, out bool coarse) {
+	coarse = false;
+	float reach = mist_reach * (0.12 + 0.88 * mq.y);
+	// None over the lip and the water above it: the spray comes off the fall.
+	float band = mist > 0.0 ? clamp(1.0 + mq.x / reach, 0.0, 1.0) * smoothstep(0.02, 0.2, mq.y) : 0.0;
+	float zf = front_z + throw_out;
+	float bz = 1.0 - smoothstep(0.0, base_mist_reach, P.z - zf - churn_reach * 0.5);
+	// None behind the fall: the space between it and the wall stays clear.
+	float bback = smoothstep(zf - thickness - 0.5, zf - thickness + 2.0, P.z);
+	float bh = base_mist_height * (0.3 + 0.7 * bz);
+	float by = 1.0 - clamp(P.y / max(bh, 0.1), 0.0, 1.0);
+	float bx = clamp((half_width + spread + 4.0 - abs(P.x)) / 5.0, 0.0, 1.0);
+	float base = base_mist > 0.0 ? by * by * bz * bz * bx * bback : 0.0;
+	if (band <= 0.0 && base <= 0.0) return 0.0;
+	float n2 = vnoise(vec3(P.x * 0.8 + 5.0, P.y * 0.55 + TIME * fall_speed * 0.22, P.z * 0.8));
+	float d = 0.0;
+	if (band > 0.0) {
+		float n1 = vnoise(vec3(P.x * 0.3, P.y * 0.2 + TIME * fall_speed * 0.11, P.z * 0.3 + TIME * 0.1));
+		d += mist * band * band * smoothstep(0.3, 0.7, n1 * 0.65 + n2 * 0.35) * 1.2;
+	}
+	if (base > 0.0) {
+		coarse = base > 0.02;
+		// Big separate billows, not an even fog.
+		float n3 = vnoise(vec3(P.x * 0.15, P.y * 0.2 - TIME * 0.6, P.z * 0.15 - TIME * 0.9));
+		d += base_mist * base * smoothstep(0.45, 0.75, n3 * 0.75 + n2 * 0.25) * 1.8;
+	}
+	return d;
 }
 
 // The surface's fine relief, for the shading only: streaks along the fall
@@ -489,8 +552,9 @@ void fragment() {
 	float hx = box_size.x * 0.5;
 	// Two tighter boxes the water can be in: the falling column, and the
 	// churn at the foot. March only their hull along the ray.
-	float colw = half_width + spread + edge_wobble * 1.3 + edge_break + 0.5;
-	float colz = front_z + lip_unevenness * 0.8 + throw_out + h_max() + 0.2;
+	float mr = mist > 0.0 ? mist_reach : 0.0;
+	float colw = half_width + spread + edge_wobble * 1.3 + edge_break + 0.5 + mr;
+	float colz = front_z + lip_unevenness * 0.8 + throw_out + plume_round + h_max() + 0.2 + mr;
 	float topy = lip_y + lip_unevenness * 0.5 + h_max() + 0.2;
 	vec2 ia = slab(ro, inv, vec3(-colw, 0.0, wall_gap), vec3(colw, topy, colz));
 	vec2 ic = slab(ro, inv, vec3(-colw, wall_top - 0.5, box_z0), vec3(colw, topy, colz));
@@ -506,6 +570,11 @@ void fragment() {
 	if (ia.y > ia.x) { t0 = ia.x; t1 = ia.y; }
 	if (ib.y > ib.x) { t0 = min(t0, ib.x); t1 = max(t1, ib.y); }
 	if (ic.y > ic.x) { t0 = min(t0, ic.x); t1 = max(t1, ic.y); }
+	if (base_mist > 0.0) {
+		vec2 im = slab(ro, inv, vec3(-(half_width + spread + 4.0), 0.0, wall_gap),
+			vec3(half_width + spread + 4.0, base_mist_height, front_z + throw_out + churn_reach * 0.5 + base_mist_reach));
+		if (im.y > im.x) { t0 = min(t0, im.x); t1 = max(t1, im.y); }
+	}
 	t0 = max(t0, ab.x);
 	t1 = min(t1, ab.y);
 	if (t1 <= t0) discard;
@@ -542,20 +611,30 @@ void fragment() {
 	// step, and in the churn (thin pieces, not a distance) never longer than
 	// a short fixed one.
 	float smin = step_len * max(1.0, t0 / max(lod_distance, 1.0));
-	float t = t0 + smin * ign(FRAGCOORD.xy);
+	// (With spray on, the start is spread over a spray step, or its coarse
+	// steps show as bands along the box the march enters by.)
+	bool do_mist = mist > 0.0 || base_mist > 0.0;
+	float t = t0 + (do_mist ? max(smin, 0.8) : smin) * ign(FRAGCOORD.xy);
 	float tp = t0;
 	bool hit = false;
+	// The spray passed through on the way: its optical depth, and where it began.
+	float macc = 0.0;
+	float tmist = -1.0;
 	for (int i = 0; i < 128; i++) {
-		if (i >= steps || t > t1) break;
+		if (i >= steps || t > t1 || macc > 5.0) break;
 		vec3 ps = ro + rd * t;
-		float v = field(ps, true);
+		vec4 inf;
+		vec2 mq;
+		float v = field_i(ps, true, inf, mq);
 		if (v > 0.0) {
 			hit = true;
 			break;
 		}
 		float lo = step_len * max(1.0, t / max(lod_distance, 1.0));
 		float st = max(-v * 0.8, lo);
-		if (ps.y < jtop) {
+
+		// (Only over the churn itself: the spray's cloud runs far out past it.)
+		if (ps.y < jtop && ps.z < chz + 0.5 && abs(ps.x) < chw) {
 			st = min(st, max(lo * 2.0, v < -0.4 ? 0.3 : 0.2));
 			// Near a churn piece: look between the last two samples, so thin
 			// pieces at grazing angles are not stepped over.
@@ -572,13 +651,24 @@ void fragment() {
 				if (hit) break;
 			}
 		}
+		// The spray over this step (after the step is settled).
+		if (do_mist) {
+			bool coarse;
+			float md = mist_at(ps, mq, coarse);
+			if (coarse) st = min(st, 0.8);
+			if (md > 0.0) {
+				if (tmist < 0.0) tmist = t;
+				macc += md * min(st, t1 - t);
+			}
+		}
 		tp = t;
 		t += st;
 	}
-	if (!hit && inside <= 0.0) discard;
+	float am = 1.0 - exp(-macc);
+	if (!hit && inside <= 0.0 && am < 0.01) discard;
 
 	vec3 col = white_color;
-	float tw = lin;
+	float tw = (!hit && inside <= 0.0) ? max(tmist, 0.0) : lin;
 	if (hit) {
 		// Settle on the surface between the last miss and the first hit.
 		for (int j = 0; j < 2; j++) {
@@ -591,7 +681,8 @@ void fragment() {
 		// Normal from the field's gradient (the big forms).
 		float ge = 0.1;
 		vec4 info;
-		float v0 = field_i(p, true, info);
+		vec2 mq0;
+		float v0 = field_i(p, true, info, mq0);
 		vec3 g = vec3(field(p + vec3(ge, 0, 0), true) - v0, field(p + vec3(0, ge, 0), true) - v0, field(p + vec3(0, 0, ge), true) - v0);
 		vec3 n = -normalize(g + vec3(1e-5));
 
@@ -681,6 +772,9 @@ void fragment() {
 			col = mix(col, gc, glass * (1.0 - churn_w));
 		}
 	}
+	// The spray in front of it.
+	vec3 mc = mix(white_color, shade_color, 0.1);
+	col = hit ? mix(col, mc, am) : mc;
 	// The water between the eye and the surface, when the eye is in it, and
 	// the front right at the eye when it is in the band at the front: there a
 	// surface a hand's width away would fill the screen with one flat shade,
@@ -699,7 +793,7 @@ void fragment() {
 		col = hit ? mix(col, ic, max(inside, wclose)) : ic;
 	}
 	ALBEDO = col;
-	ALPHA = hit ? 1.0 : inside;
+	ALPHA = hit ? 1.0 : 1.0 - (1.0 - inside) * (1.0 - am);
 
 	vec3 wp = (MODEL_MATRIX * vec4(ro + rd * max(tw, 0.15) - box_centre(), 1.0)).xyz;
 	vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(wp, 1.0));
