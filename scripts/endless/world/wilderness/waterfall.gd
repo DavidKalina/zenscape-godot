@@ -35,6 +35,15 @@ const BOX_OVER := 4.0
 ## the pool's water, from the face out.
 const FOAM_SIZE := Vector2(56.0,30.0)
 const FOAM_OVER := 0.06
+## The lip in channels (the volume shader's): the main chute where the
+## stream comes over (its last point, across the lip), CHUTE_WIDTH of the
+## sheet's half-width; THREAD_GAPS of the lip with no thread beside it (bare
+## rock); the chute's top LIP_NOTCH m under the threads' (the stream's water
+## comes over at the lip, the threads a little over the rock). Each a param of
+## the site's of the same name (lowercase); the lip's seed from its handle.
+const CHUTE_WIDTH := 0.3
+const THREAD_GAPS := 0.55
+const LIP_NOTCH := 0.5
 ## The world's light on the fall and the foam (shaders: world_gain).
 const LIGHT_GAIN := 1.15
 
@@ -151,6 +160,15 @@ static func dress(root: Node3D, sheet: Dictionary, site: Dictionary) -> void:
 	m.set_shader_parameter("throw_out",THROW)
 	m.set_shader_parameter("world_light",1.0)
 	m.set_shader_parameter("world_gain",LIGHT_GAIN)
+	# The chute under the stream's end (site s is the fall's -x).
+	var p: Dictionary = site.get("params",{})
+	var stream: Array = p.get("stream",[])
+	var lip_s := float((stream[stream.size()-1] as Array)[0]) if stream.size() >= 2 else 0.0
+	m.set_shader_parameter("chute_x",clampf(-lip_s/maxf(half,0.1),-1.0,1.0))
+	m.set_shader_parameter("chute_width",float(p.get("chute_width",CHUTE_WIDTH)))
+	m.set_shader_parameter("thread_gaps",float(p.get("thread_gaps",THREAD_GAPS)))
+	m.set_shader_parameter("lip_notch",float(p.get("lip_notch",LIP_NOTCH)))
+	m.set_shader_parameter("lip_seed",float(p.get("lip_seed",float(hash(str(site.get("handle",""))) % 97))))
 	# After the pool's foam (which writes no depth): the fall writes depth.
 	m.render_priority = 1
 	var bm := BoxMesh.new()
