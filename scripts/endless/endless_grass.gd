@@ -90,6 +90,7 @@ extends Node3D
 ## tufts, FAR_WASH) take the drift's wash, so it reads from cruise height.
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const PeakBody = preload("res://scripts/endless/peak_body.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const Carpet = preload("res://scripts/shared/aqueduct_isle_flora.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
@@ -1334,14 +1335,18 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var hs: PackedFloat32Array = got.heights
 	var ms: PackedFloat32Array = got.meadows
 	var rs: PackedFloat32Array = got.river
-	if native != null: return _grow_native(native,f,land_seed,key,got,site_values,far_share)
+	# The Peak's shelf wears autumn (PeakBody `autumn`): its grass grows as
+	# on low ground, here, not natively.
+	var autumn := PeakBody.autumn_meets(x0-PAD,z0-PAD,x0+CELL+PAD,z0+CELL+PAD)
+	if native != null and not autumn: return _grow_native(native,f,land_seed,key,got,site_values,far_share)
 	# No turf in it at all (the sea, the peaks): nothing to grow.
-	var any := false
-	for h: float in hs:
-		var over := h-Field.SEA_Y
-		if over >= BEACH_CLEAR and over < top:
-			any = true
-			break
+	var any := autumn
+	if not any:
+		for h: float in hs:
+			var over := h-Field.SEA_Y
+			if over >= BEACH_CLEAR and over < top:
+				any = true
+				break
 	if not any: return []
 	var ragged := {}
 	var lattice := {}
@@ -1366,6 +1371,9 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 		# As the land's mesh splits each quad: (00, 10, 01) and (10, 11, 01).
 		var h := h00+fx*(h10-h00)+fz*(h01-h00) if fx+fz <= 1.0 else h11+(1.0-fx)*(h01-h11)+(1.0-fz)*(h10-h11)
 		var over := h-Field.SEA_Y
+		if autumn:
+			var on := PeakBody.autumn_at(p.x,p.y)
+			if on > 0.0: over = lerpf(over,PeakBody.AUTUMN_OVER,on)
 		if over < BEACH_CLEAR: return NAN
 		# The slope as the land's normals have it (central differences),
 		# at the nearer node.

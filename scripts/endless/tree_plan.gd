@@ -33,6 +33,7 @@ extends RefCounted
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
+const PeakBody = preload("res://scripts/endless/peak_body.gd")
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
 const RockPlan = preload("res://scripts/endless/rocks/rock_plan.gd")
 const HallSites = preload("res://scripts/endless/hall_sites.gd")
@@ -203,6 +204,13 @@ static func cell_of(x: float, z: float) -> Vector2i:
 ## ground's up there.
 func suits(field: RefCounted, x: float, z: float, s: Dictionary, up: float) -> float:
 	var over := float(s.height)-Field.SEA_Y
+	# The Peak's shelf (PeakBody `autumn`): its woods stand as on low ground,
+	# along the wall's foot and on the lip, the middle kept open to land.
+	var wood := PeakBody.autumn_at(x,z,"wood")
+	if wood > 0.0:
+		if up < STEEP.x: return 0.0
+		return smoothstep(0.3,0.6,wood)*smoothstep(STEEP.x,STEEP.y,up)
+	if PeakBody.autumn_at(x,z) > 0.2: return 0.0
 	if over < BEACH_CLEAR: return 0.0
 	if float(s.river) < RIVER_KEEP: return 0.0
 	if up < STEEP.x: return 0.0
@@ -267,6 +275,8 @@ func mask(field: RefCounted, x: float, z: float, s: Dictionary, up: float) -> Ve
 	var k := suits(field,x,z,s,up)
 	if k <= 0.0: return Vector3.ZERO
 	var f := reach(x,z,s,up)
+	# On the shelf's woods, close stands.
+	if PeakBody.autumn_at(x,z,"wood") > 0.0: f = maxf(f,DENSE_AT+EDGE)
 	var dense := smoothstep(DENSE_AT-EDGE,DENSE_AT+EDGE,f)
 	var grove := smoothstep(GROVE_AT-EDGE,GROVE_AT+EDGE,f)*(1.0-dense)
 	if dense > 0.0:
@@ -468,8 +478,9 @@ func area(field: RefCounted, x0: float, z0: float, size: float) -> PackedFloat32
 			var gz := (hs[(j+1)*n+i]-hs[(j-1)*n+i])/(SLOT*2.0)
 			var up := 1.0/sqrt(1.0+gx*gx+gz*gz)
 			var s: Dictionary = shapes[j*n+i]
-			# None where the Peak's massif lifts or cuts the land (LandField shape).
-			if s.has("peak"): continue
+			# None where the Peak's massif lifts or cuts the land (LandField
+			# shape), but on its shelf's woods (PeakBody `autumn`).
+			if s.has("peak") and PeakBody.autumn_at((si+0.5)*SLOT,(sj+0.5)*SLOT,"wood") <= 0.0: continue
 			var px := (si+_hash01(si,sj,2))*SLOT
 			var pz := (sj+_hash01(si,sj,3))*SLOT
 			var m := mask(field,px,pz,s,up)

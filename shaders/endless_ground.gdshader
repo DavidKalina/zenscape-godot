@@ -212,6 +212,13 @@ uniform vec4 peak_bend = vec4(170.0, 2.2, 1250.0, 4500.0);
 uniform vec4 peak_cirque = vec4(165.0, 0.0, 0.0, 0.0);
 uniform vec4 peak_cirque_lobes = vec4(0.07, 0.09, 0.04, 0.16);
 uniform vec4 peak_cirque_strip = vec4(80.0, 32.0, 62.0, 0.0);
+#include "res://shaders/autumn_place.gdshaderinc"
+// Autumn's carpet tones (scripts/endless/world/overgrown/look.gd's) and the
+// height (m over the sea) its paint takes where it lies.
+const vec3 AUTUMN_TONE_TOP = vec3(3.0, 0.92, 0.42);
+const vec3 AUTUMN_TONE_LOW = vec3(2.8, 0.80, 0.38);
+const vec3 AUTUMN_UNDER_TONE = vec3(2.2, 0.56, 0.22);
+const float AUTUMN_OVER = 30.0;
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 // A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
@@ -834,6 +841,11 @@ float peak_fade(vec2 p, float scale, float fp) {
 
 void fragment() {
 	vec3 p = world_position;
+	// Autumn by place (autumn_place.gdshaderinc: the Peak's shelf): its
+	// carpet in autumn's tones, and the paint that goes by height (tundra,
+	// the Peak's granite and dark rock, snow) as on low ground.
+	vec2 autumn_map = zs_autumn_map(p.xz);
+	float autumn_here = autumn_map.x;
 	// The paint's tones: this spot's regions' in a world of regions, else the material's.
 	vec3 rp_tone_top = carpet_tone_top;
 	vec3 rp_tone_low = carpet_tone_low;
@@ -849,6 +861,11 @@ void fragment() {
 		rp_hue = zs_region_mix3(rw, carpet_hue_r);
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
 		rp_swell = zs_region_mix3(rw, grass_swell_r);
+	}
+	if (autumn_here > 0.0) {
+		rp_tone_top = mix(rp_tone_top, AUTUMN_TONE_TOP, autumn_here);
+		rp_tone_low = mix(rp_tone_low, AUTUMN_TONE_LOW, autumn_here);
+		rp_under_tone = mix(rp_under_tone, AUTUMN_UNDER_TONE, autumn_here);
 	}
 	// The wind by place (wind_field): windy grass rolls, calm grass stands.
 	// (Read once here for the whole pixel: zs_wind_here.)
@@ -881,6 +898,8 @@ void fragment() {
 	vec2 gxz = p.xz + shear * vec2(sheared_y * 0.8, sheared_y * 0.55);
 	fp = max(fp, fp3 * shear);
 	float over = max(p.y - sea_y, DRY_LOW_OVER * dry_low);
+	float over_true = over;
+	if (autumn_here > 0.0) over = mix(over, AUTUMN_OVER, autumn_here);
 	float meadow = clamp(land_colour.a, 0.0, 1.0);
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - p);
 	// (The live river's map gradients, taken here in uniform control flow.)
@@ -981,6 +1000,9 @@ void fragment() {
 		pk_rag = (peak_noise(p.xz / 340.0) - 0.5) * peak_basalt_rag.x + (peak_noise(p.xz / 90.0) - 0.5) * peak_basalt_rag.y;
 		pk_dark = peak_basalt * pk.x * smoothstep(peak_basalt_span.x, peak_basalt_span.y, over + pk_rag);
 	}
+	// (Autumn's ground keeps the haze of the dark rock round it, by its true height.)
+	float pk_dark_haze = pk_dark;
+	if (autumn_here > 0.0 && peak_basalt > 0.0 && pk.x > 0.0) pk_dark_haze = peak_basalt * pk.x * smoothstep(peak_basalt_span.x, peak_basalt_span.y, over_true + pk_rag);
 	if (pk.x > 0.0) {
 		float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
 		float pk_line = mix(snow_line, peak_snow, pk.x);
@@ -1396,7 +1418,12 @@ void fragment() {
 		snow *= mix(vec3(1.0), vec3(0.94, 0.955, 0.985) * (1.0 + sm_tone * 0.30 * summit_tone), sm_use);
 	}
 
+	// Autumn by place: the turf gold to rust at every distance (the carpet's
+	// tones above only reach so far).
+	if (autumn_here > 0.0) grass = mix(grass, zs_autumn_turf(grass, zs_noise(p.xz / 60.0 + 7.0) * 0.7 + zs_noise(p.xz / 17.0) * 0.3), autumn_here);
 	vec3 albedo = mix(grass, rock, rocky);
+	// (and spilt down the drop under it, rock and all, so the band reads from afar)
+	if (autumn_map.y > 0.0) albedo = mix(albedo, zs_autumn_turf(albedo, zs_noise(p.xz / 45.0 + 3.0)) * 0.85, autumn_map.y * (1.0 - autumn_here));
 	// High ground above the grass: scree, lichened stone and short turf in
 	// patches, more stone the higher; in on the tufts' own thinning (alpine).
 	if (summit_mode > 0.5) {
@@ -1855,10 +1882,10 @@ void fragment() {
 	// The haze, with its height term (shaders/endless_height_haze.gdshaderinc).
 	vec4 land_haze = zs_land_haze(VERTEX, world_position.y, INV_VIEW_MATRIX);
 	// The basalt stands in the towers' own haze (their PAINT's haze_height).
-	if (pk_dark > 0.0) {
-		float land_up = smoothstep(haze_height.x, haze_height.x + haze_height.y, over + haze_height.w);
-		float dark_up = smoothstep(peak_basalt_span.z, peak_basalt_span.w, over + haze_height.w + pk_rag * peak_basalt_rag.z);
-		land_haze.a *= mix(1.0, (1.0 - dark_up * PEAK_BASALT_HAZE.z) / max(1.0 - land_up * haze_height.z, 0.01), pk_dark);
+	if (pk_dark_haze > 0.0) {
+		float land_up = smoothstep(haze_height.x, haze_height.x + haze_height.y, over_true + haze_height.w);
+		float dark_up = smoothstep(peak_basalt_span.z, peak_basalt_span.w, over_true + haze_height.w + pk_rag * peak_basalt_rag.z);
+		land_haze.a *= mix(1.0, (1.0 - dark_up * PEAK_BASALT_HAZE.z) / max(1.0 - land_up * haze_height.z, 0.01), pk_dark_haze);
 	}
 	FOG = land_haze;
 }

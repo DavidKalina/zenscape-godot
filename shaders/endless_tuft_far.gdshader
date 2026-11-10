@@ -33,6 +33,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_react.gdshaderinc"
 #include "res://shaders/region_paint.gdshaderinc"
 #include "res://shaders/backlight.gdshaderinc"
+#include "res://shaders/autumn_place.gdshaderinc"
 // Backlight's gain on the far ring's tips (Godot's BACKLIGHT, shadowed).
 const float BACKLIGHT_GAIN = 5.0;
 
@@ -99,6 +100,12 @@ void vertex() {
 		rp_tip = zs_region_mix3(rw, tip_colour_r);
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
 		swell = zs_region_mix3(rw, grass_swell_r);
+	}
+	// Autumn by place (the Peak's shelf): overgrown's far tuft colours.
+	float autumn_here = zs_autumn_here(root.xz);
+	if (autumn_here > 0.0) {
+		rp_root = mix(rp_root, vec3(0.20, 0.085, 0.03), autumn_here);
+		rp_tip = mix(rp_tip, vec3(0.62, 0.30, 0.08), autumn_here);
 	}
 	float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, root);
 	float ring_rank = fract(sin(dot(root.xz, vec2(19.31, 71.87))) * 43758.5453);

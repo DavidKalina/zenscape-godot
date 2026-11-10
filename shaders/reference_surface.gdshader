@@ -13,6 +13,7 @@ shader_type spatial;
 #include "res://shaders/grass_react.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_season.gdshaderinc"
+#include "res://shaders/autumn_place.gdshaderinc"
 #include "res://shaders/shaping_reveal.gdshaderinc"
 #include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
@@ -1059,6 +1060,13 @@ void fragment() {
 			tint = zs_sv_keep(tint, distance(world_position, zs_camera_position), spruce_g.z);
 			spruce_tip = zs_sv_tip(zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3));
 		}
+	}
+	// Autumn by place (the Peak's shelf): its grass gold to rust, its trees
+	// gold, amber and red (after the spruce's own paint, which sets its crown).
+	if (zs_autumn_rect.z > 0.0 && (grass_blades || plant_growth || spruce_blue > 0.0 || spruce_paint > 0.0)) {
+		float autumn_here = zs_autumn_here(grass_blades ? look_position.xz : plant_root);
+		if (grass_blades) tint = mix(tint, zs_autumn_turf(tint, zs_noise(look_position.xz / 60.0 + 7.0) * 0.7 + zs_noise(look_position.xz / 17.0) * 0.3), autumn_here * smoothstep(0.0, 0.4, grass_along));
+		else zs_autumn_tree(tint, plant_root, autumn_here);
 	}
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
