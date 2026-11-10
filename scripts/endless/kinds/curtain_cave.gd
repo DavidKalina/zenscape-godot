@@ -46,6 +46,16 @@ const REFINE := 3
 const COLUMN := 1.0
 const LAYER := 1
 const ROCK := Color(0.5,0.46,0.42)
+## The mouth behind the sheet reads dark from outside (a lit tube showed
+## through to the bend): THROAT veils of black across the cave, THROAT_STEP m
+## apart from THROAT_FROM m in, each THROAT_ALPHA, facing out (from inside,
+## looking out through the water, they are not drawn) and faded out within
+## THROAT_FADE m of the eye (flying in, the cave lightens ahead, no pop).
+const THROAT := 5
+const THROAT_FROM := 2.0
+const THROAT_STEP := 2.5
+const THROAT_ALPHA := 0.4
+const THROAT_FADE := Vector2(3.0,24.0)
 
 static var _bare := {}
 
@@ -122,8 +132,47 @@ static func build(root: Node3D, site: Dictionary, c: PackedFloat32Array) -> void
 	cs.shape = shape
 	body.add_child(cs)
 	root.add_child(body)
+	_throat(root,c,floor_y)
 	root.set_meta("solid",_solid(c,surface,floor_y))
 	root.set_meta("cave",{"tris":faces.size()/3,"rings":rings.size(),"length":length})
+
+## The dark veils in the mouth behind the sheet (THROAT): each the cave's
+## section (its walls and arch: curtain_land.gd `cave_roof`).
+static func _throat(root: Node3D, c: PackedFloat32Array, floor_y: float) -> void:
+	var sh := Shader.new()
+	sh.code = """shader_type spatial;
+render_mode unshaded, cull_back, depth_draw_never, shadows_disabled;
+uniform float alpha = 0.4;
+uniform float wall = 0.45;
+uniform vec2 fade = vec2(3.0, 24.0);
+void fragment() {
+	vec2 p = vec2(UV.x * 2.0 - 1.0, 1.0 - UV.y);
+	float roof = wall + (1.0 - wall) * sqrt(max(1.0 - p.x * p.x, 0.0));
+	if (p.y > roof) discard;
+	ALBEDO = vec3(0.004, 0.004, 0.005);
+	ALPHA = alpha * smoothstep(fade.x, fade.y, length(VERTEX));
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("alpha",THROAT_ALPHA)
+	m.set_shader_parameter("wall",Land.WALL_SHARE)
+	m.set_shader_parameter("fade",THROAT_FADE)
+	var tall := c[Land.I_CAVE_TALL]
+	var quad := QuadMesh.new()
+	quad.size = Vector2(c[Land.I_CAVE_HALF]*2.0,tall)
+	quad.material = m
+	for k in THROAT:
+		var t := THROAT_FROM+THROAT_STEP*k
+		var at := _at(c,t,Vector2(0.0,floor_y+tall*0.5))
+		var into := _at(c,t+1.0,Vector2(0.0,floor_y+tall*0.5))-at
+		var veil := MeshInstance3D.new()
+		veil.name = "Throat%d" % k
+		veil.mesh = quad
+		veil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# The quad's face (+Z) turned out of the cave.
+		veil.transform = Transform3D(Basis.looking_at(into.normalized(),Vector3.UP),at)
+		root.add_child(veil)
 
 ## The section (x: u, y: over the foot, z: 1 where it may stand back into
 ## the rock, 0 on the floor): from the floor's left corner up the left wall,
