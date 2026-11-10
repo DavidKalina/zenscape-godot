@@ -9,7 +9,9 @@ extends RefCounted
 ## A site's clear (params.clear, m) keeps trees, rock groups (stacks,
 ## hoodoos, boulders), arches and the land's cut sites (slot halls, split
 ## mountains, tunnels) out of the circle that radius round its spot, after
-## the layout file's move; a deleted site keeps none. The clears are a pure
+## the layout file's move; params.clears ([[s, f, r], ...]: m right of and
+## ahead of its spot, as it faces) more circles, which move and turn with
+## it (a curtain's lake); a deleted site keeps none. The clears are a pure
 ## function of the lists, the world and the layout file, so every machine
 ## with the same ones stands the same land. --no-placed: no clears either.
 
@@ -84,10 +86,19 @@ static func clears(profile: RefCounted) -> Array:
 	if _clears_of.size() != 2 or not is_same(_clears_of[0],profile) or not is_same(_clears_of[1],LayoutOverrides.data):
 		var out: Array = []
 		for s: Dictionary in in_play(profile):
+			if LayoutOverrides.deleted(str(s.handle)): continue
 			var r := float((s.params as Dictionary).get("clear",0.0))
-			if r <= 0.0 or LayoutOverrides.deleted(str(s.handle)): continue
-			var at := spot(s)
-			out.append(Vector3(at.x,at.y,r))
+			if r > 0.0:
+				var at := spot(s)
+				out.append(Vector3(at.x,at.y,r))
+			# More circles in the site's own frame ([s right, f ahead, r]),
+			# moved and turned with it (a curtain's lake).
+			var more: Array = (s.params as Dictionary).get("clears",[])
+			if more.is_empty(): continue
+			var xf := LayoutOverrides.xform(str(s.handle),Transform3D(Basis(Vector3.UP,deg_to_rad(float(s.heading))),Vector3(float(s.x),0.0,float(s.z))))
+			for q: Array in more:
+				var w := xf*Vector3(float(q[0]),0.0,-float(q[1]))
+				out.append(Vector3(w.x,w.z,float(q[2])))
 		_clears = out
 		_clears_of = [profile,LayoutOverrides.data]
 	var got := _clears
