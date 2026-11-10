@@ -75,6 +75,11 @@ func _preset(v: String) -> void:
 			_yaw = deg_to_rad(28)
 			_pitch = 0.14
 			_dist = 24.0
+		"far":
+			_target = Vector3(0, 20, 0)
+			_yaw = deg_to_rad(-14)
+			_pitch = 0.07
+			_dist = 300.0
 		"close":
 			_target = Vector3(-6, 8, HANG)
 			_yaw = deg_to_rad(22)
