@@ -33,6 +33,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_react.gdshaderinc"
 #include "res://shaders/region_paint.gdshaderinc"
 #include "res://shaders/backlight.gdshaderinc"
+#include "res://shaders/grass_shade.gdshaderinc"
 // Backlight's gain on the far ring's tips (Godot's BACKLIGHT, shadowed).
 const float BACKLIGHT_GAIN = 5.0;
 
@@ -196,4 +197,17 @@ void fragment() {
 		vec3 sun_v = normalize((VIEW_MATRIX * vec4(zs_key_direction, 0.0)).xyz);
 		BACKLIGHT = zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-sun_v, VIEW), pow(max(along, 1.0e-4), 6.0), BACKLIGHT_GAIN));
 	}
+}
+
+// Godot's own lighting as the default does it (a light() replaces it), with
+// the sun's shade lifted (grass_shade.gdshaderinc).
+void light() {
+	vec3 d;
+	vec3 s;
+	zs_grass_light(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, ROUGHNESS, 0.2, d, s);
+	DIFFUSE_LIGHT += d;
+	SPECULAR_LIGHT += s;
+	if (LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR, zs_hemi_sky, 1.0 - ATTENUATION * smoothstep(0.0, 0.2, dot(NORMAL, LIGHT)));
+	// The tips' backlight (BACKLIGHT, set in fragment), as the default adds it.
+	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * BACKLIGHT * max(-dot(NORMAL, LIGHT), 0.0) / PI;
 }

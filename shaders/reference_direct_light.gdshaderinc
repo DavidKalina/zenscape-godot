@@ -1,5 +1,6 @@
 #include "res://shaders/light_leans.gdshaderinc"
 #include "res://shaders/backlight.gdshaderinc"
+#include "res://shaders/grass_shade.gdshaderinc"
 // Source Lambert + GGX direct lighting. The climbing valley shadow gates only
 // direct contributions, preserving hemisphere and reflected-sky afterglow.
 void light() {
@@ -76,6 +77,8 @@ void light() {
 	// backscatter above never sees a back face; its tips glow toward the sun
 	// instead. The shader names its tip fraction and strength.
 	if (ZS_GRASS_GLOW > 0.0) DIFFUSE_LIGHT += energy * zs_grass_translucency(LIGHT, VIEW, ALBEDO, ZS_GRASS_ALONG, ZS_GRASS_GLOW);
+	// A cast shadow keeps some of the sun's strength, cool (grass_shade.gdshaderinc).
+	if (ZS_GRASS_GLOW > 0.0 && LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR * gate * inversion_transmit, zs_hemi_sky, 1.0 - ATTENUATION * gate * smoothstep(0.0, 0.2, nl));
 #ifdef ZS_BACKLIGHT_GRASS
 	// Backlight: the blades' thin tips seen against a low sun catch it.
 	if (ZS_GRASS_GLOW > 0.0 && zs_backlight > 0.0 && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
