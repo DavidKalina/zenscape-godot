@@ -1,0 +1,277 @@
+{
+ "fps": 60,
+ "units": "span",
+ "bl": 0.9,
+ "clips": {
+  "graze": {
+   "length": 3.0,
+   "loop": true,
+   "ground_bl": 0.0,
+   "beats": {
+    "graze.lift": [
+     2.2
+    ]
+   }
+  },
+  "alert": {
+   "length": 0.6,
+   "loop": false,
+   "ground_bl": 0.0,
+   "beats": {
+    "alert.up": [
+     0.25
+    ]
+   }
+  },
+  "stop_look": {
+   "length": 1.2,
+   "loop": false,
+   "ground_bl": 0.5,
+   "beats": {
+    "stop_look.halt": [
+     0.35
+    ],
+    "stop_look.hold": [
+     0.6
+    ]
+   },
+   "ground_curve": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.1,
+     0.4898
+    ],
+    [
+     0.2,
+     0.8163
+    ],
+    [
+     0.3,
+     0.9796
+    ],
+    [
+     0.4,
+     1.0
+    ],
+    [
+     0.5,
+     1.0
+    ],
+    [
+     0.6,
+     1.0
+    ],
+    [
+     0.7,
+     1.0
+    ],
+    [
+     0.8,
+     1.0
+    ],
+    [
+     0.9,
+     1.0
+    ],
+    [
+     1.0,
+     1.0
+    ],
+    [
+     1.1,
+     1.0
+    ],
+    [
+     1.2,
+     1.0
+    ]
+   ]
+  },
+  "trot": {
+   "length": 0.8,
+   "loop": true,
+   "ground_bl": 2.0,
+   "beats": {
+    "trot.plant": [
+     0.0,
+     0.4
+    ]
+   }
+  },
+  "gallop": {
+   "length": 0.55,
+   "loop": true,
+   "ground_bl": 4.0,
+   "beats": {
+    "gallop.plant": [
+     0.05
+    ],
+    "gallop.air": [
+     0.35
+    ]
+   }
+  },
+  "sprint": {
+   "length": 0.5,
+   "loop": true,
+   "ground_bl": 7.0,
+   "beats": {
+    "sprint.plant": [
+     0.05
+    ],
+    "sprint.push": [
+     0.2
+    ],
+    "sprint.air": [
+     0.25
+    ]
+   }
+  },
+  "bolt_start": {
+   "length": 0.5,
+   "loop": false,
+   "ground_bl": 1.2,
+   "beats": {
+    "bolt_start.crouch": [
+     0.15
+    ],
+    "bolt_start.launch": [
+     0.3
+    ]
+   },
+   "ground_curve": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.0417,
+     0.0
+    ],
+    [
+     0.0833,
+     0.0
+    ],
+    [
+     0.125,
+     0.0
+    ],
+    [
+     0.1667,
+     0.0064
+    ],
+    [
+     0.2083,
+     0.0371
+    ],
+    [
+     0.25,
+     0.1042
+    ],
+    [
+     0.2917,
+     0.215
+    ],
+    [
+     0.3333,
+     0.355
+    ],
+    [
+     0.375,
+     0.5043
+    ],
+    [
+     0.4167,
+     0.6586
+    ],
+    [
+     0.4583,
+     0.824
+    ],
+    [
+     0.5,
+     1.0
+    ]
+   ]
+  },
+  "leap": {
+   "length": 0.9,
+   "loop": false,
+   "ground_bl": 12.6,
+   "beats": {
+    "leap.takeoff": [
+     0.2
+    ],
+    "leap.land": [
+     0.7
+    ]
+   },
+   "ground_curve": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.075,
+     0.0833
+    ],
+    [
+     0.15,
+     0.1667
+    ],
+    [
+     0.225,
+     0.25
+    ],
+    [
+     0.3,
+     0.3333
+    ],
+    [
+     0.375,
+     0.4167
+    ],
+    [
+     0.45,
+     0.5
+    ],
+    [
+     0.525,
+     0.5833
+    ],
+    [
+     0.6,
+     0.6667
+    ],
+    [
+     0.675,
+     0.75
+    ],
+    [
+     0.75,
+     0.8333
+    ],
+    [
+     0.825,
+     0.9167
+    ],
+    [
+     0.9,
+     1.0
+    ]
+   ]
+  }
+ },
+ "sockets": {
+  "head": "head",
+  "chest": "chest",
+  "rump": "hips",
+  "foot_fl": "hoof_l",
+  "foot_hl": "hhoof_l",
+  "foot_fr": "hoof_r",
+  "foot_hr": "hhoof_r"
+ }
+}
