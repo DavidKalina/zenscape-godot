@@ -45,11 +45,11 @@ const THROW := 2.0
 static func build(site: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Curtain"
-	var sheet := sheet_of(site)
+	var c := Land.shape_of(site,site.xform)
+	var sheet := sheet_of(site,c)
 	var skin := str(site.get("skin",""))
 	if SKINS.has(skin): (SKINS[skin] as GDScript).dress(root,sheet,site)
 	# The space behind: the cave through the hill (curtain_cave.gd), if any.
-	var c := Land.shape_of(site,site.xform)
 	Cave.build(root,site,c)
 	# The boulders at its foot (curtain_rocks.gd).
 	Rocks.build(root,site,c)
@@ -70,8 +70,8 @@ static func build(site: Dictionary) -> Node3D:
 ## over the pool's water the space behind reaches: the cave mouth's top; 0
 ## with no cave), open_half (that space's half-width)}. A skin thins its
 ## sheet over `open` so the space behind shows through.
-static func sheet_of(site: Dictionary) -> Dictionary:
-	var c := Land.shape_of(site,site.xform)
+static func sheet_of(site: Dictionary, shape := PackedFloat32Array()) -> Dictionary:
+	var c := shape if not shape.is_empty() else Land.shape_of(site,site.xform)
 	var foot_y := c[Land.I_Y]
 	var back := c[Land.I_BACK]
 	var lip := Vector3(0.0,c[Land.I_LIP]-foot_y,back)

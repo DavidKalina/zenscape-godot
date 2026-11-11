@@ -6,6 +6,12 @@ extends RefCounted
 ## rock_build.gd) in the land's bare rock, one mesh and its collider; none
 ## in water or on the outflow. Seeded by the site's handle, so the same
 ## every time.
+##
+## Off the main thread: the blocks are laid out and their mesh arrays and
+## collider shapes made by a WorkerThreadPool task with its own field (35 to
+## 135 ms a fall, one frame's hitch when a fall 2.6 km off came into reach);
+## the main thread adds the node when the task is done (`_stand`), a few
+## frames after the curtain stands.
 
 const Land = preload("res://scripts/endless/kinds/curtain_land.gd")
 const Blocks = preload("res://scripts/endless/rocks/peak_boulders.gd")
@@ -35,14 +41,62 @@ const DRY_PAD := 1.0
 const LEVEL := 0.8
 
 static var _bare := {}
+## The tasks in flight: key -> WorkerThreadPool task id (main thread only).
+static var _tasks := {}
+static var _next := 0
 
 ## Adds the boulders of shape `c` (curtain_land.gd) to curtain `root` (its
-## frame the site's).
+## frame the site's): asked of a worker here, stood by `_stand` once made.
 static func build(root: Node3D, site: Dictionary, c: PackedFloat32Array) -> void:
-	var field: Object = site.get("field")
-	if field == null: return
+	var land: Object = site.get("field")
+	if land == null: return
+	var job := {"handle":str(site.get("handle","")),"c":c,"field":land.get_script(),"seed":int(land.seed),"world":land.world,
+		"detail":float(land.detail),"xform":site.get("xform",Transform3D.IDENTITY),"root":root.get_instance_id(),"material":_material(site)}
+	_next += 1
+	_tasks[_next] = WorkerThreadPool.add_task(_work.bind(_next,job),false,"curtain boulders")
+
+## On a worker: the blocks laid out and built, then `_stand` on the main thread.
+static func _work(key: int, job: Dictionary) -> void:
+	var field: Object = (job.field as GDScript).new(int(job.seed),job.world)
+	field.detail = float(job.detail)
+	var made := _make(field,str(job.handle),job.c)
+	_stand.bind(key,job,made).call_deferred()
+
+## On the main thread: the task let go, and its boulders added to the curtain
+## if it still stands.
+static func _stand(key: int, job: Dictionary, made: Dictionary) -> void:
+	if _tasks.has(key):
+		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+		_tasks.erase(key)
+	var root := instance_from_id(int(job.root)) as Node3D
+	if made.is_empty() or root == null or root.is_queued_for_deletion(): return
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,made.arrays,[],made.lods,RockShape.format(made.arrays))
+	mesh.surface_set_material(0,job.material)
+	var node := Node3D.new()
+	node.name = "Boulders"
+	node.transform = (job.xform as Transform3D).affine_inverse()*Transform3D(Basis.IDENTITY,made.anchor)
+	var mi := MeshInstance3D.new()
+	mi.name = "Mesh"
+	mi.mesh = mesh
+	node.add_child(mi)
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	body.collision_layer = LAYER
+	body.collision_mask = 0
+	for shape: ConcavePolygonShape3D in made.shapes:
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		body.add_child(cs)
+	node.add_child(body)
+	root.add_child(node)
+	root.set_meta("boulders",int(made.n))
+
+## The boulders of shape `c` on `field`: {arrays, lods, shapes, anchor, n},
+## or {} with none.
+static func _make(field: Object, handle: String, c: PackedFloat32Array) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([str(site.get("handle","")),"curtain boulders"])
+	rng.seed = hash([handle,"curtain boulders"])
 	var spots: Array = []
 	var floor_y := c[Land.I_FLOOR]
 	# Round the pool's front and sides (behind the fall is the face).
@@ -84,32 +138,14 @@ static func build(root: Node3D, site: Dictionary, c: PackedFloat32Array) -> void
 		placed.append(Vector3(w.x,w.y,r))
 		if anchor == Vector3.INF: anchor = Vector3(w.x,float(field.height(w.x,w.y)),w.y)
 		pillars.append(Blocks._block(field,anchor,w,r,r*float(sp[2]),rng))
-	if pillars.is_empty(): return
+	if pillars.is_empty(): return {}
 	var b := RockBuild.build({"pos":anchor,"pillars":pillars,"bare":true})
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays,[],b.lods,RockShape.format(b.arrays))
-	mesh.surface_set_material(0,_material(site))
-	var node := Node3D.new()
-	node.name = "Boulders"
-	var xform: Transform3D = site.get("xform",Transform3D.IDENTITY)
-	node.transform = xform.affine_inverse()*Transform3D(Basis.IDENTITY,anchor)
-	var mi := MeshInstance3D.new()
-	mi.name = "Mesh"
-	mi.mesh = mesh
-	node.add_child(mi)
-	var body := StaticBody3D.new()
-	body.name = "Body"
-	body.collision_layer = LAYER
-	body.collision_mask = 0
+	var shapes: Array = []
 	for faces: PackedVector3Array in b.faces:
 		var shape := ConcavePolygonShape3D.new()
 		shape.set_faces(faces)
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		body.add_child(cs)
-	node.add_child(body)
-	root.add_child(node)
-	root.set_meta("boulders",pillars.size())
+		shapes.append(shape)
+	return {"arrays":b.arrays,"lods":b.lods,"shapes":shapes,"anchor":anchor,"n":pillars.size()}
 
 ## How far out from the middle (|s|, m) the wall on `side` rises WALL_RISE
 ## over the floor at site f `f`; NAN where it doesn't within reach.
