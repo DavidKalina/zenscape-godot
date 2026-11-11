@@ -10,7 +10,9 @@ extends RefCounted
 ##   Truck_F, Truck_R) swivel to the track's way at the car's bogies; the engine's
 ##   rods follow the drivers' crank pins: SideRod_* rides round with the pins (it
 ##   never turns), MainRod_* turns on the rear pin so its far end stays on the
-##   crosshead's line, and Crosshead_* slides along it. Only the cars within their
+##   crosshead's line, and Crosshead_* slides along it. The gate car's doors
+##   (Door_RF, _RB, _LF, _LB, modelled shut) slide open along the car by
+##   RailTrain's `slid` (its movers', the doors' solids). Only the cars within their
 ##   far look's range of the camera are moved: past it the Far mesh shows, the car
 ##   at rest (assets/models/train/train_import.gd).
 ## - The smash car's plugs, CrackPlug_F and CrackPlug_B (RailTrain's plates 0 and
@@ -67,12 +69,16 @@ func dress(car: Dictionary) -> bool:
 	(car.node as Node3D).add_child(model)
 	car.model = model
 	var root: Node3D = model.get_child(0) if model.get_child_count() > 0 else model
-	var rig := {"wheels":[],"trucks":[],"rods":[],"reach":0.0}
+	var rig := {"wheels":[],"trucks":[],"rods":[],"doors":[],"reach":0.0}
 	var far := root.get_node_or_null("Far") as GeometryInstance3D
 	rig.reach = (far.visibility_range_begin+far.visibility_range_begin_margin if far != null else 150.0)+MOVE_PAST
 	for child in root.get_children():
 		var n := str(child.name)
 		if n.begins_with("Driver_"): _wheel(rig,child,root)
+		elif n.begins_with("Door_") and car.has("door_slide"):
+			# The front half (F) slides on forward (-z), the back one back.
+			var way := -1.0 if n.ends_with("F") else 1.0
+			(rig.doors as Array).append([child,(child as Node3D).position,way*float(car.door_slide)])
 		elif n == "LeadTruck" or n.begins_with("Truck_"):
 			(rig.trucks as Array).append([child,n != "Truck_R"])
 			for w in child.get_children():
@@ -189,6 +195,9 @@ func step(delta: float, cars: Array[Dictionary], d: float, eye: Vector3, corrido
 			if l.z > 0.0: l = -l
 			(t[0] as Node3D).rotation.y = atan2(-l.x,-l.z)
 		for rod: Dictionary in rig.rods: _rod(rod,-d/float(rod.r))
+		if not (rig.doors as Array).is_empty():
+			var open := float(car.get("slid",1.0))
+			for dr: Array in rig.doors: (dr[0] as Node3D).position = (dr[1] as Vector3)+Vector3(0.0,0.0,float(dr[2])*open)
 	if not shards.is_empty(): _shards_step(delta,corridor,deck)
 
 ## The rods with the drivers turned `a` (rad about x).
