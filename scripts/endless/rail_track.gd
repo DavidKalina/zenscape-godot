@@ -272,9 +272,16 @@ func _build_near(i: int) -> void:
 				var h := RAIL_WIDTH*0.5
 				var sa := ss[q]
 				var sb := ss[q+1]
-				steel.quad_uv(a-ra+a0,b-rb+b0,b-rb+b1,a-ra+a1,-rs[q],STEEL_C,[Vector2(-h,sa),Vector2(-h,sb),Vector2(-h,sb),Vector2(-h,sa)],[Vector2(0,0),Vector2(0,0),Vector2(0,1),Vector2(0,1)])
-				steel.quad_uv(a-ra+a1,b-rb+b1,b+rb+b1,a+ra+a1,us[q],STEEL_C,[Vector2(-h,sa),Vector2(-h,sb),Vector2(h,sb),Vector2(h,sa)],[Vector2(1,1),Vector2(1,1),Vector2(1,1),Vector2(1,1)])
-				steel.quad_uv(a+ra+a1,b+rb+b1,b+rb+b0,a+ra+a0,rs[q],STEEL_C,[Vector2(h,sa),Vector2(h,sb),Vector2(h,sb),Vector2(h,sa)],[Vector2(0,1),Vector2(0,1),Vector2(0,0),Vector2(0,0)])
+				var l0 := Vector2(-h,sa)
+				var l1 := Vector2(-h,sb)
+				var r0 := Vector2(h,sa)
+				var r1 := Vector2(h,sb)
+				var v0 := Vector2(0,0)
+				var v1 := Vector2(0,1)
+				var vt := Vector2(1,1)
+				steel.quad_uv4(a-ra+a0,b-rb+b0,b-rb+b1,a-ra+a1,-rs[q],STEEL_C,l0,l1,l1,l0,v0,v0,v1,v1)
+				steel.quad_uv4(a-ra+a1,b-rb+b1,b+rb+b1,a+ra+a1,us[q],STEEL_C,l0,l1,r1,r0,vt,vt,vt,vt)
+				steel.quad_uv4(a+ra+a1,b+rb+b1,b+rb+b0,a+ra+a0,rs[q],STEEL_C,r0,r1,r1,r0,v1,v1,v0,v0)
 	var mi := earth.instance(_timber_in if _under[i] == 1 else _timber)
 	steel.add_to(mi.mesh as ArrayMesh,_steel_in if _under[i] == 1 else _steel)
 	if _under[i] == 1: mi.layers = UNDER_LAYER
@@ -367,13 +374,45 @@ class _Mesh:
 			normals.append(n)
 			colors.append(col)
 
-	## `quad_n` with the UVs of `quad_uv`; the corners' UV from the box's
-	## own (sx, sz) signs.
-	func _quad_n_uv(a: Vector3, b: Vector3, c: Vector3, d: Vector3, face: Vector3, col: Color, n: Vector3, uv: Array, uv2: Vector2) -> void:
-		var ua: Vector2 = uv[0]
-		var ub: Vector2 = uv[1]
-		var uc: Vector2 = uv[2]
-		var ud: Vector2 = uv[3]
+	## `quad_uv` with the corners' UVs and UV2s as arguments (no arrays: the rails, built by the hundred).
+	func quad_uv4(a: Vector3, b: Vector3, c: Vector3, d: Vector3, face: Vector3, col: Color, ua: Vector2, ub: Vector2, uc: Vector2, ud: Vector2, va: Vector2, vb: Vector2, vc: Vector2, vd: Vector2) -> void:
+		var n := (b-a).cross(c-a)
+		if n.dot(face) > 0.0:
+			var t := b
+			b = d
+			d = t
+			var tu := ub
+			ub = ud
+			ud = tu
+			var tv := vb
+			vb = vd
+			vd = tv
+			n = -n
+		n = -n.normalized()
+		verts.append(a)
+		verts.append(b)
+		verts.append(c)
+		verts.append(a)
+		verts.append(c)
+		verts.append(d)
+		uvs.append(ua)
+		uvs.append(ub)
+		uvs.append(uc)
+		uvs.append(ua)
+		uvs.append(uc)
+		uvs.append(ud)
+		uv2s.append(va)
+		uv2s.append(vb)
+		uv2s.append(vc)
+		uv2s.append(va)
+		uv2s.append(vc)
+		uv2s.append(vd)
+		for k in 6:
+			normals.append(n)
+			colors.append(col)
+
+	## `quad_n` with a UV for each corner, and one UV2 for all (the sleepers).
+	func _quad_n_uv(a: Vector3, b: Vector3, c: Vector3, d: Vector3, face: Vector3, col: Color, n: Vector3, ua: Vector2, ub: Vector2, uc: Vector2, ud: Vector2, uv2: Vector2) -> void:
 		if (b-a).cross(c-a).dot(face) > 0.0:
 			var t := b
 			b = d
@@ -381,8 +420,18 @@ class _Mesh:
 			var tu := ub
 			ub = ud
 			ud = tu
-		verts.append_array([a,b,c,a,c,d])
-		uvs.append_array([ua,ub,uc,ua,uc,ud])
+		verts.append(a)
+		verts.append(b)
+		verts.append(c)
+		verts.append(a)
+		verts.append(c)
+		verts.append(d)
+		uvs.append(ua)
+		uvs.append(ub)
+		uvs.append(uc)
+		uvs.append(ua)
+		uvs.append(uc)
+		uvs.append(ud)
 		for k in 6:
 			normals.append(n)
 			colors.append(col)
@@ -397,22 +446,23 @@ class _Mesh:
 		var hx := x.length()
 		var hz := z.length()
 		var u2 := Vector2(id,s)
-		var q := func(b0: Vector3, e: Array, face: Vector3) -> void:
-			var pts := []
-			var uv := []
-			for k in 4:
-				var sx: float = e[k].x
-				var sz: float = e[k].y
-				var base: Vector3 = b0 if int(e[k].z) == 0 else (top if int(e[k].z) == 1 else bot)
-				pts.append(base+x*sx+z*sz)
-				uv.append(Vector2(sx*hx,s+sz*hz))
-			_quad_n_uv(pts[0],pts[1],pts[2],pts[3],face,col,up,uv,u2)
-		# (sx, sz, 1 top / 2 bottom) of each corner.
-		q.call(top,[Vector3(-1,-1,1),Vector3(1,-1,1),Vector3(1,1,1),Vector3(-1,1,1)],y)
-		q.call(top,[Vector3(-1,-1,2),Vector3(1,-1,2),Vector3(1,-1,1),Vector3(-1,-1,1)],-z)
-		q.call(top,[Vector3(-1,1,2),Vector3(1,1,2),Vector3(1,1,1),Vector3(-1,1,1)],z)
-		q.call(top,[Vector3(-1,-1,2),Vector3(-1,1,2),Vector3(-1,1,1),Vector3(-1,-1,1)],-x)
-		q.call(top,[Vector3(1,-1,2),Vector3(1,1,2),Vector3(1,1,1),Vector3(1,-1,1)],x)
+		var u00 := Vector2(-hx,s-hz)
+		var u10 := Vector2(hx,s-hz)
+		var u11 := Vector2(hx,s+hz)
+		var u01 := Vector2(-hx,s+hz)
+		var t00 := top-x-z
+		var t10 := top+x-z
+		var t11 := top+x+z
+		var t01 := top-x+z
+		var b00 := bot-x-z
+		var b10 := bot+x-z
+		var b11 := bot+x+z
+		var b01 := bot-x+z
+		_quad_n_uv(t00,t10,t11,t01,y,col,up,u00,u10,u11,u01,u2)
+		_quad_n_uv(b00,b10,t10,t00,-z,col,up,u00,u10,u10,u00,u2)
+		_quad_n_uv(b01,b11,t11,t01,z,col,up,u01,u11,u11,u01,u2)
+		_quad_n_uv(b00,b01,t01,t00,-x,col,up,u00,u01,u01,u00,u2)
+		_quad_n_uv(b10,b11,t11,t10,x,col,up,u10,u11,u11,u10,u2)
 
 	## `box` for a stop's part (y vertical) with the stop shader's coordinates
 	## (shaders/rail_stop.gdshader): UV along a face (`seed` m offset, so two
