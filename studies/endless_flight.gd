@@ -58,7 +58,8 @@ extends Node3D
 ## --max-fps=N caps the frame rate at N (0 none; vsync stays on), a rate the
 ## machine holds every frame so it never jumps between the screen's rate and
 ## half of it (77 or 120 on a 154 Hz screen).
-## The Peak's candidate bodies (scripts/endless/peak_body.gd): --peak-shape=a|b|c
+## The Peak's generated bodies (scripts/endless/peak_body.gd): shape a by
+## default, --peak-shape=a|b|c, --peak-shape=old the old profile; a body stands
 ## in place of the old profile (its tarn, ice, gorges and finds off),
 ## --peak-start with it starts in the air off the mouth of the valley under
 ## the flat at the top, heading up it; --shelf-start off the foot of the
@@ -70,10 +71,12 @@ extends Node3D
 ## one of kind K (slot, winding, gorge, grand) where it fits, --split-slot=X
 ## the slot kind's toy width (6: 12 m).
 ## The railroad (seed 1; scripts/endless/rail_trains.gd): --rail-start=beside
-## (behind train 0's van on the farm plain), =tunnel (at the west tunnel's farm
-## mouth as the trains are about to meet in it), =bridge (at the bay bridge's
-## west end, the same); --no-railroad, --trains=0|1|2, --train-speed=,
-## --rail-clock=S.
+## (behind train 0's van on the north-east shore's plain), =tunnel (at the
+## north tunnel's mouth off the inner viaduct as the trains are about to meet
+## in it), =bridge (at the bay bridge's west end, the same), =mine (beside
+## train 0 as it stands in the mine town up on the Peak's shelf), =ride (sat on
+## a flatcar at the start station); --no-railroad, --trains=0|1|2,
+## --train-speed=, --rail-clock=S.
 ## The pirate ships (scripts/endless/pirate_ship.gd): --ship-start starts in the
 ## air off the first's beam, --full-meter with the meter full, and again each time
 ## a ship's plates come back or the plane leaves a sinking one; --ship-return=S the
@@ -630,7 +633,7 @@ func _ready() -> void:
 		if not _alt_given:
 			_alt = float(ship_pose.alt)
 			_alt_given = true
-	# --rail-start=beside|tunnel|bridge: in the gap behind train 0's van, the
+	# --rail-start=beside|tunnel|bridge|mine: in the gap behind train 0's van, the
 	# trains' clock to match (RailTrains `line_start`); ride: parked on its flatcar.
 	if RailTrains.start_flag() != "" and RailTrack.wanted(field) and RailTrains.count_flag() > 0 and not RailTrain.test_wanted():
 		var rail_pose: Dictionary = RailTrains.line_start(RailLine.shared(),RailTrains.start_flag(),RailTrain.speed_flag())
@@ -663,7 +666,7 @@ func _ready() -> void:
 	var shelf_start := shelf_up or "--shelf-start" in preload("res://scripts/launch_args.gd").user_args()
 	if shelf_start or "--peak-start" in preload("res://scripts/launch_args.gd").user_args():
 		var pk: RefCounted = field.peak()
-		if pk == null or not pk.shaped(): push_warning("--peak-start, --shelf-start: need --peak-shape=a|b|c")
+		if pk == null or not pk.shaped(): push_warning("--peak-start, --shelf-start: need a Peak body (not --peak-shape=old)")
 		elif shelf_start and pk.body.shelf.is_empty(): push_warning("--shelf-start: this shape has no shelf")
 		else:
 			var st: Vector3 = pk.body.shelf_start(shelf_up) if shelf_start else pk.body.start()

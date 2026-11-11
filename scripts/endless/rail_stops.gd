@@ -13,11 +13,10 @@ extends Node3D
 ## (`platform`), and the trains stop along them: each street
 ## is placed by hand in the station's frame (STOPS: `head` along s and
 ## across, `turn` off the line), on the flattest dry ground beside it. Mine
-## town's street runs along the bench of the hill over its station, 10 m
-## above the line, the headframe higher up behind it: the valley under the
-## mine trestle is a sea inlet (the map's place, (-4500, 700), 560 m off, is
-## in the water), so the town is on the shore's hill, in sight ahead from
-## the trestle.
+## town is up on the Peak's shelf (its west face): its street runs along the
+## line in the yard the bench widens to there, cut back into the mountain
+## (PeakBody's shelf `wide`), between the track and the yard's back wall, the
+## headframe at the wall's foot behind it (`mark_side`, `mark_out`).
 ## Each street has its handle (`rail/<stop>-street`, AGENTS.md Handles): a
 ## layout's move wins over the coded spot. The station's parts follow the
 ## line (its piece's s).
@@ -146,12 +145,14 @@ const UNDER_SHELTER := 0.35
 ## The stops, by the line's piece: the town's side of the line (+1 the
 ## right of +s), the street's head (m along s from the station, m out from
 ## the centre line on that side), its turn off straight-out (degrees,
-## toward +s), how many lots a side, the landmark.
+## toward +s), how many lots a side, the landmark; optionally the
+## landmark's side (`mark_side`, times the town's) and how far out it stands
+## (`mark_out`, m; the headframe's, 150 without).
 const STOPS := [
 	{"piece":"rail/start-station","street":"rail/start-station-street","side":1.0,"head":Vector2(-6.0,40.0),"turn":0.0,"lots":2,"mark":"shed"},
 	{"piece":"rail/farm-town","street":"rail/farm-town-street","side":1.0,"head":Vector2(-18.0,40.0),"turn":0.0,"lots":5,"mark":"elevator"},
-	{"piece":"rail/mine-town","street":"rail/mine-town-street","side":-1.0,"head":Vector2(-150.0,80.0),"turn":90.0,"lots":6,"mark":"headframe"},
-	{"piece":"rail/cattle-town","street":"rail/cattle-town-street","side":-1.0,"head":Vector2(10.0,40.0),"turn":0.0,"lots":5,"mark":"pens"},
+	{"piece":"rail/mine-town","street":"rail/mine-town-street","side":-1.0,"head":Vector2(-45.0,58.0),"turn":90.0,"lots":4,"mark":"headframe","mark_out":112.0},
+	{"piece":"rail/cattle-town","street":"rail/cattle-town-street","side":1.0,"head":Vector2(10.0,40.0),"turn":0.0,"lots":5,"mark":"pens"},
 ]
 
 ## Part kinds: where its base is and how its foot is laid.
@@ -377,7 +378,7 @@ static func _town(ln: RefCounted, s: float, spec: Dictionary, parts: Array, mark
 	var mark := str(spec.mark)
 	if mark == "elevator": _elevator(ln,s,fr,side,marks)
 	elif mark == "pens": _pens(ln,s,fr,side,marks)
-	elif mark == "headframe": _headframe(fr,side,marks)
+	elif mark == "headframe": _headframe(fr,side*float(spec.get("mark_side",1.0)),marks,float(spec.get("mark_out",150.0)))
 	elif mark == "shed": _shed(ln,s,fr,side,marks)
 
 ## The farm's grain elevator beside the line past the house: a tall bin
@@ -424,10 +425,10 @@ static func _pens(ln: RefCounted, s: float, fr: Array, side: float, parts: Array
 
 ## The mine's headframe up the hill behind the town: four legs a bay
 ## apart, a cap and the sheave house on top.
-static func _headframe(fr: Array, side: float, parts: Array) -> void:
+static func _headframe(fr: Array, side: float, parts: Array, out := 150.0) -> void:
 	const TALL := 30.0
 	var off := WorldScale.opening(TOY_LEGS)*0.5+LEG*0.5
-	var c: Vector2 = fr[0]-fr[1]*60.0+fr[2]*side*150.0
+	var c: Vector2 = fr[0]-fr[1]*60.0+fr[2]*side*out
 	for e: Vector2 in [Vector2(-1,-1),Vector2(1,-1),Vector2(-1,1),Vector2(1,1)]:
 		parts.append(_part(c+fr[2]*e.x*off+fr[1]*e.y*off,fr[2],LEG*0.5,LEG*0.5,GROUND,0.0,-INF,TALL,TIMBER_C.darkened(0.2)))
 	parts.append(_part(c,fr[2],off+LEG,off+LEG,GROUND,0.0,TALL,TALL+2.0,TIMBER_C.darkened(0.1),true))

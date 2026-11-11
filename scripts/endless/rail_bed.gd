@@ -32,6 +32,7 @@ extends RefCounted
 
 const RailLine = preload("res://scripts/endless/rail_line.gd")
 const BoreShape = preload("res://scripts/endless/rail_bore_shape.gd")
+const PeakBody = preload("res://scripts/endless/peak_body.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const STOPS_PATH := "res://scripts/endless/rail_stops.gd"
 
@@ -142,6 +143,10 @@ var _t := 0.0
 static func make(land_seed: int, world_id: String) -> RefCounted:
 	if land_seed != 1 or not world_id in ["wilderness","doors"]: return null
 	if "--no-railroad" in LaunchArgs.user_args(): return null
+	# The line is laid round the Peak's body (shape a, the default): with the
+	# old profile (--peak-shape=old) or another body it would run through
+	# the mountain, so the railroad stays out.
+	if PeakBody.wanted(LaunchArgs.user_args()) != "a": return null
 	_ensure()
 	return new() if _ok else null
 

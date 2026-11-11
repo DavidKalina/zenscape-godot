@@ -12,8 +12,13 @@ python tools/rail_line.py [--grid scratch/rail/world10.json] [--fresh-grid]
 2. The land under it: tools/harness/rail_sample.gd reads the live field's
    height (and river water) at every sample, on the centre line and both bed
    edges. The 10 m grid (tools/site_map.py's JSON) is only for the picture.
-3. The bed: the ground averaged over AVG m, kept off the sea, raised over the
-   bay to BAY_UP over the sea, graded to GRADE both ways, then eased.
+3. The bed: the ground averaged over AVG m (on the Peak's shelf, where the
+   draft's `profile.ride` says, its bench averaged over BENCH_AVG m), kept off
+   the sea, raised over the bay to BAY_UP over the sea, graded to GRADE both
+   ways, then eased; held level along each stop (`profile.stops`) and, where
+   `profile.climb` says, under a ceiling that climbs at GRADE to a stop's level
+   (the way up the far side of the mountain from the shelf, whatever the land
+   over it: tunnels, bridges).
 4. Each stretch's kind (grade, cut, fill, tunnel, trestle, bridge) and the
    named pieces (`rail/<piece>`, the handles scripts/endless/rail_line.gd
    hands to LayoutOverrides).
@@ -33,9 +38,9 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import site_map  # noqa: E402
 
 DRAFT = "docs/design/endless-flight/railroad/route-line.json"
-BOX = "-5400,-3800,2000,2800"
+BOX = "-5000,-3400,2000,2400"
 CTRL = 40.0        # draft metres per control point
-R_MIN = 160.0      # the tightest curve laid (rails want 150 or more)
+R_MIN = 170.0      # the tightest curve laid (rails want 150 or more; 160 as played, with a margin)
 STEP = 4.0         # metres between the path's samples
 EDGE = 12.5        # bed edge from the centre line (track gap 13, a car, a shoulder: rail_bed.gd HALF)
 AVG = 300.0        # the bed follows the ground averaged over this
@@ -47,22 +52,28 @@ BAY_UP = 40.0      # the bay bridge's deck over the sea
 RIVER_UP = 5.0     # the bed's least height over a river's water it crosses: a bridge, never a dam
 RIVER_PAD = 8.0    # a river's bridge runs this far past its water each way (the channel's banks)
 BAY = (148.0, 836.0, 700.0)   # the bay bridge's zone: x, z, radius
+BENCH_AVG = 480.0  # the shelf's bench averaged over about a slab, so the bed rides its steps' middle
+LEVEL = 170.0      # a stop's bed is held level this far each way (a train is 262 m)
 TUNNEL, CUT, FILL, TRESTLE = 22.0, 4.0, 4.0, 12.0
 SHORT = 60.0       # tunnels, trestles and bridges shorter than this become cut or fill
 
-# The seven places, in the line's order (spec-railroad.md). Stations and towns
-# get a piece each; the rest name the stretches near them.
+# The places, in the line's order. Stations and towns get a piece each (the
+# four stops: the draft's `profile.stops` puts them); the rest name the
+# stretches near them.
 PLACES = [
     ("start-station", "station", 1350.0, 350.0),
     ("shore", "", 1050.0, -1100.0),
-    ("farm-town", "town", -2500.0, -3300.0),
-    ("west", "", -4707.0, -857.0),
-    ("mine-town", "town", -4500.0, 700.0),
-    ("cattle-town", "town", -2500.0, 2300.0),
+    ("farm-town", "town", -850.0, -2540.0),
+    ("inner-bay", "", -2250.0, -1900.0),
+    ("north-face", "", -3300.0, -1650.0),
+    ("north-west", "", -4300.0, -1450.0),
+    ("mine-town", "town", -4370.0, -880.0),
+    ("south-face", "", -3700.0, 600.0),
+    ("cattle-town", "town", -1650.0, 1250.0),
     ("bay", "", 148.0, 836.0),
 ]
-HEADLINE = {("west", "tunnel"): "west-tunnel", ("mine-town", "trestle"): "mine-trestle",
-            ("bay", "bridge"): "bay-bridge"}
+HEADLINE = {("north-face", "tunnel"): "north-tunnel", ("inner-bay", "bridge"): "inner-viaduct",
+            ("inner-bay", "trestle"): "inner-viaduct", ("bay", "bridge"): "bay-bridge"}
 KEEP_OFF = ["first-cairn", "east-room", "meadow-dash"]
 FINDS_NEAR = ["bay-ring", "sea-arch-ring", "stack-top", "saddle-ring"]
 COL = {"tunnel": (150, 60, 255), "cut": (255, 200, 60), "grade": (250, 250, 250),
@@ -158,7 +169,8 @@ def sample_land(points, scene_args):
         sys.exit("rail_sample failed (%d)" % r.returncode)
     d = json.load(open(out))
     river = np.array([np.nan if v is None else v for v in d["river"]], dtype=float)
-    return np.array(d["ground"], dtype=float), river, float(d["sea"])
+    bench = np.array([np.nan if v is None else v for v in d.get("bench", [None] * len(points))], dtype=float)
+    return np.array(d["ground"], dtype=float), river, float(d["sea"]), bench
 
 
 # --- 3. the bed ------------------------------------------------------------------
@@ -210,17 +222,100 @@ def river_under(river_all, n):
     return grown, lv
 
 
-def lay_bed(pts, ground, sea, water=None):
-    floor = np.full(len(pts), sea + SEA_UP)
+def nearest_i(pts, xz):
+    return int(np.argmin(np.hypot(pts[:, 0] - xz[0], pts[:, 1] - xz[1])))
+
+
+def span_mask(pts, a, b):
+    """Samples from the one nearest `a` on to the one nearest `b` (round the loop)."""
+    n = len(pts)
+    i, j = nearest_i(pts, a), nearest_i(pts, b)
+    m = np.zeros(n, bool)
+    k = i
+    while True:
+        m[k] = True
+        if k == j:
+            break
+        k = (k + 1) % n
+    return m
+
+
+def lipschitz(f, up):
+    """`f` made GRADE-steep at most round the loop: lifted (up) or lowered."""
+    step = GRADE * STEP
+    n = len(f)
+    f = f.copy()
+    for _ in range(2):
+        for i in range(2 * n):
+            j, p = i % n, (i - 1) % n
+            f[j] = max(f[j], f[p] - step) if up else min(f[j], f[p] + step)
+        for i in range(2 * n, 0, -1):
+            j, p = i % n, (i + 1) % n
+            f[j] = max(f[j], f[p] - step) if up else min(f[j], f[p] + step)
+    return f
+
+
+def stop_spots(pts, profile):
+    """Each stop's sample: the draft's `profile.stops` [{name, x, z}], else PLACES'."""
+    stops = profile.get("stops") or [{"name": p[0], "x": p[2], "z": p[3]} for p in PLACES if p[1]]
+    return {st["name"]: nearest_i(pts, (st["x"], st["z"])) for st in stops}
+
+
+def lay_bed(pts, ground, sea, water=None, bench=None, profile=None):
+    profile = profile or {}
+    n = len(pts)
+    floor = np.full(n, sea + SEA_UP)
     if water is not None:
         floor = np.where(np.isnan(water), floor, np.maximum(floor, water + RIVER_UP))
     floor = np.where(ground < sea, sea + WATER_UP, floor)
     bay = np.hypot(pts[:, 0] - BAY[0], pts[:, 1] - BAY[1]) < BAY[2]
     floor = np.where(bay & (ground < sea), sea + BAY_UP, floor)
-    bed = clamp_grade(np.maximum(cyclic_mean(ground, AVG), sea + SEA_UP), floor)
-    bed = clamp_grade(cyclic_mean(bed, EASE), floor)
-    bed = cyclic_mean(bed, 40.0)  # no kinks left for the game's spline to overshoot
-    return bed, floor
+    target = np.maximum(cyclic_mean(ground, AVG), sea + SEA_UP)
+    # On the shelf: its bench, averaged over about a slab (its steps' middle).
+    ride = np.zeros(n, bool)
+    for a, b in profile.get("ride", []):
+        ride |= span_mask(pts, a, b)
+    if bench is not None and ride.any():
+        have = ~np.isnan(bench)
+        fill = np.where(have, bench, np.interp(np.arange(n), np.where(have)[0], bench[have], period=n) if have.any() else target)
+        smooth = cyclic_mean(fill, BENCH_AVG)
+        target = np.where(ride, smooth, target)
+    ceil = np.full(n, np.inf)
+    first = clamp_grade(cyclic_mean(clamp_grade(target, floor), EASE), floor)
+    # Each stop level over LEVEL m each way, at the bed's height at its middle.
+    spots = stop_spots(pts, profile)
+    half = int(LEVEL / STEP)
+    levels = {}
+    F0 = lipschitz(floor, True)
+    for name, i in spots.items():
+        # on the shelf the bench's own level there, else the bed's first lay;
+        # never under what a river's or the sea's floor nearby needs
+        idx = [(i + t) % n for t in range(-half, half + 1)]
+        y = max(float(target[i]) if ride[i] else float(first[i]), float(F0[idx].max()))
+        floor[idx] = np.maximum(floor[idx], y)
+        ceil[idx] = y
+        levels[name] = y
+    # A climb at GRADE up to a stop's level, whatever the land over it.
+    for c in profile.get("climb", []):
+        m = span_mask(pts, c["from"], c["to"])
+        i_top = spots[c["stop"]]
+        y = levels[c["stop"]]
+        k = np.where(m)[0]
+        # metres along the loop from each sample to the stop's level stretch
+        for t in k:
+            d = ((i_top - half - t) % n) * STEP
+            ceil[t] = min(ceil[t], y - GRADE * 0.985 * d)
+    F, Cc = lipschitz(floor, True), lipschitz(ceil, False)
+    bad = np.where(F > Cc + 1e-6)[0]
+    if len(bad):
+        print("PROFILE INFEASIBLE at %d samples, s %s" % (len(bad), ", ".join("%.0f" % (i * STEP) for i in bad[::25])))
+    clip = lambda b: np.minimum(np.maximum(b, F), Cc)
+    bed = clip(clamp_grade(target, floor))
+    bed = clip(cyclic_mean(bed, EASE))
+    # No kinks left for the game's spline to overshoot (a level stop's ends, a
+    # ceiling's foot): eased last, so a stop is level but for its last 20 m.
+    bed = cyclic_mean(clip(cyclic_mean(bed, 40.0)), 40.0)
+    return bed, floor, levels
 
 
 def as_played(pts, bed, sub=8):
@@ -294,11 +389,13 @@ def station_at(pts, kinds, bed, ground, x, z):
     return i0
 
 
-def pieces_of(pts, L, kinds, bed, ground):
+def pieces_of(pts, L, kinds, bed, ground, spots=None):
     n = len(pts)
     out = []
     for name, kind, x, z in PLACES:
         if kind:
+            if spots and name in spots:
+                x, z = float(pts[spots[name]][0]), float(pts[spots[name]][1])
             i = station_at(pts, kinds, bed, ground, x, z)
             out.append({"name": "rail/" + name, "kind": kind, "s0": round(i * STEP, 1), "s1": round(i * STEP, 1),
                         "x": x, "z": z, "y": round(float(bed[i]), 2)})
@@ -436,14 +533,17 @@ def main():
     pts, k = np.roll(pts, -i0, 0), np.roll(k, -i0)  # s = 0 at the start station
     t, right = frames(pts)
     probe = np.concatenate([pts, pts + right * EDGE, pts - right * EDGE])
-    g_all, river_all, sea = sample_land(probe, scene_args)
+    g_all, river_all, sea, bench_all = sample_land(probe, scene_args)
     n = len(pts)
     ground, g_r, g_l = g_all[:n], g_all[n:2 * n], g_all[2 * n:]
     river = river_all[:n]
     water = river_under(river_all, n)[1]
-    bed, floor = lay_bed(pts, ground, sea, water)
+    profile = draft.get("profile", {})
+    bed, floor, levels = lay_bed(pts, ground, sea, water, bench_all[:n], profile)
+    for name, y in levels.items():
+        print("  stop %-14s held level at %.1f m (%.1f over the sea)" % (name, y, y - sea))
     kinds = classify(ground, bed, sea, water)
-    pieces = pieces_of(pts, L, kinds, bed, ground)
+    pieces = pieces_of(pts, L, kinds, bed, ground, stop_spots(pts, profile))
 
     sites = {s["name"]: s for s in grid["sites"]}
     finds = []

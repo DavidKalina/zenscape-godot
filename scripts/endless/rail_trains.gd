@@ -33,9 +33,10 @@ extends Node3D
 ## the four stops (LINE_STOPS, a train's middle on the middle of the
 ## station's platforms, RailStops `platform`) and wait
 ## each one's dwell, their laps held to one period, so they pass each other in
-## the same two places every lap: their noses meet mid west tunnel (LINE_TUNNEL,
-## head on in the dark) and, by the dwells (long at the mine and cattle towns,
-## short at the start and the farm: `line_split`), mid bay bridge (LINE_BRIDGE),
+## the same two places every lap: their noses meet mid north tunnel (LINE_TUNNEL,
+## head on in the dark, through the Peak's north-east ridge) and, by the dwells
+## (long at the mine and cattle towns, short at the start and the farm:
+## `line_split`), mid bay bridge (LINE_BRIDGE),
 ## at any --train-speed=. The lap's start is set so the bridge meeting falls
 ## LINE_MEET s into the clock: a fresh start takes off (the clock held in the
 ## menu) with train 1 pulling out of the start station and both trains coming
@@ -54,7 +55,7 @@ extends Node3D
 ##
 ## Knobs: --trains=0|1|2 (TRAINS: how many run; one is track 0's), and
 ## RailTrain's --train-speed=, --rail-clock=S, --no-train-smoke; the quick starts
-## --rail-start=beside|tunnel|bridge|ride (`line_start`).
+## --rail-start=beside|tunnel|bridge|mine|ride (`line_start`).
 
 const RailTrain = preload("res://scripts/endless/rail_train.gd")
 const Timetable = preload("res://scripts/endless/rail_timetable.gd")
@@ -79,17 +80,17 @@ const TEST_MEET := 8.0
 const CRUISE := 36.75
 ## The line's stops in the order track 0 meets them: [piece, the sign of its
 ## share of the split], both trains'. With one period for both and the first
-## meeting mid west tunnel, the second falls where the dwells after the tunnel
+## meeting mid north tunnel, the second falls where the dwells after the tunnel
 ## (mine, cattle) outweigh the ones before it (start, farm): each waits
 ## DWELL_MID s, less the split at the start and farm, plus it at the mine and
 ## cattle towns. `line_split` finds the split that puts it mid bay bridge at
-## the trains' speed (30.3 s at 32 m/s, the waits about 30/30/90/90; each
-## second of it moves the meeting about 64 m along).
+## the trains' speed (each second of it moves the meeting about 64 m along).
 const DWELL_MID := 60.0
 const LINE_STOPS := [["rail/start-station",-1.0],["rail/farm-town",-1.0],["rail/mine-town",1.0],["rail/cattle-town",1.0]]
-## Where the noses meet (s): mid west tunnel and mid bay bridge.
-const LINE_TUNNEL := 10020.0
-const LINE_BRIDGE := 17316.0
+## Where the noses meet (s): mid north tunnel (rail/north-tunnel) and mid bay
+## bridge (rail/bay-bridge), on assets/railroad/rail_line.json as laid.
+const LINE_TUNNEL := 6490.0
+const LINE_BRIDGE := 14786.0
 ## The clock time (s) the noses meet on the bay bridge. The start faces the
 ## Peak and no stretch of the line is in view ahead of it in the first minute
 ## (the land hides it all within 50 degrees of the nose, flown straight at 45
@@ -106,21 +107,22 @@ const LINE_MEET := 35.0
 ## 4 m it settles onto the deck in 2.5 s), flying its way at cruise, the clock
 ## set to match: each puts the van in one place, so the plane starts there
 ## at any --train-speed= and any train length:
-## - beside: the van at START_BESIDE, where the farm plain's 2 km run to the
-##   farm town starts, at full speed, train 1 far off on the cattle side: creep
-##   up the train at cruise (about a minute to the engine, as it brakes into
-##   the farm town), Boost to it;
-## - tunnel: the van START_MOUTH m short of the west tunnel's mouth, at the
-##   farm mouth's trestle, the plane 6 s short of the bore: train 0 goes in
-##   ahead on the right and train 1 comes at the plane head on in the dark
-##   (the noses meet mid tunnel 7 s in, train 1's meets the plane 15 s in, at
-##   32 m/s with the 24 cars);
+## - beside: the van at START_BESIDE, on the north-east shore's plain about
+##   1.8 km short of the farm town, at full speed, train 1 far off: creep up
+##   the train at cruise (about a minute to the engine, as it brakes into the
+##   farm town), Boost to it;
+## - tunnel: the van START_MOUTH m short of the north tunnel's mouth, on the
+##   inner viaduct, the plane 6 s short of the bore: train 0 goes in ahead on
+##   the right and train 1 comes at the plane head on in the dark (the noses
+##   meet mid tunnel);
 ## - bridge: the van START_DECK m onto the bay bridge's west end: between both
-##   trains on the deck (the noses meet 7 s in, train 1's meets the plane 15
-##   s in).
+##   trains on the deck;
+## - mine: the van at the tail of the mine town's platforms (rail/mine-town,
+##   up on the Peak's shelf) as train 0 comes to a stand there: fly along it
+##   past the station, the shelf going on round the mountain ahead.
 ## - ride: sat on a flatcar of train 0 about to pull out of the start station
 ##   (RailRide `line_start`: its own pose, with the deck to park on).
-const START_BESIDE := 3800.0
+const START_BESIDE := 2300.0
 const START_MOUTH := 194.0
 const START_DECK := 26.0
 const START_UP := 6.5
@@ -169,13 +171,13 @@ static func clock_flag(otherwise := 0.0) -> float:
 		if a.begins_with("--rail-clock="): return a.trim_prefix("--rail-clock=").to_float()
 	return otherwise
 
-## --rail-start=beside|tunnel|bridge (`line_start`), or "".
+## --rail-start=beside|tunnel|bridge|mine|ride (`line_start`), or "".
 static func start_flag() -> String:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--rail-start="): return a.trim_prefix("--rail-start=")
 	return ""
 
-## The quick start `which` (beside, tunnel, bridge: START_BESIDE above) on
+## The quick start `which` (beside, tunnel, bridge, mine: START_BESIDE above) on
 ## `line` with the trains at `top` m/s: {at (Vector2, x z), heading (rad, the
 ## study's: forward is (-sin, -cos)), y (world), clock (s), s}; {} if unknown.
 static func line_start(line: RefCounted, which: String, top := RailTrain.SPEED) -> Dictionary:
@@ -186,11 +188,18 @@ static func line_start(line: RefCounted, which: String, top := RailTrain.SPEED) 
 	var van := 0.0
 	match which:
 		"beside": van = START_BESIDE
-		"tunnel": van = float(line.piece("rail/west-tunnel").get("s0",LINE_TUNNEL))-START_MOUTH
+		"tunnel": van = float(line.piece("rail/north-tunnel").get("s0",LINE_TUNNEL))-START_MOUTH
 		"bridge": van = float(line.piece("rail/bay-bridge").get("s0",LINE_BRIDGE))+START_DECK
+		"mine":
+			# Track 0's nose stops half a train past the platforms' middle
+			# (`line_tables`): its van half a train short of it.
+			var p: Dictionary = line.piece("rail/mine-town")
+			if p.is_empty(): return {}
+			var pl: Vector2 = RailStops.platform(line,float(p.s0))
+			van = (pl.x+pl.y)*0.5-long*0.5
 		"ride": return RailRide.line_start(line,tables)
 		_:
-			push_warning("--rail-start=%s: beside, tunnel, bridge or ride" % which)
+			push_warning("--rail-start=%s: beside, tunnel, bridge, mine or ride" % which)
 			return {}
 	var clock := float(t0.time_at(van+long))
 	var s: float = t0.s_of(float(t0.at(clock).d)-long-RailTrain.START_BACK)
