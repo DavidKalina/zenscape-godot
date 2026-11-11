@@ -3,13 +3,22 @@
 [ext_resource type="Shader" path="res://assets/models/train/train_surface.gdshader" id="1"]
 [ext_resource type="Texture2D" path="res://assets/models/train/train_metal.jpg" id="2"]
 [ext_resource type="Texture2D" path="res://assets/models/train/train_metal_n.jpg" id="3"]
+[ext_resource type="Texture2D" path="res://assets/models/train/train_wear.jpg" id="4"]
 
 [resource]
 shader = ExtResource("1")
 shader_parameter/albedo_tex = ExtResource("2")
 shader_parameter/normal_tex = ExtResource("3")
-shader_parameter/normal_depth = 0.12
-shader_parameter/roughness_value = 0.42
+shader_parameter/wear_tex = ExtResource("4")
+shader_parameter/normal_depth = 0.6
+shader_parameter/roughness_value = 0.4
 shader_parameter/metallic_value = 0.15
-shader_parameter/fill = 4.0
-shader_parameter/rim = 0.35
+shader_parameter/fill = 2.8
+shader_parameter/rim = 0.1
+shader_parameter/rough_var = 0.35
+shader_parameter/patch = 0.35
+shader_parameter/streak = 0.5
+shader_parameter/soot = 0.9
+shader_parameter/dust = 0.45
+shader_parameter/cavity = 0.7
+shader_parameter/polish = 0.25

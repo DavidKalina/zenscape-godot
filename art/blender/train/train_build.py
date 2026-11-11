@@ -273,21 +273,21 @@ COL = {
 	"thru": "9c7430", "gate": "d9b13f", "concrete": "a7a39b",
 }
 
-TEX_SIZE = {"wood": 512, "metal": 256, "coal": 512, "concrete": 256}
+TEX_SIZE = {"wood": 512, "metal": 512, "coal": 512, "concrete": 256}
 TILE = {"wood": 4.0, "metal": 4.0, "coal": 2.5, "concrete": 3.0}
 
 # Each material: its shader, albedo, normal, then uniforms. The game takes no
 # ambient light, so these fill the shade from the sky's hemisphere as the land's
 # own surfaces do (the pirate ship's way); the glb carries names only.
 MATERIALS = {
-	"wood": ("surface", "train_wood", "train_wood_n", {"normal_depth": 1.0, "roughness_value": 0.8, "fill": 5.0, "rim": 0.25}),
-	"metal": ("surface", "train_metal", "train_metal_n", {"normal_depth": 0.12, "roughness_value": 0.42, "metallic_value": 0.15, "fill": 4.0, "rim": 0.35}),
-	"iron": ("surface", "train_metal", None, {"roughness_value": 0.5, "metallic_value": 0.45, "fill": 3.0, "rim": 0.3}),
-	"brass": ("surface", "train_metal", None, {"roughness_value": 0.32, "metallic_value": 0.75, "fill": 2.5, "rim": 0.4}),
-	"coal": ("surface", "train_coal", "train_coal_n", {"normal_depth": 1.4, "roughness_value": 0.55, "metallic_value": 0.1, "fill": 3.0, "rim": 0.2}),
-	"glass": ("surface", None, None, {"roughness_value": 0.12, "metallic_value": 0.3, "fill": 1.2, "rim": 0.5}),
+	"wood": ("surface", "train_wood", "train_wood_n", {"normal_depth": 1.0, "roughness_value": 0.82, "fill": 3.4, "rim": 0.1, "rough_var": 0.25, "patch": 0.7, "streak": 0.45, "soot": 0.25, "dust": 0.5}),
+	"metal": ("surface", "train_metal", "train_metal_n", {"normal_depth": 0.6, "roughness_value": 0.4, "metallic_value": 0.15, "fill": 2.8, "rim": 0.1, "rough_var": 0.35, "patch": 0.35, "streak": 0.5, "soot": 0.9, "dust": 0.45, "cavity": 0.7, "polish": 0.25}),
+	"iron": ("surface", "train_metal", None, {"roughness_value": 0.42, "metallic_value": 0.45, "fill": 2.2, "rim": 0.1, "rough_var": 0.4, "patch": 0.2, "streak": 0.3, "soot": 0.5, "dust": 0.5}),
+	"brass": ("surface", "train_metal", None, {"roughness_value": 0.36, "metallic_value": 0.75, "fill": 1.8, "rim": 0.15, "rough_var": 0.5, "patch": 0.65, "streak": 0.45, "dust": 0.3}),
+	"coal": ("surface", "train_coal", "train_coal_n", {"normal_depth": 1.4, "roughness_value": 0.55, "metallic_value": 0.1, "fill": 2.4, "rim": 0.08, "rough_var": 0.3, "dust": 0.3}),
+	"glass": ("surface", None, None, {"roughness_value": 0.12, "metallic_value": 0.3, "fill": 1.0, "rim": 0.3}),
 	"dark": ("surface", None, None, {"roughness_value": 0.95, "fill": 0.6, "rim": 0.0}),
-	"concrete": ("surface", "train_concrete", "train_concrete_n", {"normal_depth": 0.9, "roughness_value": 0.92, "fill": 4.0, "rim": 0.2}),
+	"concrete": ("surface", "train_concrete", "train_concrete_n", {"normal_depth": 0.9, "roughness_value": 0.92, "fill": 3.2, "rim": 0.08, "rough_var": 0.2, "patch": 0.6, "streak": 0.5, "dust": 0.5}),
 	"lamp": ("lamp", None, None, {}),
 }
 MAT_NAMES = tuple(MATERIALS)
@@ -2357,13 +2357,46 @@ def paint_wood(W):
 
 
 def paint_metal(W):
-	"""Painted iron: a faint mottle and streaks running down."""
+	"""Painted iron: plates 2 m by 1 m (a tile is 4 m), staggered, a seam groove
+	between them, a row of rivets down each side of it, a faint mottle and
+	streaks running down. The albedo carries the seams and rivets' dark rims
+	and a little paint worn off their tops; the height map the relief."""
 	mott = spectral(W, W, 1.4, 41)
 	streak = spectral(W, W, 0.8, 42, sx=1.0, sy=8.0)
+	v, u = np.mgrid[0:W, 0:W].astype(np.float32) / W
+	px = 1.0 / W
+	rows = 4
+	row = np.floor(v * rows).astype(np.int32)
+	# Plates 2 m long: a vertical seam each half tile, the odd rows a quarter over.
+	ucol = (u + 0.25 * (row % 2)) % 0.5
+	vrow = (v * rows) % 1.0
+	d_h = np.minimum(vrow, 1.0 - vrow) / rows            # tile units to a horizontal seam
+	d_v = np.minimum(ucol, 0.5 - ucol)                   # to a vertical seam
+	groove = np.exp(-(np.minimum(d_h, d_v) / (1.6 * px)) ** 2)
+	# Rivets every 0.1 m (1/40 tile), 0.035 m either side of a seam.
+	off = 0.035 / 4.0
+	step = 1.0 / 40.0
+	def dots(d_perp, along):
+		a = (along / step) % 1.0
+		da = (np.minimum(a, 1.0 - a)) * step
+		dp = np.abs(d_perp - off)
+		return np.exp(-((da / (2.2 * px)) ** 2 + (dp / (2.2 * px)) ** 2))
+	rivet = np.maximum(dots(d_h, u), dots(d_v, v + 0.5 * (row % 2) / rows))
 	base = 0.92 + 0.07 * (mott - 0.5) + 0.06 * (streak - 0.5)
+	base = base * (1.0 - 0.35 * groove) * (1.0 - 0.12 * rivet) + 0.05 * rivet * nsst(0.5, 1.0, rivet)
 	col = np.clip(np.stack((base, base, base * 0.99), axis=-1), 0, 1)
-	hgt = 0.3 * (mott - 0.5)
+	hgt = 0.06 * (mott - 0.5) - 0.55 * groove + 0.9 * rivet
 	return col, hgt
+
+
+def paint_wear(W):
+	"""The shared wear map the surface shader reads by position, not uv (no
+	per-car texture): r a broad blotch (paint faded and patchy), g a soft noise the
+	shader stretches into streaks running down, b fine grit (roughness)."""
+	r = spectral(W, W, 1.7, 71)
+	g = spectral(W, W, 1.1, 72)
+	b = spectral(W, W, 0.5, 73)
+	return np.clip(np.stack((r, g, b), axis=-1), 0, 1)
 
 
 def paint_concrete(W):
@@ -2439,27 +2472,78 @@ SHADER_SURFACE = """shader_type spatial;
 // Written by art/blender/train/train_build.py. Lit as the world is: no ambient,
 // the sky's hemisphere added as emission (the pirate ship's surface), so a stock
 // material would go black out of the sun. Albedo: the tile times the vertex
-// colour (the paint, its grime baked in).
+// colour (the paint, its grime baked in), then weathered here from the model's
+// own position and one shared wear map (no per-car texture, so a car looks the
+// same near and far): paint faded and patchy, streaks running down, soot on
+// what faces up, dust low down, the underside dark, and a roughness that varies
+// (matte soot and dust, a polish where the relief catches). `tint` colours a
+// block the game builds itself (rail_train.gd), which has no vertex colours.
 render_mode diffuse_lambert, specular_schlick_ggx;
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D wear_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
+uniform vec4 tint : source_color = vec4(1.0);
 uniform float normal_depth = 0.0;
 uniform float roughness_value = 0.9;
 uniform float metallic_value = 0.0;
 uniform float fill = 1.6;
 uniform float rim = 0.3;
+uniform float rough_var = 0.0;
+uniform float patch = 0.0;
+uniform float streak = 0.0;
+uniform float soot = 0.0;
+uniform float dust = 0.0;
+uniform float cavity = 0.0;
+uniform float polish = 0.0;
+varying vec3 lpos;
+varying vec3 lnrm;
+void vertex() {
+	lpos = VERTEX;
+	lnrm = NORMAL;
+}
 void fragment() {
-	vec3 base = texture(albedo_tex, UV).rgb * COLOR.rgb;
-	ALBEDO = base;
-	ROUGHNESS = roughness_value;
-	METALLIC = metallic_value;
+	vec3 base = texture(albedo_tex, UV).rgb * COLOR.rgb * tint.rgb;
+	// Position on the face: h along it, v up it (the top's v runs along the car).
+	vec3 an = abs(lnrm);
+	float h = an.x > an.z ? lpos.z : lpos.x;
+	float v = an.y > max(an.x, an.z) ? lpos.z : lpos.y;
+	vec2 pq = vec2(h, v);
+	float blotch = texture(wear_tex, pq * 0.21 + 0.13).r;
+	float blotch2 = texture(wear_tex, pq * 0.83 + 0.41).r;
+	float run = texture(wear_tex, vec2(pq.x * 0.9, pq.y * 0.11) + 0.27).g;
+	float grit = texture(wear_tex, pq * 3.3).b;
+	// The paint: lighter or darker panel by panel, faded and greyed in patches.
+	base *= 1.0 + patch * (blotch - 0.5) * 1.5;
+	float luma = dot(base, vec3(0.3, 0.55, 0.15));
+	base = mix(base, vec3(luma) * 1.12, patch * 0.4 * smoothstep(0.45, 0.72, blotch2));
+	// The relief: slope darkens a seam's groove, and catches a polish.
+	float slope = 0.0;
 	if (normal_depth > 0.0) {
-		NORMAL_MAP = texture(normal_tex, UV).rgb;
+		vec3 nm = texture(normal_tex, UV).rgb;
+		NORMAL_MAP = nm;
 		NORMAL_MAP_DEPTH = normal_depth;
+		slope = clamp(length(nm.xy * 2.0 - 1.0) * 2.0, 0.0, 1.0);
 	}
+	base *= 1.0 - cavity * slope * 0.35;
+	// Streaks running down: a dark rusty wash, strongest low.
+	float low = 1.0 - smoothstep(0.5, 3.5, lpos.y);
+	float s = smoothstep(0.52, 0.78, run) * streak * (0.45 + 0.55 * blotch2) * (0.5 + 0.5 * low);
+	base = mix(base, base * vec3(0.5, 0.36, 0.28), s);
+	// Soot on what faces up, matte; dust low down; the underside dark.
+	float sk = soot * smoothstep(0.35, 0.95, lnrm.y) * (0.45 + 0.9 * blotch);
+	base *= 1.0 - 0.6 * clamp(sk, 0.0, 1.0);
+	float dd = dust * (1.0 - smoothstep(0.15, 1.5, lpos.y)) * (0.3 + 1.0 * blotch2);
+	base = mix(base, vec3(0.2, 0.16, 0.115) * (0.5 + luma * 1.2), clamp(dd, 0.0, 1.0) * 0.55);
+	base *= mix(0.55, 1.0, smoothstep(-0.9, 0.1, lnrm.y));
+	ALBEDO = base;
+	float r = roughness_value + rough_var * ((grit - 0.5) * 1.1 + (blotch - 0.5) * 1.5);
+	r += 0.35 * clamp(sk, 0.0, 1.0) + 0.25 * clamp(dd, 0.0, 1.0) + 0.2 * s;
+	r -= polish * slope;
+	ROUGHNESS = clamp(r, 0.12, 1.0);
+	METALLIC = metallic_value * (1.0 - 0.6 * clamp(sk + dd, 0.0, 1.0));
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
@@ -2486,6 +2570,9 @@ def write_materials():
 			if tex:
 				ext.append(f'[ext_resource type="Texture2D" path="{RES}/{tex}.jpg" id="{i}"]')
 				lines.append(f'shader_parameter/{key} = ExtResource("{i}")')
+		if shader == "surface":
+			ext.append(f'[ext_resource type="Texture2D" path="{RES}/train_wear.jpg" id="4"]')
+			lines.append('shader_parameter/wear_tex = ExtResource("4")')
 		for k, v in params.items():
 			lines.append(f"shader_parameter/{k} = {v}")
 		text = '[gd_resource type="ShaderMaterial" format=3]\n\n' + "\n".join(ext) + "\n\n[resource]\n" + "\n".join(lines) + "\n"
@@ -2497,7 +2584,8 @@ def make_mats(scale):
 	for name, fn in (("wood", paint_wood), ("metal", paint_metal), ("coal", paint_coal), ("concrete", paint_concrete)):
 		c, h = fn(int(TEX_SIZE[name] * scale))
 		save_tex(f"train_{name}", c)
-		save_tex(f"train_{name}_n", normal_from(h, 4.0 if name != "coal" else 6.0), data=True)
+		save_tex(f"train_{name}_n", normal_from(h, {"coal": 6.0, "metal": 9.0}.get(name, 4.0)), data=True)
+	save_tex("train_wear", paint_wear(int(256 * scale)), data=True)
 	write_materials()
 	return {name: bpy.data.materials.new(name) for name in MAT_NAMES}
 
