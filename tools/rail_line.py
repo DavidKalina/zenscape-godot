@@ -303,7 +303,8 @@ def lay_bed(pts, ground, sea, water=None, bench=None, profile=None):
         k = np.where(m)[0]
         # metres along the loop from each sample to the stop's level stretch
         for t in k:
-            d = ((i_top - half - t) % n) * STEP
+            d = (i_top - half - t) % n
+            d = 0.0 if d > n // 2 else d * STEP  # inside the level stretch: none to climb
             ceil[t] = min(ceil[t], y - GRADE * 0.985 * d)
     F, Cc = lipschitz(floor, True), lipschitz(ceil, False)
     bad = np.where(F > Cc + 1e-6)[0]
@@ -410,10 +411,13 @@ def pieces_of(pts, L, kinds, bed, ground, spots=None):
             k = "bridge" if sum(kinds[t] == "bridge" for t in idx) * 2 > len(idx) else "trestle"
         m = ((i + j) // 2) % n
         spans.append((nearest_place(*pts[m]), k, i, j, idx))
-    best = {}  # the headline span of its place and kind is the longest one there
+    # The headline piece of its place and kind: the longest tunnel there, the
+    # tallest span.
+    size = lambda sp: (sp[3] - sp[2]) if sp[1] == "tunnel" else float(np.max(np.abs(ground[sp[4]] - bed[sp[4]])))
+    best = {}
     for sp in spans:
         key = (sp[0], sp[1])
-        if key in HEADLINE and (key not in best or sp[3] - sp[2] > best[key][3] - best[key][2]):
+        if key in HEADLINE and (key not in best or size(sp) > size(best[key])):
             best[key] = sp
     count = {}
     for sp in sorted(spans, key=lambda sp: sp[2] % n):

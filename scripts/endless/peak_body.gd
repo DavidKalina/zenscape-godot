@@ -67,8 +67,8 @@ const SHAPES := {
 		# railway at its grade to the mine's level stretch, then on steeper,
 		# for the plane only, to the upper shelf.
 		"shelf":{"from":12.0,"to":432.0,"y":Vector2(45.0,390.0),"power":1.0,"width":Vector2(96.0,64.0),
-			"way":[[12.0,45.0],[40.0,64.0],[176.0,152.0],[194.0,152.0],[432.0,390.0]],
-			"wide":[[166.0,0.0],[176.0,86.0],[194.0,86.0],[202.0,0.0]],
+			"way":[[12.0,45.0],[40.0,64.0],[166.0,150.0],[184.0,150.0],[432.0,390.0]],
+			"wide":[[156.0,0.0],[166.0,86.0],[184.0,86.0],[192.0,0.0]],
 			"slab":Vector2(380.0,640.0),"step":Vector2(10.0,18.0),"riser":20.0,"cant":0.05,
 			"fill":1.25,"fill_max":Vector2(30.0,70.0),"window":16.0,
 			# On up from its top to the court (see The upper shelf below).

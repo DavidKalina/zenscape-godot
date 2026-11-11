@@ -89,8 +89,8 @@ const DWELL_MID := 60.0
 const LINE_STOPS := [["rail/start-station",-1.0],["rail/farm-town",-1.0],["rail/mine-town",1.0],["rail/cattle-town",1.0]]
 ## Where the noses meet (s): mid north tunnel (rail/north-tunnel) and mid bay
 ## bridge (rail/bay-bridge), on assets/railroad/rail_line.json as laid.
-const LINE_TUNNEL := 6490.0
-const LINE_BRIDGE := 14786.0
+const LINE_TUNNEL := 6492.0
+const LINE_BRIDGE := 14486.0
 ## The clock time (s) the noses meet on the bay bridge. The start faces the
 ## Peak and no stretch of the line is in view ahead of it in the first minute
 ## (the land hides it all within 50 degrees of the nose, flown straight at 45
@@ -256,12 +256,12 @@ static func line_tables(line: RefCounted, top := RailTrain.SPEED, meet := LINE_M
 	t1.phase += shift
 	return [t0,t1]
 
-## The split (s, in [0, DWELL_MID]) that puts the second meeting at
+## The split (s, in [-DWELL_MID, DWELL_MID]) that puts the second meeting at
 ## LINE_BRIDGE at `top` m/s, by halving: the meeting comes down s as the split
 ## grows.
 static func line_split(line: RefCounted, top := RailTrain.SPEED) -> float:
 	var n := float(line.length())
-	var lo := 0.0
+	var lo := -DWELL_MID
 	var hi := DWELL_MID
 	for i in range(10):
 		var mid := (lo+hi)*0.5

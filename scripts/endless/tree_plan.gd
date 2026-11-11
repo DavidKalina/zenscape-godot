@@ -209,6 +209,9 @@ func suits(field: RefCounted, x: float, z: float, s: Dictionary, up: float) -> f
 	var wood := PeakBody.autumn_at(x,z,"wood")
 	if wood > 0.0:
 		if up < STEEP.x: return 0.0
+		# The railroad's bed (read as a valley's floor: LandField `_rail_shape`)
+		# keeps its trees off.
+		if float(s.valley) < INF and float(s.valley) < float(s.half): return 0.0
 		return smoothstep(0.3,0.6,wood)*smoothstep(STEEP.x,STEEP.y,up)
 	if PeakBody.autumn_at(x,z) > 0.2: return 0.0
 	if over < BEACH_CLEAR: return 0.0
