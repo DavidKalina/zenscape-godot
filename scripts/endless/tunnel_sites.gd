@@ -921,6 +921,14 @@ static func dry_at(t: Site, x: float, z: float) -> bool:
 	var q := local(t,x,z)
 	return q.x >= -APRON-t.ramp.x and q.x <= t.length+APRON+t.ramp.y and absf(q.y) <= TRENCH_WIDE
 
+## True where (x, z) is in sunk tunnel `t`'s dry strip between its mouths:
+## rock roofs the bore there, so a stream or lake on the land over it stays
+## (the ramps past the mouths are open to the sky, and dry).
+static func roofed_at(t: Site, x: float, z: float) -> bool:
+	if not dry_at(t,x,z): return false
+	var u := local(t,x,z).x
+	return u >= 0.0 and u <= t.length
+
 ## The ramps of sunk tunnel `t` as the sea's cuts (shaders/endless_sea.gdshader
 ## `dry_cut`): each Vector4(from xz, to xz), DRY_HALF m wide each side.
 static func dry_cuts(t: Site) -> Array:

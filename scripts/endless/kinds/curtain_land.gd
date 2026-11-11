@@ -231,6 +231,9 @@ const LAKE_FADE := 14.0
 const LAKE_IN := 0.8
 const LAKE_OUT := 0.15
 const LAKE_W := 400.0
+## The stream's bare bed fades out over this depth under the lake's level
+## (m), where the lake holds it.
+const LAKE_UNBARE := 0.5
 
 ## Site `s`'s shape, the coded site (placed_list.gd `site_of`) at `xform`.
 ## Params `stream` and `outflow`: [[s, f, level over the foot, half-width],
@@ -671,6 +674,10 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 	# nearest of its segments.
 	var ns := int(c[I_STREAM_N])
 	var no := int(c[I_OUT_N])
+	# The stream's bare bed, kept apart until the lake's known: none under the
+	# lake's water (its head runs into the lake, and painted the lake's bed
+	# rock there, a pale tongue in the water).
+	var stream_bare := 0.0
 	var best_s := Vector4(INF,0.0,0.0,0.0)
 	var best_o := Vector4(INF,0.0,0.0,0.0)
 	var all := segs.is_empty()
@@ -712,7 +719,7 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 		half = lerpf(half,c[I_LIP_HALF],fanned)
 		var level := lerpf(c[i+2],c[i+PT+2],t)
 		var out := d-half
-		bare = maxf(bare,clampf((STREAM_BARE-out)/2.0,0.0,1.0)*float(f < -back+0.5))
+		stream_bare = clampf((STREAM_BARE-out)/2.0,0.0,1.0)*float(f < -back+0.5)
 		# Its banks: a low one, then a gorge's walls where the land is high.
 		var rise := STREAM_BANK*(0.75+0.6*_n2(x/14.0+seed,z/14.0+3.0))
 		var bed := _bowl(level,STREAM_DEPTH,out,half,rise)
@@ -750,6 +757,8 @@ static func at(c: PackedFloat32Array, base: float, x: float, z: float, cave := t
 				out = dh/LAKE_IN+maxf(0.5-soft,0.0)*2.0*LAKE_FADE
 				if out > 0.0: out = maxf(out,1.1)
 			if out < REACH: waters.append(PackedFloat32Array([out,LAKE_W+out,LAKE_W,c[I_LAKE_Y],0.0,0.0]))
+			stream_bare *= 1.0-smoothstep(0.0,-LAKE_UNBARE,dh)*clampf(soft*2.0,0.0,1.0)
+	bare = maxf(bare,stream_bare)
 	if has_cave(c):
 		var tu := cave_at(c,q)
 		if not is_nan(tu.x):

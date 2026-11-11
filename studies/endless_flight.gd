@@ -1232,11 +1232,14 @@ func _on_river() -> bool:
 ## The water under a point: the sea's swell, or a river's level over it.
 func water_at(p: Vector3, land_h := NAN) -> float:
 	if GroundTally.on: GroundTally.tick(&"water_at")
-	if tunnels != null and tunnels.dry(p): return -INF
-	var level := Field.SEA_Y+sea_height(p,land_h)
+	var dry: bool = tunnels != null and tunnels.dry(p)
+	# A sunk tunnel's strip cuts the sea, and off its roofed length all water.
+	if dry and not tunnels.roofed(p): return -INF
 	var river: float = field.river_y(p.x,p.z)
 	# A stream or lake on the land over a bore the point is in: not its water.
 	if not is_nan(river) and tunnels != null and tunnels.under_water_over(p,river): river = NAN
+	if dry: return -INF if is_nan(river) else river
+	var level := Field.SEA_Y+sea_height(p,land_h)
 	return level if is_nan(river) else maxf(level,river)
 
 ## The top of the land, a river's water or the sea's swell under `p` (a
