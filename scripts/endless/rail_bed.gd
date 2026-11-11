@@ -471,10 +471,12 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 	var hs := PackedFloat32Array()
 	var ms := PackedFloat32Array()
 	var bs := PackedFloat32Array()
+	var ds := PackedFloat32Array()
 	var mv := PackedByteArray()
 	hs.resize(w*w)
 	ms.resize(w*w)
 	bs.resize(w*w)
+	ds.resize(w*w)
 	mv.resize(w*w)
 	var any := false
 	for j in w:
@@ -492,6 +494,7 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 			hs[k] = got.x
 			ms[k] = got.y
 			bs[k] = ballast()
+			ds[k] = last_d
 			if absf(last_lift) > 0.001 or bs[k] > 0.0 or got.y != meadow:
 				mv[k] = 1
 				any = any or inner
@@ -508,6 +511,7 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 	var mds := PackedFloat32Array()
 	var ids := PackedInt32Array()
 	var bal := PackedFloat32Array()
+	var dist := PackedFloat32Array()
 	for j in n:
 		for i in n:
 			var k := (j+1)*w+i+1
@@ -523,6 +527,7 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 			mds.append(ms[k] if mv[k] == 1 else colours[v].a)
 			ids.append(v)
 			bal.append(bs[k])
+			dist.append(ds[k])
 			if mv[k] == 0: continue
 			heights[v] = y
 			verts[v] = Vector3(i*step,y,j*step)
@@ -535,7 +540,7 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 	if not ids.is_empty():
 		var cs: PackedColorArray = field.colours(xs,zs,ys,ups,mds)
 		for q in ids.size():
-			var c := cs[q].lerp(BALLAST,bal[q])
+			var c := cs[q].lerp(_ballast_at(xs[q],zs[q],dist[q],cs[q]),bal[q])
 			c.a = mds[q]
 			colours[ids[q]] = c
 	for e in 4:
@@ -557,6 +562,39 @@ func apply_chunk(field: Object, under: Callable, made: Dictionary, x0: float, z0
 	made.colours = colours
 	made.carved = carved
 	made.river = river
+
+## The bed's ballast paint at a vertex (x, z), `d` m from the centre line and
+## over land colour `land`: dark and oily by each track's middle, paler and
+## dustier toward the shoulders, going to the land's own colour at the foot,
+## with a mottle of its own (a vertex's, and a wider one) so the band is not
+## one flat tan. The 3D strips and sleepers (rail_track.gd) sit on it.
+func _ballast_at(x: float, z: float, d: float, land: Color) -> Color:
+	var at := absf(d)-(HALF-RailLine.CAR_WIDTH*0.5-SHOULDER)
+	var dt := absf(at)
+	var mottle := _vnoise(x*0.13,z*0.13)*0.6+_vnoise(x*0.41+7.0,z*0.41)*0.4
+	var oil := 1.0-smoothstep(0.6,3.2,dt)
+	var c := BALLAST.lerp(Color(0.24,0.225,0.21),oil*(0.4+0.6*mottle))
+	# Shoulders between and outside the tracks: pale dust, then the land's own.
+	c = c.lerp(Color(0.5,0.46,0.4),smoothstep(3.4,5.6,dt)*0.55)
+	c = c.lerp(land*0.8,smoothstep(5.0,HALF,dt)*0.5*mottle)
+	return c*(0.88+0.24*mottle)
+
+## Smooth value noise in [0, 1].
+static func _vnoise(x: float, z: float) -> float:
+	var ix := floorf(x)
+	var iz := floorf(z)
+	var fx := x-ix
+	var fz := z-iz
+	fx = fx*fx*(3.0-2.0*fx)
+	fz = fz*fz*(3.0-2.0*fz)
+	var a := _h2(ix,iz)
+	var b := _h2(ix+1.0,iz)
+	var c := _h2(ix,iz+1.0)
+	var e := _h2(ix+1.0,iz+1.0)
+	return lerpf(lerpf(a,b,fx),lerpf(c,e,fx),fz)
+
+static func _h2(x: float, z: float) -> float:
+	return fposmod(sin(x*127.1+z*311.7)*43758.5453,1.0)
 
 ## No grass on the bed's top (EndlessGrass `grow_cell`, both its paths): the
 ## grid's river channel (LandField.grid's `river`, how far outside a river's
