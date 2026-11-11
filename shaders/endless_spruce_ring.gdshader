@@ -18,6 +18,7 @@ render_mode cull_disabled, diffuse_lambert, specular_disabled;
 // The globals (hemisphere, cloud sun, key) and the woods' wind by place
 // (tree_wind.gdshaderinc zs_tree_far_sway, wind_field.gdshaderinc).
 #include "res://shaders/tree_wind.gdshaderinc"
+#include "res://shaders/autumn_place.gdshaderinc"
 #include "res://shaders/look_fill.gdshaderinc"
 // The shade's olive turns with the shade's hue (light_leans; 0 fixed).
 #include "res://shaders/light_leans.gdshaderinc"
@@ -100,6 +101,8 @@ void fragment() {
 	// The b look: the tiers' lit top and dark skirt band (the facing from the mesh's own normal), and the dabs.
 	if (spruce_tier.y > 0.0 || spruce_tier.z > 0.0) c = zs_st_paint(c, bake, 1.0 - smoothstep(-0.6, 0.0, (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).y), spruce_tier, 1.0);
 	if (spruce_tier2.y > 0.0) c = zs_st_dabs(c, (ring_world.xz - ring_foot.xz) + vec2(ring_world.y * 0.61, -ring_world.y * 0.37) + vec2(rank * 91.0, rank * 37.0), d, zs_st_pixel(d, PROJECTION_MATRIX[1][1], VIEWPORT_SIZE.y), spruce_tier2);
+	// Autumn by place (the Peak's shelf), as the near crowns turn.
+	if (zs_autumn_rect.z > 0.0) zs_autumn_tree(c, ring_foot.xz, zs_autumn_here(ring_foot.xz));
 	c *= paint.x;
 	if (spruce_var.y > 0.0) c = zs_sv_keep(c, d, spruce_g.z);
 	ALBEDO = c;

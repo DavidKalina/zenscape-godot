@@ -58,6 +58,11 @@ extends Node3D
 ## --max-fps=N caps the frame rate at N (0 none; vsync stays on), a rate the
 ## machine holds every frame so it never jumps between the screen's rate and
 ## half of it (77 or 120 on a 154 Hz screen).
+## The Peak's candidate bodies (scripts/endless/peak_body.gd): --peak-shape=a|b|c
+## in place of the old profile (its tarn, ice, gorges and finds off),
+## --peak-start with it starts in the air off the mouth of the valley under
+## the flat at the top, heading up it; --shelf-start off the foot of the
+## shelf round shape a (PeakBody `shelf`), heading along it.
 ## Split mountains (scripts/endless/split_sites.gd): --split-near-start starts
 ## 520 m out of the nearest one's lower mouth, heading in, 28 m up or more
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
@@ -170,6 +175,7 @@ const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 const HallDoors = preload("res://scripts/endless/hall_doors.gd")
 ## The crown's spirals of cloud (scripts/endless/peak_spirals.gd; --spirals=0 none).
+const PeakBody = preload("res://scripts/endless/peak_body.gd")
 const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
 const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
 const SurgeSpray = preload("res://scripts/endless/surge_spray.gd")
@@ -647,6 +653,24 @@ func _ready() -> void:
 		if not _alt_given:
 			_alt = float(rail_start.alt)
 			_alt_given = true
+	# --peak-start: with a candidate Peak body (--peak-shape=), in the air off
+	# the mouth of the valley under its flat, heading up it.
+	# --shelf-start: off the foot of its shelf (shape a), heading along it.
+	var peak_start := false
+	var shelf_start := "--shelf-start" in preload("res://scripts/launch_args.gd").user_args()
+	if shelf_start or "--peak-start" in preload("res://scripts/launch_args.gd").user_args():
+		var pk: RefCounted = field.peak()
+		if pk == null or not pk.shaped(): push_warning("--peak-start, --shelf-start: need --peak-shape=a|b|c")
+		elif shelf_start and pk.body.shelf.is_empty(): push_warning("--shelf-start: this shape has no shelf")
+		else:
+			var st: Vector3 = pk.body.shelf_start() if shelf_start else pk.body.start()
+			_start = pk.world(st.x,st.y)
+			var way: Vector2 = pk.world(cos(st.z),sin(st.z))-pk.world(0.0,0.0)
+			_heading = atan2(-way.x,-way.y)
+			_heading_given = true
+			if not _alt_given: _alt = 70.0
+			peak_start = true
+			print("peak start: %s heading %.0f" % [str(_start.round()),-rad_to_deg(_heading)])
 	if WaterContact.near_start_wanted():
 		var w: Dictionary = WaterContact.near_start(field,_start)
 		if w.is_empty(): push_warning("--water-near-start: no river mouth near the start")
@@ -670,7 +694,7 @@ func _ready() -> void:
 	# The Peak (scripts/endless/peak_massif.gd): the start faces its summit,
 	# unless a heading was named or a start flag set its own; the menu's
 	# meadow takes the clear heading nearest that.
-	var own_start := SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty() or not is_nan(_rail_start_clock)
+	var own_start := peak_start or SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty() or not is_nan(_rail_start_clock)
 	var peak: RefCounted = field.peak()
 	var face_peak := peak != null and not _heading_given and not own_start
 	if face_peak:
@@ -704,7 +728,12 @@ func _ready() -> void:
 			for k: String in paint: look.ground.set_shader_parameter(k,paint[k])
 			if PeakSnow.wanted(): PeakSnow.paint(look.ground,peak)
 		# The tarn's look (shaders/peak_tarn.gdshaderinc; --peak-tarn=0 off).
-		if peak != null and look.ground != null: PeakTarn.apply(peak,look.ground)
+		if peak != null and not peak.shaped() and look.ground != null: PeakTarn.apply(peak,look.ground)
+		# Autumn on a candidate body's shelf (PeakBody `autumn`,
+		# shaders/autumn_place.gdshaderinc); none without one.
+		var autumn_tex: Array = PeakBody.autumn_texture() if peak != null and peak.shaped() else []
+		RenderingServer.global_shader_parameter_set(&"zs_autumn_rect",autumn_tex[1] if not autumn_tex.is_empty() else Vector4.ZERO)
+		if not autumn_tex.is_empty(): RenderingServer.global_shader_parameter_set(&"zs_autumn_mask",autumn_tex[0])
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
@@ -852,19 +881,19 @@ func _ready() -> void:
 		add_child(lines)
 		lines.setup(seed,self)
 	# The Peak's lift up the rock gorge (scripts/endless/peak_routes.gd).
-	if peak != null and air_lift != null:
+	if peak != null and not peak.shaped() and air_lift != null:
 		var lift := PeakRoutes.lift(peak,Callable(field,"height"))
 		air_lift.add(str(lift.name),lift.points,float(lift.radius),float(lift.strength),bool(lift.one_way))
 		var wisps: MultiMeshInstance3D = preload("res://scripts/endless/peak_lift_wisps.gd").new()
 		add_child(wisps)
 		wisps.setup(lift.points,float(lift.radius),seed,Callable(field,"height"))
 	# Its ruined stair (scripts/endless/peak_stair.gd), the rock gorge's tell.
-	if peak != null and not ("--stair=0" in preload("res://scripts/launch_args.gd").user_args()):
+	if peak != null and not peak.shaped() and not ("--stair=0" in preload("res://scripts/launch_args.gd").user_args()):
 		stair = PeakStair.new()
 		add_child(stair)
 		stair.setup(peak,Callable(field,"height"),seed)
 	# The climbers' flags (scripts/endless/peak_flags.gd).
-	if peak != null and not ("--peak-flags=0" in preload("res://scripts/launch_args.gd").user_args()):
+	if peak != null and not peak.shaped() and not ("--peak-flags=0" in preload("res://scripts/launch_args.gd").user_args()):
 		var flags: Node3D = preload("res://scripts/endless/peak_flags.gd").new()
 		add_child(flags)
 		flags.setup(peak,Callable(field,"height"),seed,stair,towers)
@@ -927,9 +956,12 @@ func _ready() -> void:
 		spirals.name = "PeakSpirals"
 		add_child(spirals)
 		spirals.setup(self)
-		spirals.set_axes(PeakSpirals.on_towers(towers.axes() if towers != null else [],peak.PLATEAU_Y+Field.SEA_Y+60.0))
+		var spiral_axes := PeakSpirals.on_towers(towers.axes() if towers != null else [],(float(peak.body.flat_y) if peak.shaped() else peak.PLATEAU_Y)+Field.SEA_Y+60.0)
+		# A candidate body's crown places its own (PeakBody `ribbons`).
+		if peak.shaped(): spiral_axes = peak.body.ribbons(spiral_axes,peak.world(peak.body.flat_c.x,peak.body.flat_c.y),float(peak.body.flat_y)+Field.SEA_Y)
+		spirals.set_axes(spiral_axes)
 	# Snow blowing off the crown's tips and high ridges (scripts/endless/peak_spindrift.gd).
-	if peak != null and PeakSpindrift.wanted():
+	if peak != null and not peak.shaped() and PeakSpindrift.wanted():
 		spindrift = PeakSpindrift.new()
 		add_child(spindrift)
 		spindrift.setup(self,peak,Callable(field,"height"),towers,seed,Field.SEA_Y)

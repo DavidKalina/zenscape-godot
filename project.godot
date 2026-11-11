@@ -189,6 +189,14 @@ zs_season={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_autumn_mask={
+"type": "sampler2D",
+"value": ""
+}
+zs_autumn_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_sky_season={
 "type": "vec4",
 "value": Vector4(1, 0, 0, 0)

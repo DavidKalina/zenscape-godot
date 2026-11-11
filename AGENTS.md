@@ -1,34 +1,10 @@
 # The game
 
-The game is endless flight, whose name has outlived the plan: you fly the
-plane over generated land (hills, mountains, cliffs, lakes, rivers, coast
-and sea, with bird flocks, overgrown halls and tunnels and scattered ruins)
-and land anywhere flat. Its scene is `studies/endless_flight.tscn`, the
-project's main scene (`run-endless-flight.command`; design and rounds:
-`docs/design/endless-flight/`). It is to ship on Steam. When the user says
-"the game" or "the main scene", they mean endless flight.
-
-The world is going from endless to fixed (decided 2026-10-31). The wilderness
-becomes a set piece of seed 1's generated land, with the Peak, 5 minutes edge
-to edge at full speed: 17 km across, at about 57 m/s level on Boost. The
-generator stays and the land keeps its shape; doors lead to other worlds.
-The order: set the size, then place interesting things and doors by hand,
-then collectibles. The size is set: open sea rings the land (the wilderness
-recipe's `coast_` keys) and the plane is eased home past it. Hand placement
-isn't built yet, so new work shouldn't lean on a seed other than 1.
-
-In scope: the plane, its flight, landing and the camera; the land, sky,
-water and ambience; collectibles and flying challenges (the flight packs in
-`studies/flight_study.tscn`); light destruction of the ruins
-(`scripts/breaks/`). Out of scope: walking (cut on 2026-10-24), enemies,
-treasure heists, the Olmec, hearts and damage.
-
-On 2026-10-24 everything else was cut: the aqueduct isle and the kit isles,
-the motif editor, the walking character, the Olmec and the city kit,
-enemies and their studies. They are whole at the git tag
-`archive/before-the-cut`; `docs/archive.md` lists each and how to bring it
-back. The walker's motor went too (2026-10-25): the ruin kit keeps the
-walker's numbers it was sized by as frozen constants.
+The main scene is `studies/endless_flight.tscn` (`run-endless-flight.command`):
+you fly a plane over generated land and can land anywhere flat. What the
+game is beyond that is being redefined (fresh start, 2026-11-07); ask the
+user rather than assume. Earlier directions and their notes live in git
+history before this date.
 
 # Test execution
 
@@ -59,7 +35,7 @@ each of these: finding Godot and keeping the import fresh (`tools/godot.py`),
 the smoke check (`tools/smoke.py`), checks through the real play loop
 (`tools/harness/drive.gd` with `tools/drive.py`), seed and knob tables
 (`tools/sweep.py`), rendered stills (`tools/shot.py`) and runs longer than the tool-call
-limit (`tools/bg.py`). A new RuinKit piece: `tools/kit_piece.py` (scaffold,
+limit (`tools/bg.py`). A new ruin-kit piece: `tools/kit_piece.py` (scaffold,
 numbers, recipe, yard, check). `python tools/index.py <word>` finds the older
 one-off tools. Throwaway drivers go in `scratch/` (git-ignored); before
 writing one, run `python tools/drive.py --api` for the helpers it can call. If a
@@ -162,28 +138,6 @@ Headless can't show waits on the GPU (reading meshes back, writing one
 MultiMesh instance in place), so prove those rendered. Stills from a driven
 run show what it really flew over. Repeat an A/B before believing it.
 
-# Meadows and flats
-
-The land always has meadows and flats in reach: wherever the plane is
-over land, a flat stretch long enough to land by hand is never far off.
-Terrain, kinds of place and dressing added to the land must not take that
-away.
-
-# Handles
-
-Placement code names its pieces: it asks `scripts/layout_overrides.gd` for
-each piece by a stable name (`<route>/<piece>`), and the moves in the layout
-file (`layouts/<scene>.json`) win over the coded spot; the slot halls read
-theirs this way (`scripts/endless/hall_sites.gd`). Keep those names stable;
-saved layouts key on them. (The in-world editor that wrote layout files,
-F4, was part of the aqueduct isle and is in the archive.)
-
-# The ruin kit
-
-The arches, halls and tunnels in the land are built from RuinKit pieces
-(`scripts/ruin_kit*.gd`). Keep piece ids stable: the land's recipes and the
-break kinds (`scripts/breaks/break_kinds.gd` `KIND_OF`) name them.
-
 # Subagent models
 
 Pick a subagent's model by what it makes:
@@ -208,33 +162,3 @@ scouts return short `path:line` reports; read only the lines they point
 to. A scout's list is a lead, not a census: before an edit that must reach
 every call site, every user of a name or every file a change touches, run
 that grep yourself.
-
-# Sizes
-
-The plane's and the wanderer's sizes live only in `scripts/world_scale.gd`,
-the one parser of `--plane-scale=` / `--wanderer-scale=` / `--opening-ratio=`.
-Size a flown opening from its toy-era width (named in the file that owns it,
-e.g. `TOY_THREAD := 3.5`) with `WorldScale.opening(toy_width)`: toy width x
-plane x `RATIO` (1.0), floored at `SNUG` (1.2 m past each wingtip). At
-`--plane-scale=1 --opening-ratio=1` every opening is its toy width exactly.
-Use `gap(room)` only for spacing with no toy width, and a knife-edge slot
-only on purpose with `knife()`. The ruin kit's steps, ledges and jump gaps
-come from the walker's numbers, frozen in the kit when the walker was cut
-(`RuinKit.STAND`, `GRAB_TOP`/`CHAIN_TOP`, the tower's kick). Other files ask WorldScale rather than
-copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
-`tests/test_world_scale_guard.gd`.
-
-# Animation
-
-Characters and enemies animate to a high bar: authored key poses
-that read at a glance, anticipation, squash and stretch, follow-through,
-snappy timing with holds, and weight that matches size. Author clips in
-Blender (rig + actions exported to glb) and layer procedural corrections,
-such as hands placed on the real wall, on top of them. Judge animation by
-eye in rendered captures.
-
-# Models
-
-A round that makes or changes a model assesses the geometry tricks in
-`docs/art/model-budget.md` and lists in its handoff which apply, with
-estimated triangle and frame-time savings.

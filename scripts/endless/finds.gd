@@ -94,8 +94,14 @@ func setup(game: Node) -> void:
 	hud = Hud.new()
 	hud.setup(game,self)
 	layer.add_child(hud)
+	# A candidate Peak body (--peak-shape=): the old Peak's finds and the
+	# glacier's (its gorge run's gates) stand down with its profile.
+	var pk: RefCounted = _field.peak() if _field.has_method("peak") else null
+	var shaped := pk != null and bool(pk.shaped())
 	for world_id: String in Table.WORLDS:
-		for r: Dictionary in Table.WORLDS[world_id]: _add(world_id,r)
+		for r: Dictionary in Table.WORLDS[world_id]:
+			if shaped and str(r.get("area","")) in ["peak","foothills"]: continue
+			_add(world_id,r)
 	_resolve()
 	_stream(game.plane.position,true)
 	var missing: int = _pending.size()
@@ -222,7 +228,7 @@ func _split(key: String) -> Vector3:
 
 func _peak(parts: PackedStringArray) -> Vector3:
 	var pk: RefCounted = _field.peak() if _field.has_method("peak") else null
-	if pk == null: return Vector3.INF
+	if pk == null or pk.shaped(): return Vector3.INF
 	var t: Dictionary = pk.tarn()
 	match parts[1]:
 		"summit": return pk.summit()

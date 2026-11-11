@@ -50,6 +50,7 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Sites = preload("res://scripts/endless/hall_sites.gd")
 const Ponds = preload("res://scripts/endless/land_ponds.gd")
+const PeakBody = preload("res://scripts/endless/peak_body.gd")
 
 const HANDLE := "peak/massif"
 ## The tarn's water (its centre, at its level): origin moves it on the
@@ -561,6 +562,16 @@ var _crown_ph := PackedFloat32Array()
 var _root_way := PackedVector2Array()
 ## The roots on (`--spire-form=0` off).
 var _form := true
+## A candidate body in place of the profile (`--peak-shape=a|b|c`,
+## scripts/endless/peak_body.gd), or null. With one, the profile and everything
+## pinned to it (the tarn, the ice, the gorges, the plateau) are off: the
+## massif's height is the body's, and its tarn, gorge and finds' callers check
+## `shaped()` and stand down.
+var body: RefCounted = null
+
+## Whether this massif is a candidate body (not the old profile).
+func shaped() -> bool:
+	return body != null
 
 ## Whether the massif climbs into the towers (`--spire-form=0` the dome and post).
 static func form_wanted() -> bool:
@@ -588,6 +599,11 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 	if not is_finite(yaw): yaw = rad_to_deg(atan2(-at.x,-at.y))
 	var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(yaw)),Vector3(at.x,0.0,at.y))
 	var m: RefCounted = new(land_seed,LayoutOverrides.xform(HANDLE,coded))
+	var shape := PeakBody.wanted(LaunchArgs.user_args())
+	if shape != "":
+		m.body = PeakBody.new(shape,land_seed)
+		m.pond = PackedFloat32Array()
+		m.body.bake_autumn(m.centre,m.facing,m.side)
 	if ground.is_valid() and not LaunchArgs.user_args().has("--peak-mask=0"): m._mask(land_seed,ground)
 	m._go_native(land_seed,ground)
 	return m
@@ -610,7 +626,7 @@ static func native_wanted() -> bool:
 	if _native_state < 0:
 		var ok := true
 		for a: String in LaunchArgs.user_args():
-			if a == "--native-peak=0" or a == "--gdscript-kernels" or a == "--cirque=0" or a == "--spire-form=0": ok = false
+			if a == "--native-peak=0" or a == "--gdscript-kernels" or a == "--cirque=0" or a == "--spire-form=0" or a.begins_with("--peak-shape="): ok = false
 		if ok:
 			var path := "res://native/terrain_kernels/zenscape_kernels.gdextension"
 			if not ClassDB.class_exists(NATIVE_CLASS) and FileAccess.file_exists(path):
@@ -1123,6 +1139,13 @@ func world(a: float, v := 0.0) -> Vector2:
 ## The ground shader's Peak uniforms (shaders/endless_ground.gdshader
 ## `peak_paint`): the frame, the zone, the snow line and the valley.
 func paint() -> Dictionary:
+	if body != null:
+		# The zone, the snow and the rock by height; no ice, valley floor, cirque
+		# or rock gorge.
+		return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
+			"peak_snow":SNOW_LINE,"peak_basalt":1.0 if dark_wanted() else 0.0,"peak_stretch":Vector4(1.0e6,1.0e6,1.0e6,1.0e6),
+			"peak_cirque_strip":Vector4(0.0,0.0,0.0,0.0),"peak_ice_on":0.0,"peak_rock_count":0,
+			"peak_basalt_span":body.basalt_span(),"peak_basalt_rag":body.basalt_rag()}
 	return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
 		"peak_snow":SNOW_LINE,"peak_basalt":1.0 if dark_wanted() else 0.0,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
 		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y),
@@ -1146,6 +1169,7 @@ func tarn() -> Dictionary:
 ## Whether the box (x0, z0)..(x1, z1) meets the tarn's reach (its water and
 ## the REACH round it that its reads carry).
 func tarn_meets(x0: float, z0: float, x1: float, z1: float) -> bool:
+	if pond.is_empty(): return false
 	var far := _tarn_wet+Ponds.REACH
 	return pond[0]+far >= x0 and pond[0]-far <= x1 and pond[1]+far >= z0 and pond[1]-far <= z1
 
@@ -1164,6 +1188,9 @@ func cirque_at(x: float, z: float) -> Vector4:
 ## lower than PLATEAU_UNDER m under its flat): where a landing is on the Peak.
 const PLATEAU_UNDER := 25.0
 func on_plateau(p: Vector3) -> bool:
+	if body != null:
+		var fc := world(body.flat_c.x,body.flat_c.y)
+		return Vector2(p.x,p.z).distance_to(fc) < float(body.flat_r)+float(body.flat_blend) and p.y-SEA_Y > float(body.flat_y)-PLATEAU_UNDER
 	return Vector2(p.x,p.z).distance_to(centre) < PLATEAU_BLEND and p.y-SEA_Y > PLATEAU_Y-PLATEAU_UNDER
 
 ## Gorge `g` (Split.ICE, Split.ROCK): {line (world points on its floor's middle,
@@ -1245,6 +1272,7 @@ func carve_line(height: Callable) -> Dictionary:
 ## The tower bases' tops (world), for the spires.
 func tower_bases() -> Array[Vector3]:
 	var out: Array[Vector3] = []
+	if body != null: return out
 	for k in _towers.size():
 		var p := world(_towers[k].x,_towers[k].y)
 		out.append(Vector3(p.x,_tower_tops[k]+SEA_Y,p.y))
@@ -1252,6 +1280,11 @@ func tower_bases() -> Array[Vector3]:
 
 ## The crown's highest tip (world).
 func summit() -> Vector3:
+	if body != null:
+		var top: Dictionary = body.crown()[0]
+		var at: Vector2 = top.at+top.lean
+		var p := world(at.x,at.y)
+		return Vector3(p.x,float(top.tip)+SEA_Y,p.y)
 	var best := 0
 	for k in CROWN.size():
 		if float(CROWN[k][2]) > float(CROWN[best][2]): best = k
@@ -1267,6 +1300,14 @@ func _lean(k: int) -> Vector2:
 ## coded place, on the land's own height (`height`: world y at (x, z)).
 func crown(height: Callable, entry: Callable) -> Array:
 	var out: Array = []
+	if body != null:
+		for t: Dictionary in body.crown():
+			var at: Vector2 = t.at
+			var ln: Vector2 = t.lean
+			var e: Dictionary = entry.call(world(at.x,at.y),float(t.base),float(t.tip),world(ln.x,ln.y)-world(0.0,0.0),float(t.girth),int(t.seed))
+			e["spire"] = true
+			out.append(e)
+		return out
 	for k in CROWN.size():
 		var row: Array = CROWN[k]
 		var at := world(float(row[0]),float(row[1]))
@@ -1431,6 +1472,9 @@ func _h(a: float, v: float, step := 0.0) -> Vector3:
 ## floor only the hollows move: back from the flown air, down to the floor's edge
 ## and never past it, so the floor stands and no wall comes nearer the plane.
 func _h_rock(a: float, v: float, step: float) -> Vector4:
+	if body != null:
+		var hb: Vector3 = body.h(a,v)
+		return Vector4(hb.x,hb.y,hb.z,0.0)
 	if _native != null: return _native.h_rock(a,v,step)
 	var r := _h_rock0(a,v,step)
 	if ice_carve and a > LEAD_FROM and a < GLACIER.y:
@@ -1456,6 +1500,7 @@ func _h_rock0(a: float, v: float, step: float) -> Vector4:
 
 ## The massif's own shapes at (a, v).
 func _h0(a: float, v: float) -> Vector3:
+	if body != null: return body.h(a,v)
 	var n := _noise.get_noise_2d(a,v)
 	var av := absf(v)
 	var sg := 1.0 if v >= 0.0 else -1.0

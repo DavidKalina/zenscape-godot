@@ -109,7 +109,7 @@ static func with_arches(field: RefCounted, cx: int, cz: int, specs: Array) -> Ar
 static func gates_grid(field: RefCounted) -> Dictionary:
 	if not wanted() or not field.has_method("peak"): return {}
 	var peak: RefCounted = field.peak()
-	if peak == null: return {}
+	if peak == null or peak.shaped(): return {}
 	var list: Array = []
 	var add := func(name: String, c: Vector3, n: Vector3, w: float, h: float) -> void:
 		var r := Vector3.UP.cross(n).normalized()
@@ -146,7 +146,7 @@ static func cells(field: RefCounted) -> Dictionary:
 static func _all(field: RefCounted) -> Dictionary:
 	if not wanted() or not field.has_method("peak"): return {}
 	var peak: RefCounted = field.peak()
-	if peak == null: return {}
+	if peak == null or peak.shaped(): return {}
 	var key := [int(field.seed),peak.centre,peak.facing]
 	_lock.lock()
 	var got: Variant = _cache.get(key)

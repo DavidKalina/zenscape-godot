@@ -59,7 +59,12 @@ var sites := {}
 func setup(g: Node3D, s: Node3D) -> void:
 	game = g
 	smash = s
-	for site: Dictionary in SITES: place(site.name,site.at,site.yaw)
+	# A candidate Peak body (--peak-shape=): no rooms on the old Peak's plateau
+	# and gorge.
+	var pk: RefCounted = g.field.peak()
+	for site: Dictionary in SITES:
+		if pk != null and pk.shaped() and str(site.name) in ["cracked/gorge","cracked/tarn"]: continue
+		place(site.name,site.at,site.yaw)
 
 ## A chamber at `at` (world XZ), turned `yaw`: see the header.
 func place(handle: String, at: Vector2, yaw: float) -> void:

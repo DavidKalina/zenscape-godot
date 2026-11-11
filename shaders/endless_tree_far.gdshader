@@ -8,6 +8,7 @@ shader_type spatial;
 render_mode cull_back, diffuse_lambert, specular_disabled;
 // The cheap sway with the wind where the tree stands (tree_wind.gdshaderinc).
 #include "res://shaders/tree_wind.gdshaderinc"
+#include "res://shaders/autumn_place.gdshaderinc"
 
 uniform vec4 band = vec4(0.0, 1.0, 1e6, 1.0);
 uniform vec4 albedo : source_color = vec4(1.0);
@@ -17,10 +18,12 @@ uniform float baked = 1.0;
 uniform float sway_tall = 4.3;
 
 varying float keep;
+varying flat vec2 far_foot;
 
 void vertex() {
 	vec3 foot = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	float d = distance(foot, CAMERA_POSITION_WORLD);
+	far_foot = foot.xz;
 	keep = smoothstep(band.x, band.x + band.y, d) * (1.0 - smoothstep(band.z - band.w, band.z, d));
 	if (keep > 0.0 && zs_tree_alive > 0.0) {
 		float tall = sway_tall * length(MODEL_MATRIX[1].xyz);
@@ -32,6 +35,9 @@ void vertex() {
 
 void fragment() {
 	vec3 shade = mix(vec3(1.0), COLOR.rgb, baked);
-	ALBEDO = albedo.rgb * shade;
+	vec3 c = albedo.rgb * shade;
+	// Autumn by place (the Peak's shelf), as the near crowns turn.
+	if (zs_autumn_rect.z > 0.0) zs_autumn_tree(c, far_foot, zs_autumn_here(far_foot));
+	ALBEDO = c;
 	ROUGHNESS = 1.0;
 }
