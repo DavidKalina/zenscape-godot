@@ -124,6 +124,24 @@ var built := 0
 var block_tris := 0
 var piece_tris := 0
 
+## The one noise map every lining surface is worn from (the shader's
+## `wear_tex`), made once and shared by every bore.
+static var _wear: ImageTexture
+
+static func _wear_map() -> ImageTexture:
+	if _wear: return _wear
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.fractal_type = FastNoiseLite.FRACTAL_FBM
+	n.fractal_octaves = 5
+	n.frequency = 0.022
+	n.seed = 7
+	var img := n.get_seamless_image(256,256,false,false,0.1,true)
+	img.convert(Image.FORMAT_L8)
+	img.generate_mipmaps()
+	_wear = ImageTexture.create_from_image(img)
+	return _wear
+
 func setup(land_field: RefCounted) -> void:
 	field = land_field
 	line = RailLine.shared()
@@ -138,10 +156,14 @@ func setup(land_field: RefCounted) -> void:
 	_tunnels = line.stretches("tunnel")
 	_lining = ShaderMaterial.new()
 	_lining.shader = LINING_SHADER
+	_lining.set_shader_parameter("wear_tex",_wear_map())
 	# The portals in the same stone out of doors, the sky's light in its shade.
 	_stone = _lining.duplicate()
 	_stone.set_shader_parameter("fill",0.0)
 	_stone.set_shader_parameter("sky_fill",PORTAL_SKY)
+	_stone.set_shader_parameter("arch_half",BoreShape.half())
+	_stone.set_shader_parameter("arch_crown",BoreShape.crown())
+	_stone.set_shader_parameter("relief",0.8)
 	_head = StandardMaterial3D.new()
 	_head.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_head.albedo_color = HEAD_COLOR
