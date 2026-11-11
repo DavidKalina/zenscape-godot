@@ -40,10 +40,11 @@ extends RefCounted
 ##   s before it pulls out (the study parks the plane on the deck: `ground`).
 ##   --ride-car=<kind> sits on another kind with a top (box: the tallest roof,
 ##   9 m), --ride-at=<s> that many seconds further on, wherever the train is then
-##   moving or not. The ride start's lap (s, period 1038): it pulls out at 3,
-##   farm town 243, the west tunnel 415-451 (the meeting about 430), the mine
-##   trestle 453-507, mine town 520, cattle town 726, the bay bridge 927-979 (the
-##   meeting about 950), the start station again 1011.
+##   moving or not. The ride start's lap (s after it pulls out, period 960):
+##   farm town 176, the inner viaduct 255-275, the north tunnel 276-291 (the
+##   meeting about 335 on the clock's lap: 515), mine town 436 (up on the
+##   Peak's shelf), down the shelf to the cattle town 680, the bay bridge
+##   780-850 (the meeting), the start station again 900.
 ## - **On the line** it rides the whole lap with nothing in its way: the bores'
 ##   vault is the least room over it, 6.9 m over the plane's top sat on the
 ##   tallest roof (a boxcar, 9 m: RailBoreShape sizes the vault on it); the spans
