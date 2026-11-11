@@ -574,6 +574,7 @@ func _ready() -> void:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
 	FrameLog.begin(preload("res://scripts/launch_args.gd").user_args())
+	StreamLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	if FrameLog.on and not GroundTally.on and "--ground-tally" in preload("res://scripts/launch_args.gd").user_args(): GroundTally.start()
 	LineLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	# The layout file first: the slot halls' sites read its moves when

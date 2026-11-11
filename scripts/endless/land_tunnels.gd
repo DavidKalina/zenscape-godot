@@ -739,8 +739,39 @@ func deep(p: Vector3) -> bool:
 		if minf(q.x,t.length-q.x) < DEEP_IN: return false
 		for sh: Dictionary in t.shafts:
 			if Vector2(p.x,p.z).distance_to(sh.at) < DEEP_IN: return false
-		return true
+		return not _mouth_seen(t,p)
 	return false
+
+## Whether either mouth of `t` shows from `p` in its bore: down a straight
+## bore the mouth is in view from far past DEEP_IN, and the land outside
+## came on in one frame there (found in play, flying out of the falls'
+## tunnel). Three points across each mouth, MOUTH_IN m inside it, by `sight`;
+## looked at again every MOUTH_EVERY frames.
+const MOUTH_IN := 3.0
+const MOUTH_SIDE := 3.0
+const MOUTH_EVERY := 3
+var _mouth_frame := -1000
+var _mouth_was := false
+func _mouth_seen(t: Tunnels.Site, p: Vector3) -> bool:
+	var frame := Engine.get_process_frames()
+	if absi(frame-_mouth_frame) < MOUTH_EVERY: return _mouth_was
+	_mouth_frame = frame
+	_mouth_was = false
+	var whole := sight_whole
+	for s: float in [MOUTH_IN,t.length-MOUTH_IN]:
+		var at: Array = Tunnels.at_s(t,s)
+		var c: Vector2 = at[0]
+		var across := Vector2(-(at[1] as Vector2).y,(at[1] as Vector2).x)
+		for side: float in [0.0,-MOUTH_SIDE,MOUTH_SIDE]:
+			var m := c+across*side
+			var b := Tunnels.bore_at(t,m.x,m.y)
+			if is_nan(b.x): continue
+			if sight(p,Vector3(m.x,(b.x+b.y)*0.5,m.y)) >= 0.999:
+				_mouth_was = true
+				break
+		if _mouth_was: break
+	sight_whole = whole
+	return _mouth_was
 
 ## Each mouth's and shaft's daylight in the sun's colour and strength (none
 ## at night, nor past DAY_REACH of its tunnel).

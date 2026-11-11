@@ -232,6 +232,9 @@ func _plan() -> void:
 	_queue.sort_custom(func(a: Vector3i, b: Vector3i) -> bool:
 		if first and a.x != b.x: return a.x > b.x
 		return _distance(a) < _distance(b))
+	if StreamLog.on:
+		for key: Vector3i in _queue: StreamLog.want(&"land",key,_distance_flat(key))
+		StreamLog.keep(&"land",_wanted,_pending)
 	_show()
 
 func _split(level: int, ix: int, iz: int) -> void:
@@ -352,6 +355,7 @@ func _ask() -> void:
 		var id := WorkerThreadPool.add_task(_build.bind(key,seed),high)
 		_tasks[id] = key
 		if high: _high[id] = true
+		if StreamLog.on: StreamLog.ask(&"land",key)
 	if not held.is_empty(): _queue = held+_queue
 	# Tasks done: their ids let go.
 	for id: int in _tasks.keys():
@@ -390,6 +394,7 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	made.tops =_tops_of(key,made.get("heights",PackedFloat32Array()))
 	made.key = key
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
+	made.ended = Time.get_ticks_usec()
 	_done_lock.lock()
 	_done.append(made)
 	_done_lock.unlock()
@@ -722,6 +727,7 @@ func _commit() -> bool:
 		var r: Dictionary = ready.pop_front()
 		var key: Vector3i = r.key
 		_pending.erase(key)
+		if StreamLog.on: StreamLog.built(&"land",key,float(r.ms),int(r.ended))
 		var tops: Dictionary = r.get("tops",{})
 		_keep_tops(key,tops)
 		stats.built += 1
@@ -782,7 +788,9 @@ func _show() -> void:
 			for key: Vector3i in got: show[key] = true
 	for key: Vector3i in _shown.keys():
 		if not show.has(key) and _chunks.has(key): (_chunks[key].node as Node3D).visible = false
-	for key: Vector3i in show.keys(): (_chunks[key].node as Node3D).visible = true
+	for key: Vector3i in show.keys():
+		(_chunks[key].node as Node3D).visible = true
+		if StreamLog.on and not _shown.has(key): StreamLog.show(&"land",key,key.x,_distance_flat(key))
 	_shown = show
 	for key: Vector3i in _chunks.keys():
 		if show.has(key) or _wanted.has(key): continue

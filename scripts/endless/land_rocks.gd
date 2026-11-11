@@ -162,6 +162,7 @@ func step(at: Vector3) -> void:
 		var key: Vector2i = _queue.pop_front()
 		if _cells.has(key) or _pending.has(key): continue
 		_pending[key] = WorkerThreadPool.add_task(_task.bind(key))
+		if StreamLog.on: StreamLog.ask(&"rocks",key)
 	var began := Time.get_ticks_usec()
 	if _add_bodies(began): return
 	while true:
@@ -229,12 +230,19 @@ func _plan(at: Vector3) -> void:
 	_queue.clear()
 	for key: Vector2i in _wanted(at,REACH):
 		if not _cells.has(key) and not _pending.has(key): _queue.append(key)
+	if StreamLog.on:
+		var keys := {}
+		for key: Vector2i in _queue:
+			keys[key] = true
+			StreamLog.want(&"rocks",key,_cell_distance(key,at))
+		StreamLog.keep(&"rocks",keys,_pending)
 	for key: Vector2i in _cells.keys():
 		if _cell_distance(key,at) > _reach_of(key)+Plan.CELL: _free_cell(key)
 
 func _task(key: Vector2i) -> void:
 	if _quit: return
 	var result := _build_cell(key,Field.new(seed))
+	result["ended"] = Time.get_ticks_usec()
 	_lock.lock()
 	_done.append(result)
 	_lock.unlock()
@@ -258,6 +266,9 @@ func _commit_one(done: Dictionary) -> void:
 	var key: Vector2i = done.key
 	var t0 := Time.get_ticks_usec()
 	stats.slowest_build_ms = maxf(stats.slowest_build_ms,float(done.ms))
+	if StreamLog.on:
+		StreamLog.built(&"rocks",key,float(done.ms),int(done.get("ended",0)))
+		StreamLog.show(&"rocks",key,0,_cell_distance(key,_eye))
 	if _cells.has(key) or _cell_distance(key,_eye) > _reach_of(key)+Plan.CELL*2.0: return
 	var records: Array = []
 	for b: Dictionary in done.groups:

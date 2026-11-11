@@ -529,6 +529,7 @@ func step(at: Vector3, plane_at: Vector3) -> void:
 		if job[0] == "b" and _blocks.has(key): continue
 		if job[0] == "f" and _far.has(key): continue
 		_pending[name] = WorkerThreadPool.add_task(_task.bind(String(job[0]),key))
+		if StreamLog.on: StreamLog.ask(&"trees",name)
 	var began := Time.get_ticks_usec()
 	while true:
 		_lock.lock()
@@ -656,6 +657,15 @@ func _plan(at: Vector3) -> void:
 		if j < far_jobs.size():
 			_queue.append(far_jobs[j])
 			j += 1
+	if StreamLog.on:
+		var names := {}
+		for job: Array in _queue:
+			var k: Vector2i = job[1]
+			var size: float = BLOCK if job[0] == "b" else Plan.FAR_CELL
+			var name := "%s%d_%d" % [job[0],k.x,k.y]
+			names[name] = true
+			StreamLog.want(&"trees",name,_rect_distance(k.x*size,k.y*size,size,at))
+		StreamLog.keep(&"trees",names,_pending)
 	for key: Vector2i in _blocks.keys():
 		if _rect_distance(key.x*BLOCK,key.y*BLOCK,BLOCK,at) > MID.z+BLOCK: _free_block(key)
 	for key: Vector2i in _far.keys():
@@ -671,6 +681,7 @@ func _task(kind: String, key: Vector2i) -> void:
 	var field := Field.new(seed)
 	var plan := _plan_for()
 	var result: Dictionary = _build(kind,key,field,plan)
+	result["ended"] = Time.get_ticks_usec()
 	_lock.lock()
 	_done.append(result)
 	_lock.unlock()
@@ -1070,6 +1081,12 @@ func _lookup(ck: Vector2i, trees: PackedFloat32Array) -> Dictionary:
 
 func _commit(done: Dictionary) -> void:
 	var key: Vector2i = done.key
+	if StreamLog.on:
+		var far_cell: bool = done.kind == "f"
+		var size: float = Plan.FAR_CELL if far_cell else BLOCK
+		var name := "%s%d_%d" % [done.kind,key.x,key.y]
+		StreamLog.built(&"trees",name,float(done.ms),int(done.get("ended",0)))
+		StreamLog.show(&"trees",name,1 if far_cell else 0,_rect_distance(key.x*size,key.y*size,size,_eye))
 	stats.plan_ms += float(done.ms)
 	stats.plans += 1
 	stats.slowest_plan_ms = maxf(stats.slowest_plan_ms,float(done.ms))

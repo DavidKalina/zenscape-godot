@@ -1054,6 +1054,10 @@ func _plan() -> void:
 		layer.queue.clear()
 		for key: Vector2i in layer.wanted:
 			if not layer.cells.has(key) and not layer.pending.has(key): layer.queue.append(key)
+		if StreamLog.on:
+			var log_as := &"grass_far" if layer.far else &"grass"
+			for key: Vector2i in layer.queue: StreamLog.want(log_as,key,_cell_d(key))
+			StreamLog.keep(log_as,layer.wanted,layer.pending)
 		# Nearest by the ring distance first: ahead before behind.
 		layer.queue.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return _cell_d(a) < _cell_d(b))
 
@@ -1074,6 +1078,7 @@ func _ask() -> void:
 				one[0] = (one[0] as Dictionary).duplicate()
 				if layer.native == null: one[1] = null
 			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,mix,lod),false,"grass cell")
+			if StreamLog.on: StreamLog.ask(&"grass_far" if layer.far else &"grass",key)
 
 ## Finished tasks let go.
 func _reap() -> void:
@@ -1103,6 +1108,7 @@ func _stand(all := false) -> void:
 			stats.grown += 1
 			stats.grow_ms += float(r.ms)
 			stats.slowest_grow_ms = maxf(stats.slowest_grow_ms,float(r.ms))
+			if StreamLog.on: StreamLog.built(&"grass_far" if layer.far else &"grass",r.key,float(r.ms),int(r.ended))
 			if layer.cells.has(r.key) or not layer.wanted.has(r.key): continue
 			var node := Node3D.new()
 			node.name = "%s_%d_%d" % ["Far" if layer.far else "Near",r.key.x,r.key.y]
@@ -1166,6 +1172,7 @@ func _stand_some(all: bool, began: int) -> void:
 	if cull: node.set_meta("groups",groups.values())
 	node.set_meta("instances",int(_standing[3]))
 	layer.cells[r.key] = node
+	if StreamLog.on: StreamLog.show(&"grass_far" if layer.far else &"grass",r.key,1 if layer.far else 0,_cell_d(r.key))
 	_standing = []
 
 ## The cell half stood let go.
@@ -1436,7 +1443,7 @@ func _grow(layer: Layer, key: Vector2i, land_seed: int, mix: Dictionary, rings: 
 		parts = _join(parts)
 	var took := (Time.get_ticks_usec()-began)/1000.0
 	_lock.lock()
-	_done.append({"layer":layer,"key":key,"parts":parts,"ms":took})
+	_done.append({"layer":layer,"key":key,"parts":parts,"ms":took,"ended":Time.get_ticks_usec()})
 	_lock.unlock()
 
 ## One cell's grass (and, for the near layer, flowers) as plain batches, one
