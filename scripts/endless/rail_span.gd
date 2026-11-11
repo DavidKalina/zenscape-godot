@@ -60,6 +60,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const RailStops = preload("res://scripts/endless/rail_stops.gd")
 const TIMBER_SHADER = preload("res://shaders/rail_timber.gdshader")
+const STONE_SHADER = preload("res://shaders/rail_stone.gdshader")
 
 const LAYER := 1
 ## The deck's frames (m of s) and its pieces (m of s): one mesh and one
@@ -185,7 +186,7 @@ const DECK_TOP_C := Color(0.48,0.41,0.33)
 const TRACK_C := Color(0.36,0.31,0.26)
 const STONE_C := Color(0.80,0.74,0.65,0.65)
 const STONE_LIGHT := Color(0.88,0.83,0.74,0.7)
-const STONE_DAMP := Color(0.64,0.62,0.56,0.65)
+const STONE_DAMP := Color(0.64,0.62,0.56,0.6)
 const IRON_C := Color(0.25,0.24,0.23)
 const TRACK_STRIP := 0.3
 const TRACK_UP := RailTrack.BALLAST_TOP-RailTrack.SLEEPER_BASE
@@ -281,13 +282,26 @@ func setup(land_field: RefCounted, a_line: RefCounted = null) -> void:
 	var gap: float = line.track_gap()
 	_deck_half = gap*0.5+RailLine.CAR_WIDTH*0.5+DECK_PAST
 	var stone: ShaderMaterial = RuinKit.materials().stone
+	stone = stone.duplicate() as ShaderMaterial
+	stone.shader = STONE_SHADER
+	stone.set_shader_parameter("rim",0.05)
+	stone.set_shader_parameter("stone_knee",0.4)
+	stone.set_shader_parameter("stone_cap",0.62)
+	stone.set_shader_parameter("roughness_value",0.8)
+	stone.set_shader_parameter("stone_tile_bump",1.5)
+	stone.set_shader_parameter("stone_tile_tone",0.55)
+	stone.set_shader_parameter("stone_tile_mortar",0.6)
 	var wood := stone.duplicate() as ShaderMaterial
 	wood.shader = TIMBER_SHADER
 	wood.set_shader_parameter("stone_weather",0.0)
 	wood.set_shader_parameter("grit",0.9)
 	wood.set_shader_parameter("grit_scale",0.7)
 	wood.set_shader_parameter("grit_grade",0.15)
-	wood.set_shader_parameter("roughness_value",0.9)
+	wood.set_shader_parameter("roughness_value",0.8)
+	wood.set_shader_parameter("grain",1.6)
+	wood.set_shader_parameter("rail_fill",0.6)
+	wood.set_shader_parameter("stone_knee",0.3)
+	wood.set_shader_parameter("stone_cap",0.44)
 	_mats = [stone,wood,RailStops.paint()]
 	for sp: Array in line.spans():
 		_s0.append(float(sp[0]))
@@ -438,7 +452,7 @@ func _hull(k: int, ra: PackedVector3Array, rb: PackedVector3Array, fa: Fr, fb: F
 	_hn.append(n)
 	_hv.append_array(ra)
 	_hv.append_array(rb)
-	_hcol.append(col)
+	_hcol.append(_toned(col,mat,ra[0]))
 	_hmat.append(mat)
 	_hflag.append(flags)
 	_hk.append(k)
@@ -1229,6 +1243,18 @@ func _abutment(m: _M, s: float, into: float, foot: float) -> void:
 static func _jitter(c: Color, seed_v: float) -> Color:
 	var h := fposmod(sin(seed_v*12.9898)*43758.5453,1.0)
 	return c.lightened((h-0.5)*0.12) if h > 0.5 else c.darkened((0.5-h)*0.16)
+
+## A hull's drawn colour: each timber member its own tone (some greyer, some
+## browner), each stone piece a little off its neighbours.
+static func _toned(c: Color, mat: int, at: Vector3) -> Color:
+	if mat == PAINT: return c
+	var seed_v := at.x*0.731+at.y*1.377+at.z*0.519
+	var h := fposmod(sin(seed_v*12.9898)*43758.5453,1.0)
+	var h2 := fposmod(sin(seed_v*78.233+1.7)*24634.6345,1.0)
+	if mat == WOOD:
+		var t := c.lightened((h-0.5)*0.3) if h > 0.5 else c.darkened((0.5-h)*0.42)
+		return t.lerp(Color(0.42,0.4,0.37,c.a),maxf(0.0,h2-0.72)*0.9)
+	return c.lightened((h-0.5)*0.14) if h > 0.5 else c.darkened((0.5-h)*0.2)
 
 func _collide(i: int) -> void:
 	var shape := ConcavePolygonShape3D.new()

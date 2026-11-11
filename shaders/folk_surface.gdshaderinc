@@ -74,6 +74,10 @@ uniform float stone_cap = 0.48;
 // The railroad's timber grain (shaders/rail_timber.gdshaderinc).
 #include "res://shaders/rail_timber.gdshaderinc"
 #endif
+#ifdef ZS_RAIL_WEAR
+// The railroad spans' weathering (shaders/rail_wear.gdshaderinc).
+#include "res://shaders/rail_wear.gdshaderinc"
+#endif
 varying vec3 gleam_world;
 #ifdef ZS_NIGHT_STONE
 // The ruins at night (night light round 2, docs/design/night-light/
@@ -191,6 +195,13 @@ void fragment() {
 	NORMAL = detailed;
 #endif
 #endif
+#ifdef ZS_RAIL_WEAR
+	{
+		vec3 worn_n = NORMAL;
+		rough_add += rail_wear(base, worn_n, normalize((INV_VIEW_MATRIX * vec4(face_normal, 0.0)).xyz), gleam_world, local, COLOR, VERTEX, UV);
+		NORMAL = worn_n;
+	}
+#endif
 #ifdef ZS_STONE_WEATHER
 	if (stone_knee > 0.0) {
 		float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
@@ -216,6 +227,9 @@ void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - metallic_value);
 	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * rim_sky * edge * rim;
+#ifdef ZS_RAIL_WEAR
+	EMISSION += diffuse * mix(zs_hemi_sky, vec3(dot(zs_hemi_sky, vec3(0.333))) * vec3(1.1, 0.95, 0.78), 0.6) * zs_hemi_energy / PI * rail_fill * (1.0 - clamp(dot(normal, zs_key_direction), 0.0, 1.0));
+#endif
 #ifdef ZS_STONE_WEATHER
 	// No light() here to see the sun's shadow: faces turned from the sun take
 	// the sky fill, the rest a little of it. Both out underground.

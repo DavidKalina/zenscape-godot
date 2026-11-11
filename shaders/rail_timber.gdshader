@@ -12,6 +12,7 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 #define ZS_STONE_WEATHER
 #define ZS_CRAFT_GRIME
 #define ZS_TIMBER_GRAIN
+#define ZS_RAIL_WEAR
 uniform float shelter_fill = 4.5;
 uniform vec3 shelter_tint : source_color = vec3(1.0, 0.82, 0.6);
 #include "res://shaders/folk_surface.gdshaderinc"
