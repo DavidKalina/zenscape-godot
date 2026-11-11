@@ -64,7 +64,14 @@ const SHAPES := {
 		"arete":{"steps":3,"amp":Vector2(80.0,160.0),"spurs":2,"spur_amp":Vector2(80.0,150.0)},
 		"shelf":{"from":12.0,"to":432.0,"y":Vector2(45.0,390.0),"power":1.0,"width":Vector2(96.0,64.0),
 			"slab":Vector2(380.0,640.0),"step":Vector2(10.0,18.0),"riser":20.0,"cant":0.05,
-			"wall":6.0,"fill":1.25,"fill_max":Vector2(30.0,70.0),"window":16.0}},
+			"fill":1.25,"fill_max":Vector2(30.0,70.0),"window":16.0,
+			# On up from its top to the court (see The upper shelf below).
+			"up":{"way":[[432.0,390.0,64.0,0],[470.0,418.0,48.0,0],[510.0,445.0,44.0,0],[606.0,538.0,42.0,0],[664.0,662.0,40.0,0],
+					[717.0,664.0,40.0,0],[744.0,1212.0,52.0,1],[770.0,1222.0,40.0,2],[930.0,1287.0,40.0,2]],
+				"kinds":[{"slab":Vector2(300.0,460.0),"step":Vector2(10.0,16.0),"riser":20.0,"window":6.0,"smooth":10.0},
+					{"slab":Vector2(36.0,50.0),"step":Vector2(10.0,16.0),"riser":7.0,"window":6.0,"smooth":9.0},
+					{"slab":Vector2(60.0,95.0),"step":Vector2(6.0,10.0),"riser":10.0,"window":10.0,"smooth":9.0}],
+				"step":1.5,"fill_max":Vector2(14.0,34.0)}}},
 	# A long ridge running out to one side against a sheer wall on the far
 	# side, between two short ridges; two big valleys either side of the long
 	# ridge.
@@ -145,7 +152,10 @@ var _gully := FastNoiseLite.new()
 ## shape and seed (`_shelf_line`): {from, to, step (radians a sample), r
 ## (each sample's radius, m), s (m along the line at each), slab (each slab's
 ## start, m along), y0 (its height there), rise (its riser, m), tilt (m per
-## m), w (each sample's width), len (the line's length)}.
+## m), rl (m along its riser takes), w (each sample's width), len (the line's
+## length), pieces (the lower line and the upper: each its own from, to,
+## step, n, r, s, w; the upper's points p and its width square to it, perp),
+## top_len (the lower's length), up_at (the upper's way points, m along)}.
 var _shelf_cfg: Dictionary = {}
 var shelf: Dictionary = {}
 static var _shelf_cache := {}
@@ -207,6 +217,10 @@ func _init(which: String, land_seed: int) -> void:
 	if d.has("arete"): _broken(d.arete,ridges,land_seed)
 	_shelf_cfg = d.get("shelf",{})
 	if "--peak-shelf=0" in preload("res://scripts/launch_args.gd").user_args(): _shelf_cfg = {}
+	# --peak-shelf=low: the lower shelf alone, as the round before had it.
+	elif "--peak-shelf=low" in preload("res://scripts/launch_args.gd").user_args():
+		_shelf_cfg = _shelf_cfg.duplicate()
+		_shelf_cfg.erase("up")
 	if not _shelf_cfg.is_empty(): shelf = _shelf_line(land_seed)
 	_court = d.get("court",{})
 	if not _court.is_empty(): _teeth_from = 320.0
@@ -268,8 +282,8 @@ func _broken(ar: Dictionary,ridges: Array,land_seed: int) -> void:
 # {from, to (degrees round, + toward +v, past 360 for a second turn), y
 # (heights at its ends), power (how the height shares out along it), width
 # (m, at the foot and at the top), slab (lengths, m), step (risers, m), riser
-# (m along each riser takes), cant (m per m out), wall (the cut's slope up
-# from the bench), fill (the built edge's slope down), fill_max (fill fading
+# (m along each riser takes), cant (m per m out), fill (the built edge's
+# slope down; the cut wall up from the bench is `_wall`), fill_max (fill fading
 # out from .x to .y m), window (degrees)}.
 
 ## The shelf's line, made once per shape and seed.
@@ -379,7 +393,153 @@ func _make_shelf(land_seed: int) -> Dictionary:
 	ww.resize(n)
 	var wd: Vector2 = c.width
 	for i in n: ww[i] = lerpf(wd.x,wd.y,ss[i]/total)
-	return {"from":from,"to":to,"step":dth,"n":n,"r":rs,"s":ss,"w":ww,"slab":starts,"y0":y0,"rise":rise,"tilt":tilt,"len":total,"grade":grade}
+	var rl := PackedFloat32Array()
+	rl.resize(starts.size())
+	rl.fill(float(c.riser))
+	var low := {"from":from,"to":to,"step":dth,"n":n,"r":rs,"s":ss,"w":ww,"perp":false}
+	var out := {"from":from,"to":to,"step":dth,"n":n,"r":rs,"s":ss,"w":ww,"slab":starts,"y0":y0,"rise":rise,"tilt":tilt,"rl":rl,"len":total,"grade":grade,
+		"pieces":[low],"top_len":total}
+	if c.has("up"): _make_upper(out,c.up,land_seed)
+	return out
+
+# --- The upper shelf -----------------------------------------------------------
+# From the lower shelf's top on up to the court. Over the foot of the crown the
+# spires' roots stand out of the horn all round from about 500 m up to about
+# 1200 m, but for a crease between two of them on each of three faces, so the
+# bench goes on round under the roots (`way` keeps it under them) to the crease
+# on the flat's face, climbs it as a stair between the two spires there, then
+# swings round the summit's cone under the court's rim, inside the ring of
+# spires, up onto the court. A second line on from the first (its own polar
+# piece, finer, its width and side taken square to the line, not along the
+# radius, as the stair runs in toward the summit). {way: [[degrees round
+# (going on from the lower's `to`), height, width, kind], ...] (the height
+# shared out evenly along the length between each two), kinds: [{slab, step,
+# riser, window}, ...] (0 the bench, 1 the stair, 2 the swing to the court),
+# step (degrees a sample)}.
+
+## Puts the upper line into `out` (the shelf's dictionary, the lower in it).
+func _make_upper(out: Dictionary, up: Dictionary, land_seed: int) -> void:
+	var way: Array = up.way
+	var kinds: Array = up.kinds
+	var from := deg_to_rad(float(way[0][0]))
+	var to := deg_to_rad(float(way[way.size()-1][0]))
+	var dth := deg_to_rad(float(up.step))
+	var n := int(ceil((to-from)/dth))+1
+	dth = (to-from)/float(n-1)
+	var low_r: PackedFloat32Array = out.r
+	var r_join := low_r[low_r.size()-1]
+	# Each sample's segment of the way (k: from way[k] to way[k+1]).
+	var seg := PackedInt32Array()
+	seg.resize(n)
+	var ys := PackedFloat32Array()
+	ys.resize(n)
+	for i in n:
+		var th := rad_to_deg(from+dth*i)
+		var k := 0
+		while k < way.size()-2 and th > float(way[k+1][0]): k += 1
+		seg[i] = k
+		var t := clampf((th-float(way[k][0]))/(float(way[k+1][0])-float(way[k][0])),0.0,1.0)
+		ys[i] = lerpf(float(way[k][1]),float(way[k+1][1]),t)
+	var rs := PackedFloat32Array()
+	rs.resize(n)
+	var ss := PackedFloat32Array()
+	ss.resize(n)
+	var s0 := float(out.len)
+	for pass_i in 2:
+		var raw := PackedFloat32Array()
+		raw.resize(n)
+		for i in n:
+			var th := from+dth*i
+			var kd: Dictionary = kinds[int(way[seg[i]+1][3])]
+			var win := deg_to_rad(float(kd.window))
+			var got: Array = []
+			for k in 5:
+				got.append(_contour(ys[i],th+win*(float(k)-2.0)/2.0,1400.0))
+			got.sort()
+			# `pick` 2 the median; higher rides out round the ridges' noses.
+			raw[i] = float(got[int(kd.get("pick",2))])
+		for i in n:
+			var sum := 0.0
+			var wsum := 0.0
+			var m := maxi(int(round(float(kinds[int(way[seg[i]+1][3])].smooth)/float(up.step))),1)
+			for k in range(-m,m+1):
+				var j := clampi(i+k,0,n-1)
+				var w := float(m+1)-absf(float(k))
+				sum += raw[j]*w
+				wsum += w
+			rs[i] = sum/wsum
+			# Joined to the lower line's end.
+			rs[i] = lerpf(r_join,rs[i],smoothstep(0.0,8.0,float(i)))
+		ss[0] = s0
+		for i in range(1,n):
+			var a := Vector2.from_angle(from+dth*(i-1))*rs[i-1]
+			var b := Vector2.from_angle(from+dth*i)*rs[i]
+			ss[i] = ss[i-1]+a.distance_to(b)
+		# The way's points along the length, and the heights shared out
+		# evenly between them.
+		var at := _way_s(way,from,dth,ss)
+		for i in n:
+			var k := seg[i]
+			var t := clampf((ss[i]-at[k])/maxf(at[k+1]-at[k],0.001),0.0,1.0)
+			ys[i] = lerpf(float(way[k][1]),float(way[k+1][1]),t)
+	var at := _way_s(way,from,dth,ss)
+	var ww := PackedFloat32Array()
+	ww.resize(n)
+	for i in n:
+		var k := seg[i]
+		var t := clampf((ss[i]-at[k])/maxf(at[k+1]-at[k],0.001),0.0,1.0)
+		ww[i] = lerpf(float(way[k][2]),float(way[k+1][2]),t)
+	var pts := PackedVector2Array()
+	pts.resize(n)
+	for i in n: pts[i] = Vector2.from_angle(from+dth*i)*rs[i]
+	# The slabs, each segment of the way its own run of them.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([land_seed,"peak_shelf_up",shape])
+	var starts: PackedFloat32Array = out.slab
+	var y0: PackedFloat32Array = out.y0
+	var rise: PackedFloat32Array = out.rise
+	var tilt: PackedFloat32Array = out.tilt
+	var rl: PackedFloat32Array = out.rl
+	var y := float(way[0][1])
+	for k in way.size()-1:
+		var kd: Dictionary = kinds[int(way[k+1][3])]
+		var a0 := at[k]
+		var a1 := at[k+1]
+		var grade := (float(way[k+1][1])-float(way[k][1]))/maxf(a1-a0,0.001)
+		var sl: Vector2 = kd.slab
+		var stp: Vector2 = kd.step
+		var x := a0
+		while x < a1-0.5:
+			var ln := rng.randf_range(sl.x,sl.y)
+			if x+ln > a1-0.5*sl.x: ln = a1-x
+			var climb := grade*ln
+			var st := minf(rng.randf_range(stp.x,stp.y),0.8*climb)
+			starts.append(x)
+			y0.append(y)
+			rise.append(st)
+			tilt.append((climb-st)/ln)
+			rl.append(float(kd.riser))
+			y += climb
+			x += ln
+	out.slab = starts
+	out.y0 = y0
+	out.rise = rise
+	out.tilt = tilt
+	out.rl = rl
+	out.len = ss[n-1]
+	out.up_from = s0
+	out.up_at = at
+	out.pieces.append({"from":from,"to":to,"step":dth,"n":n,"r":rs,"s":ss,"w":ww,"perp":true,"p":pts})
+
+## The way's points' distances along the line (m), from the samples' (each
+## way point at its angle).
+func _way_s(way: Array, from: float, dth: float, ss: PackedFloat32Array) -> PackedFloat32Array:
+	var at := PackedFloat32Array()
+	for row: Array in way:
+		var f := clampf((deg_to_rad(float(row[0]))-from)/dth,0.0,float(ss.size()-1))
+		var i := mini(int(f),ss.size()-2)
+		at.append(lerpf(ss[i],ss[i+1],f-i))
+	return at
 
 ## The bench's height (over the sea) at `s` m along the shelf's line.
 func shelf_y(s: float) -> float:
@@ -389,7 +549,8 @@ func shelf_y(s: float) -> float:
 	var rz: PackedFloat32Array = shelf.rise
 	var tl: PackedFloat32Array = shelf.tilt
 	var y0: PackedFloat32Array = shelf.y0
-	return y0[k]+rz[k]*smoothstep(0.0,float(_shelf_cfg.riser),x)+tl[k]*minf(x,float(shelf.len)-starts[k])
+	var rl: PackedFloat32Array = shelf.rl
+	return y0[k]+rz[k]*smoothstep(0.0,rl[k],x)+tl[k]*minf(x,float(shelf.len)-starts[k])
 
 ## Where (a, v) stands to the shelf: Vector4(d (m out from its line, + out),
 ## s (m along it), its width there, how much of the shelf is there (0 past its
@@ -398,25 +559,53 @@ func shelf_at(a: float, v: float) -> Vector4:
 	if shelf.is_empty(): return Vector4(INF,0.0,0.0,0.0)
 	var r := sqrt(a*a+v*v)
 	var th := wrapf(atan2(v,a),0.0,TAU)
-	var from := float(shelf.from)
-	var to := float(shelf.to)
-	var dth := float(shelf.step)
-	var n := int(shelf.n)
-	var rs: PackedFloat32Array = shelf.r
-	var ss: PackedFloat32Array = shelf.s
-	var ws: PackedFloat32Array = shelf.w
 	var best := Vector4(INF,0.0,0.0,0.0)
-	var phi := th
-	while phi < from-0.2: phi += TAU
-	while phi <= to+0.2:
-		var f := clampf((phi-from)/dth,0.0,float(n-1)-0.001)
-		var i := int(f)
-		var t := f-i
-		var d := r-lerpf(rs[i],rs[i+1],t)
-		if absf(d) < absf(best.x):
-			var e := smoothstep(from-0.09,from+0.03,phi)*(1.0-smoothstep(to-0.015,to+0.04,phi))
-			best = Vector4(d,lerpf(ss[i],ss[i+1],t),lerpf(ws[i],ws[i+1],t),e)
-		phi += TAU
+	var pieces: Array = shelf.pieces
+	var last := pieces.size()-1
+	for pi in pieces.size():
+		var pc: Dictionary = pieces[pi]
+		var from := float(pc.from)
+		var to := float(pc.to)
+		var dth := float(pc.step)
+		var n := int(pc.n)
+		var rs: PackedFloat32Array = pc.r
+		var ss: PackedFloat32Array = pc.s
+		var ws: PackedFloat32Array = pc.w
+		# A piece joined to the next ends at its angle; the next starts there.
+		var lo := from-0.2 if pi == 0 else from
+		var hi := to+0.2 if pi == last else to
+		var phi := th
+		while phi < lo: phi += TAU
+		while phi <= hi:
+			var f := clampf((phi-from)/dth,0.0,float(n-1)-0.001)
+			var i := int(f)
+			var t := f-i
+			var d := r-lerpf(rs[i],rs[i+1],t)
+			var s := lerpf(ss[i],ss[i+1],t)
+			var wd := lerpf(ws[i],ws[i+1],t)
+			if bool(pc.perp) and absf(d) < 0.5*wd+430.0:
+				# Square to the line: the nearest of its segments round here.
+				var pts: PackedVector2Array = pc.p
+				var q := Vector2(a,v)
+				var bd := INF
+				for j in range(maxi(i-6,0),mini(i+7,n-1)):
+					var p0 := pts[j]
+					var seg := pts[j+1]-p0
+					var u := clampf((q-p0).dot(seg)/maxf(seg.length_squared(),0.001),0.0,1.0)
+					var off := q-(p0+seg*u)
+					var dd := off.length()
+					if dd < bd:
+						bd = dd
+						# Outward: to the right of the way along.
+						d = dd*(1.0 if off.dot(Vector2(seg.y,-seg.x)) >= 0.0 else -1.0)
+						s = lerpf(ss[j],ss[j+1],u)
+						wd = lerpf(ws[j],ws[j+1],u)
+			if absf(d) < absf(best.x):
+				var e := 1.0
+				if pi == 0: e = smoothstep(from-0.09,from+0.03,phi)
+				if pi == last: e *= 1.0-smoothstep(to-0.015,to+0.04,phi)
+				best = Vector4(d,s,wd,e)
+			phi += TAU
 	return best
 
 ## The shelf over the body's height `y` at (a, v): Vector3(height, how much
@@ -428,17 +617,50 @@ func _shelf_on(a: float, v: float, y: float) -> Vector3:
 	var half := 0.5*at.z
 	var yb := shelf_y(at.y)-float(c.cant)*clampf(at.x,-half,half)+0.6*_rough.get_noise_2d(a*2.0,v*2.0)
 	var ex := maxf(absf(at.x)-half,0.0)
-	var upper := yb+float(c.wall)*ex
+	var upper := yb+_wall(ex,at.y,signf(at.x),a,v)
 	var lower := yb-float(c.fill)*ex
 	var yn := clampf(y,lower,upper)
 	var top := 1.0-smoothstep(half-6.0,half+4.0,absf(at.x))
 	if yn > y:
 		# Built out: only so deep, then the bench breaks off.
-		var fm: Vector2 = c.fill_max
+		# (Up on the horn only a little: a deep fill there stands out of the
+		# face as a dam; it breaks off instead.)
+		var fm: Vector2 = c.up.fill_max if c.has("up") and at.y > float(shelf.top_len) else c.fill_max
 		var keep := 1.0-smoothstep(fm.x,fm.y,yn-y)
 		yn = y+(yn-y)*keep
 		top *= keep
 	return Vector3(lerpf(y,yn,at.w),at.w*(1.0-smoothstep(half,half+40.0,absf(at.x))),top*at.w)
+
+## The cut wall's height over the bench `ex` m out past its edge, at `s` m
+## along on `side` (-1 in, +1 out): broken rock, not a facet. Its foot wanders
+## in and out along the way, and it climbs in steps (a steep riser, then a
+## ledge), the risers' slope, height and ledges changing along the way, so
+## one stretch leans back in tiers and the next stands near sheer; its edges
+## crumble, and each tier jogs in or out on its own. On average about 3 to
+## 11 m up a metre out, so it meets the slope above it soon, as a steep wall
+## would.
+func _wall(ex: float, s: float, side: float, a: float, v: float) -> float:
+	var o := side*2900.0
+	var back := 3.0+3.0*_rough.get_noise_2d(s*0.9+o,17.0)+2.0*_rough.get_noise_2d(s*3.1+o,-230.0)+1.2*_rough.get_noise_2d(s*9.0+o,77.0)
+	var x := ex-maxf(back,0.0)
+	if x <= 0.0: return 0.0
+	var k := lerpf(7.0,15.0,0.5+0.5*_rough.get_noise_2d(s*0.55+o,900.0))
+	var hh := lerpf(10.0,30.0,0.5+0.5*_rough.get_noise_2d(s*0.75+o,400.0))
+	var lw := 0.5+0.5*_rough.get_noise_2d(s*1.3+o,-800.0)
+	var ledge := hh*lerpf(0.02,0.35,lw*lw*lw)
+	var run := hh/k
+	var per := run+ledge
+	# Each tier jogs in or out along the way on its own, so the wall breaks
+	# into blocks and buttresses rather than one face.
+	# (Eased from tier to tier, so no edge stands up as a needle.)
+	var t0 := x/per
+	var m0 := floorf(t0)
+	var jog := 9.0*lerpf(_rough.get_noise_2d(s*4.0+o,m0*37.0),_rough.get_noise_2d(s*4.0+o,(m0+1.0)*37.0),smoothstep(0.55,1.0,t0-m0))
+	var q := maxf(x-jog,0.0)/per
+	var m := floorf(q)
+	var hw := m*hh+hh*minf((q-m)*per/run,1.0)
+	var crumble := smoothstep(0.0,8.0,hw)
+	return hw+(3.0*_rough.get_noise_2d(a*4.0,v*4.0)+1.5*_rough.get_noise_2d(a*10.0+300.0,v*10.0))*crumble
 
 ## The bench's top at (a, v) (0..1; 0 without a shelf).
 func shelf_top(a: float, v: float) -> float:
@@ -462,6 +684,10 @@ const AUTUMN_CELL := 5.0
 const SPILL := 55.0
 ## The grass and trees on the bench grow as on ground this high (m over the sea).
 const AUTUMN_OVER := 30.0
+## The bench's height (m over the sea) over which its grass thins out, and its
+## trees.
+const AUTUMN_THIN := Vector2(560.0,900.0)
+const AUTUMN_WOOD_THIN := Vector2(470.0,720.0)
 
 ## Bakes the map for this body in the world frame (`centre` the frame's
 ## origin, `facing` its a axis, `side` its v axis) and puts it in play.
@@ -469,7 +695,7 @@ func bake_autumn(centre: Vector2, facing: Vector2, side: Vector2) -> void:
 	# (The land's workers make bodies too and read the map as they go: it is
 	# put in play once, by the first, and never written again after.)
 	if shelf.is_empty(): return
-	var key := ["autumn",shape,hash(shelf.r),centre,facing]
+	var key := ["autumn",shape,hash(shelf.r),float(shelf.len),centre,facing]
 	_shelf_lock.lock()
 	var got: Variant = _shelf_cache.get(key)
 	if got == null:
@@ -509,9 +735,13 @@ func _bake_autumn(centre: Vector2, facing: Vector2, side: Vector2) -> Dictionary
 			var sp := (1.0-smoothstep(0.0,SPILL*(0.45+0.7*rag),out)) if out > 0.0 else (1.0-smoothstep(0.0,10.0,-at.x-0.5*at.z))
 			# Only down a drop: not up the far wall of a cut through a ridge.
 			if out > 0.0 and sp > 0.0: sp *= 1.0-smoothstep(-6.0,2.0,h(a,v).x-shelf_y(at.y))
-			spill[j*n+i] = sp*at.w
+			# Thinning with height up the upper shelf, bare rock from the
+			# stair's middle on.
+			var yb := shelf_y(at.y)
+			var thin := 1.0-smoothstep(AUTUMN_THIN.x,AUTUMN_THIN.y,yb+40.0*(rag-0.5))
+			spill[j*n+i] = sp*at.w*thin
 			if absf(at.x) > 0.5*at.z+10.0: continue
-			var t := _shelf_on(a,v,_body(a,v).x).z
+			var t := _shelf_on(a,v,_body(a,v).x).z*thin
 			if t <= 0.0: continue
 			top[j*n+i] = t
 			# Woods: a belt along the wall's foot, clumps on the outer lip.
@@ -524,7 +754,7 @@ func _bake_autumn(centre: Vector2, facing: Vector2, side: Vector2) -> Dictionary
 			var outer := smoothstep(0.74,0.80,u)*(1.0-smoothstep(0.88,0.93,u))*smoothstep(-0.05,0.15,cl)
 			# Now and then a grove across the whole bench at a slab's end.
 			var across := smoothstep(0.35,0.5,cl)*smoothstep(0.5,0.6,lump.get_noise_2d(a*0.31+500.0,v*0.31))
-			wood[j*n+i] = t*t*maxf(maxf(inner,outer),across*smoothstep(0.04,0.09,u)*(1.0-smoothstep(0.88,0.93,u)))
+			wood[j*n+i] = t*t*(1.0-smoothstep(AUTUMN_WOOD_THIN.x,AUTUMN_WOOD_THIN.y,yb+60.0*(cl-0.0)))*maxf(maxf(inner,outer),across*smoothstep(0.04,0.09,u)*(1.0-smoothstep(0.88,0.93,u)))
 	return {"x0":x0,"z0":z0,"cell":AUTUMN_CELL,"n":n,"top":top,"wood":wood,"spill":spill}
 
 ## The map's value (`which`: "top" or "wood") at world (x, z), bilinear; 0
@@ -774,12 +1004,14 @@ func start() -> Vector3:
 	return Vector3(at.x,at.y,(on-at).angle())
 
 ## A quick start off the shelf's foot: Vector3(a, v, heading along it as an
-## angle in the frame), 450 m short of it on its way.
-func shelf_start() -> Vector3:
-	var rs: PackedFloat32Array = shelf.r
-	var th := float(shelf.from)
+## angle in the frame), 450 m short of it on its way; `upper`, short of the
+## upper shelf's foot (its lower's top) instead.
+func shelf_start(upper := false) -> Vector3:
+	var pc: Dictionary = shelf.pieces[1] if upper and shelf.pieces.size() > 1 else shelf.pieces[0]
+	var rs: PackedFloat32Array = pc.r
+	var th := float(pc.from)
 	var p0 := Vector2.from_angle(th)*rs[0]
-	var p1 := Vector2.from_angle(th+float(shelf.step))*rs[1]
+	var p1 := Vector2.from_angle(th+float(pc.step))*rs[1]
 	var way := (p1-p0).normalized()
 	var at := p0-way*450.0
 	return Vector3(at.x,at.y,way.angle())

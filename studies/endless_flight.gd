@@ -62,7 +62,8 @@ extends Node3D
 ## in place of the old profile (its tarn, ice, gorges and finds off),
 ## --peak-start with it starts in the air off the mouth of the valley under
 ## the flat at the top, heading up it; --shelf-start off the foot of the
-## shelf round shape a (PeakBody `shelf`), heading along it.
+## shelf round shape a (PeakBody `shelf`), heading along it, --shelf-start=up
+## off the foot of its upper part, which goes on up to the court.
 ## Split mountains (scripts/endless/split_sites.gd): --split-near-start starts
 ## 520 m out of the nearest one's lower mouth, heading in, 28 m up or more
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
@@ -655,15 +656,17 @@ func _ready() -> void:
 			_alt_given = true
 	# --peak-start: with a candidate Peak body (--peak-shape=), in the air off
 	# the mouth of the valley under its flat, heading up it.
-	# --shelf-start: off the foot of its shelf (shape a), heading along it.
+	# --shelf-start: off the foot of its shelf (shape a), heading along it;
+	# --shelf-start=up off the foot of its upper shelf (the lower's top).
 	var peak_start := false
-	var shelf_start := "--shelf-start" in preload("res://scripts/launch_args.gd").user_args()
+	var shelf_up := "--shelf-start=up" in preload("res://scripts/launch_args.gd").user_args()
+	var shelf_start := shelf_up or "--shelf-start" in preload("res://scripts/launch_args.gd").user_args()
 	if shelf_start or "--peak-start" in preload("res://scripts/launch_args.gd").user_args():
 		var pk: RefCounted = field.peak()
 		if pk == null or not pk.shaped(): push_warning("--peak-start, --shelf-start: need --peak-shape=a|b|c")
 		elif shelf_start and pk.body.shelf.is_empty(): push_warning("--shelf-start: this shape has no shelf")
 		else:
-			var st: Vector3 = pk.body.shelf_start() if shelf_start else pk.body.start()
+			var st: Vector3 = pk.body.shelf_start(shelf_up) if shelf_start else pk.body.start()
 			_start = pk.world(st.x,st.y)
 			var way: Vector2 = pk.world(cos(st.z),sin(st.z))-pk.world(0.0,0.0)
 			_heading = atan2(-way.x,-way.y)
