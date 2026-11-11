@@ -1368,21 +1368,37 @@ static var _unit: BoxMesh
 static func _box(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float) -> AABB:
 	return AABB(Vector3(x0,y0,z0),Vector3(x1-x0,y1-y0,z1-z0))
 
-func _mat(key: String) -> StandardMaterial3D:
+## Which of the train's shared materials (assets/models/train/<name>.tres) a
+## block's look is made of: what the models' own surfaces are, weathered the same.
+const SURFACE := {
+	"under":"iron", "iron":"iron", "roof":"metal", "brace":"metal", "truss":"metal",
+	"crane":"metal", "boom":"metal", "window":"glass", "culvert":"concrete",
+	"inside":"dark", "slat":"dark", "gold":"brass",
+}
+
+func _mat(key: String) -> Material:
 	if _mats.has(key): return _mats[key]
-	var m := StandardMaterial3D.new()
 	var c: Color = LOOKS.get(key,Color.MAGENTA)
-	m.albedo_color = c
-	m.roughness = 0.85
-	# A sky fill of its own: the land's shaders bring theirs, a plain material
-	# none, and a car's shaded side went black.
-	m.emission_enabled = true
-	m.emission = c*FILL
-	if GLOW.has(key):
-		m.emission = c
-		m.emission_energy_multiplier = float(GLOW[key])
-	_mats[key] = m
-	return m
+	var shared := "res://assets/models/train/%s.tres" % str(SURFACE.get(key,"wood"))
+	if GLOW.has(key) or not ResourceLoader.exists(shared):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = c
+		m.roughness = 0.85
+		# A sky fill of its own: the land's shaders bring theirs, a plain material
+		# none, and a car's shaded side went black.
+		m.emission_enabled = true
+		m.emission = c*FILL
+		if GLOW.has(key):
+			m.emission = c
+			m.emission_energy_multiplier = float(GLOW[key])
+		_mats[key] = m
+		return m
+	# The models' own shader, the block's colour its `tint`: a block carries no
+	# vertex colours, so it is weathered as the cars are, not left clean.
+	var sm := (load(shared) as ShaderMaterial).duplicate() as ShaderMaterial
+	sm.set_shader_parameter(&"tint",c)
+	_mats[key] = sm
+	return sm
 
 func _exit_tree() -> void:
 	if game == null or not is_instance_valid(game.arches): return
