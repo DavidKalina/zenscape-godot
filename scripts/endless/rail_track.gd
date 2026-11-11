@@ -20,6 +20,7 @@ extends Node3D
 
 const RailLine = preload("res://scripts/endless/rail_line.gd")
 const RailBed = preload("res://scripts/endless/rail_bed.gd")
+const RailWear = preload("res://scripts/endless/rail_wear.gd")
 ## In a tunnel, past its first DAY_IN m, a piece is on the bore's inside
 ## layer (RailBore: the sun leaves it out).
 const UNDER_LAYER := 1 << 14
@@ -72,8 +73,12 @@ var _near: Array = []
 var _body: Array = []
 var _faces: Array = []
 var _under := PackedByteArray()
-var _earth: StandardMaterial3D
-var _steel: StandardMaterial3D
+var _earth: ShaderMaterial
+var _earth_in: ShaderMaterial
+var _timber: ShaderMaterial
+var _timber_in: ShaderMaterial
+var _steel: ShaderMaterial
+var _steel_in: ShaderMaterial
 ## Pieces built so far (a driver's count).
 var built := 0
 
@@ -101,13 +106,14 @@ func setup(_field: RefCounted) -> void:
 	for st: Array in line.stretches("tunnel"):
 		for i in _n:
 			if i*PIECE >= float(st[0])+DAY_IN and minf(i*PIECE+PIECE,length) <= float(st[1])-DAY_IN: _under[i] = 1
-	_earth = StandardMaterial3D.new()
-	_earth.vertex_color_use_as_albedo = true
-	_earth.roughness = 0.95
-	_steel = StandardMaterial3D.new()
-	_steel.albedo_color = STEEL_C
-	_steel.metallic = 0.2
-	_steel.roughness = 0.45
+	# The weathered surfaces (rail_wear.gd, shaders/rail_track.gdshader): the
+	# ballast, the sleepers and the rails, and the same for a tunnel's inside.
+	_earth = RailWear.track(0)
+	_earth_in = RailWear.track(0,true)
+	_timber = RailWear.track(1)
+	_timber_in = RailWear.track(1,true)
+	_steel = RailWear.track(2)
+	_steel_in = RailWear.track(2,true)
 
 ## Each frame: pieces built near `eye` and freed far from it; colliders near
 ## the plane at `plane_at`.
@@ -213,10 +219,13 @@ func _build_far(i: int) -> void:
 			var lb1 := b-rb*BALLAST_HALF+ub*BALLAST_TOP
 			var rb1 := b+rb*BALLAST_HALF+ub*BALLAST_TOP
 			var rb0 := b+rb*BALLAST_FOOT-ub*BALLAST_SINK
-			m.quad(la0,lb0,lb1,la1,-ra+ua,BALLAST_SIDE_C)
-			m.quad(la1,lb1,rb1,ra1,ua,BALLAST_C)
-			m.quad(ra1,rb1,rb0,ra0,ra+ua,BALLAST_SIDE_C)
-	var mi := m.instance(_earth)
+			# UV: across the track from its middle (m), along the line's s.
+			var sa: float = f.s[k]
+			var sb: float = f.s[k+1]
+			m.quad_uv(la0,lb0,lb1,la1,-ra+ua,BALLAST_SIDE_C,[Vector2(-BALLAST_FOOT,sa),Vector2(-BALLAST_FOOT,sb),Vector2(-BALLAST_HALF,sb),Vector2(-BALLAST_HALF,sa)])
+			m.quad_uv(la1,lb1,rb1,ra1,ua,BALLAST_C,[Vector2(-BALLAST_HALF,sa),Vector2(-BALLAST_HALF,sb),Vector2(BALLAST_HALF,sb),Vector2(BALLAST_HALF,sa)])
+			m.quad_uv(ra1,rb1,rb0,ra0,ra+ua,BALLAST_SIDE_C,[Vector2(BALLAST_HALF,sa),Vector2(BALLAST_HALF,sb),Vector2(BALLAST_FOOT,sb),Vector2(BALLAST_FOOT,sa)])
+	var mi := m.instance(_earth_in if _under[i] == 1 else _earth)
 	if _under[i] == 1: mi.layers = UNDER_LAYER
 	add_child(mi)
 	_far[i] = mi
@@ -244,7 +253,9 @@ func _build_near(i: int) -> void:
 			var r := rs[k].lerp(rs[k+1],t).normalized()
 			var u := us[k].lerp(us[k+1],t).normalized()
 			var fw := u.cross(r)
-			earth.box_lit(c+r*off+u*((SLEEPER_BASE+SLEEPER_TOP)*0.5),r*SLEEPER_HALF,fw*(SLEEPER_WIDTH*0.5),u*((SLEEPER_TOP-SLEEPER_BASE)*0.5),SLEEPER_C)
+			# Its own number, so its tone and its split are its own (the shader).
+			var n := roundf(s/SLEEPER_STEP)
+			earth.box_lit_uv(c+r*off+u*((SLEEPER_BASE+SLEEPER_TOP)*0.5),r*SLEEPER_HALF,fw*(SLEEPER_WIDTH*0.5),u*((SLEEPER_TOP-SLEEPER_BASE)*0.5),SLEEPER_C,s,fposmod(sin(n*12.9898)*43758.5453,1.0))
 			s += SLEEPER_STEP
 		# The two rails, on the sleepers.
 		for rail: float in [-0.5,0.5]:
@@ -257,11 +268,15 @@ func _build_near(i: int) -> void:
 				var a1 := us[q]*RAIL_TOP
 				var b0 := us[q+1]*SLEEPER_TOP
 				var b1 := us[q+1]*RAIL_TOP
-				steel.quad(a-ra+a0,b-rb+b0,b-rb+b1,a-ra+a1,-rs[q],STEEL_C)
-				steel.quad(a-ra+a1,b-rb+b1,b+rb+b1,a+ra+a1,us[q],STEEL_C)
-				steel.quad(a+ra+a1,b+rb+b1,b+rb+b0,a+ra+a0,rs[q],STEEL_C)
-	var mi := earth.instance(_earth)
-	steel.add_to(mi.mesh as ArrayMesh,_steel)
+				# UV: across the rail from its middle, along s; UV2: the top, the height.
+				var h := RAIL_WIDTH*0.5
+				var sa := ss[q]
+				var sb := ss[q+1]
+				steel.quad_uv(a-ra+a0,b-rb+b0,b-rb+b1,a-ra+a1,-rs[q],STEEL_C,[Vector2(-h,sa),Vector2(-h,sb),Vector2(-h,sb),Vector2(-h,sa)],[Vector2(0,0),Vector2(0,0),Vector2(0,1),Vector2(0,1)])
+				steel.quad_uv(a-ra+a1,b-rb+b1,b+rb+b1,a+ra+a1,us[q],STEEL_C,[Vector2(-h,sa),Vector2(-h,sb),Vector2(h,sb),Vector2(h,sa)],[Vector2(1,1),Vector2(1,1),Vector2(1,1),Vector2(1,1)])
+				steel.quad_uv(a+ra+a1,b+rb+b1,b+rb+b0,a+ra+a0,rs[q],STEEL_C,[Vector2(h,sa),Vector2(h,sb),Vector2(h,sb),Vector2(h,sa)],[Vector2(0,1),Vector2(0,1),Vector2(0,0),Vector2(0,0)])
+	var mi := earth.instance(_timber_in if _under[i] == 1 else _timber)
+	steel.add_to(mi.mesh as ArrayMesh,_steel_in if _under[i] == 1 else _steel)
 	if _under[i] == 1: mi.layers = UNDER_LAYER
 	add_child(mi)
 	_near[i] = mi
@@ -286,6 +301,10 @@ class _Mesh:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	## Optional: the weathering shaders' coordinates (rail_wear.gd). A mesh
+	## that never calls the `_uv` methods has none, and no UV arrays.
+	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
 
 	## The quad a b c d (in order round it), facing `face`'s side.
 	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, face: Vector3, col: Color) -> void:
@@ -312,6 +331,121 @@ class _Mesh:
 			verts.append(v)
 			normals.append(n)
 			colors.append(col)
+
+	## `quad` with a UV (and a UV2, if given) for each corner a b c d.
+	func quad_uv(a: Vector3, b: Vector3, c: Vector3, d: Vector3, face: Vector3, col: Color, uv: Array, uv2 := []) -> void:
+		var n := (b-a).cross(c-a)
+		var ua: Vector2 = uv[0]
+		var ub: Vector2 = uv[1]
+		var uc: Vector2 = uv[2]
+		var ud: Vector2 = uv[3]
+		var va := Vector2.ZERO
+		var vb := Vector2.ZERO
+		var vc := Vector2.ZERO
+		var vd := Vector2.ZERO
+		if not uv2.is_empty():
+			va = uv2[0]
+			vb = uv2[1]
+			vc = uv2[2]
+			vd = uv2[3]
+		if n.dot(face) > 0.0:
+			var t := b
+			b = d
+			d = t
+			var tu := ub
+			ub = ud
+			ud = tu
+			var tv := vb
+			vb = vd
+			vd = tv
+			n = -n
+		n = -n.normalized()
+		verts.append_array([a,b,c,a,c,d])
+		uvs.append_array([ua,ub,uc,ua,uc,ud])
+		uv2s.append_array([va,vb,vc,va,vc,vd])
+		for k in 6:
+			normals.append(n)
+			colors.append(col)
+
+	## `quad_n` with the UVs of `quad_uv`; the corners' UV from the box's
+	## own (sx, sz) signs.
+	func _quad_n_uv(a: Vector3, b: Vector3, c: Vector3, d: Vector3, face: Vector3, col: Color, n: Vector3, uv: Array, uv2: Vector2) -> void:
+		var ua: Vector2 = uv[0]
+		var ub: Vector2 = uv[1]
+		var uc: Vector2 = uv[2]
+		var ud: Vector2 = uv[3]
+		if (b-a).cross(c-a).dot(face) > 0.0:
+			var t := b
+			b = d
+			d = t
+			var tu := ub
+			ub = ud
+			ud = tu
+		verts.append_array([a,b,c,a,c,d])
+		uvs.append_array([ua,ub,uc,ua,uc,ud])
+		for k in 6:
+			normals.append(n)
+			colors.append(col)
+			uv2s.append(uv2)
+
+	## `box_lit` for a sleeper: UV across the track from its middle (m, the
+	## box's x axis) and along s (`s` its middle), UV2 its number and s.
+	func box_lit_uv(c: Vector3, x: Vector3, z: Vector3, y: Vector3, col: Color, s: float, id: float) -> void:
+		var top := c+y
+		var bot := c-y
+		var up := y.normalized()
+		var hx := x.length()
+		var hz := z.length()
+		var u2 := Vector2(id,s)
+		var q := func(b0: Vector3, e: Array, face: Vector3) -> void:
+			var pts := []
+			var uv := []
+			for k in 4:
+				var sx: float = e[k].x
+				var sz: float = e[k].y
+				var base: Vector3 = b0 if int(e[k].z) == 0 else (top if int(e[k].z) == 1 else bot)
+				pts.append(base+x*sx+z*sz)
+				uv.append(Vector2(sx*hx,s+sz*hz))
+			_quad_n_uv(pts[0],pts[1],pts[2],pts[3],face,col,up,uv,u2)
+		# (sx, sz, 1 top / 2 bottom) of each corner.
+		q.call(top,[Vector3(-1,-1,1),Vector3(1,-1,1),Vector3(1,1,1),Vector3(-1,1,1)],y)
+		q.call(top,[Vector3(-1,-1,2),Vector3(1,-1,2),Vector3(1,-1,1),Vector3(-1,-1,1)],-z)
+		q.call(top,[Vector3(-1,1,2),Vector3(1,1,2),Vector3(1,1,1),Vector3(-1,1,1)],z)
+		q.call(top,[Vector3(-1,-1,2),Vector3(-1,1,2),Vector3(-1,1,1),Vector3(-1,-1,1)],-x)
+		q.call(top,[Vector3(1,-1,2),Vector3(1,1,2),Vector3(1,1,1),Vector3(1,-1,1)],x)
+
+	## `box` for a stop's part (y vertical) with the stop shader's coordinates
+	## (shaders/rail_stop.gdshader): UV along a face (`seed` m offset, so two
+	## alike boxes differ) and, on a side, down from the box's top; UV2 the
+	## `kind` of part and the height over the ground `gy` (NAN: 99, on another part);
+	## on a top, UV2.y is instead its half sizes, round(4 hx) + 512 round(4 hz).
+	func box_wear(c: Vector3, x: Vector3, z: Vector3, y: Vector3, col: Color, kind: int, gy: float, seed: float) -> void:
+		var top := c+y
+		var bot := c-y
+		var hx := x.length()
+		var hz := z.length()
+		var one := func(cs: Array, face: Vector3, mode: int) -> void:
+			var pts := []
+			var uv := []
+			var uv2 := []
+			for e: Vector3 in cs:
+				var p: Vector3 = (top if e.z > 0.5 else bot)+x*e.x+z*e.y
+				pts.append(p)
+				var u := Vector2.ZERO
+				if mode == 0: u = Vector2(e.x*hx,e.y*hz)
+				elif mode == 1: u = Vector2(seed+e.x*hx,p.y-top.y)
+				else: u = Vector2(seed+e.y*hz,p.y-top.y)
+				uv.append(u)
+				# A top carries its half sizes instead (quarter metres, exact in a float).
+				if mode == 0: uv2.append(Vector2(kind,roundf(hx*4.0)+roundf(hz*4.0)*512.0))
+				else: uv2.append(Vector2(kind,99.0 if is_nan(gy) else p.y-gy))
+			quad_uv(pts[0],pts[1],pts[2],pts[3],face,col,uv,uv2)
+		# (sx, sz, 1 top / 0 bottom) of each corner.
+		one.call([Vector3(-1,-1,1),Vector3(1,-1,1),Vector3(1,1,1),Vector3(-1,1,1)],y,0)
+		one.call([Vector3(-1,-1,0),Vector3(1,-1,0),Vector3(1,-1,1),Vector3(-1,-1,1)],-z,1)
+		one.call([Vector3(-1,1,0),Vector3(1,1,0),Vector3(1,1,1),Vector3(-1,1,1)],z,1)
+		one.call([Vector3(-1,-1,0),Vector3(-1,1,0),Vector3(-1,1,1),Vector3(-1,-1,1)],-x,2)
+		one.call([Vector3(1,-1,0),Vector3(1,1,0),Vector3(1,1,1),Vector3(1,-1,1)],x,2)
 
 	## A box as `box`, its sides lit as its top (their normal its top's): a
 	## small box seen edge on from afar (the sleepers) shades as one surface
@@ -343,6 +477,12 @@ class _Mesh:
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_COLOR] = colors
+		if not uvs.is_empty():
+			# A mesh that mixes the two kinds of quad pads the plain ones with zeros.
+			uvs.resize(verts.size())
+			uv2s.resize(verts.size())
+			arrays[Mesh.ARRAY_TEX_UV] = uvs
+			arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 		mesh.surface_set_material(mesh.get_surface_count()-1,mat)
 
