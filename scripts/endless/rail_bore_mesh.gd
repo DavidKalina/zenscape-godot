@@ -41,6 +41,9 @@ const RING := 3.0
 ## The lining's floor lies this far under the bed (the track's ballast on it).
 const FLOOR_UNDER := 0.06
 const VAULT_SEGS := 16
+## The shader's scale for the height over the bed in the vertex alpha (m).
+const HEIGHT_SCALE := 40.0
+const INV_HEIGHT_SCALE := 1.0/HEIGHT_SCALE
 ## Rough rock: pushed out up to ROUGH_OUT m.
 const ROUGH_OUT := 1.3
 ## Soot along the crown of a lined bore (the share of the vault's rise it
@@ -57,6 +60,10 @@ class M:
 	var uv2 := PackedVector2Array()
 	## Soot in the vertex colour (for a material that doesn't read UV2).
 	var soot_in_color := false
+	## The bed's height under this mesh's surfaces (NAN: not given); each
+	## vertex's height over it goes in the vertex colour's alpha for the
+	## shader's wear (dirt at a wall's foot, damp higher up).
+	var base_y := NAN
 
 	## The quad p[0..3] (in order round it), facing `face`'s side, its
 	## corners' UVs `u`, kind `k`, soot per corner `soot`.
@@ -90,14 +97,19 @@ class M:
 		var pts := [a,b,cc,a,cc,d]
 		var uvs := [ua,ub,uc,ua,uc,ud]
 		var ss := [sa,sb,sc,sa,sc,sd]
+		var tall := not is_nan(base_y)
 		for i in 6:
-			v.append(pts[i])
+			var pt: Vector3 = pts[i]
+			v.append(pt)
 			n.append(nn)
+			var cc2 := col
+			# (the colour's alpha saturates at 0..1 on its way into the mesh)
+			if tall: cc2 = Color(col.r,col.g,col.b,(pt.y-base_y)*INV_HEIGHT_SCALE)
 			if soot_in_color and ss[i] > 0.0:
-				var sk := col.lerp(SOOT_C,clampf(float(ss[i]),0.0,1.0))
-				sk.a = col.a
+				var sk := cc2.lerp(SOOT_C,clampf(float(ss[i]),0.0,1.0))
+				sk.a = cc2.a
 				c.append(sk)
-			else: c.append(col)
+			else: c.append(cc2)
 			uv.append(uvs[i])
 			uv2.append(Vector2(k,ss[i]))
 
@@ -310,6 +322,7 @@ func _segment(m: M, ra: Array, rb: Array, sa: float, sb: float, rib: bool) -> vo
 	var pa: PackedVector2Array = ra[2]
 	var np := wa.size()
 	var look: Array = _look((sa+sb)*0.5,rib)
+	m.base_y = line.centre((sa+sb)*0.5).y
 	var axis_a: Vector3 = line.centre(sa)+Vector3.UP*4.0
 	var axis_b: Vector3 = line.centre(sb)+Vector3.UP*4.0
 	var mid := (sa+sb)*0.5
@@ -346,6 +359,7 @@ func _segment(m: M, ra: Array, rb: Array, sa: float, sb: float, rib: bool) -> vo
 ## The rib's side where the inset steps from `i0` to `i1` at s: between
 ## the two rings, facing the shallower side.
 func _step_face(m: M, r0: Array, r1: Array, s: float, i0: float, i1: float) -> void:
+	m.base_y = line.centre(s).y
 	var w0: PackedVector3Array = r0[0]
 	var w1: PackedVector3Array = r1[0]
 	var tg: Vector3 = line.tangent(s)
@@ -360,6 +374,7 @@ func _step_face(m: M, r0: Array, r1: Array, s: float, i0: float, i1: float) -> v
 
 ## The recess of a refuge on `side` over a..b: its back, top and floor.
 func _refuge_bay(m: M, a: float, b: float, side: float, ins: float) -> void:
+	m.base_y = line.centre((a+b)*0.5).y
 	var ha: float = (plan.section(a) as Vector3).x-ins
 	var hb: float = (plan.section(b) as Vector3).x-ins
 	var deep := Plan.REFUGE_DEEP+ins
@@ -373,6 +388,7 @@ func _refuge_bay(m: M, a: float, b: float, side: float, ins: float) -> void:
 	m.quad(flo,Vector3.UP,C_FLOOR,[Vector2(a,0),Vector2(b,0),Vector2(b,deep),Vector2(a,deep)],K_FLOOR)
 
 func _refuge_end(m: M, s: float, side: float, way: float) -> void:
+	m.base_y = line.centre(s).y
 	var h: float = (plan.section(s) as Vector3).x
 	var deep := Plan.REFUGE_DEEP+0.5
 	var top := Plan.REFUGE_H
@@ -390,6 +406,7 @@ func _lamp_head(m: M, s: float, p: Vector3) -> void:
 # --- Members --------------------------------------------------------------------------
 
 func _member(m: M, i: int) -> void:
+	m.base_y = line.centre((float(plan.ms0[i])+float(plan.ms1[i]))*0.5).y
 	var s0: float = plan.ms0[i]
 	var s1: float = plan.ms1[i]
 	var d0: float = plan.md0[i]
@@ -569,6 +586,7 @@ func portal(s: float, dir: float, kind: int) -> Dictionary:
 	var r := Vector3(-fwd.z,0.0,fwd.x)
 	var c: Vector3 = line.centre(s)
 	var front := c-fwd*BoreShape.FACE_OUT
+	m.base_y = c.y
 	var back := c+fwd*BoreShape.BLOCK_IN
 	var up := Vector3.UP
 	var face := BoreShape.face_half()
