@@ -42,6 +42,7 @@ extends Node3D
 const RailLine = preload("res://scripts/endless/rail_line.gd")
 const RailBed = preload("res://scripts/endless/rail_bed.gd")
 const RailTrack = preload("res://scripts/endless/rail_track.gd")
+const RailWear = preload("res://scripts/endless/rail_wear.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
@@ -194,7 +195,9 @@ func setup(land_field: RefCounted) -> void:
 	var t0 := Time.get_ticks_usec()
 	field = land_field
 	line = RailLine.shared()
-	_stone = paint()
+	# The stops are weathered (rail_wear.gd, shaders/rail_stop.gdshader); `paint`
+	# stays flat for the span (rail_span.gd), whose meshes have no wear UVs.
+	_stone = RailWear.stop()
 	_grow = WorldScale.span*0.5+1.0
 	for stop: Dictionary in plan():
 		_build_stop(stop)
@@ -563,10 +566,13 @@ func _box_of(p: Dictionary, m: RefCounted, body: StaticBody3D) -> void:
 	var y0 := foot if lo == -INF else base+lo
 	var y1 := base+float(p.hi)
 	if y1 <= y0+0.05: return
+	# The wear shader's kind of part, and the ground its height is over (a part
+	# standing on another has none).
+	var gy := base if lo == -INF else NAN
 	if bool(p.plinth) and base+PLINTH > foot:
-		_add(c,u,hx+0.3,hz+0.3,foot,base+PLINTH,STONE_C,false,m,body)
+		_add(c,u,hx+0.3,hz+0.3,foot,base+PLINTH,STONE_C,false,m,body,9,base)
 		y0 = maxf(y0,base)
-	_add(c,u,hx,hz,y0,y1,p.col,bool(p.under),m,body)
+	_add(c,u,hx,hz,y0,y1,p.col,bool(p.under),m,body,_kind_of(p.col,y1-y0,lo != -INF),gy)
 	for f: Array in p.get("faces",[]):
 		_panes(c,u,hx,hz,f[0],int(f[1]),bool(f[2]),base+PLINTH,y1,m)
 
@@ -583,10 +589,14 @@ func _panes(c: Vector2, u: Vector2, hx: float, hz: float, n: Vector2, storeys: i
 	var n3 := Vector3(n.x,0.0,n.y)
 	var t3 := Vector3(t.x,0.0,t.y)
 	var o := Vector3(at.x,0.0,at.y)
+	# UV: m along the pane, down from its top; UV2: its kind (7 glass, 8 door) and height.
 	var pane := func(x: float, w: float, y0: float, y1p: float, col: Color) -> void:
 		var a := o+t3*(x-w*0.5)
 		var b := o+t3*(x+w*0.5)
-		m.quad(a+Vector3.UP*y0,b+Vector3.UP*y0,b+Vector3.UP*y1p,a+Vector3.UP*y1p,n3,col)
+		var hp := y1p-y0
+		var k2 := Vector2(8.0 if col == DOOR_C else 7.0,hp)
+		var seed := x*3.1
+		m.quad_uv(a+Vector3.UP*y0,b+Vector3.UP*y0,b+Vector3.UP*y1p,a+Vector3.UP*y1p,n3,col,[Vector2(seed,-hp),Vector2(seed+w,-hp),Vector2(seed+w,0.0),Vector2(seed,0.0)],[k2,k2,k2,k2])
 	if door: pane.call(0.0,DOOR.x,floor_y,floor_y+DOOR.y,DOOR_C)
 	if half >= 5.0:
 		var sx := minf(half*0.5+0.5,half-2.0)
@@ -600,15 +610,32 @@ func _panes(c: Vector2, u: Vector2, hx: float, hz: float, n: Vector2, storeys: i
 		for i in cols:
 			pane.call(-half+half*2.0*(i+0.5)/cols,WINDOW.x,y0,y0+WINDOW.y,GLASS_C)
 
-func _add(c: Vector2, u: Vector2, hx: float, hz: float, y0: float, y1: float, col: Color, under: bool, m: RefCounted, body: StaticBody3D) -> void:
+## The wear shader's kind of part (shaders/rail_stop.gdshader): 0 boards, 1
+## platform, 2 timber, 3 roof, 4 tank, 5 trim, 6 brick, 9 stone foot. By the
+## paint: the same colour as a constant at any darkness (a ratio), else a thin
+## raised slab is a roof if dark and trim if not, else boards.
+static func _kind_of(col: Color, thick: float, raised: bool) -> int:
+	for k: Array in [[PLATFORM_C,1],[TIMBER_C,2],[ROOF_C,3],[TANK_C,4],[DEPOT_TRIM,5],[TRIM_DARK,5],[BRICK_C,6]]:
+		var ref: Color = k[0]
+		var r := col.r/ref.r
+		if absf(col.g/ref.g-r) < 0.02 and absf(col.b/ref.b-r) < 0.02 and r < 1.01: return int(k[1])
+	if raised and thick <= 1.0: return 3 if col.get_luminance() < 0.35 else 5
+	return 0
+
+func _add(c: Vector2, u: Vector2, hx: float, hz: float, y0: float, y1: float, col: Color, under: bool, m: RefCounted, body: StaticBody3D, kind := 0, gy := NAN) -> void:
 	var x := Vector3(u.x,0.0,u.y)*hx
 	var z := Vector3(-u.y,0.0,u.x)*hz
 	var y := Vector3(0.0,(y1-y0)*0.5,0.0)
 	var mid := Vector3(c.x,(y0+y1)*0.5,c.y)
-	m.box(mid,x,z,y,col)
+	# Each box its own offset along its faces, so two alike differ.
+	var seed := fposmod(sin(c.x*12.9898+c.y*78.233)*43758.5453,1.0)*37.0
+	m.box_wear(mid,x,z,y,col,kind,gy,seed)
 	if under:
 		var bot := mid-y
-		m.quad(bot-x-z,bot+x-z,bot+x+z,bot-x+z,-y,Color(col,UNDER_SHELTER))
+		var hxm := x.length()
+		var hzm := z.length()
+		var uv2 := Vector2(kind,99.0 if is_nan(gy) else y0-gy)
+		m.quad_uv(bot-x-z,bot+x-z,bot+x+z,bot-x+z,-y,Color(col,UNDER_SHELTER),[Vector2(seed-hxm,-hzm),Vector2(seed+hxm,-hzm),Vector2(seed+hxm,hzm),Vector2(seed-hxm,hzm)],[uv2,uv2,uv2,uv2])
 	var cs := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(hx*2.0,y1-y0,hz*2.0)
