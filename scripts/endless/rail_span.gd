@@ -285,6 +285,7 @@ func setup(land_field: RefCounted, a_line: RefCounted = null) -> void:
 	stone = stone.duplicate() as ShaderMaterial
 	stone.shader = STONE_SHADER
 	stone.set_shader_parameter("rim",0.05)
+	stone.set_shader_parameter("rail_fill",0.75)
 	stone.set_shader_parameter("stone_knee",0.4)
 	stone.set_shader_parameter("stone_cap",0.62)
 	stone.set_shader_parameter("roughness_value",0.8)
