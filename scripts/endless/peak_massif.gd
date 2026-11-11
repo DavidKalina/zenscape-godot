@@ -562,7 +562,7 @@ var _crown_ph := PackedFloat32Array()
 var _root_way := PackedVector2Array()
 ## The roots on (`--spire-form=0` off).
 var _form := true
-## A candidate body in place of the profile (`--peak-shape=a|b|c`,
+## The generated body in place of the profile (shape a by default, `--peak-shape=a|b|c`; `--peak-shape=old` none,
 ## scripts/endless/peak_body.gd), or null. With one, the profile and everything
 ## pinned to it (the tarn, the ice, the gorges, the plateau) are off: the
 ## massif's height is the body's, and its tarn, gorge and finds' callers check
@@ -626,7 +626,8 @@ static func native_wanted() -> bool:
 	if _native_state < 0:
 		var ok := true
 		for a: String in LaunchArgs.user_args():
-			if a == "--native-peak=0" or a == "--gdscript-kernels" or a == "--cirque=0" or a == "--spire-form=0" or a.begins_with("--peak-shape="): ok = false
+			if a == "--native-peak=0" or a == "--gdscript-kernels" or a == "--cirque=0" or a == "--spire-form=0": ok = false
+		if PeakBody.wanted(LaunchArgs.user_args()) != "": ok = false
 		if ok:
 			var path := "res://native/terrain_kernels/zenscape_kernels.gdextension"
 			if not ClassDB.class_exists(NATIVE_CLASS) and FileAccess.file_exists(path):

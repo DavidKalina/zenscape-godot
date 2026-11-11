@@ -96,6 +96,7 @@ func _peak() -> void:
 	if pk == null: return
 	var top: Vector3 = pk.summit()
 	add("peak","peak/summit",top.x,top.z,{"y":top.y})
+	if pk.shaped(): return  # a Peak body: no tarn, strip or towers of the old profile
 	var t: Dictionary = pk.tarn()
 	add("peak","peak/tarn",t.centre.x,t.centre.z,{"y":t.level,"radius":t.wet})
 	add("peak","peak/plateau",t.plateau.x,t.plateau.y)

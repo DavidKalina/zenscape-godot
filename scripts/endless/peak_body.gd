@@ -1,8 +1,8 @@
 extends RefCounted
-## A generated body for the Peak, a candidate shape chosen by
-## `--peak-shape=a|b|c` (PeakMassif `body`; without the flag the massif keeps
-## its old profile and this is never made). GDScript only: the flag turns the
-## native twin off.
+## A generated body for the Peak, the shape chosen by `--peak-shape=a|b|c`
+## (PeakMassif `body`); without the flag it is shape a, and `--peak-shape=old`
+## keeps the old profile (this is never made then). GDScript only: a body turns
+## the native twin off.
 ##
 ## Heights are over the sea, in the massif's frame (`a` along its facing, toward
 ## the start; `v` across), the summit at the frame's centre.
@@ -62,7 +62,13 @@ const SHAPES := {
 		"court":{"r":62.0,"blend":40.0,"off":0.0,"ribbon":0.62,"ribbon_root":15.0,
 			"spires":[[-1,255.0,1.0,135.0,0.9],[1,275.0,0.62,102.0,0.6],[2,285.0,0.55,96.0,0.55],[0,280.0,0.40,84.0,0.5],[3,275.0,0.34,78.0,0.5]]},
 		"arete":{"steps":3,"amp":Vector2(80.0,160.0),"spurs":2,"spur_amp":Vector2(80.0,150.0)},
+		# The lower shelf's heights by `way`: up from its foot to where the
+		# railway joins it (scripts/endless/rail_line.gd), on up with the
+		# railway at its grade to the mine's level stretch, then on steeper,
+		# for the plane only, to the upper shelf.
 		"shelf":{"from":12.0,"to":432.0,"y":Vector2(45.0,390.0),"power":1.0,"width":Vector2(96.0,64.0),
+			"way":[[12.0,45.0],[40.0,64.0],[176.0,152.0],[194.0,152.0],[432.0,390.0]],
+			"wide":[[166.0,0.0],[176.0,86.0],[194.0,86.0],[202.0,0.0]],
 			"slab":Vector2(380.0,640.0),"step":Vector2(10.0,18.0),"riser":20.0,"cant":0.05,
 			"fill":1.25,"fill_max":Vector2(30.0,70.0),"window":16.0,
 			# On up from its top to the court (see The upper shelf below).
@@ -161,14 +167,19 @@ var shelf: Dictionary = {}
 static var _shelf_cache := {}
 static var _shelf_lock := Mutex.new()
 
-## The shape `--peak-shape=` names ("" without the flag or for an unknown one).
+## The shape without a flag.
+const DEFAULT := "a"
+
+## The shape `--peak-shape=` names: DEFAULT without the flag or for an unknown
+## one, "" for `old` (the old profile, no body).
 static func wanted(args: PackedStringArray) -> String:
 	for a: String in args:
 		if a.begins_with("--peak-shape="):
 			var s := a.get_slice("=",1).to_lower()
+			if s == "old": return ""
 			if SHAPES.has(s): return s
-			push_warning("--peak-shape=%s: no such shape (a, b, c)" % s)
-	return ""
+			push_warning("--peak-shape=%s: no such shape (a, b, c, old)" % s)
+	return DEFAULT
 
 func _init(which: String, land_seed: int) -> void:
 	shape = which
@@ -328,7 +339,14 @@ func _make_shelf(land_seed: int) -> Dictionary:
 	var win := deg_to_rad(float(c.window))
 	var ys := PackedFloat32Array()
 	ys.resize(n)
-	for i in n: ys[i] = lerpf(yy.x,yy.y,pow(float(i)/float(n-1),float(c.power)))
+	# `way` (optional): [[degrees round, height], ...], from `from` to `to`:
+	# the heights at those points, shared out evenly along the length between
+	# each two (the railway's grade up the bench, then a level stretch for its
+	# stop), in place of `y` and `power`.
+	var way: Array = c.get("way",[])
+	for i in n:
+		if way.is_empty(): ys[i] = lerpf(yy.x,yy.y,pow(float(i)/float(n-1),float(c.power)))
+		else: ys[i] = _way_y(way,rad_to_deg(from+dth*i))
 	var rs := PackedFloat32Array()
 	rs.resize(n)
 	var ss := PackedFloat32Array()
@@ -360,7 +378,15 @@ func _make_shelf(land_seed: int) -> Dictionary:
 			var a := Vector2.from_angle(from+dth*(i-1))*rs[i-1]
 			var b := Vector2.from_angle(from+dth*i)*rs[i]
 			ss[i] = ss[i-1]+a.distance_to(b)
-		for i in n: ys[i] = lerpf(yy.x,yy.y,pow(ss[i]/ss[n-1],float(c.power)))
+		if way.is_empty():
+			for i in n: ys[i] = lerpf(yy.x,yy.y,pow(ss[i]/ss[n-1],float(c.power)))
+		else:
+			var wat := _way_s(way,from,dth,ss)
+			for i in n:
+				var k := 0
+				while k < way.size()-2 and ss[i] > wat[k+1]: k += 1
+				var t := clampf((ss[i]-wat[k])/maxf(wat[k+1]-wat[k],0.001),0.0,1.0)
+				ys[i] = lerpf(float(way[k][1]),float(way[k+1][1]),t)
 	var total := ss[n-1]
 	# The slabs: each a share of the climb, most of it in its riser.
 	var rng := RandomNumberGenerator.new()
@@ -369,22 +395,38 @@ func _make_shelf(land_seed: int) -> Dictionary:
 	var stp: Vector2 = c.step
 	var starts := PackedFloat32Array()
 	var lens: Array = []
-	var at := 0.0
-	while at < total-0.5*sl.x:
-		var ln := rng.randf_range(sl.x,sl.y)
-		if at+ln > total-0.5*sl.x: ln = total-at
-		starts.append(at)
-		lens.append(ln)
-		at += ln
+	var grades: Array = []
+	# Each stretch of the way its own run of slabs at its own grade (the whole
+	# line one stretch without a `way`).
+	var cuts := [0.0,total]
+	var cut_y := [yy.x,yy.y]
+	if not way.is_empty():
+		cuts = Array(_way_s(way,from,dth,ss))
+		cut_y = []
+		for row: Array in way: cut_y.append(float(row[1]))
+	for k in cuts.size()-1:
+		var a0 := float(cuts[k])
+		var a1 := float(cuts[k+1])
+		var g := (float(cut_y[k+1])-float(cut_y[k]))/maxf(a1-a0,0.001)
+		var at := a0
+		while at < a1-0.5*sl.x or (at < a1-0.5 and starts.is_empty()):
+			var ln := rng.randf_range(sl.x,sl.y)
+			if at+ln > a1-0.5*sl.x: ln = a1-at
+			starts.append(at)
+			lens.append(ln)
+			grades.append(g)
+			at += ln
+		# A stretch too short for a slab of its own joins the last one.
+		if at < a1-0.01 and not lens.is_empty(): lens[lens.size()-1] = float(lens[lens.size()-1])+(a1-at)
 	var grade := (yy.y-yy.x)/total
 	var y0 := PackedFloat32Array()
 	var rise := PackedFloat32Array()
 	var tilt := PackedFloat32Array()
-	var y := yy.x
+	var y := float(cut_y[0])
 	for k in starts.size():
 		var ln := float(lens[k])
-		var climb := grade*ln
-		var st := 0.0 if k == 0 else minf(rng.randf_range(stp.x,stp.y),0.8*climb)
+		var climb := float(grades[k])*ln
+		var st := 0.0 if k == 0 or climb <= 0.0 else minf(rng.randf_range(stp.x,stp.y),0.8*climb)
 		y0.append(y)
 		rise.append(st)
 		tilt.append((climb-st)/ln)
@@ -392,7 +434,19 @@ func _make_shelf(land_seed: int) -> Dictionary:
 	var ww := PackedFloat32Array()
 	ww.resize(n)
 	var wd: Vector2 = c.width
-	for i in n: ww[i] = lerpf(wd.x,wd.y,ss[i]/total)
+	# `wide` (optional): [[degrees round, metres more], ...]: the bench widened
+	# there into the face, its outer edge kept (the mine's yard by the
+	# railway's stop, cut back into the mountain), straight between the
+	# points, none past them.
+	var wide: Array = c.get("wide",[])
+	for i in n:
+		ww[i] = lerpf(wd.x,wd.y,ss[i]/total)
+		if not wide.is_empty():
+			var deg := rad_to_deg(from+dth*i)
+			if deg > float(wide[0][0]) and deg < float(wide[wide.size()-1][0]):
+				var more := _way_y(wide,deg)
+				ww[i] += more
+				rs[i] -= 0.5*more
 	var rl := PackedFloat32Array()
 	rl.resize(starts.size())
 	rl.fill(float(c.riser))
@@ -530,6 +584,16 @@ func _make_upper(out: Dictionary, up: Dictionary, land_seed: int) -> void:
 	out.up_from = s0
 	out.up_at = at
 	out.pieces.append({"from":from,"to":to,"step":dth,"n":n,"r":rs,"s":ss,"w":ww,"perp":true,"p":pts})
+
+## The height a `way` ([[degrees, height], ...]) gives at `deg` degrees round
+## (straight between its points, held past its ends).
+static func _way_y(way: Array, deg: float) -> float:
+	if deg <= float(way[0][0]): return float(way[0][1])
+	for k in way.size()-1:
+		if deg <= float(way[k+1][0]):
+			var t := (deg-float(way[k][0]))/maxf(float(way[k+1][0])-float(way[k][0]),0.001)
+			return lerpf(float(way[k][1]),float(way[k+1][1]),t)
+	return float(way[way.size()-1][1])
 
 ## The way's points' distances along the line (m), from the samples' (each
 ## way point at its angle).
