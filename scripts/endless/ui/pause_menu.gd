@@ -21,9 +21,17 @@ const ControlsPage = preload("res://scripts/endless/ui/controls_page.gd")
 
 const WASH_IN := 0.2
 
-## The flight HUD stays up under the pause slip (FlightHud reads this off the
-## game's overlay): the money shows while paused.
+## The tree held before the flight's first tick ends the run in an access
+## violation when it quits (found by the settings page's --open-settings): the
+## menu opens only after the flight has run this many frames and physics ticks.
+const FIRST_TICKS := 3
+
+## The flight HUD's top chips stay up under the pause slip (FlightHud reads
+## this off the game's overlay): the money shows while paused. Not under a
+## page (controls, settings), which has the screen to itself.
 var keeps_flight_hud := true
+var _frames := 0
+var _ticks := 0
 var _open := false
 ## The logbook is up over the held flight; back here when it closes.
 var _away := false
@@ -53,6 +61,7 @@ func is_open() -> bool:
 ## True when Esc or Start would open it now.
 func can_open() -> bool:
 	if _open or host == null or not host.walk_ready or host.overlay != null: return false
+	if _frames < FIRST_TICKS or _ticks < FIRST_TICKS: return false
 	return host.stage == null or not host.stage.holding()
 
 func open_menu() -> void:
@@ -144,7 +153,12 @@ func quit_to_title() -> void:
 	LaunchArgs.set_override(LaunchArgs.title_args(LaunchArgs.own_args()))
 	tree.reload_current_scene()
 
+func _physics_process(_delta: float) -> void:
+	if _ticks < FIRST_TICKS and host != null and host.walk_ready: _ticks += 1
+
 func _process(delta: float) -> void:
+	if _frames < FIRST_TICKS and host != null and host.walk_ready: _frames += 1
+	keeps_flight_hud = page == null
 	if _away and host.overlay == null:
 		# The logbook closed: the menu again, on the row it left from.
 		_away = false

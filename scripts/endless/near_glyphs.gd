@@ -74,12 +74,15 @@ static var _items := {}
 static var _textures := {}
 static var _tones := {}
 
-## --glyphs=old, --glyphs=gilt (or both, comma-separated), read once. It
+## --glyphs=old, --glyphs=gilt (or both, comma-separated) and --ui=old (the
+## old drawing with the rest of the old UI), read once. It
 ## only turns a switch on, so one set from code (the trunk's --ui=old) stays.
 static func _flags() -> void:
 	if _flags_read: return
 	_flags_read = true
 	for arg: String in LaunchArgs.user_args():
+		# The one way back to the UI before the flight UI (endless_flight.gd `ui_old`).
+		if arg == "--ui=old": old = true
 		if not arg.begins_with("--glyphs="): continue
 		for word: String in arg.trim_prefix("--glyphs=").split(",",false):
 			if word == "old": old = true

@@ -13,13 +13,19 @@ extends Control
 ## - lower left: the short hint from takeoff, and the landing's stop cue.
 ##
 ## `studies/endless_flight.gd` makes one with `make(game, layer)` unless
-## `--hud=old`. It then takes today's pieces off the screen (the key line, the
+## `--hud=old` or `--ui=old`. It then takes today's pieces off the screen (the key line, the
 ## stop cue's label, the centred region caption, the finds counter) and
 ## reads the game's own state for its own: nothing is fed to it.
 ##
 ## For the trunk:
 ## - `OPTS` / `opt` / `set_opt`: the switches (launch flags for now).
-## - `set_hints(on)`: the settings' "HUD hints".
+## - `set_hints(on)`: the settings' "HUD hints" (the game sets it at its start
+##   and when the setting changes).
+## - `say(text)`: a brief note in the hint's place (F2's "3D at 85%", F3's
+##   "graphics: ..."); `carry` is one said when the next flight's HUD comes up.
+## - Under a menu that keeps the HUD (the pause slip: its `keeps_flight_hud`)
+##   only the top chips stay; the hint, the notes, the region tag and the
+##   charge plate step aside for the menu's own prompts.
 ## - `draws_charge`: true while a FlightHud draws the charge, so the chain
 ##   HUDs leave their own corner bar out.
 ## - `money_anchor()`, `pending()`, `land_coin(n)`, `coin_flight`: the coin
@@ -47,10 +53,15 @@ static var _opts := {}
 ## True while a FlightHud is up and draws the charge: the chain HUDs skip
 ## their own bar in the lower right (near_miss_hud_handoff.gd, _glyph.gd).
 static var draws_charge := false
+## A note for the next flight's HUD to say as it comes up (F3 starts the
+## flight again under its "graphics: ..." note).
+static var carry := ""
 
-## False with `--hud=old`: today's counter, caption, bar and key line stay.
+## False with `--hud=old` or `--ui=old`: today's counter, caption, bar and
+## key line stay.
 static func wanted() -> bool:
-	return not ("--hud=old" in LaunchArgs.user_args())
+	var args := LaunchArgs.user_args()
+	return not ("--hud=old" in args or "--ui=old" in args)
 
 ## A switch's value now ("bank", "when", "off", ...).
 static func opt(name: String) -> String:
@@ -114,6 +125,8 @@ const SPEED_FAST := 12.0
 const SPEED_HOLD := 0.6
 ## Gold this far over the plane's boost speed (the mock-up: 210 over 208).
 const SPEED_TOP := 2.0
+## A note (`say`) stays this long.
+const NOTE_HOLD := 2.0
 
 # --- State -------------------------------------------------------------------------------
 
@@ -124,6 +137,10 @@ var coin_flight := false
 
 var _a := 0.0
 var _top_a := 1.0
+## 0 while a menu is up over the HUD (the pause slip), 1 in flight.
+var _menu_a := 1.0
+var _note := ""
+var _note_age := 99.0
 var _clock := 0.0
 var _taken := false
 var _finds_hud: Node
@@ -202,6 +219,11 @@ func land_coin(n := 1) -> void:
 func bank_age() -> float:
 	return _bank_age
 
+## A brief note on a chip in the hint's place, for NOTE_HOLD s.
+func say(text: String) -> void:
+	_note = text
+	_note_age = 0.0
+
 func _gain(d: int) -> void:
 	if _pending <= 0 and _plus_age > PLUS_FOR.y: _plus = 0
 	_plus += d
@@ -226,6 +248,10 @@ func _process(delta: float) -> void:
 	var keeps: bool = overlay != null and overlay.get("keeps_flight_hud") == true
 	var open: bool = game.get("stage") == null and (overlay == null or keeps)
 	_a = move_toward(_a,1.0 if open else 0.0,dt/0.25)
+	_menu_a = move_toward(_menu_a,0.0 if overlay != null else 1.0,dt/0.15)
+	if open and overlay == null and not carry.is_empty():
+		say(carry)
+		carry = ""
 	var numbers: Control = game.get("_hud")
 	_top_a = move_toward(_top_a,0.0 if numbers != null and numbers.visible else 1.0,dt/0.2)
 	var landing: Object = game.get("hand_landing")
@@ -236,6 +262,7 @@ func _process(delta: float) -> void:
 		_charge_step(dt)
 		_speed_step(dt,flying)
 		_hint_step(dt,flying)
+		_note_age += dt
 	else:
 		_stay_a = move_toward(_stay_a,1.0,dt/0.3)
 		_money_a = maxf(_money_a,_stay_a)
@@ -387,13 +414,13 @@ func _draw_top(k: float) -> void:
 	var y := 62.0*k
 	var caption: Label = game.get("_region_caption")
 	if caption != null and caption.modulate.a > 0.003 and not caption.text.is_empty():
-		var ra := smoothstep(0.0,1.0,caption.modulate.a)*a
+		var ra := smoothstep(0.0,1.0,caption.modulate.a)*a*_menu_a
 		Kit.chip(self,[Kit.part(caption.text.to_upper(),Kit.MED,11.5,0.24,Kit.CREAM)],Vector2(28.0*k-6.0*k*(1.0-ra),y),k,24.0,14.0,20.0,false,ra)
 		y += 30.0*k
 	if _finds_hud != null:
 		var title := str(_finds_hud.get("_name"))
 		var age := float(_finds_hud.get("_pop"))
-		var fa := smoothstep(0.0,0.15,age)*(1.0-smoothstep(3.4,4.1,age))*a
+		var fa := smoothstep(0.0,0.15,age)*(1.0-smoothstep(3.4,4.1,age))*a*_menu_a
 		if not title.is_empty() and fa > 0.003:
 			Kit.chip(self,[Kit.part(title,Kit.MED,12.0,0.08,Kit.TOAST)],Vector2(28.0*k,y),k,24.0,12.0,20.0,false,fa)
 
@@ -436,12 +463,19 @@ const STOPPED := [["Space","RT","boost to roll"],["Shift","LT","again to back up
 const BACKING := [["Shift","LT","let go to stop"]]
 
 func _draw_hint(k: float) -> void:
+	# None of it under a menu: the menu's own prompts run along the foot.
+	var m := _a*_menu_a
+	if m <= 0.003: return
 	var at := Vector2(28.0*k,size.y-50.0*k)
-	if _hint_a > 0.003: Kit.prompts(self,Kit.pick(HINTS),at,k,false,true,_hint_a*_a)
-	var a := _stop_a*_a
-	if a <= 0.003: return
+	if _hint_a > 0.003: Kit.prompts(self,Kit.pick(HINTS),at,k,false,true,_hint_a*m)
 	# Over the hint while it shows, in its place once it has gone.
 	at.y -= 30.0*k*smoothstep(0.0,1.0,_hint_a)
+	# A note (F2, F3): over the stop cue while that shows.
+	var na := smoothstep(0.0,0.15,_note_age)*(1.0-smoothstep(NOTE_HOLD,NOTE_HOLD+0.4,_note_age))*m
+	if na > 0.003 and not _note.is_empty():
+		Kit.chip(self,[Kit.part(_note,Kit.MED,12.0,0.08,Kit.TOAST)],at-Vector2(0.0,30.0*k*smoothstep(0.0,1.0,_stop_a)),k,24.0,12.0,20.0,false,na)
+	var a := _stop_a*m
+	if a <= 0.003: return
 	var word := "STOPPED"
 	var pairs := Kit.pick(STOPPED)
 	if _stop_text.begins_with("backing"):
@@ -457,7 +491,8 @@ func _draw_hint(k: float) -> void:
 	Kit.chip(self,parts,at,k,24.0,12.0,20.0,false,a)
 
 func _draw_charge(k: float) -> void:
-	var a := _a
+	var a := _a*_menu_a
+	if a <= 0.003: return
 	var speed_a := _spd_a
 	if not _charge_on and speed_a <= 0.003: return
 	# Right to left from the plate's right pad: roll mark, cells, chevrons, then the speed.

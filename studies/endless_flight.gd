@@ -207,7 +207,8 @@ const MenuSpot = preload("res://scripts/endless/menu_spot.gd")
 const MenuStage = preload("res://scripts/endless/menu_stage.gd")
 const MainMenu = preload("res://scripts/endless/main_menu.gd")
 ## The new title and the pause menu (docs/design/ui/spec-flight-ui.md);
-## `--menus=old` keeps the title above and Esc only letting the mouse go.
+## `--menus=old` keeps the title above and Esc only letting the mouse go
+## (`--ui=old` too: `ui_old`).
 const TitleMenu = preload("res://scripts/endless/ui/title_menu.gd")
 const PauseMenu = preload("res://scripts/endless/ui/pause_menu.gd")
 
@@ -488,7 +489,7 @@ var water: Node3D
 var knock: Node3D
 var _near_hud: Control
 ## The corner HUD (scripts/endless/ui/flight_hud.gd): finds, money, region,
-## charge and speed, the hint. Null with --hud=old, which keeps today's.
+## charge and speed, the hint. Null with --hud=old or --ui=old, which keep today's.
 var flight_hud: Control
 var _fade: ColorRect
 var _fade_left := 0.0
@@ -523,7 +524,7 @@ var stage: RefCounted
 var doors: Node3D
 var finds: Node
 var menu: Control
-## The pause menu (Esc, the pad's Start), or null with `--menus=old`.
+## The pause menu (Esc, the pad's Start), or null with `--menus=old` or `--ui=old`.
 var pause_menu: Control
 
 ## The 3D at a Native draw (the player's render resolution, and the default
@@ -940,7 +941,7 @@ func _park_for_menu(spots: Array) -> void:
 	_heading = float(spot.heading)
 	if look != null and look.clouds != null and spot != spots[0]: look.clouds.clear_fog_at(_start)
 	_launch(Vector3(_start.x,field.height(_start.x,_start.y),_start.y),_heading,true)
-	menu = MainMenu.new() if _has_arg("--menus=old") else TitleMenu.new(self)
+	menu = MainMenu.new() if _has_arg("--menus=old") or ui_old() else TitleMenu.new(self)
 	menu.name = "MainMenu"
 	_hint.get_parent().add_child(menu)
 	menu.picked.connect(_menu_picked)
@@ -1067,11 +1068,15 @@ func _build_ui() -> void:
 	if "--near-hud=glyph" in hud_args: _near_hud = NearMissHudGlyph.new()
 	elif "--near-hud=classic" in hud_args: _near_hud = NearMissHud.new()
 	elif "--near-hud=tag" in hud_args or "--near-hud=handoff" in hud_args or "--near-hud=handoff-tag" in hud_args: _near_hud = NearMissHudHandoff.new()
-	elif "--near-hud=ring" in hud_args: _near_hud = NearMissHudRing.new()
+	# --ui=old gives the ring too, unless the plate is named.
+	elif "--near-hud=ring" in hud_args or (ui_old() and not "--near-hud=plate" in hud_args): _near_hud = NearMissHudRing.new()
 	else: _near_hud = NearMissHudPlate.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
-	if FlightHud.wanted(): flight_hud = FlightHud.make(self,layer)
+	if FlightHud.wanted():
+		flight_hud = FlightHud.make(self,layer)
+		# The settings' HUD hints (a launch's --hud-hints=off still wins for its run).
+		FlightHud.set_hints(GameSettings.hud_hints() and not _has_arg("--hud-hints=off"))
 	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
 	summary = preload("res://scripts/endless/landing_summary.gd").new(self)
 	layer.add_child(summary)
@@ -1116,7 +1121,7 @@ func _build_ui() -> void:
 			layer.add_child(_region_debug)
 	# The pause menu, over the rest of the layer: it takes Esc and the pad's
 	# Start in flight before `_unhandled_input` below does.
-	if not _has_arg("--menus=old"):
+	if not (_has_arg("--menus=old") or ui_old()):
 		pause_menu = PauseMenu.new(self)
 		layer.add_child(pause_menu)
 
@@ -1915,6 +1920,14 @@ func _shake_eye(delta: float) -> void:
 	camera.rotate_object_local(Vector3.UP,(sin(t*SHAKE_HZ.x)*0.6+sin(t*SHAKE_HZ.z+1.1)*0.4)*k)
 	camera.rotate_object_local(Vector3.RIGHT,(sin(t*SHAKE_HZ.y+0.4)*0.6+sin(t*SHAKE_HZ.x*1.37+2.0)*0.4)*k)
 
+## `--ui=old`: the one way back to the UI before the flight UI (docs/design/ui/
+## spec-flight-ui.md): the old title and Esc, the key line with the old HUD
+## pieces and their bar (FlightHud.wanted), the ring by the plane, the old
+## glyphs (near_glyphs.gd `_flags`). Each also has its own finer flag
+## (--menus=old, --hud=old, --near-hud=ring, --glyphs=old).
+static func ui_old() -> bool:
+	return "--ui=old" in preload("res://scripts/launch_args.gd").user_args()
+
 static func _has_arg(prefix: String) -> bool:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with(prefix): return true
@@ -2037,6 +2050,7 @@ func _next_scale() -> void:
 	# Through the settings, so the settings page shows it and it is kept.
 	GameSettings.set_scale(SCALES[(i+1)%SCALES.size()])
 	_hint.text = _hint.text.get_slice("  ·  3D at",0)+"  ·  3D at %d%%" % roundi(rr.scale_override*100.0)
+	if flight_hud != null: flight_hud.call("say","3D at %d%%" % roundi(rr.scale_override*100.0))
 
 ## F3: the next graphics preset, kept, and the flight again on it.
 func _next_preset() -> void:
@@ -2045,12 +2059,20 @@ func _next_preset() -> void:
 	var next: String = GraphicsPreset.NAMES[(GraphicsPreset.NAMES.find(GameSettings.preset())+1)%GraphicsPreset.NAMES.size()]
 	GameSettings.set_preset(next)
 	_hint.text = "graphics: %s ..." % GraphicsPreset.PRESETS[next].title
+	# The flight starts again under it: the new HUD says it now, and once the
+	# flight is back.
+	if flight_hud != null:
+		flight_hud.call("say",_hint.text)
+		FlightHud.carry = "graphics: %s" % GraphicsPreset.PRESETS[next].title
 	GameSettings.restart(get_tree(),scene_file_path)
 
 ## A setting changed (scripts/endless/ui/game_settings.gd): the hint line
-## follows HUD hints, unless the title has it hidden.
+## follows HUD hints, unless the title has it hidden, and the new HUD's
+## hints (FlightHud.set_hints) with it.
 func _setting_changed(key: String) -> void:
-	if key == "hints" and _hint != null: _hint.visible = GameSettings.hud_hints() and stage == null
+	if key != "hints": return
+	if _hint != null: _hint.visible = GameSettings.hud_hints() and stage == null
+	FlightHud.set_hints(GameSettings.hud_hints())
 
 ## The settings page (scripts/endless/ui/settings_page.gd) over the flight,
 ## the flight held under it as the logbook holds it; null if another overlay
