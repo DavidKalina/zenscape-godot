@@ -188,8 +188,11 @@ func bank_age() -> float:
 	return float(_bank.age) if not _bank.is_empty() else -1.0
 
 ## The charge's place on screen (the parry's light flies to it): the corner
-## HUD's cells, lower right (Hud.dc.html).
+## HUD's cells, lower right (Hud.dc.html): where that HUD says they are, by
+## the mock-up's number with none up.
 func meter_point() -> Vector2:
+	var hud: Control = FlightHud.up
+	if hud != null and is_instance_valid(hud): return hud.call("cells_point")
 	var k := Kit.scale_of(size)
 	return global_position+size-Vector2(104.0,38.0)*k
 

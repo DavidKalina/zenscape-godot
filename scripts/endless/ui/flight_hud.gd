@@ -28,8 +28,9 @@ extends Control
 ##   charge plate step aside for the menu's own prompts.
 ## - `draws_charge`: true while a FlightHud draws the charge, so the chain
 ##   HUDs leave their own corner bar out.
-## - `money_anchor()`, `pending()`, `land_coin(n)`, `coin_flight`: the coin
-##   flight's hooks.
+## - `money_anchor()`, `pending()`, `claim(n)`, `land_coin(n)`, `coin_flight`,
+##   `top_alpha()`: the coin flight's hooks (coin_flight.gd). `up` is the HUD
+##   on screen and `cells_point()` where its charge cells are.
 ## - `draw_coin`, `draw_roll`, `draw_surge`, `draw_finds_mark`: the marks,
 ##   one function each, for the glyph set to take over.
 
@@ -53,6 +54,9 @@ static var _opts := {}
 ## True while a FlightHud is up and draws the charge: the chain HUDs skip
 ## their own bar in the lower right (near_miss_hud_handoff.gd, _glyph.gd).
 static var draws_charge := false
+## The FlightHud on screen, or null: the chain HUD asks it where the charge
+## cells are (`cells_point`).
+static var up: Control
 ## A note for the next flight's HUD to say as it comes up (F3 starts the
 ## flight again under its "graphics: ..." note).
 static var carry := ""
@@ -131,8 +135,10 @@ const NOTE_HOLD := 2.0
 # --- State -------------------------------------------------------------------------------
 
 var game: Node
-## Set by the coin flight: the total then waits for `land_coin` instead of
-## ticking by itself.
+## True while a coin flight is joined (coin_flight.gd). A pay's own ticks then
+## always wait LAND_AT s from the pay (the chain HUD's beat), so the coins can
+## `claim` it as the pennant's money row shows; what they leave unclaimed still
+## ticks by itself.
 var coin_flight := false
 
 var _a := 0.0
@@ -153,6 +159,7 @@ var _money_known := false
 var _shown := 0
 var _pending := 0
 var _plus := 0
+## The total's own ticks to come: [seconds from now, amount].
 var _lands: Array = []
 var _bank_age := 99.0
 var _plus_age := 99.0
@@ -190,9 +197,11 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	draws_charge = true
+	up = self
 
 func _exit_tree() -> void:
 	draws_charge = false
+	if up == self: up = null
 
 # --- The coin flight's hooks -------------------------------------------------------------
 
@@ -208,6 +217,21 @@ func money_anchor() -> Vector2:
 func pending() -> int:
 	return _pending
 
+## The coin flight takes a pay over: up to `n` of the pending money leaves the
+## total's own ticks and waits for `land_coin`. Returns how much it took (less
+## than `n` when part of the pay has already ticked).
+func claim(n: int) -> int:
+	var took := 0
+	var i := _lands.size()-1
+	while i >= 0 and took < n:
+		var land: Array = _lands[i]
+		var part := mini(int(land[1]),n-took)
+		took += part
+		if part >= int(land[1]): _lands.remove_at(i)
+		else: land[1] = int(land[1])-part
+		i -= 1
+	return took
+
 ## One coin landed: `n` of the pending money joins the total, which kicks.
 func land_coin(n := 1) -> void:
 	var take := mini(n,_pending)
@@ -216,6 +240,19 @@ func land_coin(n := 1) -> void:
 	_shown += take
 	_kick_age = 0.0
 	if _plus_age > PLUS_FOR.y: _plus_age = 0.0
+	# The chip stays for the rest of its beat from the last coin, however far
+	# its clock had run (a pay with the chip already up starts it at CHIP_IN).
+	_bank_age = minf(_bank_age,LAND_AT+LAND_GAP*(COINS_MOST-1))
+
+## How much of the top chips shows (0 under a page or the F1 numbers): the
+## coins in the air follow it.
+func top_alpha() -> float:
+	return _a*_top_a
+
+## The middle of the charge cells, screen px (the parry's light flies to it).
+func cells_point() -> Vector2:
+	var k := Kit.scale_of(size)
+	return global_position+Vector2(size.x-108.5*k,size.y-39.0*k)
 
 ## Seconds since the pay the chip is showing (99 at rest): the beat's clock.
 func bank_age() -> float:
@@ -233,12 +270,12 @@ func _gain(d: int) -> void:
 	_pending += d
 	if _bank_age > CHIP_OUT.y: _bank_age = CHIP_IN.y if _money_a >= 0.99 else 0.0
 	elif _bank_age > CHIP_IN.y: _bank_age = CHIP_IN.y
-	if coin_flight: return
+	var wait := LAND_AT if coin_flight else maxf(LAND_AT-_bank_age,0.0)
 	var n := mini(d,COINS_MOST)
 	for i in n:
 		@warning_ignore("integer_division")
 		var amount := d/n+(1 if i < d%n else 0)
-		_lands.append([LAND_AT+LAND_GAP*i,amount])
+		_lands.append([wait+LAND_GAP*i,amount])
 
 # --- Each frame --------------------------------------------------------------------------
 
@@ -305,9 +342,14 @@ func _money_step(dt: float, landed: bool) -> void:
 	_bank_age += dt
 	_plus_age += dt
 	_kick_age += dt
-	while not _lands.is_empty() and float((_lands[0] as Array)[0]) <= _bank_age:
-		var land: Array = _lands.pop_front()
-		land_coin(int(land[1]))
+	var i := 0
+	while i < _lands.size():
+		var land: Array = _lands[i]
+		land[0] = float(land[0])-dt
+		if float(land[0]) <= 0.0:
+			_lands.remove_at(i)
+			land_coin(int(land[1]))
+		else: i += 1
 	# The flight's coins never came (or came short): the total is made right.
 	if _pending > 0 and _lands.is_empty() and _bank_age > CHIP_OUT.x-0.4: land_coin(_pending)
 	_stay_a = move_toward(_stay_a,1.0 if landed or opt("money") == "always" else 0.0,dt/0.3)

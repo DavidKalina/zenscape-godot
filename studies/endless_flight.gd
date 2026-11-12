@@ -197,6 +197,7 @@ const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.
 const NearMissHudRing = preload("res://scripts/endless/near_miss_hud_ring.gd")
 const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
 const NearMissHudPlate = preload("res://scripts/endless/near_miss_hud_plate.gd")
+const CoinFlight = preload("res://scripts/endless/ui/coin_flight.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 ## Low over water: the cushion, the spray, the wake's marks, the wet screen.
 const WaterContact = preload("res://scripts/endless/water_contact.gd")
@@ -491,6 +492,9 @@ var _near_hud: Control
 ## The corner HUD (scripts/endless/ui/flight_hud.gd): finds, money, region,
 ## charge and speed, the hint. Null with --hud=old or --ui=old, which keep today's.
 var flight_hud: Control
+## The bank's coins between the two (scripts/endless/ui/coin_flight.gd), or
+## null when either is the old one.
+var coin_flight: Control
 var _fade: ColorRect
 var _fade_left := 0.0
 var _punch := 0.0
@@ -1077,6 +1081,9 @@ func _build_ui() -> void:
 		flight_hud = FlightHud.make(self,layer)
 		# The settings' HUD hints (a launch's --hud-hints=off still wins for its run).
 		FlightHud.set_hints(GameSettings.hud_hints() and not _has_arg("--hud-hints=off"))
+		# A bank's coins from the plate's pennant to the money chip: only with
+		# the new chain HUD and the new corner HUD both up.
+		if _near_hud is NearMissHudPlate: coin_flight = CoinFlight.make(layer,_near_hud,flight_hud)
 	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
 	summary = preload("res://scripts/endless/landing_summary.gd").new(self)
 	layer.add_child(summary)
