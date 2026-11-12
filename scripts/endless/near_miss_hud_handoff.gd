@@ -831,7 +831,7 @@ func _draw_readback(s: float) -> void:
 	if ltext != "":
 		_txt(_block,lf,ltext,Vector2(_row_left(lw)+lw*0.5,ly),lpx,Color(CREAM,la),8.0*s)
 	if title != "": _txt(_block,nf,title,Vector2(rl+nw*0.5,ny),npx,Color(GOLD,na),8.0*s,1.0,0.0,Color(1.0,0.75,0.27,0.6),12.0*s)
-	var tex := Badges.texture("bank","razor",coin)
+	var tex := Badges.texture("coin","razor",coin)
 	if tex != null: _block.draw_texture_rect(tex,Rect2(Vector2(rl+nw+gap,ny-coin*0.5),Vector2.ONE*coin),false,Color(1,1,1,na))
 	_txt(_block,_nums,money,Vector2(rl+row-cw*0.5,ny),npx*1.05,Color(GOLD,na),8.0*s)
 
