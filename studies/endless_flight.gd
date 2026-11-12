@@ -202,6 +202,10 @@ const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
 const MenuSpot = preload("res://scripts/endless/menu_spot.gd")
 const MenuStage = preload("res://scripts/endless/menu_stage.gd")
 const MainMenu = preload("res://scripts/endless/main_menu.gd")
+## The new title and the pause menu (docs/design/ui/spec-flight-ui.md);
+## `--menus=old` keeps the title above and Esc only letting the mouse go.
+const TitleMenu = preload("res://scripts/endless/ui/title_menu.gd")
+const PauseMenu = preload("res://scripts/endless/ui/pause_menu.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -512,6 +516,8 @@ var stage: RefCounted
 var doors: Node3D
 var finds: Node
 var menu: Control
+## The pause menu (Esc, the pad's Start), or null with `--menus=old`.
+var pause_menu: Control
 
 ## The 3D at a Native draw (the player's render resolution, and the default
 ## on a discrete GPU): 75%, upscaled by FSR (scripts/render_resolution.gd
@@ -925,7 +931,7 @@ func _park_for_menu(spots: Array) -> void:
 	_heading = float(spot.heading)
 	if look != null and look.clouds != null and spot != spots[0]: look.clouds.clear_fog_at(_start)
 	_launch(Vector3(_start.x,field.height(_start.x,_start.y),_start.y),_heading,true)
-	menu = MainMenu.new()
+	menu = MainMenu.new() if _has_arg("--menus=old") else TitleMenu.new(self)
 	menu.name = "MainMenu"
 	_hint.get_parent().add_child(menu)
 	menu.picked.connect(_menu_picked)
@@ -1093,6 +1099,11 @@ func _build_ui() -> void:
 			_region_debug.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 			_region_debug.add_theme_constant_override("outline_size",4)
 			layer.add_child(_region_debug)
+	# The pause menu, over the rest of the layer: it takes Esc and the pad's
+	# Start in flight before `_unhandled_input` below does.
+	if not _has_arg("--menus=old"):
+		pause_menu = PauseMenu.new(self)
+		layer.add_child(pause_menu)
 
 # --- The plane ------------------------------------------------------------------------
 
