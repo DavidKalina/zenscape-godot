@@ -53,8 +53,17 @@ Launching the game with no flags:
    strip, the multiplier's segments, the "about to bank" state, the
    half-size pennant, the lost state; on a bank the coins travel to the
    money chip and the total ticks up.
-7. **Glyphs**: the new set, drawn from `glyphs.json`, with a colour per
-   kind (the json's tints), everywhere the HUD shows a glyph.
+7. **Glyphs**: the new set, drawn from `glyphs.json`, in colour, everywhere
+   the HUD shows a glyph. Every glyph that has its own colour today keeps
+   that colour family (green tree, blue water, brown canyon, purple
+   inverted, orange dive, red scrape ...); a new glyph takes the colour of
+   what it shows. All-gilt stays as one switch for comparison.
+   **No sun anywhere** (the user, 2026-11-11: "I don't like the sun glyph
+   for points. Just doesn't really make sense."): points banked and money
+   are the coin (`bank`, `coin`), the charge is the swirl (`surge`), roll
+   ready is `roll`. Where a mock-up draws a sun (the money chip's sun coin
+   in `Hud.dc.html`, the bank's sun in `Chain.dc.html`, the old sunburst
+   by the plane) the build draws these instead; `surge_burst` is not used.
 8. `--ui=old` brings back today's title, key line, ring HUD and glyphs, so
    the two can be flown side by side.
 
