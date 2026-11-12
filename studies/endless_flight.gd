@@ -193,6 +193,7 @@ const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
 const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
 const NearMissHudRing = preload("res://scripts/endless/near_miss_hud_ring.gd")
+const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 ## Low over water: the cushion, the spray, the wake's marks, the wet screen.
 const WaterContact = preload("res://scripts/endless/water_contact.gd")
@@ -479,6 +480,9 @@ var water: Node3D
 ## The trees knocked down and falling (scripts/endless/tree_knock.gd).
 var knock: Node3D
 var _near_hud: Control
+## The corner HUD (scripts/endless/ui/flight_hud.gd): finds, money, region,
+## charge and speed, the hint. Null with --hud=old, which keeps today's.
+var flight_hud: Control
 var _fade: ColorRect
 var _fade_left := 0.0
 var _punch := 0.0
@@ -1051,6 +1055,7 @@ func _build_ui() -> void:
 	else: _near_hud = NearMissHudRing.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
+	if FlightHud.wanted(): flight_hud = FlightHud.make(self,layer)
 	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
 	summary = preload("res://scripts/endless/landing_summary.gd").new(self)
 	layer.add_child(summary)

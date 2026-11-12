@@ -39,6 +39,7 @@ const Badges = preload("res://scripts/endless/near_badges.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
 const NUMS_ITALIC = preload("res://assets/fonts/barlow-semi-condensed-800-italic-latin.woff2")
 ## The player's kept layout: [near] layout = "tag" or "top".
 const SETTINGS_PATH := "user://hud.cfg"
@@ -945,7 +946,8 @@ func _draw_half_ink(ink: Node2D) -> void:
 # --- On the screen: the tag's meter ------------------------------------------
 
 func _draw() -> void:
-	if _near == null or not tag: return
+	# The corner HUD draws the charge (scripts/endless/ui/flight_hud.gd).
+	if _near == null or not tag or FlightHud.draws_charge: return
 	var k := _k()
 	var mid := Vector2(size.x-TAG_METER_AT.x*k-TAG_METER.x*k*0.5,size.y-TAG_METER_AT.y*k)
 	_draw_meter(self,mid,TAG_METER*k,k)
