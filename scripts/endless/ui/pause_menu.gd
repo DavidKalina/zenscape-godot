@@ -159,6 +159,9 @@ func _physics_process(_delta: float) -> void:
 func _process(delta: float) -> void:
 	if _frames < FIRST_TICKS and host != null and host.walk_ready: _frames += 1
 	keeps_flight_hud = page == null
+	# A page's slip would lie half over the chain HUD by the plane: that goes too.
+	var chain: CanvasItem = host.get("_near_hud") if host != null else null
+	if chain != null: chain.modulate.a = move_toward(chain.modulate.a,0.0 if _open and page != null else 1.0,delta/0.15)
 	if _away and host.overlay == null:
 		# The logbook closed: the menu again, on the row it left from.
 		_away = false

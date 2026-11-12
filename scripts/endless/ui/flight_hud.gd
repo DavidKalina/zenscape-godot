@@ -141,6 +141,8 @@ var _top_a := 1.0
 var _menu_a := 1.0
 var _note := ""
 var _note_age := 99.0
+## 1 when the note was said with the hint up or coming: it keeps the row over it.
+var _note_row := 0.0
 var _clock := 0.0
 var _taken := false
 var _finds_hud: Node
@@ -223,6 +225,7 @@ func bank_age() -> float:
 func say(text: String) -> void:
 	_note = text
 	_note_age = 0.0
+	_note_row = 1.0 if hints_on() and _hint_age < HINT_HOLD else 0.0
 
 func _gain(d: int) -> void:
 	if _pending <= 0 and _plus_age > PLUS_FOR.y: _plus = 0
@@ -249,9 +252,6 @@ func _process(delta: float) -> void:
 	var open: bool = game.get("stage") == null and (overlay == null or keeps)
 	_a = move_toward(_a,1.0 if open else 0.0,dt/0.25)
 	_menu_a = move_toward(_menu_a,0.0 if overlay != null else 1.0,dt/0.15)
-	if open and overlay == null and not carry.is_empty():
-		say(carry)
-		carry = ""
 	var numbers: Control = game.get("_hud")
 	_top_a = move_toward(_top_a,0.0 if numbers != null and numbers.visible else 1.0,dt/0.2)
 	var landing: Object = game.get("hand_landing")
@@ -263,6 +263,9 @@ func _process(delta: float) -> void:
 		_speed_step(dt,flying)
 		_hint_step(dt,flying)
 		_note_age += dt
+		if open and overlay == null and not carry.is_empty():
+			say(carry)
+			carry = ""
 	else:
 		_stay_a = move_toward(_stay_a,1.0,dt/0.3)
 		_money_a = maxf(_money_a,_stay_a)
@@ -470,10 +473,11 @@ func _draw_hint(k: float) -> void:
 	if _hint_a > 0.003: Kit.prompts(self,Kit.pick(HINTS),at,k,false,true,_hint_a*m)
 	# Over the hint while it shows, in its place once it has gone.
 	at.y -= 30.0*k*smoothstep(0.0,1.0,_hint_a)
-	# A note (F2, F3): over the stop cue while that shows.
+	# A note (F2, F3): in the hint's place, over the hint and the stop cue
+	# while they show.
 	var na := smoothstep(0.0,0.15,_note_age)*(1.0-smoothstep(NOTE_HOLD,NOTE_HOLD+0.4,_note_age))*m
 	if na > 0.003 and not _note.is_empty():
-		Kit.chip(self,[Kit.part(_note,Kit.MED,12.0,0.08,Kit.TOAST)],at-Vector2(0.0,30.0*k*smoothstep(0.0,1.0,_stop_a)),k,24.0,12.0,20.0,false,na)
+		Kit.chip(self,[Kit.part(_note,Kit.MED,12.0,0.08,Kit.TOAST)],Vector2(at.x,size.y-50.0*k-30.0*k*(maxf(_note_row,smoothstep(0.0,1.0,_hint_a))+smoothstep(0.0,1.0,_stop_a))),k,24.0,12.0,20.0,false,na)
 	var a := _stop_a*m
 	if a <= 0.003: return
 	var word := "STOPPED"
