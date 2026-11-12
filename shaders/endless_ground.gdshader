@@ -159,6 +159,14 @@ uniform vec3 rock_tint = vec3(1.0);
 // A world's hue over the rock, taken at the rock's own light: its direction
 // the hue, its luma how much of the rock's own hue gives way (0: none).
 uniform vec3 rock_hue = vec3(0.0);
+// --basalt=: part of the rock goes a dark, cool grey (0: none). `basalt_amount`
+// how far; `basalt_land` the land's own rock takes it, `basalt_form` this
+// material's standing formations take it, `basalt_belts` the land's share
+// only in broad belts (a low-frequency mask of the world, about a km across).
+uniform float basalt_amount = 0.0;
+uniform float basalt_land = 0.0;
+uniform float basalt_form = 0.0;
+uniform float basalt_belts = 0.0;
 // The Peak's massif (scripts/endless/peak_massif.gd `paint()`; w 0: none):
 // its frame (plateau centre xz, facing xz), its zone (the bounding circle's
 // middle xz, radius, on), its snow line over the sea, and its approach
@@ -1429,6 +1437,21 @@ void fragment() {
 		lit_n = normalize(mix(n, lit_n, rocky * (1.0 - pk_scree)));
 	}
 	rock = hued(rock, rock_hue) * rock_tint * pow(PEAK_BASALT_TINT, vec3(pk_dark));
+	if (basalt_amount > 0.0 && rocky > 0.002) {
+		float bas = max(basalt_land, basalt_form);
+		if (basalt_belts > 0.5 && basalt_form < 0.5) {
+			float belt = zs_noise(p.xz / 1100.0 + vec2(31.0, 7.0)) + (zs_noise(p.xz / 240.0) - 0.5) * 0.14 + (zs_noise(p.xz / 55.0) - 0.5) * 0.06;
+			bas *= smoothstep(0.47, 0.55, belt);
+		}
+		// (Not over the Peak's own dark rock.)
+		bas *= basalt_amount * (1.0 - pk_dark);
+		// The rock's own light and dark kept, its hue gone cool; a little of
+		// its stain and lichen left.
+		// (The rock's light is mostly its own glow, the sun's share on its albedo.)
+		const vec3 BASALT_COOL = vec3(0.74, 0.90, 1.16);
+		rock = mix(rock, mix(vec3(luma(rock)), rock, 0.12) * BASALT_COOL * 0.40, bas);
+		rock_glow = mix(rock_glow, mix(vec3(luma(rock_glow)), rock_glow, 0.2) * BASALT_COOL * 0.55, bas);
+	}
 
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);
 	sand = mix(sand, SAND_WET, smoothstep(0.7, -0.1, over));

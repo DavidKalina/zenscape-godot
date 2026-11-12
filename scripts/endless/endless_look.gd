@@ -387,6 +387,19 @@ func setup(land_seed: int) -> void:
 		ground.set_shader_parameter("rock_rich",0.0)
 		ground.set_shader_parameter("rock_shape",0.0)
 	world.apply_ground(ground)
+	# --basalt=stacks|belts|all (--basalt-amount=0..1): some of the rock a dark
+	# cool grey. `stacks`: the standing formations (the flight study gives
+	# them their own copy of the ground, basalt_form); `belts`: the land's
+	# rock in broad belts, formations in a belt following; `all`: every rock.
+	var basalt := ""
+	var basalt_amount := 1.0
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--basalt="): basalt = a.get_slice("=",1)
+		elif a.begins_with("--basalt-amount="): basalt_amount = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+	if basalt in ["stacks","belts","all"]:
+		ground.set_shader_parameter("basalt_amount",basalt_amount)
+		ground.set_shader_parameter("basalt_land",0.0 if basalt == "stacks" else 1.0)
+		ground.set_shader_parameter("basalt_belts",1.0 if basalt == "belts" else 0.0)
 	# --rock-knob=name=value (repeatable): any rock_* float uniform, to try a
 	# value without editing the shader (rock-carve-handoff.md).
 	for arg: String in LaunchArgs.user_args():
