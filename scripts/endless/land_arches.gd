@@ -72,6 +72,8 @@ var density := 1.0
 var rock := 1.0
 var ruin := 1.0
 var material: Material
+## --basalt=stacks: the rock arches draw dark (instance uniform basalt_form).
+var basalt_form := false
 ## The carve's rock (LandRocks' bare: all rock, whatever the slope).
 var carve_rock: Material
 ## The cells holding the carve (they stand from CARVE_REACH).
@@ -391,6 +393,7 @@ func _commit_one(done: Dictionary, sliced := false, began := 0) -> bool:
 			var mi := MeshInstance3D.new()
 			mi.name = "Mesh"
 			mi.mesh = mesh
+			if basalt_form: mi.set_instance_shader_parameter("basalt_form",1.0)
 			node.add_child(mi)
 			var shapes: Array = b.shapes
 			for i in shapes.size():

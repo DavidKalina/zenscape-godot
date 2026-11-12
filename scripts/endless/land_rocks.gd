@@ -54,6 +54,8 @@ var _peak_only := false
 ## The Peak's hero towers (scripts/endless/rocks/peak_towers.gd), or null:
 ## their solid answers through these same calls.
 var extra: Node3D
+## --basalt=stacks: the formations (not the Peak's kinds) draw dark (the ground shader's instance uniform basalt_form).
+var basalt_form := false
 var material: Material
 ## The ground material with no turf (a spec's `bare`: the hoodoos' caps are
 ## stone, not lawn): rock_up past 1, so every face is the land's rock.
@@ -286,6 +288,7 @@ func _commit_one(done: Dictionary) -> void:
 		var mi := MeshInstance3D.new()
 		mi.name = "Mesh"
 		mi.mesh = mesh
+		if basalt_form and not name.get_slice("/",2) in Plan.ON_PEAK: mi.set_instance_shader_parameter("basalt_form",1.0)
 		node.add_child(mi)
 		node.name = name.replace("/","_")
 		node.transform = xf

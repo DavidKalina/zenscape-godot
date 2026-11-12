@@ -389,7 +389,7 @@ func setup(land_seed: int) -> void:
 	world.apply_ground(ground)
 	# --basalt=stacks|belts|all (--basalt-amount=0..1): some of the rock a dark
 	# cool grey. `stacks`: the standing formations (the flight study gives
-	# them their own copy of the ground, basalt_form); `belts`: the land's
+	# them an instance uniform, basalt_form); `belts`: the land's
 	# rock in broad belts, formations in a belt following; `all`: every rock.
 	var basalt := ""
 	var basalt_amount := 1.0

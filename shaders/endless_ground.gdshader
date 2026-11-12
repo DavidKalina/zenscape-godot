@@ -160,12 +160,12 @@ uniform vec3 rock_tint = vec3(1.0);
 // the hue, its luma how much of the rock's own hue gives way (0: none).
 uniform vec3 rock_hue = vec3(0.0);
 // --basalt=: part of the rock goes a dark, cool grey (0: none). `basalt_amount`
-// how far; `basalt_land` the land's own rock takes it, `basalt_form` this
-// material's standing formations take it, `basalt_belts` the land's share
+// how far; `basalt_land` the land's own rock takes it, `basalt_form` (per mesh) the
+// standing formations take it, `basalt_belts` the land's share
 // only in broad belts (a low-frequency mask of the world, about a km across).
 uniform float basalt_amount = 0.0;
 uniform float basalt_land = 0.0;
-uniform float basalt_form = 0.0;
+instance uniform float basalt_form = 0.0;
 uniform float basalt_belts = 0.0;
 // The Peak's massif (scripts/endless/peak_massif.gd `paint()`; w 0: none):
 // its frame (plateau centre xz, facing xz), its zone (the bounding circle's
@@ -198,6 +198,12 @@ const float PEAK_BASALT_GRANITE = 0.012;
 // the sea): over the land's short span it stood as a band round the massif.
 const vec3 PEAK_BASALT_HAZE = vec3(120.0, 760.0, 0.86);
 const float PEAK_BEDS = 3.0;
+// --basalt= (see basalt_amount): the dark stone's value at the rock's lit mid
+// (0.5), how steeply it falls to the shade, and its tint there and in the sun (a shade cooler than neutral: the sun's own warmth turns a neutral stone brown by the sea).
+const float BASALT_LIT = 0.21;
+const float BASALT_CURVE = 1.7;
+const vec3 BASALT_SHADE_TINT = vec3(0.95, 0.90, 1.12);
+const vec3 BASALT_SUN_TINT = vec3(0.90, 0.98, 1.10);
 // The rock's snapped paint (er_rock_shaped's `ease`) eased fully to
 // smooth nearer the eye than x m, not at all past y m: see the call. (Walls'
 // normals no longer swing column to column (land_stream `_wall_normals`), so
@@ -1445,12 +1451,17 @@ void fragment() {
 		}
 		// (Not over the Peak's own dark rock.)
 		bas *= basalt_amount * (1.0 - pk_dark);
-		// The rock's own light and dark kept, its hue gone cool; a little of
-		// its stain and lichen left.
-		// (The rock's light is mostly its own glow, the sun's share on its albedo.)
-		const vec3 BASALT_COOL = vec3(0.74, 0.90, 1.16);
-		rock = mix(rock, mix(vec3(luma(rock)), rock, 0.12) * BASALT_COOL * 0.40, bas);
-		rock_glow = mix(rock_glow, mix(vec3(luma(rock_glow)), rock_glow, 0.2) * BASALT_COOL * 0.55, bas);
+		// A different stone, not the same one in shade: the painted rock's
+		// light and dark kept but steepened (sunlit a mid grey with the sun's
+		// warmth, shaded near black-violet, pale edges and glints still
+		// bright), its base neutral charcoal; some of its stain and lichen
+		// left. Its bounce glow follows the same scale, its hue the cool shade tint (at sea level the warm ground bounce made the stacks brown).
+		float rl = max(luma(rock), 0.002);
+		float bl = BASALT_LIT * pow(rl / 0.5, BASALT_CURVE);
+		vec3 bc = mix(vec3(rl), rock, 0.45) * (bl / rl);
+		bc *= mix(BASALT_SHADE_TINT, BASALT_SUN_TINT, smoothstep(0.08, 0.5, rl));
+		rock = mix(rock, bc, bas);
+		rock_glow = mix(rock_glow, vec3(luma(rock_glow)) * (bl / rl) * BASALT_SHADE_TINT, bas);
 	}
 
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);

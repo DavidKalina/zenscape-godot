@@ -684,12 +684,8 @@ func _ready() -> void:
 	arches.carve_rock = rocks.bare
 	var basalt_stacks: bool = look != null and look.ground is ShaderMaterial and "--basalt=stacks" in preload("res://scripts/launch_args.gd").user_args()
 	if basalt_stacks:
-		# --basalt=stacks: the formations draw with their own copy of the ground.
-		var form: ShaderMaterial = look.ground.duplicate()
-		form.set_shader_parameter("basalt_form",1.0)
-		look.ground_copies.append(form)
-		rocks.material = form
-		arches.material = form
+		rocks.basalt_form = true
+		arches.basalt_form = true
 	# The rocks' bare copy of the ground takes the haze each frame as it does.
 	if look != null and rocks.bare is ShaderMaterial and rocks.bare != look.ground: look.ground_copies.append(rocks.bare)
 	if peak != null and PeakTowers.wanted():
@@ -700,7 +696,6 @@ func _ready() -> void:
 		rocks.extra = towers
 		if look != null: look.ground_copies.append(towers.far_material)
 		if look != null and towers.rock_material is ShaderMaterial: look.ground_copies.append(towers.rock_material)
-	if basalt_stacks and rocks.bare is ShaderMaterial: (rocks.bare as ShaderMaterial).set_shader_parameter("basalt_form",1.0)
 	halls = LandHalls.new()
 	halls.name = "Halls"
 	add_child(halls)
