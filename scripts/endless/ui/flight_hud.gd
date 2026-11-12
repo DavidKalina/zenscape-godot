@@ -252,6 +252,12 @@ func land_coin(n := 1) -> void:
 func top_alpha() -> float:
 	return _a*_top_a
 
+## How much of a coin in the air shows: as the top chips, and nothing under
+## any overlay (the pause slip lies across the coins' path; they stand still
+## while the tree is held and come back where they were).
+func coin_alpha() -> float:
+	return _a*_top_a*_menu_a
+
 ## The middle of the charge cells, screen px (the parry's light flies to it).
 func cells_point() -> Vector2:
 	var k := Kit.scale_of(size)
@@ -564,8 +570,11 @@ func _draw_charge(k: float) -> void:
 	if not _charge_on: return
 	var ready := _meter >= 0.999 and not _hot
 	var pulse := 0.5+0.5*sin(_clock*25.0)
-	# The surge mark: lit while there is any charge to hold a surge on.
-	draw_surge(self,Vector2(x+7.0*k,cy),14.0*k,a,0 if _meter <= 0.002 else (2 if _surge or _hot else 1),1.08+0.1*pulse if _surge else 1.0)
+	# The surge mark: lit while there is any charge to hold a surge on. Both
+	# of the plate's marks are the mock-up's plain shapes (chevrons, a round
+	# arrow): at this size the `surge` and `roll` glyphs are both a ring round
+	# a speck and cannot be told apart, at 14 M or at 21.
+	draw_surge(self,Vector2(x+7.0*k,cy),14.0*k,a,0 if _meter <= 0.002 else (2 if _surge or _hot else 1),1.08+0.1*pulse if _surge else 1.0,true)
 	# The cells: half a second of surge each, drained from the right.
 	var cells := Rect2(x+20.0*k,cy-2.5*k,93.0*k,5.0*k)
 	var cell_col := HOT if _hot else (SURGING if _surge else (Kit.GOLD if ready else Kit.CELL))
@@ -581,7 +590,7 @@ func _draw_charge(k: float) -> void:
 	# The roll mark: lit only on a full meter, spun and spent by the surge roll.
 	var spin := TAU*2.0*(1.0-pow(1.0-clampf(_roll_age/0.62,0.0,1.0),2.0)) if _hot else 0.0
 	var breath := 1.0+0.08*(0.5+0.5*sin(_clock*3.4)) if ready else 1.0
-	draw_roll(self,Vector2(right-12.0*k-7.5*k,cy),15.0*k,a,2 if _hot else (1 if ready else 0),breath,spin)
+	draw_roll(self,Vector2(right-12.0*k-7.5*k,cy),15.0*k,a,2 if _hot else (1 if ready else 0),breath,spin,true)
 	if not hints_on(): return
 	# The key plates over the plate: a key's first chance, and while it is held.
 	var pad := Pad.using_pad()
@@ -675,11 +684,12 @@ static func _state_col(a: float, state: int) -> Color:
 	return Color(HOT if state >= 2 else Kit.GOLD,a)
 
 ## The surge's mark, `d` across at `c`, grown `grow`: the glyph set's `surge`
-## (the swirl), where the mock-up has its chevrons. `state` 0 no charge, 1
-## charge to hold a surge on, 2 surging or hot.
-static func draw_surge(ci: CanvasItem, c: Vector2, d: float, a := 1.0, state := 1, grow := 1.0) -> void:
+## (the swirl), or with `plain` the mock-up's chevrons (the charge plate's
+## small mark). `state` 0 no charge, 1 charge to hold a surge on, 2 surging
+## or hot.
+static func draw_surge(ci: CanvasItem, c: Vector2, d: float, a := 1.0, state := 1, grow := 1.0, plain := false) -> void:
 	if a <= 0.003: return
-	if Glyphs.mode() != "old":
+	if Glyphs.mode() != "old" and not plain:
 		_state_glyph(ci,"surge",c,d*grow,a,state,d)
 		return
 	var col := _state_col(a,state)
@@ -690,11 +700,12 @@ static func draw_surge(ci: CanvasItem, c: Vector2, d: float, a := 1.0, state := 
 ## the glyph set's `roll`, the same glyph as the chain HUD's ROLL notice
 ## (near_miss_hud_plate.gd `_paint_ready`). `state` 0 not ready, 1 ready (a
 ## full meter), 2 hot (the surge roll); lit, it has a little light under it.
-static func draw_roll(ci: CanvasItem, c: Vector2, d: float, a := 1.0, state := 1, grow := 1.0, spin := 0.0) -> void:
+## With `plain`, the mock-up's round arrow (the charge plate's small mark).
+static func draw_roll(ci: CanvasItem, c: Vector2, d: float, a := 1.0, state := 1, grow := 1.0, spin := 0.0, plain := false) -> void:
 	if a <= 0.003: return
 	var across := d*grow
 	ci.draw_set_transform(c,spin,Vector2.ONE)
-	if Glyphs.mode() != "old":
+	if Glyphs.mode() != "old" and not plain:
 		if state > 0:
 			for i in 3: ci.draw_circle(Vector2.ZERO,across*(0.42+0.07*(i+1)),Color(1.0,0.84,0.42,0.09*a),true,-1.0,true)
 		_state_glyph(ci,"roll",Vector2.ZERO,across,a,state,d)

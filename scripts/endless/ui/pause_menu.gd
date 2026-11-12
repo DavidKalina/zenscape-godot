@@ -69,6 +69,7 @@ func open_menu() -> void:
 	_open = true
 	_away = false
 	host.overlay = self
+	host.key_line_under(true)
 	_was_paused = get_tree().paused
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -88,6 +89,7 @@ func resume() -> void:
 		page.queue_free()
 		page = null
 	if host.overlay == self: host.overlay = null
+	host.key_line_under(false)
 	get_tree().paused = _was_paused
 	if get_tree().current_scene == host and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 

@@ -2081,6 +2081,12 @@ func _setting_changed(key: String) -> void:
 	if _hint != null: _hint.visible = GameSettings.hud_hints() and stage == null
 	FlightHud.set_hints(GameSettings.hud_hints())
 
+## The old key line and stop cue (--hud=old beside the new menus) step aside
+## under a new menu or page, whose footer prompts sit on their place.
+func key_line_under(menu: bool) -> void:
+	for label: Label in [_hint,_stop_cue]:
+		if label != null: label.modulate.a = 0.0 if menu else 1.0
+
 ## The settings page (scripts/endless/ui/settings_page.gd) over the flight,
 ## the flight held under it as the logbook holds it; null if another overlay
 ## is up. `--open-settings` opens it as the flight starts, until the menus do.
@@ -2091,8 +2097,10 @@ func open_settings() -> Control:
 	var was := get_tree().paused
 	overlay = page
 	get_tree().paused = true
+	key_line_under(true)
 	page.closed.connect(func() -> void:
 		overlay = null
+		key_line_under(false)
 		get_tree().paused = was)
 	_hint.get_parent().add_child(page)
 	return page

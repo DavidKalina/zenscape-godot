@@ -60,7 +60,7 @@ const BACK_H := 30.0
 const BACK_GAP := 8.0
 const WASH_T := 0.2
 ## The footer's prompts: keys, pad, word.
-const FOOT := [["Up Down","Up Down","select"],["Left Right","Left Right","change"],["Esc","B","back"]]
+const FOOT := [["Up Down","D-pad","select"],["Left Right","Left Right","change"],["Esc","B","back"]]
 ## The stick: how far it must lean to count, the wait before it repeats and
 ## between repeats.
 const STICK_ON := 0.55

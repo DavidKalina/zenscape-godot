@@ -99,7 +99,7 @@ func _process(delta: float) -> void:
 		if visible: visible = false
 		return
 	if not get_tree().paused: _step(minf(delta,0.1))
-	var on := not _coins.is_empty() and float(hud.call("top_alpha")) > 0.003
+	var on := not _coins.is_empty() and float(hud.call("coin_alpha")) > 0.003
 	if visible != on: visible = on
 	if visible: queue_redraw()
 
@@ -133,7 +133,7 @@ func _at(coin: Dictionary) -> Vector2:
 
 func _draw() -> void:
 	if hud == null or not is_instance_valid(hud): return
-	var top := float(hud.call("top_alpha"))
+	var top := float(hud.call("coin_alpha"))
 	if top <= 0.003: return
 	var k := Kit.scale_of(size)
 	for coin: Dictionary in _coins:
