@@ -123,6 +123,8 @@ const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
+const GameSettings = preload("res://scripts/endless/ui/game_settings.gd")
+const SettingsPage = preload("res://scripts/endless/ui/settings_page.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
@@ -544,6 +546,9 @@ func _ready() -> void:
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
 	rr.apply(get_tree().root,rr.load_cap())
+	# The player's settings over them (scripts/endless/ui/game_settings.gd).
+	GameSettings.begin()
+	GameSettings.hub.changed.connect(_setting_changed)
 	EndlessLook.reset_season_globals()
 	# The world: its shader globals over the reset, its start under the flags.
 	world = WorldProfile.current()
@@ -896,6 +901,9 @@ func _ready() -> void:
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
 	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# Half a second in, not at once: a tree paused before the flight's first
+	# tick ends the run in an access violation when it quits.
+	if _has_arg("--open-settings"): get_tree().create_timer(0.5).timeout.connect(open_settings)
 
 ## The grass parted round the parked plane in the menu: out to PART_SPANS
 ## wingspans (round the eye EYE_PART_SPANS, and SIGHT_PART_SPANS round the
@@ -1039,6 +1047,7 @@ func _build_ui() -> void:
 	_hint.add_theme_constant_override("outline_size",4)
 	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Z roll (full meter: surge roll)  ·  Q E knife edge  ·  F flaps  ·  J logbook  ·  O photo  ·  R up again  ·  B surge  ·  Tab (hold) race a plane  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
 	layer.add_child(_hint)
+	_hint.visible = GameSettings.hud_hints()
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
 	_stop_cue.anchor_bottom = 1.0
@@ -1915,7 +1924,9 @@ func _fly_input(_delta: float) -> Dictionary:
 	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
 	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
-	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,"lean":lean,
+	# Invert pitch (the settings page) turns the keys', the stick's and the mouse's over.
+	var inv := GameSettings.pitch_sign()
+	var input := {"turn":stick.x,"pitch":stick.y*inv,"look":Vector2(_fly_look.x,_fly_look.y*inv),"lean":lean,
 		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
@@ -1948,7 +1959,7 @@ func _menu_done() -> void:
 	if stage != null and stage.running(): stage.finish(plane_figure)
 	stage = null
 	if camera.attributes != null: camera.attributes = null
-	_hint.visible = true
+	_hint.visible = GameSettings.hud_hints()
 	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 ## Back up into the air over where it is, on the heading it had.
@@ -1967,8 +1978,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if overlay != null: return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
-		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK*GameSettings.mouse_sens())
+		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK*GameSettings.mouse_sens()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
@@ -2007,6 +2018,7 @@ func _exit_tree() -> void:
 	tallies.finish()
 	if book != null: book.save()
 	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
+	if GameSettings.hub.changed.is_connected(_setting_changed): GameSettings.hub.changed.disconnect(_setting_changed)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = 1.0
 	rr.apply(get_tree().root,rr.load_cap())
@@ -2021,14 +2033,39 @@ func _next_scale() -> void:
 	var i := 0
 	for k in SCALES.size():
 		if absf(SCALES[k]-now) < 0.01: i = k
-	rr.scale_override = SCALES[(i+1)%SCALES.size()]
-	rr.apply(get_tree().root,rr.load_cap())
+	# Through the settings, so the settings page shows it and it is kept.
+	GameSettings.set_scale(SCALES[(i+1)%SCALES.size()])
 	_hint.text = _hint.text.get_slice("  ·  3D at",0)+"  ·  3D at %d%%" % roundi(rr.scale_override*100.0)
 
 ## F3: the next graphics preset, kept, and the flight again on it.
 func _next_preset() -> void:
-	_hint.text = "graphics: %s ..." % GraphicsPreset.PRESETS[GraphicsPreset.step()].title
-	GraphicsPreset.restart(get_tree(),scene_file_path)
+	# Through the settings, so the settings page shows it (and a harness
+	# run's F3 leaves the player's file alone).
+	var next: String = GraphicsPreset.NAMES[(GraphicsPreset.NAMES.find(GameSettings.preset())+1)%GraphicsPreset.NAMES.size()]
+	GameSettings.set_preset(next)
+	_hint.text = "graphics: %s ..." % GraphicsPreset.PRESETS[next].title
+	GameSettings.restart(get_tree(),scene_file_path)
+
+## A setting changed (scripts/endless/ui/game_settings.gd): the hint line
+## follows HUD hints, unless the title has it hidden.
+func _setting_changed(key: String) -> void:
+	if key == "hints" and _hint != null: _hint.visible = GameSettings.hud_hints() and stage == null
+
+## The settings page (scripts/endless/ui/settings_page.gd) over the flight,
+## the flight held under it as the logbook holds it; null if another overlay
+## is up. `--open-settings` opens it as the flight starts, until the menus do.
+func open_settings() -> Control:
+	if overlay != null: return null
+	var page: Control = SettingsPage.new()
+	page.setup(self)
+	var was := get_tree().paused
+	overlay = page
+	get_tree().paused = true
+	page.closed.connect(func() -> void:
+		overlay = null
+		get_tree().paused = was)
+	_hint.get_parent().add_child(page)
+	return page
 
 func _cloud_note() -> String:
 	if look.clouds == null: return "  ·  no clouds"
