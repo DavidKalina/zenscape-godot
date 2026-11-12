@@ -30,6 +30,7 @@ signal closed
 const Kit = preload("res://scripts/endless/ui/ui_kit.gd")
 const Pad = preload("res://scripts/pad.gd")
 const GameSettings = preload("res://scripts/endless/ui/game_settings.gd")
+const StickSteps = preload("res://scripts/endless/ui/stick_steps.gd")
 
 ## The rows, top to bottom: a heading, a row that picks one of `opts`, a
 ## slider, or Back. `id` is the setting's name in GameSettings.
@@ -61,11 +62,6 @@ const BACK_GAP := 8.0
 const WASH_T := 0.2
 ## The footer's prompts: keys, pad, word.
 const FOOT := [["Up Down","D-pad","select"],["Left Right","Left Right","change"],["Esc","B","back"]]
-## The stick: how far it must lean to count, the wait before it repeats and
-## between repeats.
-const STICK_ON := 0.55
-const STICK_WAIT := 0.38
-const STICK_EVERY := 0.11
 
 ## Whoever opened it (the flight, a menu).
 var host: Node
@@ -76,9 +72,7 @@ var _on_t := PackedFloat32Array()
 var _on := PackedInt32Array()
 var _age := 0.0
 var _drag := -1
-var _stick := Vector2.ZERO
-var _stick_dir := Vector2i.ZERO
-var _repeat := 0.0
+var _stick := StickSteps.new()
 var _mouse_was := Input.MOUSE_MODE_VISIBLE
 var _closing := false
 
@@ -295,9 +289,8 @@ func _input(event: InputEvent) -> void:
 		var joy := event as InputEventJoypadButton
 		if joy.pressed: _button(joy.button_index)
 	elif event is InputEventJoypadMotion:
-		var lean := event as InputEventJoypadMotion
-		if lean.axis == JOY_AXIS_LEFT_X: _stick.x = lean.axis_value
-		elif lean.axis == JOY_AXIS_LEFT_Y: _stick.y = lean.axis_value
+		# The left stick is read as steps in `_step_stick`; its events stop here.
+		pass
 	else: return
 	if view != null: view.set_input_as_handled()
 
@@ -321,19 +314,13 @@ func _button(index: JoyButton) -> void:
 		JOY_BUTTON_A: accept()
 		JOY_BUTTON_B: close()
 
-## The left stick as steps: one when it leans, then repeats while held.
+## The left stick as steps: one when it leans, then repeats while held
+## (stick_steps.gd).
 func _step_stick(delta: float) -> void:
-	var dir := Vector2i.ZERO
-	if absf(_stick.y) > STICK_ON and absf(_stick.y) >= absf(_stick.x): dir.y = 1 if _stick.y > 0.0 else -1
-	elif absf(_stick.x) > STICK_ON: dir.x = 1 if _stick.x > 0.0 else -1
-	if dir != _stick_dir:
-		_stick_dir = dir
-		_repeat = STICK_WAIT
-	elif dir == Vector2i.ZERO: return
-	else:
-		_repeat -= delta
-		if _repeat > 0.0: return
-		_repeat = STICK_EVERY
+	if _closing or not is_visible_in_tree():
+		_stick.rest()
+		return
+	var dir := _stick.step(delta)
 	if dir.y != 0: move(dir.y)
 	elif dir.x != 0: change(dir.x)
 

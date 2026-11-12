@@ -18,6 +18,7 @@ extends Control
 
 const Kit = preload("res://scripts/endless/ui/ui_kit.gd")
 const Pad = preload("res://scripts/pad.gd")
+const StickSteps = preload("res://scripts/endless/ui/stick_steps.gd")
 
 ## The game's name, as the title and the credits show it. The one place.
 const GAME_NAME := "ZENSCAPE"
@@ -50,6 +51,7 @@ var _rects: Array[Rect2] = []
 var _toast := ""
 var _toast_t := 0.0
 var _closed_frame := -1
+var _stick := StickSteps.new()
 
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -130,6 +132,8 @@ func taking() -> bool:
 	return active and page == null and is_visible_in_tree() and Engine.get_process_frames() != _closed_frame
 
 func _process(delta: float) -> void:
+	# The stick steps only after it has been let go under this menu.
+	if not taking(): _stick.rest()
 	if not is_visible_in_tree(): return
 	age += delta
 	var moving := age < 0.3
@@ -142,6 +146,9 @@ func _process(delta: float) -> void:
 		_toast_t -= delta
 		moving = true
 	if moving: queue_redraw()
+	if taking():
+		var lean := _stick.step(delta)
+		if lean.y != 0: move(lean.y)
 	tick(delta)
 
 func _input(event: InputEvent) -> void:
@@ -160,6 +167,9 @@ func _input(event: InputEvent) -> void:
 			pick(over)
 		elif other_input(event): _taken()
 		return
+	# The stick's leans are steps in `_process` (stick_steps.gd): each of its
+	# motion events past the dead zone would read as a press here.
+	if StickSteps.is_stick(event): return
 	var step := 0
 	if event.is_action_pressed(&"ui_up",true) or _is_key(event,KEY_W): step = -1
 	elif event.is_action_pressed(&"ui_down",true) or _is_key(event,KEY_S): step = 1

@@ -132,6 +132,12 @@ const ACTIONS := {
 	"step_in":[["button",JOY_BUTTON_BACK]],
 	"photo":[["button",JOY_BUTTON_LEFT_STICK]],
 	"menu":[["button",JOY_BUTTON_START]],
+	# The menus' selection on the left stick, read as steps with a repeat
+	# (scripts/endless/ui/stick_steps.gd); the d-pad and the keys are the GUI's ui_*.
+	"menu_left":[["axis",JOY_AXIS_LEFT_X,-1.0]],
+	"menu_right":[["axis",JOY_AXIS_LEFT_X,1.0]],
+	"menu_up":[["axis",JOY_AXIS_LEFT_Y,-1.0]],
+	"menu_down":[["axis",JOY_AXIS_LEFT_Y,1.0]],
 	# The studies' cameras back to their default (the aqueduct isle's).
 	"camera_reset":[["button",JOY_BUTTON_RIGHT_STICK]],
 }
