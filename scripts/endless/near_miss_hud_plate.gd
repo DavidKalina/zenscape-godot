@@ -611,6 +611,9 @@ func _paint_plate() -> void:
 	var x := 49.0
 	var lost_w := _w(Kit.MED,"LINE LOST",10.5,0.2)+9.0 if _v_lost else 0.0
 	var tot_w := _w(Kit.NUM,_v_tot,25.0)
+	# The bank's total lands big: the plate gives it room, so it does not lie
+	# over the multiplier folding in beside it.
+	if not _bank.is_empty(): tot_w *= _v_tot_grow
 	var mul_w := 0.0
 	var mul_gap := 0.0
 	if _v_mul != "":
@@ -642,7 +645,9 @@ func _paint_plate() -> void:
 		var age := float(_step.age)
 		var big := bool(_step.big)
 		var fly := smoothstep(STEP_FLIES,STEP_SHOWS,age)
-		var a := smoothstep(0.0,0.05,age)*(1.0-smoothstep(0.75,1.0,age/STEP_SHOWS))
+		# Gone as it reaches the multiplier (the mock-up kept it whole until
+		# 0.53 s, when it lay over the number it was changing).
+		var a := smoothstep(0.0,0.05,age)*(1.0-smoothstep(STEP_FLIES+0.03,STEP_LAND+0.1,age))
 		var ipx := maxi(roundi((21.0 if big else 15.0)*k),4)
 		var glow := Color(1.0,0.745,0.275,0.7*a) if big else Color(0,0,0,0)
 		_txt(_block,Kit.face(Kit.NUM,ipx),str(_step.text),_p(right+lerpf(2.0,-52.0,fly),15.0),ipx,Color(GOLD if big else CLOSE_C,a),2.0*k,
@@ -713,8 +718,9 @@ func _paint_disc() -> void:
 		_block.draw_polyline(crack,Color(KEY,_v_crack),3.0*k,true)
 		_block.draw_polyline(crack,Color(LOST,_v_crack),1.5*k,true)
 	if _v_flash > 0.01:
-		var fr := 15.0*k
-		_block.draw_texture_rect(_spot,Rect2(c+Vector2(-5.0,-6.0)*k-Vector2.ONE*fr,Vector2.ONE*fr*2.0),false,Color(FLASH,_v_flash))
+		# A soft spot that ends inside the disc's face (its middle 7 M off the disc's).
+		var fr := 12.5*k
+		_block.draw_texture_rect(_spot,Rect2(c+Vector2(-4.5,-5.5)*k-Vector2.ONE*fr,Vector2.ONE*fr*2.0),false,Color(FLASH,minf(_v_flash*1.25,1.0)))
 
 ## The pennant under the plate: cream cloth unrolling to the right, the line's
 ## runs stamped as seals, then the money and the closest pass.
@@ -745,15 +751,24 @@ func _paint_pennant() -> void:
 	var h := 5.0+name_h+22.0+3.0+20.0+6.0
 	var open := minf(w,smoothstep(0.45,0.75,b)*340.0)
 	if open < 6.0: return
-	var notch := minf(11.0,open*0.4)
-	# The cloth, its hard shadow, its grain and its ink spine.
-	var cloth := PackedVector2Array([_p(ox,oy),_p(ox+open,oy),_p(ox+open-notch,oy+h*0.5),_p(ox+open,oy+h),_p(ox,oy+h)])
+	# The cloth as it will lie (its swallowtail's point 11 M in from its end),
+	# shown as far as it has unrolled; its hard shadow, grain and ink spine.
+	var notch := 11.0
+	var tail := (w-open)/notch
+	var cloth := PackedVector2Array([_p(ox,oy),_p(ox+open,oy)])
+	if tail >= 1.0: cloth.append(_p(ox+open,oy+h))
+	else:
+		if tail > 0.02: cloth.append(_p(ox+open,oy+tail*h*0.5))
+		cloth.append(_p(ox+w-notch,oy+h*0.5))
+		if tail > 0.02: cloth.append(_p(ox+open,oy+h-tail*h*0.5))
+		cloth.append(_p(ox+open,oy+h))
+	cloth.append(_p(ox,oy+h))
 	var drop := PackedVector2Array()
 	for p: Vector2 in cloth: drop.append(p+Vector2(0.0,3.0*k))
 	_fill(drop,Color(KEY,0.4))
 	_fill(cloth,CLOTH)
 	var gx := 0.0
-	var body := open-notch
+	var body := minf(open,w-notch)
 	while gx < body:
 		var g0 := Color(GRAIN,0.0)
 		var g1 := Color(GRAIN,0.06)
