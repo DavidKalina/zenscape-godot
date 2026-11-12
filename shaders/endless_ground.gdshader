@@ -159,14 +159,6 @@ uniform vec3 rock_tint = vec3(1.0);
 // A world's hue over the rock, taken at the rock's own light: its direction
 // the hue, its luma how much of the rock's own hue gives way (0: none).
 uniform vec3 rock_hue = vec3(0.0);
-// --basalt=: part of the rock goes a dark, cool grey (0: none). `basalt_amount`
-// how far; `basalt_land` the land's own rock takes it, `basalt_form` (per mesh) the
-// standing formations take it, `basalt_belts` the land's share
-// only in broad belts (a low-frequency mask of the world, about a km across).
-uniform float basalt_amount = 0.0;
-uniform float basalt_land = 0.0;
-instance uniform float basalt_form = 0.0;
-uniform float basalt_belts = 0.0;
 // The Peak's massif (scripts/endless/peak_massif.gd `paint()`; w 0: none):
 // its frame (plateau centre xz, facing xz), its zone (the bounding circle's
 // middle xz, radius, on), its snow line over the sea, and its approach
@@ -198,18 +190,6 @@ const float PEAK_BASALT_GRANITE = 0.012;
 // the sea): over the land's short span it stood as a band round the massif.
 const vec3 PEAK_BASALT_HAZE = vec3(120.0, 760.0, 0.86);
 const float PEAK_BEDS = 3.0;
-// --basalt= (see basalt_amount): the dark stone's value at the rock's lit mid
-// (0.5), how steeply it falls to the shade, and its tint there and in the sun (a shade cooler than neutral: the sun's own warmth turns a neutral stone brown by the sea).
-const float BASALT_LIT = 0.21;
-const float BASALT_CURVE = 1.7;
-const vec3 BASALT_SHADE_TINT = vec3(0.95, 0.90, 1.12);
-const vec3 BASALT_SUN_TINT = vec3(0.90, 0.98, 1.10);
-// How much of the sun's own hue the dark stone keeps in its direct light (0:
-// a white sun, 1: the sun as it is). The sun's share is nearly all of a dark
-// stone's light where it faces the sun, and the key's linear hue at the
-// default hour is about (1, 0.65, 0.32): on a neutral albedo that rendered
-// brown, not grey (the sea stacks, and any land rock facing the sun).
-const float BASALT_SUN_KEEP = 0.25;
 // The rock's snapped paint (er_rock_shaped's `ease`) eased fully to
 // smooth nearer the eye than x m, not at all past y m: see the call. (Walls'
 // normals no longer swing column to column (land_stream `_wall_normals`), so
@@ -504,8 +484,6 @@ varying vec4 river_frame;
 // The land's shape (land_stream _shape, CUSTOM3): how proud (over 0.5) or
 // sunk each vertex stands at 4, 14 and 40 m; a 1 where it was made.
 varying vec4 land_shape;
-// --basalt=: how much of the pixel is the dark stone (fragment to light()).
-varying float basalt_sun;
 
 void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -1451,28 +1429,6 @@ void fragment() {
 		lit_n = normalize(mix(n, lit_n, rocky * (1.0 - pk_scree)));
 	}
 	rock = hued(rock, rock_hue) * rock_tint * pow(PEAK_BASALT_TINT, vec3(pk_dark));
-	float basalt_w = 0.0;
-	if (basalt_amount > 0.0 && rocky > 0.002) {
-		float bas = max(basalt_land, basalt_form);
-		if (basalt_belts > 0.5 && basalt_form < 0.5) {
-			float belt = zs_noise(p.xz / 1100.0 + vec2(31.0, 7.0)) + (zs_noise(p.xz / 240.0) - 0.5) * 0.14 + (zs_noise(p.xz / 55.0) - 0.5) * 0.06;
-			bas *= smoothstep(0.47, 0.55, belt);
-		}
-		// (Not over the Peak's own dark rock.)
-		bas *= basalt_amount * (1.0 - pk_dark);
-		// A different stone, not the same one in shade: the painted rock's
-		// light and dark kept but steepened (sunlit a mid grey with the sun's
-		// warmth, shaded near black-violet, pale edges and glints still
-		// bright), its base neutral charcoal; some of its stain and lichen
-		// left. Its bounce glow follows the same scale, its hue the cool shade tint (at sea level the warm ground bounce made the stacks brown).
-		float rl = max(luma(rock), 0.002);
-		float bl = BASALT_LIT * pow(rl / 0.5, BASALT_CURVE);
-		vec3 bc = mix(vec3(rl), rock, 0.45) * (bl / rl);
-		bc *= mix(BASALT_SHADE_TINT, BASALT_SUN_TINT, smoothstep(0.08, 0.5, rl));
-		rock = mix(rock, bc, bas);
-		rock_glow = mix(rock_glow, vec3(luma(rock_glow)) * (bl / rl) * BASALT_SHADE_TINT, bas);
-		basalt_w = bas;
-	}
 
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);
 	sand = mix(sand, SAND_WET, smoothstep(0.7, -0.1, over));
@@ -1631,7 +1587,6 @@ void fragment() {
 	float r_damp = r_steep * r_here * r_level * (1.0 - smoothstep(-r_aa, r_aa, r_out)) * (1.0 - smoothstep(0.0, river_wall_damp.x * (1.0 + r_ragged), r_rise - river_wall.z));
 	albedo *= 1.0 - river_wall_damp.y * r_damp;
 	ALBEDO = (albedo + ps_glit * snowy * ps_on) * (1.0 - shaded) * horizon.x;
-	basalt_sun = basalt_w * rocky * (1.0 - snowy) * (1.0 - pk.y);
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
 	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
 	ROUGHNESS = mix(ROUGHNESS, pt_rw.x, pt_rw.y);
@@ -2015,12 +1970,6 @@ void light() {
 	vec3 d;
 	vec3 s;
 	zs_grass_light(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, ROUGHNESS, 0.25, d, s);
-	// --basalt=: the sun on the dark stone most of the way to white
-	// (BASALT_SUN_KEEP), its luma kept; the shade lift below as it is.
-	if (basalt_sun > 0.0) {
-		vec3 hue = max(LIGHT_COLOR / max(dot(LIGHT_COLOR, vec3(0.2126, 0.7152, 0.0722)), 1.0e-4), vec3(0.2));
-		d *= mix(vec3(1.0), mix(vec3(1.0), 1.0 / hue, 1.0 - BASALT_SUN_KEEP), basalt_sun);
-	}
 	DIFFUSE_LIGHT += d;
 	SPECULAR_LIGHT += s;
 	if (LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR, zs_hemi_sky, 1.0 - ATTENUATION * smoothstep(0.0, 0.2, dot(NORMAL, LIGHT)), (INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).y);
