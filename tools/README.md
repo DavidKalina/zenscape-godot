@@ -36,6 +36,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | The endless land's hash for a seed, to compare machines (co-op) | `python tools/land_hash.py --seed 1 [-- --land-native=0]`; `--compare a.txt b.txt` |
 | What a scene or folder reaches (scripts, scenes, shaders, assets), or why a file is reached, before cutting or moving files | `python tools/reach.py studies/x.tscn scripts/endless [--out F]`; in Python `reach.why(starts, file)`. It reads res:// strings, class_name words, uid:// ids and #includes; a compressed binary scene's dependencies come from Godot (`ResourceLoader.get_dependencies`) |
 | A top-down map of a box of the land, every site and find named | `python tools/site_map.py --box=x0,z0,x1,z1 --out scratch/m.png` (also `m.sites.json`; `--kinds arch,find`; `--from-json` redraws) |
+| The flight glyphs' polygon data, from the design's json to the script the game loads | `python tools/glyph_data.py` (`docs/design/ui/mock/glyphs.json` to `scripts/endless/near_glyph_data.gd`; `--check` exits 1 when the script is stale) |
 | Find an existing tool | `python tools/index.py <word>` |
 
 ## godot.py: the base

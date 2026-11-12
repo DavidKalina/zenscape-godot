@@ -1,13 +1,31 @@
 extends RefCounted
-## The near misses' faceted glyphs: what a pass was near (a tree, a rock,
-## the ground, water, an arch, a gap) and the chain's ends (the bank, a
-## scrape), drawn as the archived HUD drew its icons (scripts/hud_icons.gd
-## at the tag archive/before-the-cut, "ZenScape HUD 4c"): a silhouette
-## filled with a jittered 4x4 triangle grid shaded along the top-left to
-## bottom-right diagonal, its line paths cut over it in the tint's shade, in
-## a 24-unit box. Built as SVG text and rasterised at the size drawn, so
-## nothing is baked to disk. Hex colours only (the SVG importer reads rgba()
-## as black).
+## The flight glyphs: what a pass was near (a tree, a rock, the ground, water,
+## an arch, a gap), the line's moves, the chain's ends (the bank, a scrape),
+## money, the charge, the finds and the places. Rasterised from SVG text at
+## the size drawn (nothing baked to disk; hex colours only, the SVG importer
+## reads rgba() as black) and cached. A texture covers BOX units (the 24-unit
+## box and PAD round it): draw it `px*BOX/24` across round the glyph's centre.
+##
+## Two drawings, the same calls:
+## - the set of 2026-11-11 (docs/design/ui/mock/glyphs.json, carried in
+##   near_glyph_data.gd, made by tools/glyph_data.py): flat polygons in three
+##   tones (lit, mid, shade; the light from the top left), each stroked STROKE
+##   in its own colour to close the seams. Each glyph has its own colour
+##   (TINTS, today's hues; its three tones spaced as the gilt ground's are).
+##   `gilt` (--glyphs=gilt) draws them all in the one gilt ground instead, a
+##   scrape and a crash in the loss ground. A ground can also be asked for by
+##   name as the variant ("gilt", "ink" for a cream plate, "loss", "bone").
+##   No sun: banked points are `bank` (two coins), money `coin`, the charge
+##   `surge` (a swirl), the roll ready `roll`.
+## - `old` (--glyphs=old; the trunk's --ui=old sets it): the faceted glyphs
+##   as the archived HUD drew its icons (scripts/hud_icons.gd at the tag
+##   archive/before-the-cut, "ZenScape HUD 4c"): a silhouette filled with a
+##   jittered 4x4 triangle grid shaded along the top-left to bottom-right
+##   diagonal, its line paths cut over it in the tint's shade. An id only the
+##   new set has falls back to the one it took over from (OLD_ID).
+
+const Data = preload("res://scripts/endless/near_glyph_data.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const LIGHT := Color("fffaf0")
 const SHADE := Color("1a140e")
@@ -17,26 +35,98 @@ const DROP := 1.1
 const JITTER := 0.55
 const PAD := 2.0
 const BOX := 24.0+PAD*2.0
+## The new set's seam-closing stroke (units), in each polygon's own colour.
+const STROKE := 0.14
+
+## The new set's colour per glyph (the mid tone; `tones` spaces the lit and
+## the shade from it). The kinds and moves keep today's hues; a new id takes
+## the colour of what it shows or of the id it took over from. "gilt", "loss"
+## and "bone" name a ground of the json's, used as it stands.
+const TINTS := {
+	"tree":"5e8f4c","rock":"8f8a86","ground":"7fae5a","water":"4f8fc0","arch":"a8977c","gap":"8d8577",
+	"pull":"7fae5a","skip":"4f8fc0","dive":"e0a548","knife":"c9ccd4","inverted":"c58fd0","carve":"9cc26a",
+	"canopy":"4f8a45","canyon":"b9744a","climb":"a39274","surf":"8fa3ad","crest":"4f8fc0","slalom":"6f9c4e",
+	"orbit":"7c9aa8","smash":"8f8a86",
+	"coin":"gilt","bank":"e2b25e","surge":"f7c63f","roll":"f7c63f","scrape":"loss","crash":"loss",
+	"relic":"e2b25e","landing":"a8977c","line":"e2b25e","event":"f7c63f","plane":"bone",
+	"falls":"4f8fc0","tunnel":"8d8577","peak":"8fa3ad","stack":"7c9aa8","balloon":"c2694f","whale":"7c9aa8",
+	"burrower":"b9744a","race":"c9ccd4","shop":"e0a548","door":"a8977c",
+	"tree_cluster":"5e8f4c","plane_side":"bone","coin_block":"gilt","surge_burst":"f7c63f"}
+## The lit and the shade off a mid tone, as the gilt ground's stand off its
+## mid (d9a441 to f7dc8a and 8f6a2c): the lit keeps LIT_S of the saturation
+## and climbs LIT_V of the way to full value, the shade keeps SHADE_V of the
+## value. A dark hue (the rock's grey, the canyon's brown) so gets a lit tone
+## that reads on the dark plate at 12 px without the hue moving.
+const LIT_S := 0.63
+const LIT_V := 0.8
+const SHADE_V := 0.66
+## What an id of the new set is under `old`.
+const OLD_ID := {"pull":"ground","skip":"water","crest":"surf","smash":"rock","coin":"bank","roll":"surge","crash":"scrape"}
+
+## Today's faceted drawing instead of the new set.
+static var old := false
+## The new set in the one gilt ground instead of a colour per glyph.
+static var gilt := false
+static var _flags_read := false
 
 ## [tint, fills, lines, seed, line width]
 static var _items := {}
 static var _textures := {}
+static var _tones := {}
+
+## --glyphs=old, --glyphs=gilt (or both, comma-separated), read once. It
+## only turns a switch on, so one set from code (the trunk's --ui=old) stays.
+static func _flags() -> void:
+	if _flags_read: return
+	_flags_read = true
+	for arg: String in LaunchArgs.user_args():
+		if not arg.begins_with("--glyphs="): continue
+		for word: String in arg.trim_prefix("--glyphs=").split(",",false):
+			if word == "old": old = true
+			elif word == "gilt": gilt = true
+
+## Which drawing is in force: "old", "gilt" or "tint" (a cache key for
+## whoever keeps textures made from `body_of`: near_badges.gd).
+static func mode() -> String:
+	_flags()
+	return "old" if old else ("gilt" if gilt else "tint")
+
+## The id drawn for `id` in the drawing in force, or "" if it has none.
+static func resolve(id: String) -> String:
+	_flags()
+	if old:
+		if _items.is_empty(): _build()
+		var was := str(OLD_ID.get(id,id))
+		return was if _items.has(was) else ""
+	return id if Data.GLYPHS.has(id) else ""
+
+## Every id the drawing in force has, in the sheet's order.
+static func ids() -> Array:
+	_flags()
+	if old:
+		if _items.is_empty(): _build()
+		return _items.keys()
+	return Data.ORDER.duplicate()
 
 ## The glyph for a "near" event {kind, surface, under, glyph (a move's own,
 ## line_moves.gd)}.
 static func for_moment(m: Dictionary) -> String:
-	var own := str(m.get("glyph",""))
-	if own != "" and not item(own).is_empty(): return own
+	var own := resolve(str(m.get("glyph","")))
+	if own != "": return own
 	var kind := str(m.get("of",m.get("kind","")))
 	var surface := str(m.get("surface",""))
 	if kind == "thread": return "arch" if bool(m.get("under",false)) else "gap"
+	# A pull-out has its own mark, and a skip (a pull-out off the water) its.
+	if kind == "pull-out" and not old: return "skip" if surface == "water" else "pull"
 	if surface == "tree": return "tree"
 	if surface == "water": return "water"
 	if surface == "stone": return "rock"
 	return "ground"
 
-## Variants: "icon" (faceted), "lit" (the tint lit, for a gleam) and
-## "shadow" (white silhouette with its lines, to tint as the cut's shadow).
+## Variants: "icon" (the glyph), "lit" (lit up, for a gleam) and "shadow"
+## (white silhouette, to tint as the cut's shadow); the new set also takes a
+## ground's name ("gilt", "ink", "loss", "bone") or "tint" (its own colour
+## whatever `gilt` says).
 static func svg(id: String, variant := "icon") -> String:
 	var body := body_of(id,variant)
 	if body.is_empty(): return ""
@@ -45,8 +135,10 @@ static func svg(id: String, variant := "icon") -> String:
 ## The glyph's SVG body in its 24-unit box (near_badges.gd sets it on a
 ## medallion), or "".
 static func body_of(id: String, variant := "icon") -> String:
-	var it: Dictionary = item(id)
-	if it.is_empty(): return ""
+	id = resolve(id)
+	if id == "": return ""
+	if not old: return _body_new(id,variant)
+	var it: Dictionary = _items[id]
 	var body := ""
 	var fills: Array = it.fills
 	if variant == "shadow":
@@ -68,10 +160,59 @@ static func body_of(id: String, variant := "icon") -> String:
 		body += '</g>'
 	return body
 
+## The new set's body: its polygons in order, each in its tone's colour.
+static func _body_new(id: String, variant: String) -> String:
+	var cols := PackedStringArray()
+	if variant == "shadow":
+		cols = PackedStringArray(["ffffff","ffffff","ffffff"])
+	else:
+		var from: Array = tones(id,"" if variant == "icon" or variant == "lit" else variant)
+		for c: Color in from:
+			cols.append((_mix(c,Color.WHITE,0.55) if variant == "lit" else c).to_html(false))
+	var body := ""
+	for p: Array in Data.GLYPHS[id].polys:
+		var col := cols[int(p[0])]
+		body += '<polygon points="%s" fill="#%s" stroke="#%s" stroke-width="%s" stroke-linejoin="round"/>' % [p[1],col,col,_num(STROKE)]
+	return body
+
+## The new set's three colours for `id`: lit, mid, shade. `ground` "" is the
+## one in force (its own colour, or the gilt ground under `gilt`); "tint" its
+## own colour; else a ground of the json's by name.
+static func tones(id: String, ground := "") -> Array:
+	_flags()
+	if ground == "": ground = "gilt" if gilt else "tint"
+	if ground == "tint": ground = str(TINTS.get(id,"gilt"))
+	elif ground == "gilt" and str(TINTS.get(id,"")) == "loss": ground = "loss"
+	if _tones.has(ground): return _tones[ground]
+	var out: Array
+	if Data.GROUNDS.has(ground):
+		var g: Array = Data.GROUNDS[ground]
+		out = [Color(str(g[0])),Color(str(g[1])),Color(str(g[2]))]
+	elif ground.is_valid_html_color():
+		var mid := Color(ground)
+		out = [Color.from_hsv(mid.h,mid.s*LIT_S,mid.v+(1.0-mid.v)*LIT_V),mid,Color.from_hsv(mid.h,mid.s,mid.v*SHADE_V)]
+	else:
+		return tones(id,"gilt")
+	_tones[ground] = out
+	return out
+
+## The new set's polygons for whoever draws them itself: [[tone, points on
+## the 24-unit grid], ...] in drawing order ([] for an id it lacks).
+static func polygons(id: String) -> Array:
+	var out := []
+	if not Data.GLYPHS.has(id): return out
+	for p: Array in Data.GLYPHS[id].polys:
+		var points := PackedVector2Array()
+		for pair: String in str(p[1]).split(" ",false):
+			var xy := pair.split_floats(",")
+			points.append(Vector2(xy[0],xy[1]))
+		out.append([int(p[0]),points])
+	return out
+
 ## A texture of `id` for a glyph drawn `px` pixels across its 24-unit box
 ## (cached by size). It covers BOX units: draw it `px*BOX/24` round the centre.
 static func texture(id: String, variant: String, px: float) -> Texture2D:
-	var key := "%s/%s/%d" % [id,variant,roundi(px)]
+	var key := "%s/%s/%s/%d" % [mode(),id,variant,roundi(px)]
 	if _textures.has(key): return _textures[key]
 	var source := svg(id,variant)
 	if source.is_empty(): return null
@@ -81,9 +222,15 @@ static func texture(id: String, variant: String, px: float) -> Texture2D:
 	_textures[key] = tex
 	return tex
 
+## The glyph's record in the drawing in force ({} if it has none): the old
+## set's {id, tint, fills, lines, seed, lw}, the new set's {id, tint, name,
+## group, maps, polys}.
 static func item(id: String) -> Dictionary:
-	if _items.is_empty(): _build()
-	return _items.get(id,{})
+	id = resolve(id)
+	if id == "": return {}
+	if old: return _items[id]
+	var g: Dictionary = Data.GLYPHS[id]
+	return {"id":id,"tint":tones(id)[1],"name":g.name,"group":g.group,"maps":g.maps,"polys":g.polys}
 
 static func tint(id: String) -> Color:
 	var it := item(id)

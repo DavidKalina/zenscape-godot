@@ -10,17 +10,25 @@ extends RefCounted
 const RIM := {"razor":["#fff1be","#f2c14e","#a06c1c"],"close":["#ffffff","#c5cdd7","#6f7a88"],
 	"near":["#6b7380","#4a515c","#2e333b"],"scrape":["#ffb3a6","#e8604b","#8e2e20"]}
 
+const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
+
 static var _textures := {}
 
-## The badge `id` (tree, rock, ground, water, arch, gap, bank, scrape) in
-## `tier` (razor, close, near), `px` across.
+## The badge `id` in `tier` (razor, close, near), `px` across. With the new
+## glyph set (near_glyphs.gd) every badge is the medallion with that glyph on
+## its face; under its `old` the handoff's own eight (tree, rock, ground,
+## water, arch, gap, bank, scrape) are drawn as they were.
 static func texture(id: String, tier: String, px: float) -> Texture2D:
-	if id == "bank": tier = "razor"
-	elif id == "scrape": tier = "scrape"
+	# Under `old` an id of the new set is the one it took over from (money's coin is the bank's).
+	id = Glyphs.resolve(id)
+	if id == "": return null
+	if id == "bank" or id == "coin": tier = "razor"
+	elif id == "scrape" or id == "crash": tier = "scrape"
 	var size := maxi(roundi(px/2.0)*2,8)
-	var key := "%s/%s/%d" % [id,tier,size]
+	var mode: String = Glyphs.mode()
+	var key := "%s/%s/%s/%d" % [mode,id,tier,size]
 	if _textures.has(key): return _textures[key]
-	var svg := str(SVG.get(id,""))
+	var svg := str(SVG.get(id,"")) if mode == "old" else ""
 	if svg.is_empty(): svg = _from_glyph(id)
 	if svg.is_empty(): return null
 	var rim: Array = RIM.get(tier,RIM.close)
@@ -37,7 +45,7 @@ static func texture(id: String, tier: String, px: float) -> Texture2D:
 ## A badge for a glyph the handoff didn't draw (the line's moves, near_glyphs.gd
 ## `body_of`): the same medallion, the glyph on its face.
 static func _from_glyph(id: String) -> String:
-	var body := preload("res://scripts/endless/near_glyphs.gd").body_of(id)
+	var body: String = Glyphs.body_of(id)
 	if body.is_empty(): return ""
 	var head := str(SVG.tree)
 	head = head.substr(0,head.find('<g transform="translate(11 11) scale(1.75)">'))

@@ -250,8 +250,8 @@ func _draw_block() -> void:
 	elif _near.chain_points >= 1.0 and not _moves.is_empty(): _draw_live(s)
 	_draw_ready(s)
 
-## The surge roll ready (a full meter, not being spent): a small gilt sunburst
-## breathing by the tag, its word only for READY_WORD s after it fills. No disc
+## The surge roll ready (a full meter, not being spent): the gilt roll mark
+## (near_glyphs.gd `roll`; under its `old` the surge's sunburst) breathing by the tag, its word only for READY_WORD s after it fills. No disc
 ## behind it: on the land a dark disc is all that reads.
 func _draw_ready(s: float) -> void:
 	if _near.meter < 0.999 or _near.surge > 0.0:
@@ -263,10 +263,10 @@ func _draw_ready(s: float) -> void:
 	var px := roundf(READY_PX*s/2.0)*2.0
 	var sz := px*Glyphs.BOX/24.0
 	var r := Rect2(c-Vector2.ONE*sz*0.5,Vector2.ONE*sz)
-	var shadow := Glyphs.texture("surge","shadow",px)
+	var shadow := Glyphs.texture("roll","shadow",px)
 	if shadow != null: _block.draw_texture_rect(shadow,Rect2(r.position+Vector2(0.0,2.0)*s,r.size),false,Color(0.08,0.05,0.03,0.6))
-	_block.draw_texture_rect(Glyphs.texture("surge","icon",px),r,false,Color.WHITE)
-	var lit := Glyphs.texture("surge","lit",px)
+	_block.draw_texture_rect(Glyphs.texture("roll","icon",px),r,false,Color.WHITE)
+	var lit := Glyphs.texture("roll","lit",px)
 	if lit != null: _block.draw_texture_rect(lit,r,false,Color(1,1,1,0.05+0.35*breath))
 	var a := 1.0-smoothstep(READY_WORD-0.5,READY_WORD,_ready_age)
 	if a > 0.0: _txt(_block,_bw(READY_TEXT,0.14),"ROLL",c+Vector2(0.0,READY_PX*0.82)*s,READY_TEXT*s,Color(GLINT_TEXT,a),6.0*s)
@@ -556,7 +556,7 @@ func _draw_recap(s: float, c: Vector2, ring_px: float, t: float, alpha: float) -
 	y = pad.y+spx+8.0*s+sum_px*0.5
 	_ink(_nums,sum_text,Vector2(pad.x,y),sum_px,Color(INK,sa))
 	x = pad.x+_width(_nums,sum_text,sum_px)+16.0*s
-	_glyph("bank",Vector2(x+coin*0.5,y),coin,1.0,sa)
+	_glyph("coin",Vector2(x+coin*0.5,y),coin,1.0,sa)
 	_ink(_nums,money,Vector2(x+coin+4.0*s,y),sum_px,Color(LAND_INK,sa))
 	# How it was flown.
 	y += sum_px*0.5+6.0*s+stat_px*0.5

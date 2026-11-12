@@ -54,10 +54,12 @@ const GAIN := {"knife edge":1.5,"inverted":2.0}
 const HELD_MIN := {"carve":1.0,"canopy run":1.2,"canyon run":1.2,"climb":1.0,"surf":1.0,"crest run":0.8}
 const HELD_TOP := 3.0
 const GRACE := 0.35
-## Glyphs (near_glyphs.gd ids) of the moves that have their own.
+## Glyphs (near_glyphs.gd ids) of the moves that have their own. The crest
+## run's and the smash's are the new set's; under its `old` they fall back to
+## the surf's and the rock's (near_glyphs.gd OLD_ID).
 const GLYPH := {"late pull":"dive","knife edge":"knife","inverted":"inverted","carve":"carve",
-	"canopy run":"canopy","canyon run":"canyon","climb":"climb","surf":"surf","crest run":"surf","slalom":"slalom",
-	"stack orbit":"orbit","smash":"rock"}
+	"canopy run":"canopy","canyon run":"canyon","climb":"climb","surf":"surf","crest run":"crest","slalom":"slalom",
+	"stack orbit":"orbit","smash":"smash"}
 
 const KNIFE := deg_to_rad(60.0)
 const INVERTED := deg_to_rad(120.0)
