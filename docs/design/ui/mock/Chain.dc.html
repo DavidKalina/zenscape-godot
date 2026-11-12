@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chain HUD, plate and trail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:ital,wght@0,500;1,600&display=swap">
+<style>
+body{margin:0}
+.f{font-family:'Barlow Semi Condensed','Arial Narrow',sans-serif}
+.num{font-family:'Barlow Semi Condensed','Arial Narrow',sans-serif;font-style:italic;font-weight:600;font-variant-numeric:tabular-nums}
+.bgi{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;transition:opacity .25s}
+.plate{position:absolute;display:flex;align-items:center;box-sizing:border-box;color:#f6f3ea;white-space:nowrap}
+.pbg{position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(22,24,29,.86);clip-path:polygon(0 0,100% 0,calc(100% - 9px) 100%,0 100%)}
+.pbgl{position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(22,24,29,.86);clip-path:polygon(9px 0,100% 0,100% 100%,0 100%)}
+.rel{position:relative}
+.gl{position:absolute;left:50%;top:50%;width:28px;height:28px;margin:-14px 0 0 -14px}
+.bd{display:block;width:16px;height:16px}
+.sl{display:block;width:14px;height:14px;margin:2px}
+.sw{all:unset;cursor:pointer;font:13px system-ui,sans-serif;color:#cfd3d8;background:#23272d;border:1px solid #3a4048;border-radius:4px;padding:6px 11px;white-space:nowrap}
+.sw:hover{border-color:#ffd36b;color:#fff}
+.sw:focus-visible{outline:2px solid #ffd36b;outline-offset:2px}
+.cap{font-size:12.5px;color:#9aa1ab;margin:6px 0 12px 0}
+.li{font-size:13.5px;line-height:19px;color:#cfd3d8;margin:0 0 9px 0;padding-left:14px;position:relative}
+.li b{color:#f4eedc;font-weight:600}
+.dot{position:absolute;left:0;top:7px;width:4px;height:9px;background:#ffd36b;transform:skewX(-14deg)}
+.h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#ffd36b;margin:0 0 10px 0}
+</style>
+</helmet>
+<div style="width:2150px;height:1010px;box-sizing:border-box;padding:22px 30px 0 30px;background:#16181c;color:#cfd3d8;font-family:system-ui,sans-serif;display:flex;gap:24px">
+
+<div style="width:1280px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:8px;height:34px">
+<span style="font-size:15px;color:#ffd36b;margin-right:12px">Chain HUD</span>
+<span style="font-size:12.5px;color:#9aa1ab">Bank timer</span>
+<button class="sw" style="{{vRing}}" onClick="{{setRing}}">Ring</button>
+<button class="sw" style="{{vFuse}}" onClick="{{setFuse}}">Fuse</button>
+<span style="flex-grow:1"></span>
+<span style="font-size:12.5px;color:#9aa1ab">Backdrop</span>
+<sc-for list="{{bgTabs}}" as="b" hint-placeholder-count="4">
+<button class="sw" style="{{b.style}}" onClick="{{b.go}}">{{b.label}}</button>
+</sc-for>
+</div>
+
+<div style="position:relative;width:1280px;height:800px;overflow:hidden;background:#0e1013;box-shadow:0 0 0 1px #2a2e35">
+<img class="bgi" alt="" src="/_blob/0f8fd3cad6c74bae2d4ff208b98739a7" style="{{bg0}}">
+<img class="bgi" alt="" src="/_blob/d181cc984e388cc14360cda82a399e82" style="{{bg1}}">
+<img class="bgi" alt="" src="/_blob/d79a5a40273a2305367d112004c5b455" style="{{bg2}}">
+<img class="bgi" alt="" src="/_blob/f4675b83ae768e2e8b83165ff556ae29" style="{{bg3}}">
+
+<div class="plate f" style="left:28px;top:26px;height:28px;padding:0 20px 0 10px;gap:7px"><span class="pbg"></span>
+<img class="rel" alt="" src="/_blob/7dd2eb71af9a26d6d6349269378fa2b1" style="width:19px;height:19px">
+<span class="rel num" style="font-size:19px;color:#ffd36b;line-height:28px">35</span>
+<span class="rel num" style="font-size:12.5px;color:#d9d5c8;line-height:28px;margin-left:-2px">/ 48</span>
+</div>
+
+<div class="plate f" style="right:28px;bottom:26px;height:24px;padding:0 12px 0 20px"><span class="pbgl"></span>
+<span class="rel" style="{{keyChip}}"><span class="num" style="font-size:12.5px;color:#ffd36b">Z</span><span style="font-size:11px;font-weight:500;letter-spacing:.2em;color:#f6f3ea;margin:0 12px 0 6px">ROLL</span></span>
+<span class="rel" style="font-size:10.5px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:#d9d5c8">Surge</span>
+<span class="rel" style="display:block;width:18px;height:18px;margin:0 6px 0 7px"><img alt="" src="/_blob/d515191e4540064955e87ed57c2ce562" style="{{mSun}}"><img alt="" src="/_blob/05e3333e34b34d06ff0f10f88b4121fe" style="{{mSunLit}}"></span>
+<span class="rel" style="{{mTrack}}"><span style="{{mFill}}"></span></span>
+</div>
+
+<div style="{{blk}}">
+<div style="{{sunBy}}"><img alt="" src="/_blob/05e3333e34b34d06ff0f10f88b4121fe" style="display:block;width:28px;height:28px;filter:drop-shadow(0 1px 2px rgba(14,16,19,.7))"><span class="f" style="display:block;text-align:center;font-size:9.5px;font-weight:500;letter-spacing:.2em;color:#fff3c9;text-shadow:0 0 3px #0e1013,0 0 3px #0e1013,0 1px 2px #0e1013;margin-top:-2px">ROLL</span></div>
+
+<div style="{{pen}}">
+<div style="position:relative;width:max-content;box-sizing:border-box;padding:5px 28px 6px 14px;white-space:nowrap;background-color:#f4eedc;background-image:repeating-linear-gradient(90deg,rgba(60,40,10,0) 0,rgba(60,40,10,.06) 46px,rgba(60,40,10,0) 92px);clip-path:polygon(0 0,100% 0,calc(100% - 11px) 50%,100% 100%,0 100%)">
+<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#1b1d22"></span>
+<div style="display:flex;align-items:center;gap:7px;height:22px">
+<sc-for list="{{pbeads}}" as="b" hint-placeholder-count="5">
+<span style="{{b.style}}">
+<span style="{{b.seal}}">
+<sc-if value="{{b.isTree}}"><img class="sl" alt="tree" src="/_blob/495a625e0e8c0993715c435c6803ec67"></sc-if>
+<sc-if value="{{b.isRock}}"><img class="sl" alt="stone" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870"></sc-if>
+<sc-if value="{{b.isArch}}"><img class="sl" alt="arch" src="/_blob/96df7d2ef5d7e1e71af778f9db976a55"></sc-if>
+<sc-if value="{{b.isKnife}}"><img class="sl" alt="knife edge" src="/_blob/258bc694e1f94c9bffd33b1666a50516"></sc-if>
+</span>
+<span class="num" style="font-size:12px;color:#1b1d22">{{b.n}}</span>
+</span>
+</sc-for>
+</div>
+<div style="{{penRow2}}">
+<span style="display:block;width:18px;height:18px;border-radius:50%;background:#16181d"><img class="sl" alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c"></span>
+<span class="num" style="font-size:15px;color:#1b1d22;margin-left:4px">+4</span>
+<span style="display:block;width:1px;height:11px;background:rgba(27,29,34,.3);transform:skewX(-14deg);margin:0 9px"></span>
+<span class="f" style="font-size:10px;font-weight:500;letter-spacing:.16em;color:#3a3a36">CLOSEST</span>
+<span class="num" style="font-size:13px;color:#1b1d22;margin-left:5px">0.30 m</span>
+</div>
+</div>
+</div>
+
+<div style="{{t2}}"><span class="pbg" style="background:rgba(22,24,29,.8)"></span>
+<span class="rel" style="{{rep}}"><span class="f" style="{{repName}}">{{repNameText}}</span><span class="num" style="{{repDist}}">{{repDistText}}</span><span class="f" style="{{repTag}}">{{repTagText}}</span></span>
+<span class="rel" style="{{trail}}">
+<sc-for list="{{beads}}" as="b" hint-placeholder-count="3">
+<span style="position:relative;display:flex;align-items:center;gap:2px">
+<sc-if value="{{b.isTree}}"><img class="bd" alt="tree" src="/_blob/495a625e0e8c0993715c435c6803ec67"></sc-if>
+<sc-if value="{{b.isRock}}"><img class="bd" alt="stone" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870"></sc-if>
+<sc-if value="{{b.isArch}}"><img class="bd" alt="arch" src="/_blob/96df7d2ef5d7e1e71af778f9db976a55"></sc-if>
+<sc-if value="{{b.isKnife}}"><img class="bd" alt="knife edge" src="/_blob/258bc694e1f94c9bffd33b1666a50516"></sc-if>
+<sc-if value="{{b.fl}}"><span style="position:absolute;left:2px;width:12px;bottom:-1px;height:2px;background:#ffd36b;transform:skewX(-14deg)"></span></sc-if>
+<span class="num" style="font-size:11.5px;color:#f6f3ea">{{b.n}}</span>
+</span>
+</sc-for>
+</span>
+</div>
+
+<div style="position:absolute;left:16px;top:0;height:30px;display:flex;align-items:center;box-sizing:border-box;padding:0 19px 0 33px;white-space:nowrap"><span class="pbg"></span>
+<span class="f rel" style="{{lostLab}}">Line lost</span>
+<span class="num rel" style="{{tot}}">{{totText}}</span>
+<span class="rel" style="{{mulWrap}}"><span class="num" style="{{mul}}">{{mulText}}</span>
+<span style="display:flex;gap:2px;margin:2px 1px 0 3px">
+<span style="display:block;flex:1;height:2.5px;background:rgba(246,243,234,.24);transform:skewX(-14deg)"><span style="{{seg0}}"></span></span>
+<span style="display:block;flex:1;height:2.5px;background:rgba(246,243,234,.24);transform:skewX(-14deg)"><span style="{{seg1}}"></span></span>
+<span style="display:block;flex:1;height:2.5px;background:rgba(246,243,234,.24);transform:skewX(-14deg)"><span style="{{seg2}}"></span></span>
+</span></span>
+<span class="num" style="{{step}}">{{stepText}}</span>
+<span style="{{fuse}}"><span style="{{fuseFill}}"></span></span>
+</div>
+
+<div style="{{disc}}">
+<span style="{{halo}}"></span>
+<span style="position:absolute;left:-4.5px;top:-4.5px;right:-4.5px;bottom:-4.5px;border-radius:50%;background:#0e1013"></span>
+<span style="{{arc}}"></span>
+<span style="{{face}}"></span>
+<img class="gl" alt="" src="/_blob/495a625e0e8c0993715c435c6803ec67" style="{{gTree}}">
+<img class="gl" alt="" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870" style="{{gRock}}">
+<img class="gl" alt="" src="/_blob/96df7d2ef5d7e1e71af778f9db976a55" style="{{gArch}}">
+<img class="gl" alt="" src="/_blob/258bc694e1f94c9bffd33b1666a50516" style="{{gKnife}}">
+<img class="gl" alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{gBank}}">
+<svg aria-hidden="true" viewBox="0 0 24 24" style="{{crack}}"><polyline points="8,5 11,11 9.5,13 13,19" fill="none" stroke="#0e1013" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"></polyline><polyline points="8,5 11,11 9.5,13 13,19" fill="none" stroke="#ff8a6b" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"></polyline></svg>
+<span style="{{flash}}"></span>
+</div>
+
+<img alt="" src="/_blob/495a625e0e8c0993715c435c6803ec67" style="{{fall0}}">
+<img alt="" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870" style="{{fall1}}">
+</div>
+</div>
+
+<div style="display:flex;align-items:center;gap:10px;height:34px">
+<button class="sw" style="min-width:44px;text-align:center" onClick="{{toggle}}">{{playLabel}}</button>
+<button class="sw" onClick="{{replay}}">Replay</button>
+<input type="range" min="0" max="2250" step="1" value="{{tv}}" onChange="{{scrub}}" aria-label="Scrub the sequence" style="flex-grow:1;accent-color:#ffd36b">
+<span style="font-size:12.5px;color:#9aa1ab;width:150px;text-align:right;font-variant-numeric:tabular-nums">{{clock}}</span>
+</div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+<sc-for list="{{steps}}" as="st" hint-placeholder-count="11">
+<button class="sw" style="{{st.style}}" onClick="{{st.go}}">{{st.label}}</button>
+</sc-for>
+</div>
+</div>
+
+<div style="width:338px;display:flex;flex-direction:column;padding-top:48px">
+<p class="h3">Today's ring, same scale</p>
+<img alt="Today's ring HUD while a chain builds" src="/_blob/7bf9f48a8579c5ede1350cff5d375faa" style="display:block;width:338px;height:156px">
+<p class="cap">Chain building: total, multiplier, step, three feed rows, closeness, roll mark.</p>
+<img alt="Today's ring HUD with the bank timer almost out" src="/_blob/ec2422bb06ba918fc035e8a145b5bf86" style="display:block;width:338px;height:156px">
+<p class="cap">Half a second before the bank: the arc is nearly gone and nothing else has changed.</p>
+<img alt="Today's bank banner" src="/_blob/dfec659fe217fb3384f27910c80813a0" style="display:block;width:338px;height:156px">
+<p class="cap">Banked: the banner reaches the plane's wing and holds three rows for 2.8 s.</p>
+<img alt="Today's lost line" src="/_blob/8b116d388b736bbe3e57593674bef962" style="display:block;width:338px;height:156px">
+<p class="cap">Line lost.</p>
+<p class="cap" style="margin-top:2px">Real stills from this build, fed the same line the sequence plays up to the arch (936 at ×1.8).</p>
+</div>
+
+<div style="width:420px;display:flex;flex-direction:column;padding-top:48px">
+<p class="h3">Kept</p>
+<p class="li"><span class="dot"></span>Small, tilted 6 degrees, hung off the plane's upper left and following it. Nothing shows until the first pass.</p>
+<p class="li"><span class="dot"></span>The faceted glyph popping into the disc, the gilt total that ticks, the multiplier that heats, the cloth for the bank, the quiet meter in the corner.</p>
+<p class="h3" style="margin-top:14px">Changed, and why</p>
+<p class="li"><span class="dot"></span><b>A dark plate under everything.</b> Today the cream and gold type sits on the land with only a keyline, and the third feed row is about 10 px at 70%. On a plate the type can be slimmer (600 italic, not 800) and still read over surf, ice and forest.</p>
+<p class="li"><span class="dot"></span><b>Three feed rows become one strip.</b> Just after a pass it reports that pass: its name, how close, and RAZOR or FLOURISH. In a lull it shows the line so far as glyphs with counts, a flourish underlined in gold. Points per run left the flying view; the total already ticks.</p>
+<p class="li"><span class="dot"></span><b>Closeness sits beside the name it belongs to,</b> not under the ring. Near, close and razor get three plainly different colours; today close and razor are two pale golds.</p>
+<p class="li"><span class="dot"></span><b>The multiplier shows where it stands.</b> Three segments under it run ×1 to the ×4 cap. The step still flies in, and the number changes when it lands.</p>
+<p class="li"><span class="dot"></span><b>About to bank is its own state.</b> The arc is thicker on a dark track; for the last 1.2 s of the 4.5 the track gilds and the total warms to gold, the colour it is paid in. Fuse is the same timer as a line under the total, if the arc is still too small to catch.</p>
+<p class="li"><span class="dot"></span><b>The bank is paid on the total itself:</b> the multiplier folds in and it counts up to what was earned. Then a two-row pennant: the line's shape stamped glyph by glyph, the money, the closest pass. Half the banner's area, 2.4 s, and it stops short of the wing. The sum row, average speed and time are left off the flying view.</p>
+<p class="li"><span class="dot"></span><b>Roll ready moves to the corner.</b> The sunburst shows by the tag for 2 s when the meter fills, then the meter holds it (lit sun, the key for a moment). Today it stays parked beside the plane with no chain up.</p>
+<p class="li"><span class="dot"></span><b>Size.</b> About 180 by 55 px in this frame; today's block is about 300 by 100 at the same scale.</p>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":2150,"height":1010}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { t: 3.85, playing: false, variant: 'ring', bg: 0 };
+  }
+  componentDidMount() {
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (this.state.playing) {
+        const t = this.state.t + dt;
+        if (t >= 22.5) this.setState({ t: 22.5, playing: false }); else this.setState({ t: t });
+      }
+      this._raf = requestAnimationFrame(tick);
+    };
+    this._raf = requestAnimationFrame(tick);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this._raf); }
+  data() {
+    if (this._d) return this._d;
+    // A line as the game scores it: runs of one kind, +0.2 on a switch, +0.6 on a flourish, banked 4.5 s after the last pass.
+    const P = [
+      { t: 1.5, g: 'tree', w: 'TREE GRAZE', run: 0, n: 1, tot: 84, m: 1.0, st: 0, d: 2.6, b: 'near' },
+      { t: 2.3, g: 'tree', w: 'TREES ×2', run: 0, n: 2, tot: 190, m: 1.0, st: 0, d: 1.1, b: 'close' },
+      { t: 3.0, g: 'tree', w: 'TREES ×3', run: 0, n: 3, tot: 330, m: 1.0, st: 0, d: 0.9, b: 'close' },
+      { t: 3.6, g: 'tree', w: 'TREES ×4', run: 0, n: 4, tot: 471, m: 1.0, st: 0, d: 0.3, b: 'razor' },
+      { t: 4.6, g: 'rock', w: 'STONE GRAZE', run: 1, n: 1, tot: 568, m: 1.2, st: 0.2, d: 1.2, b: 'close' },
+      { t: 5.3, g: 'rock', w: 'STONE ×2', run: 1, n: 2, tot: 689, m: 1.2, st: 0, d: 0.8, b: 'close' },
+      { t: 6.3, g: 'arch', w: 'ARCH', run: 2, n: 1, fl: true, tot: 936, m: 1.8, st: 0.6, d: 0.35, b: 'razor' },
+      { t: 7.4, g: 'tree', w: 'TREE GRAZE', run: 3, n: 1, tot: 1040, m: 2.0, st: 0.2, d: 1.3, b: 'close' },
+      { t: 8.0, g: 'tree', w: 'TREES ×2', run: 3, n: 2, tot: 1180, m: 2.0, st: 0, d: 1.0, b: 'close' },
+      { t: 9.0, g: 'knife', w: 'KNIFE EDGE', run: 4, n: 1, fl: true, tot: 1520, m: 2.6, st: 0.6, d: 0.6, b: 'close' }
+    ];
+    const P2 = [
+      { t: 17.6, g: 'tree', w: 'TREE GRAZE', run: 0, n: 1, tot: 96, m: 1.0, st: 0, d: 1.2, b: 'close' },
+      { t: 18.3, g: 'tree', w: 'TREES ×2', run: 0, n: 2, tot: 205, m: 1.0, st: 0, d: 0.9, b: 'close' },
+      { t: 19.1, g: 'rock', w: 'STONE GRAZE', run: 1, n: 1, tot: 310, m: 1.2, st: 0.2, d: 1.1, b: 'close' }
+    ];
+    this._d = { P: P, P2: P2, BANK: 13.5, LOSS: 20.0, READY: 6.3, END: 22.5 };
+    return this._d;
+  }
+  jump(t) { this.setState({ t: t, playing: false }); }
+  renderVals() {
+    const s = this.state, t = s.t, D = this.data(), ring = s.variant === 'ring';
+    const cl = (x, a, b) => Math.max(a, Math.min(b, x)), lerp = (a, b, k) => a + (b - a) * k;
+    const sm = (a, b, x) => { const k = cl((x - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
+    const pop = (g) => g < 0.1 ? lerp(1.35, 0.94, sm(0, 0.1, g)) : lerp(0.94, 1, sm(0.1, 0.22, g));
+    const hex = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    const mix = (a, b, k) => { const x = hex(a), y = hex(b); return 'rgb(' + x.map((v, i) => Math.round(lerp(v, y[i], k))).join(',') + ')'; };
+    const HEAT = ['#f6f3ea', '#f7dc8a', '#f2c14e', '#f7922e', '#ff6a2b'];
+    const heatCol = (h) => { const x = cl(h, 0, 1) * 4, i = Math.min(3, Math.floor(x)); return mix(HEAT[i], HEAT[i + 1], x - i); };
+    const grp = (n) => Math.round(n).toLocaleString('en-US');
+    const met = (d) => (d < 1 ? d.toFixed(2) : d.toFixed(1)) + ' m';
+    const CREAM = '#f6f3ea', GOLD = '#ffd36b', LOST = '#ff8a6b', NEARC = '#b9c6d2', CLOSEC = '#f7dc8a', RAZORC = '#ffb640';
+    const key = '0 0 3px #0e1013,0 0 3px #0e1013,0 1px 2px #0e1013';
+
+    let phase = 'idle', L = null, i = -1;
+    if (t >= D.P[0].t && t < D.BANK) { phase = 'live'; L = D.P; }
+    else if (t >= D.BANK && t < D.BANK + 3.6) phase = 'bank';
+    else if (t >= D.P2[0].t && t < D.LOSS) { phase = 'live'; L = D.P2; }
+    else if (t >= D.LOSS && t < D.LOSS + 1.4) phase = 'loss';
+    if (L) for (let k = 0; k < L.length; k++) if (t >= L[k].t) i = k;
+
+    // Defaults: everything hidden.
+    let blockA = 0, drop = 0, totText = '', totCol = CREAM, totXf = '', totGlow = 'none';
+    let mulText = '', mulCol = CREAM, mulPx = 17, mulScale = 1, mulGlow = 'none', mulA = 1, mulW = -1, mulShown = 1, segCol = CLOSEC;
+    let stepText = '', stepStyle = 'display:none';
+    let share = 0, arcCol = CLOSEC, trackCol = 'rgba(246,243,234,.2)', haloA = 0, haloCol = '255,211,107', rim = 'rgba(246,243,234,.3)';
+    let gNow = '', gScale = 1, gA = 1, flashA = 0, crackA = 0, shake = [0, 0];
+    let repA = 0, trailA = 0, repName = '', repNameCol = CREAM, repDist = '', repDistCol = CREAM, repTag = '', repTagCol = GOLD, t2A = 1;
+    let beads = [], penW = 0, penA = 0, pbeads = [], row2A = 0, lost = false;
+    let fall = ['display:none', 'display:none'];
+
+    if (phase === 'live') {
+      const p = L[i], prev = i > 0 ? L[i - 1] : { tot: 0, m: 1 }, age = t - p.t;
+      blockA = sm(0, 0.08, t - L[0].t);
+      totText = grp(lerp(prev.tot, p.tot, 1 - Math.pow(1 - cl(age / 0.35, 0, 1), 3)));
+      const j = 1 - sm(0, 0.14, age);
+      totXf = 'translateY(' + (-2 * j).toFixed(2) + 'px) scale(' + (1 + 0.06 * j).toFixed(3) + ')';
+      const landed = !(p.st > 0) || age >= 0.5, kick = p.st > 0 ? age - 0.5 : 9;
+      mulShown = landed ? p.m : prev.m;
+      const heat = (mulShown - 1) / 3;
+      mulText = '×' + mulShown.toFixed(1); mulPx = lerp(17, 21, heat);
+      mulCol = kick >= 0 && kick < 0.05 ? '#ffffff' : heatCol(heat);
+      mulScale = kick >= 0 ? 1 + 0.3 * (1 - sm(0, 0.2, kick)) : 1;
+      mulGlow = heat > 0.3 ? '0 0 ' + (5 + 9 * heat).toFixed(1) + 'px rgba(247,146,46,' + (0.55 * heat).toFixed(2) + ')' : 'none';
+      segCol = heatCol(Math.max(heat, 0.25));
+      if (p.st > 0 && age < 0.7) {
+        const big = !!p.fl, fly = sm(0.4, 0.7, age), a = sm(0, 0.05, age) * (1 - sm(0.75, 1, age / 0.7));
+        stepText = '+' + p.st.toFixed(1);
+        stepStyle = 'position:absolute;left:100%;top:50%;white-space:nowrap;font-size:' + (big ? 21 : 15) + 'px;line-height:22px;margin-top:-11px;color:' + (big ? GOLD : CLOSEC) +
+          ';opacity:' + a.toFixed(3) + ';text-shadow:' + key + (big ? ',0 0 10px rgba(255,190,70,.7)' : '') +
+          ';transform:translateX(' + lerp(2, -52, fly).toFixed(1) + 'px) scale(' + (pop(age) * lerp(1, 0.6, fly)).toFixed(3) + ');transform-origin:left center';
+      }
+      share = cl(1 - age / 4.5, 0, 1);
+      const ending = age > 3.3;
+      const soon = sm(3.3, 3.8, age);
+      arcCol = ending ? '#fff3c9' : heatCol(Math.max(heat, 0.25));
+      trackCol = 'rgba(255,211,107,' + lerp(0.2, 0.55, soon).toFixed(2) + ')';
+      totCol = mix(CREAM, GOLD, soon);
+      haloA = Math.max(0.55 * soon, 0.35 * heat);
+      gNow = p.g; gScale = pop(age); gA = sm(0, 0.04, age); flashA = 0.5 * (1 - sm(0, 0.3, age));
+      repA = sm(0, 0.06, age) * (1 - sm(1.3, 1.6, age)); trailA = sm(1.45, 1.75, age);
+      repName = p.w; repNameCol = p.fl ? GOLD : CREAM;
+      repDist = met(p.d); repDistCol = p.b === 'razor' ? RAZORC : (p.b === 'close' ? CLOSEC : NEARC);
+      repTag = p.fl ? 'FLOURISH' : (p.b === 'razor' ? 'RAZOR' : ''); repTagCol = p.fl ? GOLD : RAZORC;
+      const runs = [];
+      for (let k = 0; k <= i; k++) runs[L[k].run] = { g: L[k].g, n: L[k].n, fl: !!L[k].fl };
+      beads = runs.slice(-5);
+    } else if (phase === 'bank') {
+      const b = t - D.BANK;
+      blockA = 1 - sm(3.3, 3.6, b);
+      totText = '+' + grp(lerp(1520, 3952, 1 - Math.pow(1 - cl(b / 0.8, 0, 1), 3)));
+      totCol = GOLD; totGlow = '0 0 12px rgba(255,190,70,' + lerp(0.75, 0.3, sm(0.8, 1.4, b)).toFixed(2) + ')';
+      totXf = 'scale(' + (1 + 0.22 * (1 - sm(0, 0.12, b))).toFixed(3) + ')';
+      mulText = '×2.6'; mulShown = 2.6; mulCol = heatCol(1.6 / 3); mulPx = lerp(17, 21, 1.6 / 3); segCol = mulCol;
+      mulA = 1 - sm(0.12, 0.4, b); mulW = lerp(46, 0, sm(0.25, 0.55, b));
+      share = b < 1.2 ? 1 : cl(1 - (b - 1.2) / 2.4, 0, 1); arcCol = GOLD; haloA = 0.8 * (1 - sm(1.0, 1.5, b)); rim = 'rgba(255,211,107,.5)';
+      gNow = 'bank'; gScale = pop(b); gA = 1; flashA = 0.6 * (1 - sm(0, 0.35, b));
+      t2A = 1 - sm(0, 0.15, b); trailA = 1;
+      const runs = [];
+      for (let k = 0; k < D.P.length; k++) runs[D.P[k].run] = { g: D.P[k].g, n: D.P[k].n, fl: !!D.P[k].fl };
+      beads = runs.slice(-5);
+      penW = sm(0.45, 0.75, b) * 340; penA = 1;
+      pbeads = runs.map((r, k) => { const st = b - 0.62 - 0.08 * k; return { g: r.g, n: r.n, fl: r.fl, a: sm(0, 0.1, st), sc: 1 + 0.35 * (1 - sm(0, 0.1, st)) }; });
+      row2A = sm(1.15, 1.35, b);
+    } else if (phase === 'loss') {
+      const a = t - D.LOSS;
+      lost = true; blockA = 1 - sm(1.15, 1.4, a); drop = 8 * sm(0.8, 1.4, a);
+      totText = '−372'; totCol = LOST; totXf = 'scale(' + (1 + 0.15 * (1 - sm(0, 0.12, a))).toFixed(3) + ')';
+      mulA = 0; mulW = 0;
+      gNow = 'tree'; crackA = sm(0, 0.08, a); rim = 'rgba(255,138,107,.75)'; haloA = 0.5 * (1 - sm(0, 0.5, a)); haloCol = '255,138,107';
+      const q = 1 - sm(0, 0.22, a); shake = [Math.sin(a * 95) * 2.2 * q, Math.cos(a * 71) * 2.2 * q];
+      repA = sm(0.05, 0.15, a); repName = 'SCRAPED TREE'; repNameCol = '#e9e5d8';
+      fall = [[0, 0.35, 1], [1, -0.6, -1]].map((f) => {
+        const y = a * a * 150 + a * 18 * (1 + f[1] * 0.4), x = 42 + f[0] * 24 + f[1] * 26 * a;
+        return 'position:absolute;left:' + x.toFixed(1) + 'px;top:' + (35 + y).toFixed(1) + 'px;width:16px;height:16px;filter:grayscale(1);opacity:' + (0.6 * (1 - sm(0.4, 1, a))).toFixed(3) + ';transform:rotate(' + (f[2] * 130 * a).toFixed(1) + 'deg)';
+      });
+    }
+
+    // The surge meter: fills with the line's points x multiplier over 1600 (meter_full 16 units).
+    let meter = 0, flare = 0;
+    for (let k = 0; k < D.P.length; k++) {
+      const p = D.P[k];
+      if (t < p.t) break;
+      const f = Math.min(1, p.tot * p.m / 1600), r = sm(0, 0.3, t - p.t);
+      if (f > meter) { flare = Math.max(flare, 1 - sm(0, 0.45, t - p.t)); meter = lerp(meter, f, r); }
+    }
+    const full = meter >= 0.999, ra = t - D.READY - 0.3;
+    const mglow = Math.max(flare * 0.8, full ? 1 : 0);
+    const chipW = full ? sm(0, 0.2, ra) * (1 - sm(2.6, 3.0, ra)) : 0;
+    const sunByA = phase === 'live' && ra >= 0 ? sm(0, 0.08, ra) * (1 - sm(1.8, 2.2, ra)) : 0;
+
+    const glyph = (id) => 'opacity:' + (gNow === id ? gA.toFixed(3) : 0) + ';transform:translate(' + shake[0].toFixed(1) + 'px,' + shake[1].toFixed(1) + 'px) scale(' + (gNow === id ? gScale : 1).toFixed(3) + ')';
+    const seg = (k) => 'display:block;height:100%;width:' + (cl(mulShown - 1 - k, 0, 1) * 100).toFixed(0) + '%;background:' + segCol;
+    const beadOf = (r) => ({ isTree: r.g === 'tree', isRock: r.g === 'rock', isArch: r.g === 'arch', isKnife: r.g === 'knife', fl: r.fl, n: r.n > 1 ? String(r.n) : '' });
+    const stepsDef = [['Idle', 0.6], ['First pass', 1.75], ['Chain', 3.85], ['Step +0.2', 4.88], ['Flourish +0.6', 6.6], ['Roll ready', 7.15], ['Lull', 10.9], ['About to bank', 12.9], ['Bank', 13.78], ['Earned', 15.3], ['New line', 18.5], ['Lost', 20.3]];
+    let act = 0; for (let k = 0; k < stepsDef.length; k++) if (t >= stepsDef[k][1] - 0.3) act = k;
+    const onStyle = 'border-color:#ffd36b;color:#ffd36b';
+    const bgNames = ['Coast', 'Forest', 'Peak', 'Evening'];
+
+    return {
+      vRing: ring ? onStyle : '', vFuse: ring ? '' : onStyle,
+      setRing: () => this.setState({ variant: 'ring' }), setFuse: () => this.setState({ variant: 'fuse' }),
+      bgTabs: bgNames.map((n, k) => ({ label: n, style: s.bg === k ? onStyle : '', go: () => this.setState({ bg: k }) })),
+      bg0: 'opacity:' + (s.bg === 0 ? 1 : 0), bg1: 'opacity:' + (s.bg === 1 ? 1 : 0), bg2: 'opacity:' + (s.bg === 2 ? 1 : 0), bg3: 'opacity:' + (s.bg === 3 ? 1 : 0),
+      blk: 'position:absolute;left:356px;top:390px;transform-origin:20px 15px;pointer-events:none;transform:translateY(' + drop.toFixed(1) + 'px) rotate(' + (lost ? -6 + 3 * sm(0.5, 1.4, t - D.LOSS) : -6).toFixed(2) + 'deg);opacity:' + blockA.toFixed(3),
+      sunBy: 'position:absolute;left:-38px;top:-12px;width:30px;opacity:' + sunByA.toFixed(3) + ';transform:scale(' + (ra >= 0 ? pop(ra) : 1).toFixed(3) + ')',
+      disc: 'position:absolute;left:0;top:-5px;width:40px;height:40px',
+      halo: 'position:absolute;left:-4px;top:-4px;right:-4px;bottom:-4px;border-radius:50%;box-shadow:0 0 ' + (lost ? 14 : 12) + 'px 3px rgba(' + haloCol + ',' + haloA.toFixed(2) + ')',
+      arc: ring && !lost ? 'position:absolute;left:-3px;top:-3px;right:-3px;bottom:-3px;border-radius:50%;background:conic-gradient(' + arcCol + ' 0 ' + (share * 100).toFixed(2) + '%,' + trackCol + ' ' + (share * 100).toFixed(2) + '% 100%)' : 'display:none',
+      face: 'position:absolute;left:0;top:0;right:0;bottom:0;border-radius:50%;background:#16181d;box-shadow:inset 0 0 0 1.5px ' + (ring && !lost ? 'rgba(14,16,19,1)' : rim),
+      gTree: glyph('tree'), gRock: glyph('rock'), gArch: glyph('arch'), gKnife: glyph('knife'), gBank: glyph('bank'),
+      crack: 'position:absolute;left:6px;top:6px;width:28px;height:28px;opacity:' + crackA.toFixed(2) + ';transform:translate(' + shake[0].toFixed(1) + 'px,' + shake[1].toFixed(1) + 'px)',
+      flash: 'position:absolute;left:0;top:0;right:0;bottom:0;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,248,223,' + flashA.toFixed(2) + '),rgba(255,248,223,0) 70%)',
+      lostLab: lost ? 'font-size:10.5px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:' + LOST + ';margin-right:9px' : 'display:none',
+      tot: 'display:inline-block;font-size:25px;line-height:30px;color:' + totCol + ';text-shadow:' + totGlow + ';transform:' + (totXf || 'none') + ';transform-origin:left center',
+      totText: totText,
+      mulWrap: 'display:inline-flex;flex-direction:column;transform:translateY(1px);margin-left:' + (mulW >= 0 ? lerp(0, 9, mulW / 46).toFixed(1) : 9) + 'px;opacity:' + mulA.toFixed(3) + (mulW >= 0 ? ';max-width:' + mulW.toFixed(1) + 'px;overflow:hidden' : ''),
+      mul: 'display:block;line-height:17px;font-size:' + mulPx.toFixed(1) + 'px;color:' + mulCol + ';text-shadow:' + mulGlow + ';transform:scale(' + mulScale.toFixed(3) + ');transform-origin:left center',
+      mulText: mulText, seg0: seg(0), seg1: seg(1), seg2: seg(2),
+      step: stepStyle, stepText: stepText,
+      fuse: !ring && !lost && phase !== 'idle' ? 'position:absolute;left:30px;right:15px;bottom:-5px;height:3px;background:rgba(14,16,19,.85);transform:skewX(-14deg)' : 'display:none',
+      fuseFill: 'display:block;height:100%;width:' + (share * 100).toFixed(2) + '%;background:' + arcCol + ';box-shadow:0 0 6px rgba(255,211,107,' + (arcCol === GOLD || arcCol === '#fff3c9' ? 0.7 : 0) + ')',
+      t2: 'position:absolute;left:34px;top:' + (ring ? 33 : 37) + 'px;height:20px;display:grid;align-items:center;box-sizing:border-box;padding:0 17px 0 11px;white-space:nowrap;opacity:' + t2A.toFixed(3),
+      rep: 'grid-area:1/1;display:flex;align-items:center;gap:7px;opacity:' + repA.toFixed(3),
+      repName: 'font-size:11.5px;font-weight:500;letter-spacing:.14em;color:' + repNameCol, repNameText: repName,
+      repDist: 'font-size:14px;color:' + repDistCol, repDistText: repDist,
+      repTag: 'font-size:10px;font-weight:500;letter-spacing:.18em;color:' + repTagCol, repTagText: repTag,
+      trail: 'grid-area:1/1;display:flex;align-items:center;gap:9px;opacity:' + trailA.toFixed(3),
+      beads: beads.map(beadOf),
+      pen: 'position:absolute;left:18px;top:' + (ring ? 38 : 40) + 'px;overflow:hidden;max-width:' + penW.toFixed(1) + 'px;opacity:' + penA + ';filter:drop-shadow(0 3px 0 rgba(14,16,19,.4))',
+      pbeads: pbeads.map((r) => Object.assign(beadOf(r), { style: 'display:flex;align-items:center;gap:3px;opacity:' + r.a.toFixed(3) + ';transform:scale(' + r.sc.toFixed(3) + ')',
+        seal: 'display:block;width:18px;height:18px;border-radius:50%;background:#16181d;box-shadow:' + (r.fl ? '0 0 0 1.5px #f4eedc,0 0 0 3px #8c2a16' : 'none') + ';margin-right:' + (r.fl ? 3 : 0) + 'px' })),
+      penRow2: 'display:flex;align-items:center;height:20px;margin-top:3px;opacity:' + row2A.toFixed(3),
+      fall0: fall[0], fall1: fall[1],
+      keyChip: 'display:flex;align-items:center;overflow:hidden;max-width:' + (chipW * 70).toFixed(1) + 'px;opacity:' + chipW.toFixed(3),
+      mSun: 'position:absolute;left:-2px;top:-2px;width:22px;height:22px;opacity:' + (full ? 1 : 0.55),
+      mSunLit: 'position:absolute;left:-2px;top:-2px;width:22px;height:22px;opacity:' + (full ? (0.25 + 0.3 * (0.5 + 0.5 * Math.sin(t * 3.4))).toFixed(3) : 0),
+      mTrack: 'display:block;width:128px;height:4px;background:rgba(246,243,234,.24);transform:skewX(-14deg);box-shadow:0 0 ' + (9 * mglow).toFixed(1) + 'px rgba(255,214,107,' + (0.8 * mglow).toFixed(2) + ')',
+      mFill: 'display:block;height:100%;width:' + (meter * 100).toFixed(1) + '%;background:linear-gradient(90deg,#a06c1c,#f2c14e 70%,#ffe7a3)',
+      toggle: () => { const st = this.state; if (!st.playing && st.t >= 22.5) this.setState({ t: 0, playing: true }); else this.setState({ playing: !st.playing }); },
+      playLabel: s.playing ? 'Pause' : 'Play',
+      replay: () => this.setState({ t: 0, playing: true }),
+      tv: Math.round(t * 100), scrub: (e) => this.setState({ t: Number(e.target.value) / 100, playing: false }),
+      clock: t.toFixed(1) + ' s  ·  ' + stepsDef[act][0],
+      steps: stepsDef.map((d, k) => ({ label: d[0], go: () => this.jump(d[1]), style: k === act ? onStyle : '' }))
+    };
+  }
+}
+</script>
+</body>
+</html>

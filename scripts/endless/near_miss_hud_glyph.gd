@@ -20,6 +20,7 @@ extends Control
 const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
 const GILT = preload("res://shaders/near_gilt.gdshader")
+const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
 const DISPLAY = preload("res://assets/fonts/newsreader-latin.woff2")
 const CAPS = preload("res://assets/fonts/CormorantGaramond-SemiBold-latin.ttf")
 
@@ -328,7 +329,7 @@ func _heat(h: float) -> Color:
 # --- Drawn on the screen: the surge meter ----------------------------------------
 
 func _draw() -> void:
-	if _near == null: return
+	if _near == null or FlightHud.draws_charge: return
 	var u := _u()
 	var mw := METER_W*u
 	var right := size.x-METER_AT.x*u

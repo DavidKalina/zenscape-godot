@@ -123,6 +123,8 @@ const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
+const GameSettings = preload("res://scripts/endless/ui/game_settings.gd")
+const SettingsPage = preload("res://scripts/endless/ui/settings_page.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
@@ -193,6 +195,9 @@ const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
 const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
 const NearMissHudRing = preload("res://scripts/endless/near_miss_hud_ring.gd")
+const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
+const NearMissHudPlate = preload("res://scripts/endless/near_miss_hud_plate.gd")
+const CoinFlight = preload("res://scripts/endless/ui/coin_flight.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 ## Low over water: the cushion, the spray, the wake's marks, the wet screen.
 const WaterContact = preload("res://scripts/endless/water_contact.gd")
@@ -202,6 +207,11 @@ const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
 const MenuSpot = preload("res://scripts/endless/menu_spot.gd")
 const MenuStage = preload("res://scripts/endless/menu_stage.gd")
 const MainMenu = preload("res://scripts/endless/main_menu.gd")
+## The new title and the pause menu (docs/design/ui/spec-flight-ui.md);
+## `--menus=old` keeps the title above and Esc only letting the mouse go
+## (`--ui=old` too: `ui_old`).
+const TitleMenu = preload("res://scripts/endless/ui/title_menu.gd")
+const PauseMenu = preload("res://scripts/endless/ui/pause_menu.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -479,6 +489,12 @@ var water: Node3D
 ## The trees knocked down and falling (scripts/endless/tree_knock.gd).
 var knock: Node3D
 var _near_hud: Control
+## The corner HUD (scripts/endless/ui/flight_hud.gd): finds, money, region,
+## charge and speed, the hint. Null with --hud=old or --ui=old, which keep today's.
+var flight_hud: Control
+## The bank's coins between the two (scripts/endless/ui/coin_flight.gd), or
+## null when either is the old one.
+var coin_flight: Control
 var _fade: ColorRect
 var _fade_left := 0.0
 var _punch := 0.0
@@ -512,6 +528,8 @@ var stage: RefCounted
 var doors: Node3D
 var finds: Node
 var menu: Control
+## The pause menu (Esc, the pad's Start), or null with `--menus=old` or `--ui=old`.
+var pause_menu: Control
 
 ## The 3D at a Native draw (the player's render resolution, and the default
 ## on a discrete GPU): 75%, upscaled by FSR (scripts/render_resolution.gd
@@ -534,6 +552,9 @@ func _ready() -> void:
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
 	rr.apply(get_tree().root,rr.load_cap())
+	# The player's settings over them (scripts/endless/ui/game_settings.gd).
+	GameSettings.begin()
+	GameSettings.hub.changed.connect(_setting_changed)
 	EndlessLook.reset_season_globals()
 	# The world: its shader globals over the reset, its start under the flags.
 	world = WorldProfile.current()
@@ -882,6 +903,9 @@ func _ready() -> void:
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
 	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# Half a second in, not at once: a tree paused before the flight's first
+	# tick ends the run in an access violation when it quits.
+	if _has_arg("--open-settings"): get_tree().create_timer(0.5).timeout.connect(open_settings)
 
 ## The grass parted round the parked plane in the menu: out to PART_SPANS
 ## wingspans (round the eye EYE_PART_SPANS, and SIGHT_PART_SPANS round the
@@ -921,7 +945,7 @@ func _park_for_menu(spots: Array) -> void:
 	_heading = float(spot.heading)
 	if look != null and look.clouds != null and spot != spots[0]: look.clouds.clear_fog_at(_start)
 	_launch(Vector3(_start.x,field.height(_start.x,_start.y),_start.y),_heading,true)
-	menu = MainMenu.new()
+	menu = MainMenu.new() if _has_arg("--menus=old") or ui_old() else TitleMenu.new(self)
 	menu.name = "MainMenu"
 	_hint.get_parent().add_child(menu)
 	menu.picked.connect(_menu_picked)
@@ -1025,6 +1049,7 @@ func _build_ui() -> void:
 	_hint.add_theme_constant_override("outline_size",4)
 	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Z roll (full meter: surge roll)  ·  Q E knife edge  ·  F flaps  ·  J logbook  ·  O photo  ·  R up again  ·  B surge  ·  Tab (hold) race a plane  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
 	layer.add_child(_hint)
+	_hint.visible = GameSettings.hud_hints()
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
 	_stop_cue.anchor_bottom = 1.0
@@ -1035,8 +1060,11 @@ func _build_ui() -> void:
 	_stop_cue.add_theme_constant_override("outline_size",4)
 	_stop_cue.visible = false
 	layer.add_child(_stop_cue)
-	# The near misses' HUD: the ring by the plane (scripts/endless/near_miss_hud_ring.gd,
-	# the Line HUD canvas's C2). --near-hud=tag (or handoff, handoff-tag) the design
+	# The near misses' HUD: the flight UI's plate and trail by the plane
+	# (scripts/endless/near_miss_hud_plate.gd; --near-hud=plate names it;
+	# --chain-timer=fuse, --chain-best=0). --near-hud=ring the ring before it
+	# (scripts/endless/near_miss_hud_ring.gd, the Line HUD canvas's C2).
+	# --near-hud=tag (or handoff, handoff-tag) the design
 	# handoff's tag before it (scripts/endless/near_miss_hud_handoff.gd, in the tag
 	# or at the top as the player keeps it, H switches); --near-hud=glyph the earlier
 	# trial (gilt numbers in a tag), --near-hud=classic the first plain text.
@@ -1044,9 +1072,18 @@ func _build_ui() -> void:
 	if "--near-hud=glyph" in hud_args: _near_hud = NearMissHudGlyph.new()
 	elif "--near-hud=classic" in hud_args: _near_hud = NearMissHud.new()
 	elif "--near-hud=tag" in hud_args or "--near-hud=handoff" in hud_args or "--near-hud=handoff-tag" in hud_args: _near_hud = NearMissHudHandoff.new()
-	else: _near_hud = NearMissHudRing.new()
+	# --ui=old gives the ring too, unless the plate is named.
+	elif "--near-hud=ring" in hud_args or (ui_old() and not "--near-hud=plate" in hud_args): _near_hud = NearMissHudRing.new()
+	else: _near_hud = NearMissHudPlate.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
+	if FlightHud.wanted():
+		flight_hud = FlightHud.make(self,layer)
+		# The settings' HUD hints (a launch's --hud-hints=off still wins for its run).
+		FlightHud.set_hints(GameSettings.hud_hints() and not _has_arg("--hud-hints=off"))
+		# A bank's coins from the plate's pennant to the money chip: only with
+		# the new chain HUD and the new corner HUD both up.
+		if _near_hud is NearMissHudPlate: coin_flight = CoinFlight.make(layer,_near_hud,flight_hud)
 	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
 	summary = preload("res://scripts/endless/landing_summary.gd").new(self)
 	layer.add_child(summary)
@@ -1089,6 +1126,11 @@ func _build_ui() -> void:
 			_region_debug.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 			_region_debug.add_theme_constant_override("outline_size",4)
 			layer.add_child(_region_debug)
+	# The pause menu, over the rest of the layer: it takes Esc and the pad's
+	# Start in flight before `_unhandled_input` below does.
+	if not (_has_arg("--menus=old") or ui_old()):
+		pause_menu = PauseMenu.new(self)
+		layer.add_child(pause_menu)
 
 # --- The plane ------------------------------------------------------------------------
 
@@ -1885,6 +1927,14 @@ func _shake_eye(delta: float) -> void:
 	camera.rotate_object_local(Vector3.UP,(sin(t*SHAKE_HZ.x)*0.6+sin(t*SHAKE_HZ.z+1.1)*0.4)*k)
 	camera.rotate_object_local(Vector3.RIGHT,(sin(t*SHAKE_HZ.y+0.4)*0.6+sin(t*SHAKE_HZ.x*1.37+2.0)*0.4)*k)
 
+## `--ui=old`: the one way back to the UI before the flight UI (docs/design/ui/
+## spec-flight-ui.md): the old title and Esc, the key line with the old HUD
+## pieces and their bar (FlightHud.wanted), the ring by the plane, the old
+## glyphs (near_glyphs.gd `_flags`). Each also has its own finer flag
+## (--menus=old, --hud=old, --near-hud=ring, --glyphs=old).
+static func ui_old() -> bool:
+	return "--ui=old" in preload("res://scripts/launch_args.gd").user_args()
+
 static func _has_arg(prefix: String) -> bool:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with(prefix): return true
@@ -1895,7 +1945,9 @@ func _fly_input(_delta: float) -> Dictionary:
 	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
 	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
-	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,"lean":lean,
+	# Invert pitch (the settings page) turns the keys', the stick's and the mouse's over.
+	var inv := GameSettings.pitch_sign()
+	var input := {"turn":stick.x,"pitch":stick.y*inv,"look":Vector2(_fly_look.x,_fly_look.y*inv),"lean":lean,
 		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
@@ -1928,7 +1980,7 @@ func _menu_done() -> void:
 	if stage != null and stage.running(): stage.finish(plane_figure)
 	stage = null
 	if camera.attributes != null: camera.attributes = null
-	_hint.visible = true
+	_hint.visible = GameSettings.hud_hints()
 	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 ## Back up into the air over where it is, on the heading it had.
@@ -1947,8 +1999,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if overlay != null: return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
-		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK*GameSettings.mouse_sens())
+		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK*GameSettings.mouse_sens()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
@@ -1987,6 +2039,7 @@ func _exit_tree() -> void:
 	tallies.finish()
 	if book != null: book.save()
 	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
+	if GameSettings.hub.changed.is_connected(_setting_changed): GameSettings.hub.changed.disconnect(_setting_changed)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = 1.0
 	rr.apply(get_tree().root,rr.load_cap())
@@ -2001,14 +2054,56 @@ func _next_scale() -> void:
 	var i := 0
 	for k in SCALES.size():
 		if absf(SCALES[k]-now) < 0.01: i = k
-	rr.scale_override = SCALES[(i+1)%SCALES.size()]
-	rr.apply(get_tree().root,rr.load_cap())
+	# Through the settings, so the settings page shows it and it is kept.
+	GameSettings.set_scale(SCALES[(i+1)%SCALES.size()])
 	_hint.text = _hint.text.get_slice("  ·  3D at",0)+"  ·  3D at %d%%" % roundi(rr.scale_override*100.0)
+	if flight_hud != null: flight_hud.call("say","3D at %d%%" % roundi(rr.scale_override*100.0))
 
 ## F3: the next graphics preset, kept, and the flight again on it.
 func _next_preset() -> void:
-	_hint.text = "graphics: %s ..." % GraphicsPreset.PRESETS[GraphicsPreset.step()].title
-	GraphicsPreset.restart(get_tree(),scene_file_path)
+	# Through the settings, so the settings page shows it (and a harness
+	# run's F3 leaves the player's file alone).
+	var next: String = GraphicsPreset.NAMES[(GraphicsPreset.NAMES.find(GameSettings.preset())+1)%GraphicsPreset.NAMES.size()]
+	GameSettings.set_preset(next)
+	_hint.text = "graphics: %s ..." % GraphicsPreset.PRESETS[next].title
+	# The flight starts again under it: the new HUD says it now, and once the
+	# flight is back.
+	if flight_hud != null:
+		flight_hud.call("say",_hint.text)
+		FlightHud.carry = "graphics: %s" % GraphicsPreset.PRESETS[next].title
+	GameSettings.restart(get_tree(),scene_file_path)
+
+## A setting changed (scripts/endless/ui/game_settings.gd): the hint line
+## follows HUD hints, unless the title has it hidden, and the new HUD's
+## hints (FlightHud.set_hints) with it.
+func _setting_changed(key: String) -> void:
+	if key != "hints": return
+	if _hint != null: _hint.visible = GameSettings.hud_hints() and stage == null
+	FlightHud.set_hints(GameSettings.hud_hints())
+
+## The old key line and stop cue (--hud=old beside the new menus) step aside
+## under a new menu or page, whose footer prompts sit on their place.
+func key_line_under(menu: bool) -> void:
+	for label: Label in [_hint,_stop_cue]:
+		if label != null: label.modulate.a = 0.0 if menu else 1.0
+
+## The settings page (scripts/endless/ui/settings_page.gd) over the flight,
+## the flight held under it as the logbook holds it; null if another overlay
+## is up. `--open-settings` opens it as the flight starts, until the menus do.
+func open_settings() -> Control:
+	if overlay != null: return null
+	var page: Control = SettingsPage.new()
+	page.setup(self)
+	var was := get_tree().paused
+	overlay = page
+	get_tree().paused = true
+	key_line_under(true)
+	page.closed.connect(func() -> void:
+		overlay = null
+		key_line_under(false)
+		get_tree().paused = was)
+	_hint.get_parent().add_child(page)
+	return page
 
 func _cloud_note() -> String:
 	if look.clouds == null: return "  ·  no clouds"

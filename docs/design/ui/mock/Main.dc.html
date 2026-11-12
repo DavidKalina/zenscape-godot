@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Menu shell, slip and tick</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:ital,wght@0,500;1,600&family=Newsreader:wght@500&display=swap">
+<style>
+body{margin:0}
+.f{font-family:'Barlow Semi Condensed','Arial Narrow',sans-serif}
+.num{font-family:'Barlow Semi Condensed','Arial Narrow',sans-serif;font-style:italic;font-weight:600;font-variant-numeric:tabular-nums}
+.bgi{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;transition:opacity .25s}
+.slipw{position:absolute;filter:drop-shadow(0 3px 0 rgba(14,16,19,.4)) drop-shadow(0 12px 22px rgba(14,16,19,.3));animation:slipin .18s cubic-bezier(.2,.8,.3,1)}
+@keyframes slipin{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:translateX(0)}}
+.slip{position:relative;box-sizing:border-box;background-color:#f4eedc;background-image:repeating-linear-gradient(90deg,rgba(60,40,10,0) 0,rgba(60,40,10,.035) 46px,rgba(60,40,10,0) 92px);clip-path:polygon(0 0,100% 0,calc(100% - 18px) 100%,0 100%)}
+.spine{position:absolute;left:0;top:0;bottom:0;width:3px;background:#1b1d22}
+.row{all:unset;box-sizing:border-box;position:relative;display:flex;align-items:center;width:100%;cursor:pointer}
+.band{position:absolute;left:3px;right:0;top:2px;bottom:2px;background:rgba(27,29,34,.1);transform-origin:left center;animation:band .12s ease-out}
+.tick{position:absolute;left:17px;top:50%;width:4px;height:15px;margin-top:-7.5px;background:#c2501c;transform:skewX(-14deg);animation:tick .16s cubic-bezier(.2,.9,.3,1.4)}
+@keyframes band{from{opacity:0;transform:scaleX(.55)}to{opacity:1;transform:scaleX(1)}}
+@keyframes tick{from{transform:translateX(-9px) skewX(-14deg);opacity:0}to{transform:translateX(0) skewX(-14deg);opacity:1}}
+.lab{position:relative;text-transform:uppercase;white-space:nowrap;transition:padding-left .1s ease-out}
+.key{position:relative;font-size:10.5px;letter-spacing:.14em;color:#5d5b55;text-transform:uppercase;font-weight:500}
+.hd{display:flex;align-items:center;box-sizing:border-box;font-size:10.5px;font-weight:500;letter-spacing:.26em;text-transform:uppercase;color:#8c2a16}
+.rule{flex:1;height:1px;background:rgba(27,29,34,.22);margin-left:10px}
+.opt{all:unset;cursor:pointer;position:relative;box-sizing:border-box;text-transform:uppercase;white-space:nowrap}
+.ul{position:absolute;left:0;right:1px;bottom:-3px;height:2px;background:#1b1d22;transform:skewX(-14deg);animation:band .12s ease-out;transform-origin:left center}
+.plate{position:absolute;display:flex;align-items:center;box-sizing:border-box;color:#f6f3ea;white-space:nowrap}
+.pbg{position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(22,24,29,.86);clip-path:polygon(0 0,100% 0,calc(100% - 9px) 100%,0 100%)}
+.pbgl{position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(22,24,29,.86);clip-path:polygon(9px 0,100% 0,100% 100%,0 100%)}
+.rel{position:relative}
+.ck{font-family:'Barlow Semi Condensed','Arial Narrow',sans-serif;font-style:italic;font-weight:600;font-size:14px;letter-spacing:.05em;color:#1b1d22;white-space:nowrap}
+.ca{font-size:14px;font-weight:500;letter-spacing:.09em;text-transform:uppercase;color:#3a3a36;white-space:nowrap}
+.cr1{font-size:14px;font-weight:500;letter-spacing:.06em;color:#1b1d22;line-height:18px}
+.cr2{font-size:12px;font-weight:500;letter-spacing:.06em;color:#5d5b55;line-height:16px;margin-bottom:9px}
+@keyframes creditroll{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+.sw{all:unset;cursor:pointer;font:13px system-ui,sans-serif;color:#cfd3d8;background:#23272d;border:1px solid #3a4048;border-radius:4px;padding:6px 11px}
+.sw:hover{border-color:#ffd36b;color:#fff}
+.sw:focus-visible{outline:2px solid #ffd36b;outline-offset:2px}
+</style>
+</helmet>
+<div style="width:1340px;height:900px;box-sizing:border-box;padding:22px 30px 0 30px;background:#16181c;color:#cfd3d8;font-family:system-ui,sans-serif;display:flex;flex-direction:column;gap:14px">
+
+<div style="display:flex;align-items:center;gap:8px;height:34px">
+<span style="font-size:15px;color:#ffd36b;margin-right:12px">Menu shell</span>
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+<button class="sw" style="{{t.style}}" onClick="{{t.go}}">{{t.label}}</button>
+</sc-for>
+<span style="flex-grow:1"></span>
+<span style="font-size:12.5px;color:#9aa1ab;margin-right:10px">Point at the frame, then Up / Down, Left / Right, Enter, Esc</span>
+<button class="sw" onClick="{{nextBg}}">Backdrop: {{bgName}}</button>
+</div>
+
+<div tabIndex="0" onKeyDown="{{onKey}}" onMouseEnter="{{grab}}" style="position:relative;width:1280px;height:800px;overflow:hidden;outline:none;background:#0e1013;box-shadow:0 0 0 1px #2a2e35">
+<img class="bgi" alt="" src="/_blob/eb7f90b035fa52a5d7934204d9a3e1f3" style="{{bg0}}">
+<img class="bgi" alt="" src="/_blob/0f8fd3cad6c74bae2d4ff208b98739a7" style="{{bg1}}">
+<img class="bgi" alt="" src="/_blob/d181cc984e388cc14360cda82a399e82" style="{{bg2}}">
+<img class="bgi" alt="" src="/_blob/d79a5a40273a2305367d112004c5b455" style="{{bg3}}">
+<img class="bgi" alt="" src="/_blob/f4675b83ae768e2e8b83165ff556ae29" style="{{bg4}}">
+<img class="bgi" alt="" src="/_blob/e201f97b7919300b48085e0e18fd6c75" style="{{bg5}}">
+<div style="{{wash}}"></div>
+
+<sc-if value="{{showHud}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none">
+<div class="plate f" style="left:28px;top:26px;height:28px;padding:0 20px 0 10px;gap:7px"><span class="pbg"></span>
+<img class="rel" alt="" src="/_blob/7dd2eb71af9a26d6d6349269378fa2b1" style="width:19px;height:19px">
+<span class="rel num" style="font-size:19px;color:#ffd36b;line-height:28px">35</span>
+<span class="rel num" style="font-size:12.5px;color:#d9d5c8;line-height:28px;margin-left:-2px">/ 48</span>
+</div>
+<div class="plate f" style="left:138px;top:26px;height:28px;padding:0 20px 0 9px;gap:6px"><span class="pbg"></span>
+<img class="rel" alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="width:20px;height:20px">
+<span class="rel num" style="font-size:19px;color:#ffd36b;line-height:28px">146</span>
+</div>
+<div class="plate f" style="{{regionStyle}}"><span class="pbg"></span><span class="rel" style="font-size:11.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase">Wilderness</span></div>
+<sc-if value="{{isFlight}}" hint-placeholder-val="{{false}}">
+<div class="plate f" style="right:28px;bottom:26px;height:26px;padding:0 12px 0 20px"><span class="pbgl"></span>
+<span class="rel num" style="width:30px;text-align:right;font-size:17px;color:#f6f3ea">208</span>
+<span class="rel" style="font-size:9.5px;font-weight:500;letter-spacing:.18em;color:#d9d5c8;margin:2px 0 0 4px">KM/H</span>
+<span class="rel" style="display:block;width:1px;height:12px;background:rgba(246,243,234,.3);transform:skewX(-14deg);margin:0 11px"></span>
+<svg class="rel" aria-hidden="true" viewBox="0 0 16 16" style="display:block;width:14px;height:14px;color:#ffd36b"><polyline points="3,3 8,8 3,13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></polyline><polyline points="8,3 13,8 8,13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>
+<span class="rel" style="display:flex;gap:2px;margin:0 7px 0 6px">
+<span style="display:block;width:17px;height:5px;background:rgba(246,243,234,.22);transform:skewX(-14deg)"><span style="display:block;height:100%;width:100%;background:#f2c14e"></span></span>
+<span style="display:block;width:17px;height:5px;background:rgba(246,243,234,.22);transform:skewX(-14deg)"><span style="display:block;height:100%;width:100%;background:#f2c14e"></span></span>
+<span style="display:block;width:17px;height:5px;background:rgba(246,243,234,.22);transform:skewX(-14deg)"><span style="display:block;height:100%;width:100%;background:#f2c14e"></span></span>
+<span style="display:block;width:17px;height:5px;background:rgba(246,243,234,.22);transform:skewX(-14deg)"><span style="display:block;height:100%;width:10%;background:#f2c14e"></span></span>
+<span style="display:block;width:17px;height:5px;background:rgba(246,243,234,.22);transform:skewX(-14deg)"><span style="display:block;height:100%;width:0;background:#f2c14e"></span></span>
+</span>
+<svg class="rel" aria-hidden="true" viewBox="0 0 16 16" style="display:block;width:15px;height:15px;color:rgba(246,243,234,.4)"><path d="M12.3 5.5A5 5 0 1 0 13 8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path><polyline points="12.9,2.1 12.6,5.8 9,5.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>
+</div>
+</sc-if>
+<div class="plate f" style="{{hintStyle}}"><span class="pbg"></span>
+<sc-for list="{{hints}}" as="h" hint-placeholder-count="5">
+<span class="rel num" style="font-size:12.5px;letter-spacing:.06em;color:#f6f3ea;margin-left:{{h.ml}}px">{{h.k}}</span>
+<span class="rel" style="font-size:12px;font-weight:500;letter-spacing:.08em;color:#d9d5c8;margin-left:6px">{{h.v}}</span>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isTitle}}" hint-placeholder-val="{{true}}">
+<div style="position:absolute;left:0;top:0;right:0;bottom:0">
+<div style="position:absolute;left:72px;top:58px;padding-bottom:12px">
+<div style="font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:46px;line-height:56px;letter-spacing:.2em;margin-right:-.2em;white-space:nowrap;color:#f6f3ea;text-shadow:0 1px 2px rgba(14,16,19,.6),0 4px 24px rgba(14,16,19,.5)">ZENSCAPE</div>
+<div style="position:absolute;left:2px;right:18px;bottom:4px;height:2px;background:#f6f3ea;box-shadow:0 1px 3px rgba(14,16,19,.5)"></div>
+<div style="position:absolute;right:6px;bottom:0;width:5px;height:11px;background:#ffd36b;transform:skewX(-14deg);box-shadow:0 1px 3px rgba(14,16,19,.5)"></div>
+</div>
+<div class="slipw" style="left:72px;bottom:78px">
+<div class="slip" style="width:204px;padding:12px 0 12px 0"><span class="spine"></span>
+<sc-for list="{{titleItems}}" as="m" hint-placeholder-count="4">
+<button class="row f" tabIndex="-1" style="{{m.style}}" onMouseEnter="{{m.hover}}" onClick="{{m.act}}"><sc-if value="{{m.sel}}"><span class="band"></span><span class="tick"></span></sc-if><span class="lab" style="{{m.lab}}">{{m.label}}</span></button>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isPause}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;left:0;top:0;right:0;bottom:0">
+<div class="slipw" style="left:72px;top:238px">
+<div class="slip" style="width:228px;padding:8px 0 12px 0"><span class="spine"></span>
+<div class="hd f" style="height:30px;padding:0 34px 0 30px"><span>Paused</span><span class="rule"></span></div>
+<sc-for list="{{pauseItems}}" as="m" hint-placeholder-count="7">
+<button class="row f" tabIndex="-1" style="{{m.style}}" onMouseEnter="{{m.hover}}" onClick="{{m.act}}"><sc-if value="{{m.sel}}"><span class="band"></span><span class="tick"></span></sc-if><span class="lab" style="{{m.lab}}">{{m.label}}</span><span style="flex:1"></span><span class="key f" style="padding-right:36px">{{m.key}}</span></button>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isSettings}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;left:0;top:0;right:0;bottom:0">
+<div class="slipw" style="left:72px;top:150px">
+<div class="slip" style="width:452px;padding:8px 0 12px 0"><span class="spine"></span>
+<sc-for list="{{setItems}}" as="s" hint-placeholder-count="14">
+<sc-if value="{{s.isHead}}"><div class="hd f" style="{{s.hstyle}}"><span>{{s.label}}</span><span class="rule"></span></div></sc-if>
+<sc-if value="{{s.isRow}}" hint-placeholder-val="{{true}}">
+<div class="row f" style="height:28px;cursor:default" onMouseEnter="{{s.hover}}"><sc-if value="{{s.sel}}"><span class="band"></span><span class="tick"></span></sc-if>
+<span class="lab" style="{{s.lab}}">{{s.label}}</span><span style="flex:1"></span>
+<sc-if value="{{s.isSeg}}"><span class="rel" style="display:flex;gap:16px;padding-right:38px"><sc-for list="{{s.segs}}" as="g" hint-placeholder-count="3"><button class="opt f" tabIndex="-1" style="{{g.style}}" onClick="{{g.pick}}">{{g.t}}<sc-if value="{{g.on}}"><span class="ul"></span></sc-if></button></sc-for></span></sc-if>
+<sc-if value="{{s.isSlider}}"><span class="rel" style="display:flex;align-items:center;gap:12px;padding-right:38px"><button class="opt" tabIndex="-1" aria-label="{{s.label}}" style="display:block;width:132px;height:22px" onClick="{{s.slide}}"><span style="position:absolute;left:0;right:0;top:10px;height:2px;background:rgba(27,29,34,.28)"></span><span style="{{s.fill}}"></span><span style="{{s.mark}}"></span></button><span class="num" style="width:26px;text-align:right;font-size:14.5px;color:#1b1d22">{{s.val}}</span></span></sc-if>
+</div>
+</sc-if>
+<sc-if value="{{s.isBack}}"><button class="row f" tabIndex="-1" style="{{s.style}}" onMouseEnter="{{s.hover}}" onClick="{{s.act}}"><sc-if value="{{s.sel}}"><span class="band"></span><span class="tick"></span></sc-if><span class="lab" style="{{s.lab}}">Back</span><span style="flex:1"></span><span class="key f" style="padding-right:42px">Esc</span></button></sc-if>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isControls}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;left:0;top:0;right:0;bottom:0">
+<div class="slipw" style="left:72px;top:112px">
+<div class="slip" style="width:500px;padding:8px 0 12px 0"><span class="spine"></span>
+<div class="hd f" style="height:30px;padding:0 38px 0 30px"><span>Controls</span><span class="rule"></span></div>
+<div class="f" style="display:flex;align-items:center;height:22px;padding:0 38px 0 30px"><span style="width:160px"></span><span class="key" style="width:160px">Keyboard and mouse</span><span class="key">Gamepad</span></div>
+<sc-for list="{{ctrlRows}}" as="c" hint-placeholder-count="15">
+<div class="f" style="{{c.style}}"><span class="ca" style="width:160px">{{c.a}}</span><span class="ck" style="width:160px">{{c.k}}</span><span class="ck">{{c.p}}</span></div>
+</sc-for>
+<button class="row f" tabIndex="-1" style="height:30px;margin-top:10px" onClick="{{goBack}}"><span class="band"></span><span class="tick"></span><span class="lab" style="{{backLab}}">Back</span><span style="flex:1"></span><span class="key f" style="padding-right:42px">Esc</span></button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isCredits}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;left:0;top:0;right:0;bottom:0">
+<div class="slipw" style="left:72px;top:112px">
+<div class="slip" style="width:440px;padding:8px 0 12px 0"><span class="spine"></span>
+<div class="hd f" style="height:30px;padding:0 38px 0 30px"><span>Credits</span><span class="rule"></span></div>
+<div style="padding:8px 38px 0 30px">
+<div style="font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:27px;line-height:34px;letter-spacing:.18em;color:#1b1d22">ZENSCAPE</div>
+<div class="key f" style="margin-top:10px">A game by</div>
+<div class="f" style="font-size:17px;font-style:italic;font-weight:600;letter-spacing:.06em;color:#1b1d22;line-height:24px">[YOUR NAME]</div>
+</div>
+<div class="hd f" style="height:34px;padding:8px 38px 0 30px"><span>Sound</span><span class="rule"></span></div>
+<div class="f" style="position:relative;height:196px;overflow:hidden;margin:4px 38px 0 30px">
+<div style="animation:creditroll 44s linear infinite">
+<sc-for list="{{credits}}" as="c" hint-placeholder-count="12">
+<div class="cr1">{{c.a}}</div><div class="cr2">{{c.b}}</div>
+</sc-for>
+</div>
+<div style="position:absolute;left:0;right:0;top:0;height:14px;background:linear-gradient(#f4eedc,rgba(244,238,220,0))"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:22px;background:linear-gradient(rgba(244,238,220,0),#f4eedc)"></div>
+</div>
+<div class="hd f" style="height:34px;padding:8px 38px 0 30px"><span>Type</span><span class="rule"></span></div>
+<div class="f" style="padding:2px 50px 0 30px"><div class="cr1">Barlow Semi Condensed, Newsreader, Spectral, Cormorant Garamond</div><div class="cr2" style="margin-bottom:0">SIL Open Font License 1.1</div></div>
+<button class="row f" tabIndex="-1" style="height:30px;margin-top:10px" onClick="{{goBack}}"><span class="band"></span><span class="tick"></span><span class="lab" style="{{backLab}}">Back</span><span style="flex:1"></span><span class="key f" style="padding-right:42px">Esc</span></button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{showFooter}}" hint-placeholder-val="{{true}}">
+<div class="plate f" style="right:28px;bottom:26px;height:24px;padding:0 12px 0 20px"><span class="pbgl"></span>
+<sc-for list="{{footer}}" as="h" hint-placeholder-count="3">
+<span class="rel num" style="font-size:12px;letter-spacing:.08em;color:#f6f3ea;margin-left:{{h.ml}}px">{{h.k}}</span>
+<span class="rel" style="font-size:11.5px;font-weight:500;letter-spacing:.1em;color:#d9d5c8;margin-left:6px;text-transform:uppercase">{{h.v}}</span>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{toast}}" hint-placeholder-val="{{false}}">
+<div class="plate f" style="left:72px;bottom:30px;height:24px;padding:0 20px 0 12px"><span class="pbg"></span><span class="rel" style="font-size:12px;font-weight:500;letter-spacing:.08em;color:#f7dc8a">{{toast}}</span></div>
+</sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1340,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { screen: 'title', from: 'title', sel: 0, bg: -1, hintOn: true, toast: '',
+      v: { preset: 2, res: 0, win: 0, vsync: 0, master: 80, fx: 80, amb: 70, sens: 50, invert: 1, hints: 0 } };
+  }
+  componentWillUnmount() { clearTimeout(this._h); clearTimeout(this._t); }
+  armHint() { clearTimeout(this._h); this._h = setTimeout(() => this.setState({ hintOn: false }), 6500); }
+  say(t) { this.setState({ toast: t }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ toast: '' }), 2400); }
+  go(screen, from) {
+    this.setState({ screen: screen, from: from || this.state.screen, sel: 0, toast: '', hintOn: screen === 'flight' ? true : this.state.hintOn });
+    if (screen === 'flight') this.armHint();
+  }
+  back() {
+    const s = this.state;
+    if (s.screen === 'pause') return this.go('flight', 'pause');
+    if (s.screen === 'flight') return this.go('pause', 'flight');
+    if (s.screen === 'settings' || s.screen === 'controls' || s.screen === 'credits') return this.go(s.from === 'pause' ? 'pause' : 'title', s.from);
+  }
+  setV(k, val) { const v = Object.assign({}, this.state.v); v[k] = val; this.setState({ v: v }); }
+  titleList() {
+    return [
+      { label: 'Start', act: () => this.go('flight', 'title') },
+      { label: 'Settings', act: () => this.go('settings', 'title') },
+      { label: 'Credits', act: () => this.go('credits', 'title') },
+      { label: 'Quit', gap: true, act: () => this.say('Closes the game') }
+    ];
+  }
+  pauseList() {
+    return [
+      { label: 'Resume', key: 'Esc', act: () => this.go('flight', 'pause') },
+      { label: 'Logbook', key: 'J', act: () => this.say('Opens the logbook') },
+      { label: 'Photo mode', key: 'O', act: () => this.say('Opens photo mode') },
+      { label: 'Controls', key: '', act: () => this.go('controls', 'pause') },
+      { label: 'Settings', key: '', act: () => this.go('settings', 'pause') },
+      { label: 'Quit to title', key: '', gap: true, act: () => this.go('title', 'pause') },
+      { label: 'Quit', key: '', act: () => this.say('Closes the game') }
+    ];
+  }
+  settingsList() {
+    const seg = (id, label, opts) => ({ id: id, type: 'seg', label: label, opts: opts });
+    const sl = (id, label) => ({ id: id, type: 'slider', label: label });
+    const onoff = ['On', 'Off'];
+    return [
+      { type: 'head', label: 'Graphics' },
+      seg('preset', 'Preset', ['Performance', 'Quality', 'Full']),
+      seg('res', '3D resolution', ['100%', '85%', '75%', '67%']),
+      seg('win', 'Display', ['Fullscreen', 'Windowed']),
+      seg('vsync', 'VSync', onoff),
+      { type: 'head', label: 'Sound' },
+      sl('master', 'Master'), sl('fx', 'Effects'), sl('amb', 'Ambience'),
+      { type: 'head', label: 'Controls' },
+      sl('sens', 'Mouse sensitivity'),
+      seg('invert', 'Invert pitch', onoff),
+      seg('hints', 'HUD hints', onoff),
+      { type: 'back' }
+    ];
+  }
+  selectable() {
+    const s = this.state.screen;
+    if (s === 'title') return this.titleList();
+    if (s === 'pause') return this.pauseList();
+    if (s === 'settings') return this.settingsList().filter((x) => x.type !== 'head');
+    if (s === 'controls' || s === 'credits') return [{ label: 'Back', act: () => this.back() }];
+    return [];
+  }
+  adjust(item, dir) {
+    const v = this.state.v;
+    if (item.type === 'seg') this.setV(item.id, Math.max(0, Math.min(item.opts.length - 1, v[item.id] + dir)));
+    else if (item.type === 'slider') this.setV(item.id, Math.max(0, Math.min(100, v[item.id] + dir * 5)));
+  }
+  onKey(e) {
+    const s = this.state, k = e.key;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape'].indexOf(k) < 0) return;
+    e.preventDefault();
+    if (s.screen === 'flight') { if (k === 'Escape') this.go('pause', 'flight'); return; }
+    if (k === 'Escape') return this.back();
+    const list = this.selectable(), n = list.length;
+    if (!n) return;
+    const cur = list[Math.min(s.sel, n - 1)];
+    if (k === 'ArrowDown') this.setState({ sel: (s.sel + 1) % n });
+    else if (k === 'ArrowUp') this.setState({ sel: (s.sel + n - 1) % n });
+    else if (k === 'ArrowLeft' && s.screen === 'settings') this.adjust(cur, -1);
+    else if (k === 'ArrowRight' && s.screen === 'settings') this.adjust(cur, 1);
+    else if (k === 'Enter') {
+      if (s.screen === 'settings') { if (cur.type === 'back') this.back(); else if (cur.type === 'seg') this.setV(cur.id, (s.v[cur.id] + 1) % cur.opts.length); }
+      else cur.act();
+    }
+  }
+  renderVals() {
+    const s = this.state, v = s.v, scr = s.screen, sel = s.sel;
+    const INK = '#1b1d22', LAND = '#3a3a36', DIM = '#5d5b55', TICK = '#c2501c';
+    const tabDefs = [['Title', 'title', 'title'], ['Pause', 'pause', 'flight'], ['Settings', 'settings', 'pause'], ['Controls', 'controls', 'pause'], ['Credits', 'credits', 'title'], ['In flight', 'flight', 'title']];
+    const tabs = tabDefs.map((t) => ({ label: t[0], go: () => this.go(t[1], t[2]), style: scr === t[1] ? 'border-color:#ffd36b;color:#ffd36b' : '' }));
+    const labOf = (on, px) => 'font-size:' + px + 'px;' + (on
+      ? 'font-weight:600;font-style:italic;letter-spacing:.085em;color:' + INK + ';padding-left:38px'
+      : 'font-weight:500;font-style:normal;letter-spacing:.1em;color:' + LAND + ';padding-left:30px');
+    const rowOf = (h, gap) => 'height:' + h + 'px;margin-top:' + (gap ? 8 : 0) + 'px';
+    const menu = (list, h) => list.map((m, i) => ({ label: m.label, key: m.key || '', act: m.act, sel: sel === i,
+      hover: () => this.setState({ sel: i }), style: rowOf(h, m.gap), lab: labOf(sel === i, 16) }));
+    let idx = -1;
+    const setItems = this.settingsList().map((it) => {
+      if (it.type === 'head') return { isHead: true, label: it.label, hstyle: 'height:30px;padding:6px 38px 0 30px' };
+      idx += 1; const i = idx, on = sel === i;
+      const hover = () => this.setState({ sel: i });
+      if (it.type === 'back') return { isBack: true, sel: on, hover: hover, act: () => this.back(), style: rowOf(30, true), lab: labOf(on, 15) };
+      const r = { isRow: true, label: it.label, sel: on, hover: hover, lab: labOf(on, 15) };
+      if (it.type === 'seg') {
+        r.isSeg = true;
+        r.segs = it.opts.map((t, j) => { const act = v[it.id] === j; return { t: t, on: act, pick: () => { this.setState({ sel: i }); this.setV(it.id, j); },
+          style: 'font-size:13.5px;' + (act ? 'font-weight:600;font-style:italic;letter-spacing:.07em;color:' + INK : 'font-weight:500;letter-spacing:.08em;color:' + DIM) }; });
+      } else {
+        const val = v[it.id];
+        r.isSlider = true; r.val = it.id === 'sens' ? (0.2 + val * 0.018).toFixed(1) : String(val);
+        r.fill = 'position:absolute;left:0;top:10px;height:2px;width:' + val + '%;background:' + INK;
+        r.mark = 'position:absolute;top:4px;left:calc(' + val + '% - 2px);width:4px;height:14px;transform:skewX(-14deg);background:' + (on ? TICK : INK);
+        r.slide = (e) => { const b = e.currentTarget.getBoundingClientRect(); this.setState({ sel: i }); this.setV(it.id, Math.round(Math.max(0, Math.min(1, (e.clientX - b.left) / b.width)) * 20) * 5); };
+      }
+      return r;
+    });
+    const names = ['Title meadow', 'Coast', 'Forest', 'Peak', 'Evening', 'Amberlands'];
+    const defBg = { title: 0, pause: 1, settings: 2, flight: 3, controls: 1, credits: 0 };
+    const none = '\u2013';
+    const ctrl = [['Bank', 'A  D', 'Left stick'], ['Pitch', 'W  S', 'Left stick'], ['Steer', 'Mouse', none], ['Boost', 'Space', 'RT'], ['Brake', 'Shift', 'LT'],
+      ['h'], ['Roll', 'Z', 'A'], ['Surge', 'B  hold', 'X  hold'], ['Surge roll', 'Z or B  at full charge', 'A or X'], ['Knife edge', 'Q  E  hold', 'LB  RB  hold'], ['Flaps, land', 'F', 'Y'],
+      ['h'], ['Race a plane', 'Tab  hold', 'R3  hold'], ['Photo mode', 'O', 'L3'], ['Logbook', 'J', none], ['Up again', 'R', none], ['Menu', 'Esc', 'Start']];
+    const ctrlRows = ctrl.map((c) => c[0] === 'h'
+      ? { a: '', k: '', p: '', style: 'display:flex;height:7px;margin:0 38px 5px 30px;border-bottom:1px solid rgba(27,29,34,.18)' }
+      : { a: c[0], k: c[1], p: c[2], style: 'display:flex;align-items:center;height:25px;padding:0 38px 0 30px' });
+    const dot = ' \u00b7 ';
+    const cred = [['Mountain Chickadee', 'Matthias Sirch' + dot + 'CC BY-SA 4.0'], ['Steller\u2019s Jay, two takes', 'Jonathon Jongsma' + dot + 'CC BY-SA 3.0'], ['Clark\u2019s Nutcracker', 'NPS / Shan Burson' + dot + 'public domain'],
+      ['Hermit Thrush', 'Leonardo Guzman Hernandez' + dot + 'CC BY-SA 4.0'], ['Ruby-crowned Kinglet', 'Jonathon Jongsma' + dot + 'CC BY-SA 4.0'], ['Great Horned Owl', 'Michael & Katie LaTour' + dot + 'CC BY-SA 4.0'],
+      ['Common Raven', 'NPS / David Restivo' + dot + 'public domain'], ['Mountain Bluebird', 'NPS & MSU Acoustic Atlas / Jennifer Jerrett' + dot + 'public domain'], ['American Robin', 'NPS & MSU Acoustic Atlas / Jennifer Jerrett' + dot + 'public domain'],
+      ['Thunderstorm, three takes', 'stephan' + dot + 'public domain'], ['Wildlife and thunder recordings', 'From Wikimedia Commons, trimmed and levelled for the game'],
+      ['Tool and HUD foley', 'Cut from CC0 recordings on Freesound and from Kenney packs'], ['Bell and gong', 'CC0 recordings from Freesound'], ['Streams, shore, wind, rain and the rest', 'Synthesised for the game']];
+    const credits = cred.concat(cred).map((c) => ({ a: c[0], b: c[1] }));
+    const bg = s.bg >= 0 ? s.bg : defBg[scr];
+    const bgStyle = (i) => 'opacity:' + (bg === i ? 1 : 0);
+    const pair = (arr) => arr.map((p, i) => ({ k: p[0], v: p[1], ml: i ? 18 : 0 }));
+    const foot = { title: [['Up Down', 'select'], ['Enter', 'choose']], pause: [['Up Down', 'select'], ['Enter', 'choose'], ['Esc', 'resume']],
+      settings: [['Up Down', 'select'], ['Left Right', 'change'], ['Esc', 'back']], controls: [['Esc', 'back']], credits: [['Esc', 'back']] };
+    const hudOn = scr === 'flight' || scr === 'pause';
+    return {
+      tabs: tabs, onKey: (e) => this.onKey(e), grab: (e) => { if (e && e.currentTarget && e.currentTarget.focus) e.currentTarget.focus(); },
+      nextBg: () => this.setState({ bg: (bg + 1) % names.length }), bgName: names[bg],
+      bg0: bgStyle(0), bg1: bgStyle(1), bg2: bgStyle(2), bg3: bgStyle(3), bg4: bgStyle(4), bg5: bgStyle(5),
+      wash: 'position:absolute;left:0;top:0;right:0;bottom:0;transition:background .2s;background:rgba(14,16,19,' + (scr === 'pause' || scr === 'settings' || scr === 'controls' ? 0.2 : 0) + ')',
+      isControls: scr === 'controls', isCredits: scr === 'credits', ctrlRows: ctrlRows, credits: credits, goBack: () => this.back(), backLab: labOf(true, 15),
+      isFlight: scr === 'flight', isTitle: scr === 'title', isPause: scr === 'pause', isSettings: scr === 'settings', showHud: hudOn,
+      titleItems: menu(this.titleList(), 32), pauseItems: menu(this.pauseList(), 30), setItems: setItems,
+      regionStyle: 'left:28px;top:62px;height:24px;padding:0 20px 0 14px;transition:opacity .6s;opacity:' + (scr === 'flight' && s.hintOn ? 1 : 0),
+      hintStyle: 'left:28px;bottom:26px;height:24px;padding:0 20px 0 12px;transition:opacity .6s;opacity:' + (scr === 'flight' && s.hintOn && v.hints === 0 ? 1 : 0),
+      hints: pair([['A D', 'bank'], ['W S', 'pitch'], ['Space', 'boost'], ['Shift', 'brake'], ['Esc', 'menu']]),
+      showFooter: scr !== 'flight', footer: pair(foot[scr] || []), toast: s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

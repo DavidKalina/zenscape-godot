@@ -33,6 +33,9 @@ var _started := false
 var _count: Label
 var _total: Label
 var _a := 0.0
+## False when the corner HUD draws the tally (scripts/endless/ui/flight_hud.gd):
+## this keeps the count, the name and the screen's lift, and draws only the lift.
+var counter := true
 
 func setup(host: Node, keeper: Node) -> void:
 	game = host
@@ -102,6 +105,10 @@ func _scale() -> float:
 	return size.y/900.0
 
 func _lay() -> void:
+	if not counter:
+		_count.visible = false
+		_total.visible = false
+		return
 	var s := _scale()
 	var k := 1.0+(POP-1.0)*(1.0-smoothstep(0.0,POP_TIME,_pop))
 	var flash := 1.0-smoothstep(0.0,0.5,_pop)
@@ -130,7 +137,7 @@ func _draw() -> void:
 	if _lift < LIFT_FOR:
 		var k := 1.0-_lift/LIFT_FOR
 		draw_rect(Rect2(Vector2.ZERO,size),Color(1.0,0.86,0.62,LIFT*k*k))
-	if _a <= 0.003: return
+	if _a <= 0.003 or not counter: return
 	var s := _scale()
 	var px := roundf(30.0*s/2.0)*2.0
 	var draw_px := px*Glyphs.BOX/24.0

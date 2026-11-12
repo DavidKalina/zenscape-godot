@@ -39,6 +39,7 @@ const Badges = preload("res://scripts/endless/near_badges.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
 const NUMS_ITALIC = preload("res://assets/fonts/barlow-semi-condensed-800-italic-latin.woff2")
 ## The player's kept layout: [near] layout = "tag" or "top".
 const SETTINGS_PATH := "user://hud.cfg"
@@ -831,7 +832,7 @@ func _draw_readback(s: float) -> void:
 	if ltext != "":
 		_txt(_block,lf,ltext,Vector2(_row_left(lw)+lw*0.5,ly),lpx,Color(CREAM,la),8.0*s)
 	if title != "": _txt(_block,nf,title,Vector2(rl+nw*0.5,ny),npx,Color(GOLD,na),8.0*s,1.0,0.0,Color(1.0,0.75,0.27,0.6),12.0*s)
-	var tex := Badges.texture("bank","razor",coin)
+	var tex := Badges.texture("coin","razor",coin)
 	if tex != null: _block.draw_texture_rect(tex,Rect2(Vector2(rl+nw+gap,ny-coin*0.5),Vector2.ONE*coin),false,Color(1,1,1,na))
 	_txt(_block,_nums,money,Vector2(rl+row-cw*0.5,ny),npx*1.05,Color(GOLD,na),8.0*s)
 
@@ -945,7 +946,8 @@ func _draw_half_ink(ink: Node2D) -> void:
 # --- On the screen: the tag's meter ------------------------------------------
 
 func _draw() -> void:
-	if _near == null or not tag: return
+	# The corner HUD draws the charge (scripts/endless/ui/flight_hud.gd).
+	if _near == null or not tag or FlightHud.draws_charge: return
 	var k := _k()
 	var mid := Vector2(size.x-TAG_METER_AT.x*k-TAG_METER.x*k*0.5,size.y-TAG_METER_AT.y*k)
 	_draw_meter(self,mid,TAG_METER*k,k)
