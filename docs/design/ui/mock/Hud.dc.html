@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flight HUD, the full set</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:ital,wght@0,500;1,600&display=swap">
+<style>
+body{margin:0}
+.f{font-family:'Barlow Semi Condensed','Arial Narrow',sans-serif}
+.num{font-family:'Barlow Semi Condensed','Arial Narrow',sans-serif;font-style:italic;font-weight:600;font-variant-numeric:tabular-nums}
+.bgi{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;transition:opacity .25s}
+.plate{position:absolute;display:flex;align-items:center;box-sizing:border-box;color:#f6f3ea;white-space:nowrap}
+.pbg{position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(22,24,29,.86);clip-path:polygon(0 0,100% 0,calc(100% - 9px) 100%,0 100%)}
+.pbgl{position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(22,24,29,.86);clip-path:polygon(9px 0,100% 0,100% 100%,0 100%)}
+.rel{position:relative}
+.gl{position:absolute;left:50%;top:50%;width:28px;height:28px;margin:-14px 0 0 -14px}
+.bd{display:block;width:16px;height:16px}
+.sl{display:block;width:14px;height:14px;margin:2px}
+.cell{display:block;width:17px;height:5px;background:rgba(246,243,234,.3);transform:skewX(-14deg)}
+.sw{all:unset;cursor:pointer;font:12.5px system-ui,sans-serif;color:#cfd3d8;background:#23272d;border:1px solid #3a4048;border-radius:4px;padding:5px 9px;white-space:nowrap}
+.sw:hover{border-color:#ffd36b;color:#fff}
+.sw:focus-visible{outline:2px solid #ffd36b;outline-offset:2px}
+.gl2{font-size:12px;color:#9aa1ab;margin:0 2px 0 8px;white-space:nowrap}
+.li{font-size:13.5px;line-height:19px;color:#cfd3d8;margin:0 0 9px 0;padding-left:14px;position:relative}
+.li b{color:#f4eedc;font-weight:600}
+.dot{position:absolute;left:0;top:7px;width:4px;height:9px;background:#ffd36b;transform:skewX(-14deg)}
+.h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#ffd36b;margin:0 0 10px 0}
+.tr{display:flex;font-size:13px;line-height:22px;color:#cfd3d8;border-bottom:1px solid #2a2e35}
+.tr span{display:block}
+</style>
+</helmet>
+<div style="width:1800px;height:1090px;box-sizing:border-box;padding:22px 30px 0 30px;background:#16181c;color:#cfd3d8;font-family:system-ui,sans-serif;display:flex;gap:24px">
+
+<div style="width:1280px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:64px">
+<span style="font-size:15px;color:#ffd36b;margin-right:6px">Flight HUD</span>
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="7">
+<span class="gl2">{{g.label}}</span>
+<sc-for list="{{g.opts}}" as="o" hint-placeholder-count="2">
+<button class="sw" style="{{o.style}}" onClick="{{o.go}}">{{o.label}}</button>
+</sc-for>
+</sc-for>
+</div>
+
+<div style="position:relative;width:1280px;height:800px;overflow:hidden;background:#0e1013;box-shadow:0 0 0 1px #2a2e35">
+<img class="bgi" alt="" src="/_blob/0f8fd3cad6c74bae2d4ff208b98739a7" style="{{bg0}}">
+<img class="bgi" alt="" src="/_blob/d181cc984e388cc14360cda82a399e82" style="{{bg1}}">
+<img class="bgi" alt="" src="/_blob/d79a5a40273a2305367d112004c5b455" style="{{bg2}}">
+<img class="bgi" alt="" src="/_blob/f4675b83ae768e2e8b83165ff556ae29" style="{{bg3}}">
+
+<div class="plate f" style="left:28px;top:26px;height:28px;padding:0 20px 0 10px;gap:7px"><span class="pbg"></span>
+<img class="rel" alt="" src="/_blob/7dd2eb71af9a26d6d6349269378fa2b1" style="width:19px;height:19px">
+<span class="rel num" style="font-size:19px;color:#ffd36b;line-height:28px">35</span>
+<span class="rel num" style="font-size:12.5px;color:#d9d5c8;line-height:28px;margin-left:-2px">/ 48</span>
+</div>
+
+<div class="plate f" style="{{money}}"><span class="pbg"></span>
+<img class="rel" alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{moneyCoin}}">
+<span class="rel num" style="{{moneyNum}}">{{moneyText}}</span>
+<span class="rel num" style="{{plus}}">{{plusText}}</span>
+<span class="rel" style="{{flt}}"><span style="display:block;width:1px;height:12px;background:rgba(246,243,234,.3);transform:skewX(-14deg);margin:0 9px 0 4px"></span><span style="font-size:9.5px;font-weight:500;letter-spacing:.18em;color:#d9d5c8">FLIGHT</span><span class="num" style="font-size:13px;color:#f6f3ea;margin-left:5px">{{fltText}}</span></span>
+</div>
+
+<div class="plate f" style="{{kB}}"><span class="pbgl" style="{{kBbg}}"></span><span class="rel num" style="{{kBkey}}">B</span><span class="rel" style="{{kBword}}">SURGE</span></div>
+<div class="plate f" style="{{kZ}}"><span class="pbgl" style="{{kZbg}}"></span><span class="rel num" style="{{kZkey}}">Z</span><span class="rel" style="{{kZword}}">ROLL</span></div>
+
+<div class="plate f" style="right:28px;bottom:26px;height:26px;padding:0 12px 0 20px"><span class="pbgl"></span>
+<span class="rel" style="{{spd}}"><span class="num" style="{{spdNum}}">{{spdText}}</span><span style="font-size:9.5px;font-weight:500;letter-spacing:.18em;color:#d9d5c8;margin:2px 0 0 4px">KM/H</span><span style="display:block;flex:none;width:1px;height:12px;background:rgba(246,243,234,.3);transform:skewX(-14deg);margin:0 11px"></span></span>
+<svg class="rel" aria-hidden="true" viewBox="0 0 16 16" style="{{sMark}}"><polyline points="3,3 8,8 3,13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></polyline><polyline points="8,3 13,8 8,13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>
+<span class="rel" style="{{cells}}">
+<span class="cell"><span style="{{cell0}}"></span></span>
+<span class="cell"><span style="{{cell1}}"></span></span>
+<span class="cell"><span style="{{cell2}}"></span></span>
+<span class="cell"><span style="{{cell3}}"></span></span>
+<span class="cell"><span style="{{cell4}}"></span></span>
+</span>
+<svg class="rel" aria-hidden="true" viewBox="0 0 16 16" style="{{rMark}}"><path d="M12.3 5.5A5 5 0 1 0 13 8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path><polyline points="12.9,2.1 12.6,5.8 9,5.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>
+</div>
+
+<div style="{{blk}}">
+<div style="{{readyBy}}"><svg aria-hidden="true" viewBox="0 0 16 16" style="display:block;width:24px;height:24px;margin:0 auto;color:#ffd36b;filter:drop-shadow(0 0 2px #0e1013) drop-shadow(0 1px 2px #0e1013)"><path d="M12.3 5.5A5 5 0 1 0 13 8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path><polyline points="12.9,2.1 12.6,5.8 9,5.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></polyline></svg><span class="f" style="display:block;text-align:center;font-size:9.5px;font-weight:500;letter-spacing:.2em;color:#fff3c9;text-shadow:0 0 3px #0e1013,0 0 3px #0e1013,0 1px 2px #0e1013;margin-top:1px">ROLL</span></div>
+
+<div style="{{pen}}">
+<div style="position:relative;width:max-content;box-sizing:border-box;padding:5px 28px 6px 14px;white-space:nowrap;background-color:#f4eedc;background-image:repeating-linear-gradient(90deg,rgba(60,40,10,0) 0,rgba(60,40,10,.06) 46px,rgba(60,40,10,0) 92px);clip-path:polygon(0 0,100% 0,calc(100% - 11px) 50%,100% 100%,0 100%)">
+<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#1b1d22"></span>
+<div class="f" style="{{penName}}">{{penNameText}}</div>
+<div style="display:flex;align-items:center;gap:7px;height:22px">
+<sc-for list="{{pbeads}}" as="b" hint-placeholder-count="5">
+<span style="{{b.style}}">
+<span style="{{b.seal}}">
+<sc-if value="{{b.isTree}}"><img class="sl" alt="tree" src="/_blob/495a625e0e8c0993715c435c6803ec67"></sc-if>
+<sc-if value="{{b.isRock}}"><img class="sl" alt="stone" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870"></sc-if>
+<sc-if value="{{b.isArch}}"><img class="sl" alt="arch" src="/_blob/96df7d2ef5d7e1e71af778f9db976a55"></sc-if>
+<sc-if value="{{b.isKnife}}"><img class="sl" alt="knife edge" src="/_blob/258bc694e1f94c9bffd33b1666a50516"></sc-if>
+</span>
+<span class="num" style="font-size:12px;color:#1b1d22">{{b.n}}</span>
+</span>
+</sc-for>
+</div>
+<div style="{{penRow2}}">
+<span style="{{paySeal}}"><img class="sl" alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c"></span>
+<span class="num" style="{{payStyle}}">{{payText}}</span>
+<span style="display:block;width:1px;height:11px;background:rgba(27,29,34,.3);transform:skewX(-14deg);margin:0 9px"></span>
+<span class="f" style="font-size:10px;font-weight:500;letter-spacing:.16em;color:#3a3a36">CLOSEST</span>
+<span class="num" style="font-size:13px;color:#1b1d22;margin-left:5px">{{closestText}}</span>
+</div>
+</div>
+</div>
+
+<div style="{{t2}}"><span class="pbg" style="background:rgba(22,24,29,.8)"></span>
+<span class="rel" style="{{rep}}"><span class="f" style="{{repName}}">{{repNameText}}</span><span class="num" style="{{repDist}}">{{repDistText}}</span><span class="f" style="{{repTag}}">{{repTagText}}</span></span>
+<span class="rel" style="{{trail}}">
+<sc-for list="{{beads}}" as="b" hint-placeholder-count="3">
+<span style="position:relative;display:flex;align-items:center;gap:2px">
+<sc-if value="{{b.isTree}}"><img class="bd" alt="tree" src="/_blob/495a625e0e8c0993715c435c6803ec67"></sc-if>
+<sc-if value="{{b.isRock}}"><img class="bd" alt="stone" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870"></sc-if>
+<sc-if value="{{b.isArch}}"><img class="bd" alt="arch" src="/_blob/96df7d2ef5d7e1e71af778f9db976a55"></sc-if>
+<sc-if value="{{b.isKnife}}"><img class="bd" alt="knife edge" src="/_blob/258bc694e1f94c9bffd33b1666a50516"></sc-if>
+<sc-if value="{{b.fl}}"><span style="position:absolute;left:2px;width:12px;bottom:-1px;height:2px;background:#ffd36b;transform:skewX(-14deg)"></span></sc-if>
+<span class="num" style="font-size:11.5px;color:#f6f3ea">{{b.n}}</span>
+</span>
+</sc-for>
+</span>
+</div>
+
+<div style="position:absolute;left:16px;top:0;height:30px;display:flex;align-items:center;box-sizing:border-box;padding:0 19px 0 33px;white-space:nowrap"><span class="pbg"></span>
+<span class="f rel" style="{{lostLab}}">Line lost</span>
+<span class="num rel" style="{{tot}}">{{totText}}</span>
+<span class="rel" style="{{mulWrap}}"><span class="num" style="{{mul}}">{{mulText}}</span>
+<span style="display:flex;gap:2px;margin:2px 1px 0 3px">
+<span style="display:block;flex:1;height:2.5px;background:rgba(246,243,234,.24);transform:skewX(-14deg)"><span style="{{seg0}}"></span></span>
+<span style="display:block;flex:1;height:2.5px;background:rgba(246,243,234,.24);transform:skewX(-14deg)"><span style="{{seg1}}"></span></span>
+<span style="display:block;flex:1;height:2.5px;background:rgba(246,243,234,.24);transform:skewX(-14deg)"><span style="{{seg2}}"></span></span>
+</span></span>
+<span class="f rel" style="{{best}}">Flight best</span>
+<span class="num" style="{{step}}">{{stepText}}</span>
+<span style="{{fuse}}"><span style="{{fuseFill}}"></span></span>
+</div>
+
+<div style="position:absolute;left:0;top:-5px;width:40px;height:40px">
+<span style="{{halo}}"></span>
+<span style="position:absolute;left:-4.5px;top:-4.5px;right:-4.5px;bottom:-4.5px;border-radius:50%;background:#0e1013"></span>
+<span style="{{arc}}"></span>
+<span style="{{face}}"></span>
+<img class="gl" alt="" src="/_blob/495a625e0e8c0993715c435c6803ec67" style="{{gTree}}">
+<img class="gl" alt="" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870" style="{{gRock}}">
+<img class="gl" alt="" src="/_blob/96df7d2ef5d7e1e71af778f9db976a55" style="{{gArch}}">
+<img class="gl" alt="" src="/_blob/258bc694e1f94c9bffd33b1666a50516" style="{{gKnife}}">
+<img class="gl" alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{gBank}}">
+<svg aria-hidden="true" viewBox="0 0 24 24" style="{{crack}}"><polyline points="8,5 11,11 9.5,13 13,19" fill="none" stroke="#0e1013" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"></polyline><polyline points="8,5 11,11 9.5,13 13,19" fill="none" stroke="#ff8a6b" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"></polyline></svg>
+<span style="{{flash}}"></span>
+</div>
+
+<img alt="" src="/_blob/495a625e0e8c0993715c435c6803ec67" style="{{fall0}}">
+<img alt="" src="/_blob/1a5f7ad4d3792aa894a4bdd83b575870" style="{{fall1}}">
+</div>
+
+<img alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{c0}}">
+<img alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{c1}}">
+<img alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{c2}}">
+<img alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{c3}}">
+<img alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{c4}}">
+<img alt="" src="/_blob/3588d511a06a934548b4b55076dfad9c" style="{{c5}}">
+</div>
+
+<div style="display:flex;align-items:center;gap:10px;height:32px">
+<button class="sw" style="min-width:40px;text-align:center" onClick="{{toggle}}">{{playLabel}}</button>
+<button class="sw" onClick="{{replay}}">Replay</button>
+<input type="range" min="0" max="{{tmax}}" step="1" value="{{tv}}" onChange="{{scrub}}" aria-label="Scrub the sequence" style="flex-grow:1;accent-color:#ffd36b">
+<span style="font-size:12.5px;color:#9aa1ab;width:190px;text-align:right;font-variant-numeric:tabular-nums">{{clock}}</span>
+</div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+<sc-for list="{{steps}}" as="st" hint-placeholder-count="12">
+<button class="sw" style="{{st.style}}" onClick="{{st.go}}">{{st.label}}</button>
+</sc-for>
+</div>
+<p style="{{rescNote}}">Rescaled payout is on: money equals the banked points. These are not the game's numbers.</p>
+</div>
+
+<div style="width:436px;display:flex;flex-direction:column;padding-top:8px">
+<p class="h3">Added this round</p>
+<p class="li"><span class="dot"></span><b>Money</b> sits beside the finds, top left: the bank's sun coin and a gilt total. By default it shows around a bank and when landed or paused, because the total only changes at a bank; Always keeps it up.</p>
+<p class="li"><span class="dot"></span><b>Bank to money.</b> The coins leave the pennant, climb the left edge to the chip and the total ticks as each lands, with the sum beside it for a moment. The path stays in the upper left; nothing crosses the plane.</p>
+<p class="li"><span class="dot"></span><b>Charge.</b> Five cells, each half a second of surge (a full meter is 2.5 s). The chevrons light whenever there is any charge: surge is there to hold. The roll mark lights only when all five are full. Holding surge drains the cells from the right; the roll turns them white, spins its mark and spends the lot.</p>
+<p class="li"><span class="dot"></span><b>Speed</b> joins the charge in one plate, in km/h as the logbook already uses. It turns gold above boost speed (208). When it matters shows it only while the speed is changing fast or is above boost.</p>
+<p class="li"><span class="dot"></span><b>Extras.</b> Flight best marks a bank that beats this flight's best line. Flight earned shows what this flight has paid beside the total.</p>
+<p class="li"><span class="dot"></span><b>The sun is money only.</b> The old roll-ready sunburst was the same glyph as the coin, so the roll has its own mark.</p>
+
+<p class="h3" style="margin-top:12px">What a bank really pays</p>
+<div class="tr" style="color:#9aa1ab"><span style="width:86px">Line</span><span style="width:170px">Points</span><span style="width:60px">Pays</span><span>Steps</span></div>
+<div class="tr"><span style="width:86px">Small</span><span style="width:170px">205 × 1.0 = 205</span><span style="width:60px">+1</span><span>Bank: small</span></div>
+<div class="tr"><span style="width:86px">Typical</span><span style="width:170px">936 × 1.8 = 1,685</span><span style="width:60px">+1</span><span>Bank: typical</span></div>
+<div class="tr"><span style="width:86px">Sequence</span><span style="width:170px">1,520 × 2.6 = 3,952</span><span style="width:60px">+4</span><span>Full flight</span></div>
+<div class="tr"><span style="width:86px">Big</span><span style="width:170px">4,200 × 4.0 = 16,800</span><span style="width:60px">+21</span><span>Bank: big</span></div>
+<p style="font-size:12.5px;line-height:18px;color:#9aa1ab;margin:8px 0 0 0">Money is the banked points over 1,600, times the square root of the multiplier, rounded, and never less than 1. The typical row is the line captured from the game. The shop's prices run from 40 to 180. At these values most banks send one coin; Payout: Rescaled shows the same beat if a bank paid its points.</p>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1800,"height":1090}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { t: 15.78, playing: false, clip: 'full', variant: 'ring', bg: 0, money: 'bank', speed: 'when', xBest: true, xEarn: false, resc: false };
+  }
+  componentDidMount() {
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const st = this.state;
+      if (st.playing) {
+        const end = this.data()[st.clip].END, t = st.t + dt;
+        if (t >= end) this.setState({ t: end, playing: false }); else this.setState({ t: t });
+      }
+      this._raf = requestAnimationFrame(tick);
+    };
+    this._raf = requestAnimationFrame(tick);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this._raf); }
+  data() {
+    if (this._d) return this._d;
+    // Lines as the game scores them: runs of one kind, +0.2 on a switch, +0.6 on a flourish, banked 4.5 s after the last pass.
+    // Money: round(points / 1600 * sqrt(multiplier)), at least 1. The meter fills by points x multiplier over 1600; a surge spends 1 / 2.5 a second.
+    const P1 = [
+      { t: 1.5, g: 'tree', w: 'TREE GRAZE', run: 0, n: 1, tot: 84, m: 1.0, st: 0, d: 2.6, b: 'near' },
+      { t: 2.3, g: 'tree', w: 'TREES ×2', run: 0, n: 2, tot: 190, m: 1.0, st: 0, d: 1.1, b: 'close' },
+      { t: 3.0, g: 'tree', w: 'TREES ×3', run: 0, n: 3, tot: 330, m: 1.0, st: 0, d: 0.9, b: 'close' },
+      { t: 3.6, g: 'tree', w: 'TREES ×4', run: 0, n: 4, tot: 471, m: 1.0, st: 0, d: 0.3, b: 'razor' },
+      { t: 4.6, g: 'rock', w: 'STONE GRAZE', run: 1, n: 1, tot: 568, m: 1.2, st: 0.2, d: 1.2, b: 'close' },
+      { t: 5.3, g: 'rock', w: 'STONE ×2', run: 1, n: 2, tot: 689, m: 1.2, st: 0, d: 0.8, b: 'close' },
+      { t: 6.3, g: 'arch', w: 'ARCH', run: 2, n: 1, fl: true, tot: 936, m: 1.8, st: 0.6, d: 0.35, b: 'razor' },
+      { t: 7.4, g: 'tree', w: 'TREE GRAZE', run: 3, n: 1, tot: 1040, m: 2.0, st: 0.2, d: 1.3, b: 'close' },
+      { t: 8.0, g: 'tree', w: 'TREES ×2', run: 3, n: 2, tot: 1180, m: 2.0, st: 0, d: 1.0, b: 'close' },
+      { t: 9.0, g: 'knife', w: 'KNIFE EDGE', run: 4, n: 1, fl: true, tot: 1520, m: 2.6, st: 0.6, d: 0.6, b: 'close' }
+    ];
+    const P2 = [
+      { t: 21.0, g: 'tree', w: 'TREE GRAZE', run: 0, n: 1, tot: 96, m: 1.0, st: 0, d: 1.2, b: 'close' },
+      { t: 21.7, g: 'tree', w: 'TREES ×2', run: 0, n: 2, tot: 205, m: 1.0, st: 0, d: 0.9, b: 'close' },
+      { t: 22.5, g: 'rock', w: 'STONE GRAZE', run: 1, n: 1, tot: 310, m: 1.2, st: 0.2, d: 1.1, b: 'close' }
+    ];
+    const P3 = [
+      { t: 25.5, g: 'tree', w: 'TREE GRAZE', run: 0, n: 1, tot: 110, m: 1.0, st: 0, d: 1.4, b: 'close' },
+      { t: 26.2, g: 'tree', w: 'TREES ×2', run: 0, n: 2, tot: 240, m: 1.0, st: 0, d: 0.9, b: 'close' },
+      { t: 27.5, g: 'rock', w: 'STONE GRAZE', run: 1, n: 1, tot: 420, m: 1.2, st: 0.2, d: 1.0, b: 'close' }
+    ];
+    const beat = [['About to bank', 0.6], ['Bank', 1.5], ['Pennant', 2.8], ['Coins fly', 3.5], ['Total ticks', 3.85], ['Settled', 4.9]];
+    const one = (w, g, n, tot, m, d, b) => [{ t: -3.3, g: g, w: w, run: 0, n: n, tot: tot, m: m, st: 0, d: d, b: b }];
+    this._d = {
+      full: { END: 38, base: 142, flight0: 0, meter0: 0, readyT: 6.6,
+        lines: [
+          { P: P1, end: 'bank', endT: 13.5, raw: 1520, m: 2.6, points: 3952, pay: 4, closest: '0.30 m', best: true, name: '' },
+          { P: P2, end: 'lost', endT: 23.4, lost: '372' },
+          { P: P3, end: 'bank', endT: 32.0, raw: 420, m: 1.2, points: 504, pay: 1, closest: '0.90 m', best: false, name: '' }
+        ],
+        roll: [18.0], surge: [[28.3, 29.2]],
+        speed: [[0, 132], [0.6, 132], [2.3, 207], [18.0, 208], [18.1, 273], [20.5, 270], [22.3, 208], [28.3, 208], [29.2, 262], [30.9, 208], [38, 208]],
+        speedShow: [[0.6, 3.2], [18.0, 23.0], [28.3, 31.6]],
+        keys: { b: [[1.5, 3.7], [21.0, 23.2]], bHeld: [[28.3, 29.2]], z: [[6.6, 9.1]], zHeld: [[18.0, 18.5]] },
+        steps: [['Idle', 0.6], ['Chain', 3.85], ['Roll ready', 7.0], ['Lull', 10.9], ['About to bank', 12.9], ['Bank', 13.8], ['Pennant', 15.0], ['Coins fly', 15.78], ['Total ticks', 16.15], ['Settled', 17.4],
+          ['Roll spend', 18.3], ['Roll, hot', 19.4], ['Refill', 22.0], ['Lost', 23.7], ['Surge drain', 28.9], ['After surge', 30.2], ['Small bank', 34.25]] },
+      small: { END: 7.6, base: 142, flight0: 3, meter0: 0.13, readyT: null,
+        lines: [{ P: one('TREES ×2', 'tree', 2, 205, 1.0, 0.9, 'close'), runs: [{ g: 'tree', n: 2, fl: false }], end: 'bank', endT: 1.2, raw: 205, m: 1.0, points: 205, pay: 1, closest: '0.90 m', best: false, name: '' }],
+        roll: [], surge: [], speed: [[0, 208], [8, 208]], speedShow: [], keys: { b: [], bHeld: [], z: [], zHeld: [] }, steps: beat },
+      typical: { END: 7.6, base: 142, flight0: 3, meter0: 1, readyT: null,
+        lines: [{ P: one('ARCH', 'arch', 1, 936, 1.8, 0.35, 'razor'), runs: [{ g: 'tree', n: 4, fl: false }, { g: 'rock', n: 2, fl: false }, { g: 'arch', n: 1, fl: true }], end: 'bank', endT: 1.2, raw: 936, m: 1.8, points: 1685, pay: 1, closest: '0.30 m', best: false, name: '' }],
+        roll: [], surge: [], speed: [[0, 208], [8, 208]], speedShow: [], keys: { b: [], bHeld: [], z: [], zHeld: [] }, steps: beat },
+      big: { END: 7.6, base: 142, flight0: 3, meter0: 1, readyT: null,
+        lines: [{ P: one('KNIFE EDGE', 'knife', 1, 4200, 4.0, 0.4, 'razor'), runs: [{ g: 'tree', n: 5, fl: false }, { g: 'arch', n: 1, fl: true }, { g: 'rock', n: 3, fl: false }, { g: 'tree', n: 6, fl: false }, { g: 'knife', n: 1, fl: true }],
+          end: 'bank', endT: 1.2, raw: 4200, m: 4.0, points: 16800, pay: 21, closest: '0.22 m', best: true, name: 'FINE LINE' }],
+        roll: [], surge: [], speed: [[0, 208], [8, 208]], speedShow: [], keys: { b: [], bHeld: [], z: [], zHeld: [] }, steps: beat }
+    };
+    return this._d;
+  }
+  meterTable(clip) {
+    if (clip._m) return clip._m;
+    const n = Math.ceil(clip.END * 60) + 2, a = new Float32Array(n), gains = [];
+    clip.lines.forEach((L) => { let prev = 0; L.P.forEach((p) => { const live = p.tot * p.m; if (p.t >= 0) gains.push([p.t, (live - prev) / 1600]); prev = live; }); });
+    let m = clip.meter0 || 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / 60;
+      for (let k = 0; k < gains.length; k++) if (t >= gains[k][0] && t < gains[k][0] + 0.3) m = Math.min(1, m + gains[k][1] / 18);
+      let drain = false;
+      clip.roll.forEach((r) => { if (t >= r && t < r + 2.5) drain = true; });
+      clip.surge.forEach((w) => { if (t >= w[0] && t < w[1]) drain = true; });
+      if (drain) m = Math.max(0, m - 1 / 150);
+      a[i] = m;
+    }
+    clip._m = a;
+    return a;
+  }
+  jump(t) { this.setState({ t: t, playing: false }); }
+  renderVals() {
+    const s = this.state, t = s.t, C = this.data()[s.clip], ring = s.variant === 'ring';
+    const cl = (x, a, b) => Math.max(a, Math.min(b, x)), lerp = (a, b, k) => a + (b - a) * k;
+    const sm = (a, b, x) => { const k = cl((x - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
+    const pop = (g) => g < 0.1 ? lerp(1.35, 0.94, sm(0, 0.1, g)) : lerp(0.94, 1, sm(0.1, 0.22, g));
+    const hex = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    const mix = (a, b, k) => { const x = hex(a), y = hex(b); return 'rgb(' + x.map((v, i) => Math.round(lerp(v, y[i], k))).join(',') + ')'; };
+    const HEAT = ['#f6f3ea', '#f7dc8a', '#f2c14e', '#f7922e', '#ff6a2b'];
+    const heatCol = (h) => { const x = cl(h, 0, 1) * 4, i = Math.min(3, Math.floor(x)); return mix(HEAT[i], HEAT[i + 1], x - i); };
+    const grp = (n) => Math.round(n).toLocaleString('en-US');
+    const met = (d) => (d < 1 ? d.toFixed(2) : d.toFixed(1)) + ' m';
+    const inWin = (list, x) => { for (let k = 0; k < list.length; k++) if (x >= list[k][0] && x < list[k][1]) return list[k]; return null; };
+    const winA = (list, x, fin, fout) => { let a = 0; list.forEach((w) => { a = Math.max(a, sm(w[0], w[0] + fin, x) * (1 - sm(w[1], w[1] + fout, x))); }); return a; };
+    const CREAM = '#f6f3ea', GOLD = '#ffd36b', LOST = '#ff8a6b', NEARC = '#b9c6d2', CLOSEC = '#f7dc8a', RAZORC = '#ffb640';
+    const key = '0 0 3px #0e1013,0 0 3px #0e1013,0 1px 2px #0e1013';
+
+    // Which line, which phase.
+    let phase = 'idle', L = null, i = -1;
+    for (let k = 0; k < C.lines.length; k++) {
+      const ln = C.lines[k];
+      if (t >= ln.P[0].t && t < ln.endT) { phase = 'live'; L = ln; }
+      else if (ln.end === 'bank' && t >= ln.endT && t < ln.endT + 5.3) { phase = 'bank'; L = ln; }
+      else if (ln.end === 'lost' && t >= ln.endT && t < ln.endT + 1.4) { phase = 'loss'; L = ln; }
+    }
+    if (phase === 'live') for (let k = 0; k < L.P.length; k++) if (t >= L.P[k].t) i = k;
+    const runsOf = (ln, upTo) => {
+      if (ln.runs) return ln.runs;
+      const r = [];
+      for (let k = 0; k <= upTo; k++) r[ln.P[k].run] = { g: ln.P[k].g, n: ln.P[k].n, fl: !!ln.P[k].fl };
+      return r;
+    };
+
+    let blockA = 0, drop = 0, totText = '', totCol = CREAM, totXf = '', totGlow = 'none';
+    let mulText = '', mulCol = CREAM, mulPx = 17, mulScale = 1, mulGlow = 'none', mulA = 1, mulW = -1, mulShown = 1, segCol = CLOSEC;
+    let stepText = '', stepStyle = 'display:none';
+    let share = 0, arcCol = CLOSEC, trackCol = 'rgba(246,243,234,.2)', haloA = 0, haloCol = '255,211,107', rim = 'rgba(246,243,234,.3)';
+    let gNow = '', gScale = 1, gA = 1, flashA = 0, crackA = 0, shake = [0, 0];
+    let repA = 0, trailA = 0, repName = '', repNameCol = CREAM, repDist = '', repDistCol = CREAM, repTag = '', repTagCol = GOLD, t2A = 1;
+    let beads = [], penW = 0, pbeads = [], row2A = 0, lost = false, bestA = 0, nameA = 0, payDim = 1;
+    let fall = ['display:none', 'display:none'];
+
+    if (phase === 'live') {
+      const p = L.P[i], prev = i > 0 ? L.P[i - 1] : { tot: 0, m: 1 }, age = t - p.t;
+      blockA = sm(0, 0.08, t - L.P[0].t);
+      totText = grp(lerp(prev.tot, p.tot, 1 - Math.pow(1 - cl(age / 0.35, 0, 1), 3)));
+      const j = 1 - sm(0, 0.14, age);
+      totXf = 'translateY(' + (-2 * j).toFixed(2) + 'px) scale(' + (1 + 0.06 * j).toFixed(3) + ')';
+      const landed = !(p.st > 0) || age >= 0.5, kick = p.st > 0 ? age - 0.5 : 9;
+      mulShown = landed ? p.m : prev.m;
+      const heat = (mulShown - 1) / 3;
+      mulText = '×' + mulShown.toFixed(1); mulPx = lerp(17, 21, heat);
+      mulCol = kick >= 0 && kick < 0.05 ? '#ffffff' : heatCol(heat);
+      mulScale = kick >= 0 ? 1 + 0.3 * (1 - sm(0, 0.2, kick)) : 1;
+      mulGlow = heat > 0.3 ? '0 0 ' + (5 + 9 * heat).toFixed(1) + 'px rgba(247,146,46,' + (0.55 * heat).toFixed(2) + ')' : 'none';
+      segCol = heatCol(Math.max(heat, 0.25));
+      if (p.st > 0 && age < 0.7) {
+        const big = !!p.fl, fly = sm(0.4, 0.7, age), a = sm(0, 0.05, age) * (1 - sm(0.75, 1, age / 0.7));
+        stepText = '+' + p.st.toFixed(1);
+        stepStyle = 'position:absolute;left:100%;top:50%;white-space:nowrap;font-size:' + (big ? 21 : 15) + 'px;line-height:22px;margin-top:-11px;color:' + (big ? GOLD : CLOSEC) +
+          ';opacity:' + a.toFixed(3) + ';text-shadow:' + key + (big ? ',0 0 10px rgba(255,190,70,.7)' : '') +
+          ';transform:translateX(' + lerp(2, -52, fly).toFixed(1) + 'px) scale(' + (pop(age) * lerp(1, 0.6, fly)).toFixed(3) + ');transform-origin:left center';
+      }
+      share = cl(1 - age / 4.5, 0, 1);
+      const ending = age > 3.3, soon = sm(3.3, 3.8, age);
+      arcCol = ending ? '#fff3c9' : heatCol(Math.max(heat, 0.25));
+      trackCol = 'rgba(255,211,107,' + lerp(0.2, 0.55, soon).toFixed(2) + ')';
+      totCol = mix(CREAM, GOLD, soon);
+      haloA = Math.max(0.55 * soon, 0.35 * heat);
+      gNow = p.g; gScale = pop(age); gA = sm(0, 0.04, age); flashA = 0.5 * (1 - sm(0, 0.3, age));
+      repA = sm(0, 0.06, age) * (1 - sm(1.3, 1.6, age)); trailA = sm(1.45, 1.75, age);
+      repName = p.w; repNameCol = p.fl ? GOLD : CREAM;
+      repDist = met(p.d); repDistCol = p.b === 'razor' ? RAZORC : (p.b === 'close' ? CLOSEC : NEARC);
+      repTag = p.fl ? 'FLOURISH' : (p.b === 'razor' ? 'RAZOR' : ''); repTagCol = p.fl ? GOLD : RAZORC;
+      beads = runsOf(L, i).slice(-5);
+    } else if (phase === 'bank') {
+      const b = t - L.endT, dur = L.points < 2000 ? 0.4 : (L.points < 10000 ? 0.8 : 1.2), heat = (L.m - 1) / 3;
+      blockA = 1 - sm(3.3, 3.6, b);
+      totText = '+' + grp(lerp(L.raw, L.points, 1 - Math.pow(1 - cl(b / dur, 0, 1), 3)));
+      totCol = GOLD; totGlow = '0 0 12px rgba(255,190,70,' + lerp(0.75, 0.3, sm(dur, dur + 0.6, b)).toFixed(2) + ')';
+      totXf = 'scale(' + (1 + 0.22 * (1 - sm(0, 0.12, b))).toFixed(3) + ')';
+      mulText = '×' + L.m.toFixed(1); mulShown = L.m; mulCol = heatCol(heat); mulPx = lerp(17, 21, heat); segCol = heatCol(Math.max(heat, 0.25));
+      mulA = 1 - sm(0.12, 0.4, b); mulW = lerp(46, 0, sm(0.25, 0.55, b));
+      share = b < 1.2 ? 1 : cl(1 - (b - 1.2) / 2.4, 0, 1); arcCol = GOLD; haloA = 0.8 * (1 - sm(1.0, 1.5, b)); rim = 'rgba(255,211,107,.5)';
+      gNow = 'bank'; gScale = pop(b); gA = 1; flashA = 0.6 * (1 - sm(0, 0.35, b));
+      t2A = 1 - sm(0, 0.15, b); trailA = 1;
+      const runs = runsOf(L, L.P.length - 1);
+      beads = runs.slice(-5);
+      penW = sm(0.45, 0.75, b) * 340;
+      pbeads = runs.slice(-5).map((r, k) => { const st = b - 0.62 - 0.08 * k; return { g: r.g, n: r.n, fl: r.fl, a: sm(0, 0.1, st), sc: 1 + 0.35 * (1 - sm(0, 0.1, st)) }; });
+      row2A = sm(1.15, 1.35, b); nameA = L.name ? sm(0.9, 1.1, b) : 0;
+      bestA = L.best && s.xBest ? sm(dur + 0.15, dur + 0.4, b) : 0;
+      payDim = lerp(1, 0.45, sm(1.9, 2.5, b));
+    } else if (phase === 'loss') {
+      const a = t - L.endT;
+      lost = true; blockA = 1 - sm(1.15, 1.4, a); drop = 8 * sm(0.8, 1.4, a);
+      totText = '−' + L.lost; totCol = LOST; totXf = 'scale(' + (1 + 0.15 * (1 - sm(0, 0.12, a))).toFixed(3) + ')';
+      mulA = 0; mulW = 0;
+      gNow = 'tree'; crackA = sm(0, 0.08, a); rim = 'rgba(255,138,107,.75)'; haloA = 0.5 * (1 - sm(0, 0.5, a)); haloCol = '255,138,107';
+      const q = 1 - sm(0, 0.22, a); shake = [Math.sin(a * 95) * 2.2 * q, Math.cos(a * 71) * 2.2 * q];
+      repA = sm(0.05, 0.15, a); repName = 'SCRAPED TREE'; repNameCol = '#e9e5d8';
+      fall = [[0, 0.35, 1], [1, -0.6, -1]].map((f) => {
+        const y = a * a * 150 + a * 18 * (1 + f[1] * 0.4), x = 42 + f[0] * 24 + f[1] * 26 * a;
+        return 'position:absolute;left:' + x.toFixed(1) + 'px;top:' + (35 + y).toFixed(1) + 'px;width:16px;height:16px;filter:grayscale(1);opacity:' + (0.6 * (1 - sm(0.4, 1, a))).toFixed(3) + ';transform:rotate(' + (f[2] * 130 * a).toFixed(1) + 'deg)';
+      });
+    }
+
+    // Money: the total, and each bank's coins from the pennant to the chip.
+    const base = s.resc ? 48200 : C.base;
+    let total = base, chipA = 0, plusText = '', plusA = 0, mKick = 0, coinFlash = 0;
+    const coins = ['display:none', 'display:none', 'display:none', 'display:none', 'display:none', 'display:none'];
+    C.lines.forEach((ln) => {
+      if (ln.end !== 'bank') return;
+      const b = t - ln.endT;
+      if (b < 0) return;
+      const pay = s.resc ? ln.points : ln.pay, n = s.resc ? 6 : Math.min(pay, 6);
+      let frac = 0;
+      for (let k = 0; k < n; k++) {
+        const go = 1.9 + 0.09 * k, land = go + 0.55;
+        frac += sm(land, land + 0.12, b) / n;
+        if (b >= land) { mKick = Math.max(mKick, 1 - sm(0, 0.2, b - land)); coinFlash = Math.max(coinFlash, 1 - sm(0, 0.3, b - land)); }
+        const u = (b - go) / 0.55;
+        if (u > 0 && u < 1) {
+          const e = u * u * (3 - 2 * u), x = (1 - e) * (1 - e) * 404 + 2 * e * (1 - e) * 170 + e * e * 157, y = (1 - e) * (1 - e) * 466 + 2 * e * (1 - e) * 356 + e * e * 40;
+          coins[k] = 'position:absolute;left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px;width:22px;height:22px;margin:-11px 0 0 -11px;pointer-events:none;opacity:' + (sm(0, 0.12, u) * (1 - sm(0.9, 1, u))).toFixed(3) +
+            ';transform:scale(' + (0.9 + 0.35 * Math.sin(Math.PI * u)).toFixed(3) + ');filter:drop-shadow(0 0 5px rgba(255,200,90,.85)) drop-shadow(0 1px 2px rgba(14,16,19,.7))';
+        }
+      }
+      total += Math.round(pay * frac);
+      if (b < 5.3) {
+        chipA = Math.max(chipA, sm(1.3, 1.6, b) * (1 - sm(4.8, 5.2, b)));
+        plusText = '+' + grp(pay); plusA = sm(2.45, 2.55, b) * (1 - sm(3.9, 4.3, b));
+      }
+    });
+    const moneyA = s.money === 'always' ? 1 : chipA;
+
+    // Charge: the meter, the surge held, the roll hot.
+    const table = this.meterTable(C), charge = table[cl(Math.round(t * 60), 0, table.length - 1)];
+    const before = table[cl(Math.round(t * 60) - 12, 0, table.length - 1)];
+    const rollW = inWin(C.roll.map((r) => [r, r + 2.5]), t), hot = !!rollW && charge > 0, surging = !!inWin(C.surge, t);
+    const ready = charge >= 0.999 && !hot, rising = charge > before + 0.004;
+    const cellCol = hot ? '#fff3c9' : (surging ? '#ffe7a3' : (ready ? GOLD : '#f2c14e'));
+    const cell = (k) => 'display:block;height:100%;width:' + (cl(charge * 5 - k, 0, 1) * 100).toFixed(1) + '%;background:' + cellCol;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 25);
+    const cellsGlow = hot ? '0 0 ' + (7 + 4 * pulse).toFixed(1) + 'px rgba(255,150,60,.9)' : (surging ? '0 0 7px rgba(255,214,107,.7)' : (ready ? '0 0 8px rgba(255,214,107,.75)' : (rising ? '0 0 7px rgba(255,214,107,.55)' : 'none')));
+    const breath = 0.5 + 0.5 * Math.sin(t * 3.4);
+    const sCol = charge <= 0.002 ? 'rgba(246,243,234,.32)' : (surging || hot ? '#fff3c9' : GOLD);
+    const rCol = hot ? '#fff3c9' : (ready ? GOLD : 'rgba(246,243,234,.32)');
+    const spin = rollW ? 720 * (1 - Math.pow(1 - cl((t - rollW[0]) / 0.62, 0, 1), 2)) : 0;
+    const keyPlate = (shown, held) => {
+      const a = Math.max(winA(shown, t, 0.15, 0.4), winA(held, t, 0.05, 0.25)), down = !!inWin(held, t);
+      return { plate: 'right:28px;bottom:60px;height:22px;padding:0 11px 0 18px;pointer-events:none;opacity:' + a.toFixed(3),
+        bg: down ? 'background:#ffd36b' : '', k: 'font-size:13px;color:' + (down ? '#1b1d22' : GOLD),
+        w: 'font-size:10.5px;font-weight:500;letter-spacing:.2em;margin-left:7px;color:' + (down ? '#1b1d22' : CREAM) };
+    };
+    const kB = keyPlate(C.keys.b, C.keys.bHeld), kZ = keyPlate(C.keys.z, C.keys.zHeld);
+    const ra = C.readyT === null ? -1 : t - C.readyT;
+    const readyByA = phase === 'live' && ra >= 0 ? sm(0, 0.08, ra) * (1 - sm(1.8, 2.2, ra)) : 0;
+
+    // Speed, km/h.
+    let v = C.speed[0][1];
+    for (let k = 0; k < C.speed.length - 1; k++) { const a = C.speed[k], b2 = C.speed[k + 1]; if (t >= a[0]) v = lerp(a[1], b2[1], sm(a[0], b2[0], t)); }
+    const top = v > 210;
+    const spdA = s.speed === 'always' ? 1 : (s.speed === 'off' ? 0 : Math.max(winA(C.speedShow, t, 0.2, 0.7), top ? 1 : 0));
+
+    const glyph = (id) => 'opacity:' + (gNow === id ? gA.toFixed(3) : 0) + ';transform:translate(' + shake[0].toFixed(1) + 'px,' + shake[1].toFixed(1) + 'px) scale(' + (gNow === id ? gScale : 1).toFixed(3) + ')';
+    const seg = (k) => 'display:block;height:100%;width:' + (cl(mulShown - 1 - k, 0, 1) * 100).toFixed(0) + '%;background:' + segCol;
+    const beadOf = (r) => ({ isTree: r.g === 'tree', isRock: r.g === 'rock', isArch: r.g === 'arch', isKnife: r.g === 'knife', fl: r.fl, n: r.n > 1 ? String(r.n) : '' });
+    const steps = C.steps;
+    let act = 0; for (let k = 0; k < steps.length; k++) if (t >= steps[k][1] - 0.25) act = k;
+    const on = 'border-color:#ffd36b;color:#ffd36b';
+    const opt = (label, active, go) => ({ label: label, style: active ? on : '', go: go });
+    const setClip = (c) => () => this.setState({ clip: c, t: 0, playing: true });
+    const everything = s.money === 'always' && s.speed === 'always' && s.xBest && s.xEarn && s.clip === 'full';
+    const minimum = s.money === 'bank' && s.speed === 'off' && !s.xBest && !s.xEarn && s.clip === 'full';
+    const groups = [
+      { label: 'View', opts: [
+        opt('Everything on', everything, () => this.setState({ clip: 'full', money: 'always', speed: 'always', xBest: true, xEarn: true, resc: false, t: 15.78, playing: false })),
+        opt('Minimum', minimum, () => this.setState({ clip: 'full', money: 'bank', speed: 'off', xBest: false, xEarn: false, resc: false, t: 10.9, playing: false })) ] },
+      { label: 'Money', opts: [opt('Around a bank', s.money === 'bank', () => this.setState({ money: 'bank' })), opt('Always', s.money === 'always', () => this.setState({ money: 'always' }))] },
+      { label: 'Speed', opts: [opt('Always', s.speed === 'always', () => this.setState({ speed: 'always' })), opt('When it matters', s.speed === 'when', () => this.setState({ speed: 'when' })), opt('Off', s.speed === 'off', () => this.setState({ speed: 'off' }))] },
+      { label: 'Extras', opts: [opt('Flight best', s.xBest, () => this.setState({ xBest: !s.xBest })), opt('Flight earned', s.xEarn, () => this.setState({ xEarn: !s.xEarn }))] },
+      { label: 'Play', opts: [opt('Full flight', s.clip === 'full', setClip('full')), opt('Bank: small', s.clip === 'small', setClip('small')), opt('Bank: typical', s.clip === 'typical', setClip('typical')), opt('Bank: big', s.clip === 'big', setClip('big'))] },
+      { label: 'Payout', opts: [opt('Real', !s.resc, () => this.setState({ resc: false })), opt('Rescaled', s.resc, () => this.setState({ resc: true }))] },
+      { label: 'Timer', opts: [opt('Ring', ring, () => this.setState({ variant: 'ring' })), opt('Fuse', !ring, () => this.setState({ variant: 'fuse' }))] },
+      { label: 'Backdrop', opts: ['Coast', 'Forest', 'Peak', 'Evening'].map((n, k) => opt(n, s.bg === k, () => this.setState({ bg: k }))) }
+    ];
+    const pay = L && L.end === 'bank' ? (s.resc ? L.points : L.pay) : 0;
+
+    return {
+      groups: groups,
+      bg0: 'opacity:' + (s.bg === 0 ? 1 : 0), bg1: 'opacity:' + (s.bg === 1 ? 1 : 0), bg2: 'opacity:' + (s.bg === 2 ? 1 : 0), bg3: 'opacity:' + (s.bg === 3 ? 1 : 0),
+      money: 'left:138px;top:26px;height:28px;padding:0 20px 0 9px;pointer-events:none;opacity:' + moneyA.toFixed(3) + ';transform:translateX(' + (-10 * (1 - moneyA)).toFixed(1) + 'px)',
+      moneyCoin: 'display:block;width:20px;height:20px;margin-right:6px;filter:drop-shadow(0 0 ' + (6 * coinFlash).toFixed(1) + 'px rgba(255,214,107,' + (0.9 * coinFlash).toFixed(2) + '))',
+      moneyNum: 'display:inline-block;font-size:19px;line-height:28px;color:' + mix(GOLD, '#fff8df', mKick) + ';transform:scale(' + (1 + 0.16 * mKick).toFixed(3) + ');transform-origin:left center',
+      moneyText: grp(total),
+      plus: 'font-size:13px;color:#f6f3ea;overflow:hidden;max-width:' + (plusA * 70).toFixed(1) + 'px;margin-left:' + (7 * plusA).toFixed(1) + 'px;opacity:' + plusA.toFixed(3), plusText: plusText,
+      flt: s.xEarn ? 'display:flex;align-items:center;margin-left:6px' : 'display:none', fltText: '+' + grp(total - base + (s.resc ? 0 : C.flight0)),
+      c0: coins[0], c1: coins[1], c2: coins[2], c3: coins[3], c4: coins[4], c5: coins[5],
+      kB: kB.plate, kBbg: kB.bg, kBkey: kB.k, kBword: kB.w, kZ: kZ.plate, kZbg: kZ.bg, kZkey: kZ.k, kZword: kZ.w,
+      spd: 'display:flex;align-items:center;overflow:hidden;max-width:' + (spdA * 110).toFixed(1) + 'px;opacity:' + spdA.toFixed(3),
+      spdNum: 'display:block;flex:none;width:30px;text-align:right;font-size:17px;color:' + (top ? GOLD : CREAM), spdText: String(Math.round(v)),
+      sMark: 'display:block;width:14px;height:14px;color:' + sCol + ';transform:scale(' + (surging ? 1.08 + 0.1 * pulse : 1).toFixed(3) + ')',
+      cells: 'display:flex;gap:2px;margin:0 7px 0 6px;box-shadow:' + cellsGlow,
+      cell0: cell(0), cell1: cell(1), cell2: cell(2), cell3: cell(3), cell4: cell(4),
+      rMark: 'display:block;width:15px;height:15px;color:' + rCol + ';transform:rotate(' + spin.toFixed(1) + 'deg) scale(' + (ready ? 1 + 0.08 * breath : 1).toFixed(3) + ');filter:' + (ready || hot ? 'drop-shadow(0 0 4px rgba(255,214,107,.8))' : 'none'),
+      blk: 'position:absolute;left:356px;top:390px;transform-origin:20px 15px;pointer-events:none;transform:translateY(' + drop.toFixed(1) + 'px) rotate(' + (lost ? -6 + 3 * sm(0.5, 1.4, t - L.endT) : -6).toFixed(2) + 'deg);opacity:' + blockA.toFixed(3),
+      readyBy: 'position:absolute;left:-40px;top:-10px;width:34px;opacity:' + readyByA.toFixed(3) + ';transform:scale(' + (ra >= 0 ? pop(ra) : 1).toFixed(3) + ')',
+      halo: 'position:absolute;left:-4px;top:-4px;right:-4px;bottom:-4px;border-radius:50%;box-shadow:0 0 ' + (lost ? 14 : 12) + 'px 3px rgba(' + haloCol + ',' + haloA.toFixed(2) + ')',
+      arc: ring && !lost ? 'position:absolute;left:-3px;top:-3px;right:-3px;bottom:-3px;border-radius:50%;background:conic-gradient(' + arcCol + ' 0 ' + (share * 100).toFixed(2) + '%,' + trackCol + ' ' + (share * 100).toFixed(2) + '% 100%)' : 'display:none',
+      face: 'position:absolute;left:0;top:0;right:0;bottom:0;border-radius:50%;background:#16181d;box-shadow:inset 0 0 0 1.5px ' + (ring && !lost ? 'rgba(14,16,19,1)' : rim),
+      gTree: glyph('tree'), gRock: glyph('rock'), gArch: glyph('arch'), gKnife: glyph('knife'), gBank: glyph('bank'),
+      crack: 'position:absolute;left:6px;top:6px;width:28px;height:28px;opacity:' + crackA.toFixed(2) + ';transform:translate(' + shake[0].toFixed(1) + 'px,' + shake[1].toFixed(1) + 'px)',
+      flash: 'position:absolute;left:0;top:0;right:0;bottom:0;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,248,223,' + flashA.toFixed(2) + '),rgba(255,248,223,0) 70%)',
+      lostLab: lost ? 'font-size:10.5px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:' + LOST + ';margin-right:9px' : 'display:none',
+      tot: 'display:inline-block;font-size:25px;line-height:30px;color:' + totCol + ';text-shadow:' + totGlow + ';transform:' + (totXf || 'none') + ';transform-origin:left center',
+      totText: totText,
+      mulWrap: 'display:inline-flex;flex-direction:column;transform:translateY(1px);margin-left:' + (mulW >= 0 ? lerp(0, 9, mulW / 46).toFixed(1) : 9) + 'px;opacity:' + mulA.toFixed(3) + (mulW >= 0 ? ';max-width:' + mulW.toFixed(1) + 'px;overflow:hidden' : ''),
+      mul: 'display:block;line-height:17px;font-size:' + mulPx.toFixed(1) + 'px;color:' + mulCol + ';text-shadow:' + mulGlow + ';transform:scale(' + mulScale.toFixed(3) + ');transform-origin:left center',
+      mulText: mulText, seg0: seg(0), seg1: seg(1), seg2: seg(2),
+      best: 'font-size:10px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:#fff3c9;overflow:hidden;max-width:' + (bestA * 80).toFixed(1) + 'px;margin-left:' + (10 * bestA).toFixed(1) + 'px;opacity:' + bestA.toFixed(3),
+      step: stepStyle, stepText: stepText,
+      fuse: !ring && !lost && phase !== 'idle' ? 'position:absolute;left:30px;right:15px;bottom:-5px;height:3px;background:rgba(14,16,19,.85);transform:skewX(-14deg)' : 'display:none',
+      fuseFill: 'display:block;height:100%;width:' + (share * 100).toFixed(2) + '%;background:' + arcCol + ';box-shadow:0 0 6px rgba(255,211,107,' + (arcCol === GOLD || arcCol === '#fff3c9' ? 0.7 : 0) + ')',
+      t2: 'position:absolute;left:34px;top:' + (ring ? 33 : 37) + 'px;height:20px;display:grid;align-items:center;box-sizing:border-box;padding:0 17px 0 11px;white-space:nowrap;opacity:' + t2A.toFixed(3),
+      rep: 'grid-area:1/1;display:flex;align-items:center;gap:7px;opacity:' + repA.toFixed(3),
+      repName: 'font-size:11.5px;font-weight:500;letter-spacing:.14em;color:' + repNameCol, repNameText: repName,
+      repDist: 'font-size:14px;color:' + repDistCol, repDistText: repDist,
+      repTag: 'font-size:10px;font-weight:500;letter-spacing:.18em;color:' + repTagCol, repTagText: repTag,
+      trail: 'grid-area:1/1;display:flex;align-items:center;gap:9px;opacity:' + trailA.toFixed(3),
+      beads: beads.map(beadOf),
+      pen: 'position:absolute;left:18px;top:' + (ring ? 38 : 40) + 'px;overflow:hidden;max-width:' + penW.toFixed(1) + 'px;filter:drop-shadow(0 3px 0 rgba(14,16,19,.4))',
+      penName: nameA > 0 ? 'font-size:15px;line-height:20px;font-style:italic;font-weight:600;letter-spacing:.1em;color:#8c2a16;opacity:' + nameA.toFixed(3) : 'display:none',
+      penNameText: L && L.name ? L.name : '',
+      pbeads: pbeads.map((r) => Object.assign(beadOf(r), { style: 'display:flex;align-items:center;gap:3px;opacity:' + r.a.toFixed(3) + ';transform:scale(' + r.sc.toFixed(3) + ')',
+        seal: 'display:block;width:18px;height:18px;border-radius:50%;background:#16181d;box-shadow:' + (r.fl ? '0 0 0 1.5px #f4eedc,0 0 0 3px #8c2a16' : 'none') + ';margin-right:' + (r.fl ? 3 : 0) + 'px' })),
+      penRow2: 'display:flex;align-items:center;height:20px;margin-top:3px;opacity:' + row2A.toFixed(3),
+      paySeal: 'display:block;width:18px;height:18px;border-radius:50%;background:#16181d;opacity:' + payDim.toFixed(2),
+      payStyle: 'font-size:15px;color:#1b1d22;margin-left:4px;opacity:' + payDim.toFixed(2), payText: '+' + grp(pay),
+      closestText: L && L.closest ? L.closest : '',
+      fall0: fall[0], fall1: fall[1],
+      toggle: () => { const st = this.state, end = this.data()[st.clip].END; if (!st.playing && st.t >= end) this.setState({ t: 0, playing: true }); else this.setState({ playing: !st.playing }); },
+      playLabel: s.playing ? 'Pause' : 'Play',
+      replay: () => this.setState({ t: 0, playing: true }),
+      tmax: Math.round(C.END * 100), tv: Math.round(t * 100), scrub: (e) => this.setState({ t: Number(e.target.value) / 100, playing: false }),
+      clock: t.toFixed(1) + ' s  ·  ' + steps[act][0],
+      steps: steps.map((d, k) => ({ label: d[0], go: () => this.jump(d[1]), style: k === act ? on : '' })),
+      rescNote: s.resc ? 'margin:0;font-size:12.5px;color:#f7922e' : 'display:none'
+    };
+  }
+}
+</script>
+</body>
+</html>
