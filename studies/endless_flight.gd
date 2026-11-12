@@ -196,6 +196,7 @@ const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
 const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
 const NearMissHudRing = preload("res://scripts/endless/near_miss_hud_ring.gd")
 const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
+const NearMissHudPlate = preload("res://scripts/endless/near_miss_hud_plate.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 ## Low over water: the cushion, the spray, the wake's marks, the wet screen.
 const WaterContact = preload("res://scripts/endless/water_contact.gd")
@@ -1058,8 +1059,11 @@ func _build_ui() -> void:
 	_stop_cue.add_theme_constant_override("outline_size",4)
 	_stop_cue.visible = false
 	layer.add_child(_stop_cue)
-	# The near misses' HUD: the ring by the plane (scripts/endless/near_miss_hud_ring.gd,
-	# the Line HUD canvas's C2). --near-hud=tag (or handoff, handoff-tag) the design
+	# The near misses' HUD: the flight UI's plate and trail by the plane
+	# (scripts/endless/near_miss_hud_plate.gd; --near-hud=plate names it;
+	# --chain-timer=fuse, --chain-best=0). --near-hud=ring the ring before it
+	# (scripts/endless/near_miss_hud_ring.gd, the Line HUD canvas's C2).
+	# --near-hud=tag (or handoff, handoff-tag) the design
 	# handoff's tag before it (scripts/endless/near_miss_hud_handoff.gd, in the tag
 	# or at the top as the player keeps it, H switches); --near-hud=glyph the earlier
 	# trial (gilt numbers in a tag), --near-hud=classic the first plain text.
@@ -1067,7 +1071,8 @@ func _build_ui() -> void:
 	if "--near-hud=glyph" in hud_args: _near_hud = NearMissHudGlyph.new()
 	elif "--near-hud=classic" in hud_args: _near_hud = NearMissHud.new()
 	elif "--near-hud=tag" in hud_args or "--near-hud=handoff" in hud_args or "--near-hud=handoff-tag" in hud_args: _near_hud = NearMissHudHandoff.new()
-	else: _near_hud = NearMissHudRing.new()
+	elif "--near-hud=ring" in hud_args: _near_hud = NearMissHudRing.new()
+	else: _near_hud = NearMissHudPlate.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
 	if FlightHud.wanted(): flight_hud = FlightHud.make(self,layer)
