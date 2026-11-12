@@ -1085,9 +1085,13 @@ func _build_ui() -> void:
 		# the new chain HUD and the new corner HUD both up.
 		if _near_hud is NearMissHudPlate: coin_flight = CoinFlight.make(layer,_near_hud,flight_hud)
 	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
-	summary = preload("res://scripts/endless/landing_summary.gd").new(self)
+	# The flight UI's slip and book; --ui=old, --landing=old and --logbook=old
+	# give the dark card and page before them.
+	if ui_old() or _has_arg("--landing=old"): summary = preload("res://scripts/endless/landing_summary.gd").new(self)
+	else: summary = preload("res://scripts/endless/ui/landing_slip.gd").new(self)
 	layer.add_child(summary)
-	logbook = preload("res://scripts/endless/logbook_view.gd").new(self)
+	if ui_old() or _has_arg("--logbook=old"): logbook = preload("res://scripts/endless/logbook_view.gd").new(self)
+	else: logbook = preload("res://scripts/endless/ui/logbook_book.gd").new(self)
 	layer.add_child(logbook)
 	_fade = ColorRect.new()
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)

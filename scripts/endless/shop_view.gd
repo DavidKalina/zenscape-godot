@@ -8,6 +8,7 @@ extends Control
 
 const ShopStock = preload("res://scripts/endless/shop_stock.gd")
 const Pad = preload("res://scripts/pad.gd")
+const StickSteps = preload("res://scripts/endless/ui/stick_steps.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
 
@@ -161,6 +162,8 @@ func _word(px: float, track: float) -> FontVariation:
 	_words[f] = roundi(px)
 	return f
 
+var _stick := StickSteps.new()
+
 func _process(delta: float) -> void:
 	# Over a CanvasLayer the anchors alone leave it no size: the screen's.
 	var screen := get_viewport_rect().size
@@ -170,6 +173,9 @@ func _process(delta: float) -> void:
 	if _note_left > 0.0:
 		_note_left -= delta
 		if _note_left <= 0.0: _note.text = ""
+	# The stick: one row a lean, then repeats while held (stick_steps.gd).
+	var lean := _stick.step(delta)
+	if lean.y != 0: choose(lean.y)
 
 func _unhandled_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
@@ -180,12 +186,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ENTER, KEY_KP_ENTER: act()
 			KEY_ESCAPE: leave()
 			_: return
-		get_viewport().set_input_as_handled()
-	elif Pad.pressed(event,&"move_forward"):
-		choose(-1)
-		get_viewport().set_input_as_handled()
-	elif Pad.pressed(event,&"move_back"):
-		choose(1)
 		get_viewport().set_input_as_handled()
 	elif event is InputEventJoypadButton and event.pressed:
 		match (event as InputEventJoypadButton).button_index:
