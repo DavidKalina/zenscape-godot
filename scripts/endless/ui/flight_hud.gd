@@ -223,7 +223,8 @@ func _process(delta: float) -> void:
 	_clock += dt
 	if not _taken: _take_over()
 	var overlay: Object = game.get("overlay")
-	var open := game.get("stage") == null and (overlay == null or bool(overlay.get("keeps_flight_hud")))
+	var keeps: bool = overlay != null and overlay.get("keeps_flight_hud") == true
+	var open: bool = game.get("stage") == null and (overlay == null or keeps)
 	_a = move_toward(_a,1.0 if open else 0.0,dt/0.25)
 	var numbers: Control = game.get("_hud")
 	_top_a = move_toward(_top_a,0.0 if numbers != null and numbers.visible else 1.0,dt/0.2)

@@ -21,6 +21,9 @@ const ControlsPage = preload("res://scripts/endless/ui/controls_page.gd")
 
 const WASH_IN := 0.2
 
+## The flight HUD stays up under the pause slip (FlightHud reads this off the
+## game's overlay): the money shows while paused.
+var keeps_flight_hud := true
 var _open := false
 ## The logbook is up over the held flight; back here when it closes.
 var _away := false
