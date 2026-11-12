@@ -7,7 +7,7 @@ extends Control
 ## - top left: the finds chip (mark, found / total), the money chip beside it
 ##   (coin, total, "+N", and behind a switch what the flight earned), the
 ##   region tag under them when a region is entered, a find's name under that;
-## - lower right: the charge and the speed in one plate (chevrons, five cells,
+## - lower right: the charge and the speed in one plate (surge mark, five cells,
 ##   roll mark; km/h before them), and over it the key plates ("B SURGE",
 ##   "Z ROLL") when each first becomes available and while it is held;
 ## - lower left: the short hint from takeoff, and the landing's stop cue.
@@ -32,7 +32,8 @@ extends Control
 ##   `top_alpha()`: the coin flight's hooks (coin_flight.gd). `up` is the HUD
 ##   on screen and `cells_point()` where its charge cells are.
 ## - `draw_coin`, `draw_roll`, `draw_surge`, `draw_finds_mark`: the marks,
-##   one function each, for the glyph set to take over.
+##   one function each, each a glyph of near_glyphs.gd (`coin`, `roll`,
+##   `surge`, `relic`); `glyph` draws any id at a mock-up's size.
 
 const Kit = preload("res://scripts/endless/ui/ui_kit.gd")
 const Pad = preload("res://scripts/pad.gd")
@@ -111,6 +112,8 @@ const KICK := Color("fff8df")
 const HOT := Color("fff3c9")
 const SURGING := Color("ffe7a3")
 const MARK_OFF_A := 0.32
+## An unlit charge mark's glyph (the bone ground) shows this much.
+const MARK_UNLIT_A := 0.42
 ## The hint stays this long from takeoff, and every fade of a corner piece.
 const HINT_HOLD := 6.5
 const FADE := 0.6
@@ -541,7 +544,7 @@ func _draw_charge(k: float) -> void:
 	if a <= 0.003: return
 	var speed_a := _spd_a
 	if not _charge_on and speed_a <= 0.003: return
-	# Right to left from the plate's right pad: roll mark, cells, chevrons, then the speed.
+	# Right to left from the plate's right pad: roll mark, cells, surge mark, then the speed.
 	var bottom := size.y-26.0*k
 	var cy := bottom-13.0*k
 	var right := size.x-28.0*k
@@ -561,9 +564,8 @@ func _draw_charge(k: float) -> void:
 	if not _charge_on: return
 	var ready := _meter >= 0.999 and not _hot
 	var pulse := 0.5+0.5*sin(_clock*25.0)
-	# The chevrons: lit while there is any charge to hold a surge on.
-	var s_col := Color(Kit.CREAM,MARK_OFF_A) if _meter <= 0.002 else (HOT if _surge or _hot else Kit.GOLD)
-	draw_surge(self,Vector2(x+7.0*k,cy),14.0*k*(1.08+0.1*pulse if _surge else 1.0),Color(s_col,s_col.a*a))
+	# The surge mark: lit while there is any charge to hold a surge on.
+	draw_surge(self,Vector2(x+7.0*k,cy),14.0*k,a,0 if _meter <= 0.002 else (2 if _surge or _hot else 1),1.08+0.1*pulse if _surge else 1.0)
 	# The cells: half a second of surge each, drained from the right.
 	var cells := Rect2(x+20.0*k,cy-2.5*k,93.0*k,5.0*k)
 	var cell_col := HOT if _hot else (SURGING if _surge else (Kit.GOLD if ready else Kit.CELL))
@@ -577,10 +579,9 @@ func _draw_charge(k: float) -> void:
 		var fill := clampf(_meter*5.0-i,0.0,1.0)
 		if fill > 0.0: Kit.slant(self,Rect2(cell.position,Vector2(cell.size.x*fill,cell.size.y)),Color(cell_col,a))
 	# The roll mark: lit only on a full meter, spun and spent by the surge roll.
-	var r_col := HOT if _hot else (Kit.GOLD if ready else Color(Kit.CREAM,MARK_OFF_A))
 	var spin := TAU*2.0*(1.0-pow(1.0-clampf(_roll_age/0.62,0.0,1.0),2.0)) if _hot else 0.0
 	var breath := 1.0+0.08*(0.5+0.5*sin(_clock*3.4)) if ready else 1.0
-	draw_roll(self,Vector2(right-12.0*k-7.5*k,cy),15.0*k*breath,Color(r_col,r_col.a*a),spin,ready or _hot)
+	draw_roll(self,Vector2(right-12.0*k-7.5*k,cy),15.0*k,a,2 if _hot else (1 if ready else 0),breath,spin)
 	if not hints_on(): return
 	# The key plates over the plate: a key's first chance, and while it is held.
 	var pad := Pad.using_pad()
@@ -603,30 +604,54 @@ func _glow(r: Rect2, col: Color, blur: float) -> void:
 		var g := blur*(i+1)/4.0
 		draw_rect(Rect2(r.position-Vector2(g,g*0.7),r.size+Vector2(g,g*0.7)*2.0),Color(col,col.a*0.11))
 
-# --- The marks: one function each, for the glyph set to take over -------------------------
+# --- The marks: one function each, the one place each is drawn ----------------------------
+#
+# Each is a glyph of near_glyphs.gd's set of 2026-11-11, `d` across its
+# 24-unit box about `c`: `coin`, `relic`, `surge`, `roll`. No sun: with
+# today's drawing in force (`Glyphs.old`: --glyphs=old), where money, the
+# charge and the roll are all the one sun, the coin, the surge and the roll
+# keep the lane's plain marks (a gold disc, the chevrons, the ring and arrow).
 
-## The money's coin, `d` across at `c`: a gold disc with a rim (the glyph
-## set's `coin` goes here). `flash` 0..1 lights it as a coin lands.
-static func draw_coin(ci: CanvasItem, c: Vector2, d: float, a := 1.0, flash := 0.0) -> void:
+## A glyph `d` across its 24-unit box about `c` (its texture's pad round the
+## box is allowed for). Rasterised at `d`, or at `rest` when that is given (a
+## mark that grows, breathes or turns: one texture, scaled). False if the
+## drawing in force has no such glyph.
+static func glyph(ci: CanvasItem, id: String, variant: String, c: Vector2, d: float, mod := Color.WHITE, rest := 0.0) -> bool:
+	var px := maxf(roundf(rest if rest > 0.0 else d),6.0)
+	var tex := Glyphs.texture(id,variant,px)
+	if tex == null: return false
+	if mod.a <= 0.003: return true
+	var sz := Vector2(tex.get_size())
+	var at := (c-sz*0.5).round()
+	if rest > 0.0:
+		sz *= d/px
+		at = c-sz*0.5
+	ci.draw_texture_rect(tex,Rect2(at,sz),false,mod)
+	return true
+
+## The money's coin, `d` across at `c`: the glyph set's `coin` (the chip's,
+## and each coin in the air: coin_flight.gd). `flash` 0..1 lights it as a coin
+## lands. `rest` is its size at rest when `d` is a size in motion.
+static func draw_coin(ci: CanvasItem, c: Vector2, d: float, a := 1.0, flash := 0.0, rest := 0.0) -> void:
 	var r := d*0.5
 	if flash > 0.003:
 		for i in 3: ci.draw_circle(c,r+d*0.1*(i+1),Color(1.0,0.84,0.42,0.22*flash*a),true,-1.0,true)
+	if Glyphs.mode() != "old":
+		# Its shadow on the plate (and on a bright sky), then the coin.
+		ci.draw_circle(c+Vector2(0.0,d*0.05),r*0.82,Color(Kit.NIGHT,0.5*a),true,-1.0,true)
+		glyph(ci,"coin","icon",c,d,Color(1,1,1,a),rest)
+		if flash > 0.003: glyph(ci,"coin","lit",c,d,Color(1,1,1,a*flash),rest)
+		return
 	ci.draw_circle(c+Vector2(0.0,d*0.05),r*0.92,Color(Kit.NIGHT,0.5*a),true,-1.0,true)
 	ci.draw_circle(c,r*0.9,Color(Color("b9812a").lerp(Kit.GOLD,flash*0.5),a),true,-1.0,true)
 	ci.draw_circle(c,r*0.68,Color(Kit.GOLD.lerp(KICK,flash),a),true,-1.0,true)
 	ci.draw_arc(c,r*0.5,PI*1.05,PI*1.6,8,Color(KICK,0.8*a),maxf(d*0.07,1.0),true)
 
-## The finds' mark, `d` across at `c`: today's `relic` glyph. `gleam` 0..1
+## The finds' mark, `d` across at `c`: the `relic` glyph. `gleam` 0..1
 ## lights it as a find is made.
 static func draw_finds_mark(ci: CanvasItem, c: Vector2, d: float, a := 1.0, gleam := 0.0) -> void:
-	var px := maxf(roundf(d/2.0)*2.0,8.0)
-	var side := px*Glyphs.BOX/24.0
-	var r := Rect2(c-Vector2.ONE*side*0.5,Vector2.ONE*side)
-	var tex := Glyphs.texture("relic","icon",px)
-	if tex != null: ci.draw_texture_rect(tex,r,false,Color(1,1,1,a))
-	if gleam > 0.003:
-		var lit := Glyphs.texture("relic","lit",px)
-		if lit != null: ci.draw_texture_rect(lit,r,false,Color(1,1,1,a*gleam))
+	glyph(ci,"relic","icon",c,d,Color(1,1,1,a))
+	if gleam > 0.003: glyph(ci,"relic","lit",c,d,Color(1,1,1,a*gleam))
 
 ## A stroked path on the mock-up's 16-unit box, `d` across about `c`, round
 ## at its ends and corners.
@@ -638,23 +663,47 @@ static func _stroke(ci: CanvasItem, pts: PackedVector2Array, c: Vector2, d: floa
 	ci.draw_polyline(at,col,w,true)
 	for p in at: ci.draw_circle(p,w*0.5,col,true,-1.0,true)
 
-## The surge's chevrons, `d` across at `c` (the glyph set's `surge` swirl
-## goes here).
-static func draw_surge(ci: CanvasItem, c: Vector2, d: float, col: Color) -> void:
-	if col.a <= 0.003: return
-	_stroke(ci,PackedVector2Array([Vector2(3,3),Vector2(8,8),Vector2(3,13)]),c,d,col)
-	_stroke(ci,PackedVector2Array([Vector2(8,3),Vector2(13,8),Vector2(8,13)]),c,d,col)
+## A charge mark's three states as one glyph: 0 unlit (the bone ground,
+## faint), 1 lit (its own colour), 2 hot (lit up).
+static func _state_glyph(ci: CanvasItem, id: String, c: Vector2, d: float, a: float, state: int, rest: float) -> void:
+	if state <= 0: glyph(ci,id,"bone",c,d,Color(1,1,1,MARK_UNLIT_A*a),rest)
+	else: glyph(ci,id,"lit" if state >= 2 else "icon",c,d,Color(1,1,1,a),rest)
 
-## The roll mark, `d` across at `c`, turned `spin` radians: the mock-up's
-## own drawing (an open ring with an arrow head; the glyph set's `roll` goes
-## here). `lit` puts a little light under it.
-static func draw_roll(ci: CanvasItem, c: Vector2, d: float, col: Color, spin := 0.0, lit := false) -> void:
-	if col.a <= 0.003: return
-	var u := d/16.0
-	var w := maxf(1.9*u,1.0)
+## A charge mark's colour in the lane's plain drawing.
+static func _state_col(a: float, state: int) -> Color:
+	if state <= 0: return Color(Kit.CREAM,MARK_OFF_A*a)
+	return Color(HOT if state >= 2 else Kit.GOLD,a)
+
+## The surge's mark, `d` across at `c`, grown `grow`: the glyph set's `surge`
+## (the swirl), where the mock-up has its chevrons. `state` 0 no charge, 1
+## charge to hold a surge on, 2 surging or hot.
+static func draw_surge(ci: CanvasItem, c: Vector2, d: float, a := 1.0, state := 1, grow := 1.0) -> void:
+	if a <= 0.003: return
+	if Glyphs.mode() != "old":
+		_state_glyph(ci,"surge",c,d*grow,a,state,d)
+		return
+	var col := _state_col(a,state)
+	_stroke(ci,PackedVector2Array([Vector2(3,3),Vector2(8,8),Vector2(3,13)]),c,d*grow,col)
+	_stroke(ci,PackedVector2Array([Vector2(8,3),Vector2(13,8),Vector2(8,13)]),c,d*grow,col)
+
+## The roll mark, `d` across at `c`, grown `grow` and turned `spin` radians:
+## the glyph set's `roll`, the same glyph as the chain HUD's ROLL notice
+## (near_miss_hud_plate.gd `_paint_ready`). `state` 0 not ready, 1 ready (a
+## full meter), 2 hot (the surge roll); lit, it has a little light under it.
+static func draw_roll(ci: CanvasItem, c: Vector2, d: float, a := 1.0, state := 1, grow := 1.0, spin := 0.0) -> void:
+	if a <= 0.003: return
+	var across := d*grow
 	ci.draw_set_transform(c,spin,Vector2.ONE)
-	if lit: ci.draw_arc(Vector2.ZERO,5.0*u,deg_to_rad(-30.2),deg_to_rad(-360.0),24,Color(1.0,0.84,0.42,0.3*col.a),w*2.6,true)
-	ci.draw_arc(Vector2.ZERO,5.0*u,deg_to_rad(-30.2),deg_to_rad(-360.0),24,col,w,true)
-	ci.draw_circle(Vector2(5.0*u,0.0),w*0.5,col,true,-1.0,true)
-	_stroke(ci,PackedVector2Array([Vector2(12.9,2.1),Vector2(12.6,5.8),Vector2(9.0,5.3)]),Vector2.ZERO,d,col)
+	if Glyphs.mode() != "old":
+		if state > 0:
+			for i in 3: ci.draw_circle(Vector2.ZERO,across*(0.42+0.07*(i+1)),Color(1.0,0.84,0.42,0.09*a),true,-1.0,true)
+		_state_glyph(ci,"roll",Vector2.ZERO,across,a,state,d)
+	else:
+		var col := _state_col(a,state)
+		var u := across/16.0
+		var w := maxf(1.9*u,1.0)
+		if state > 0: ci.draw_arc(Vector2.ZERO,5.0*u,deg_to_rad(-30.2),deg_to_rad(-360.0),24,Color(1.0,0.84,0.42,0.3*col.a),w*2.6,true)
+		ci.draw_arc(Vector2.ZERO,5.0*u,deg_to_rad(-30.2),deg_to_rad(-360.0),24,col,w,true)
+		ci.draw_circle(Vector2(5.0*u,0.0),w*0.5,col,true,-1.0,true)
+		_stroke(ci,PackedVector2Array([Vector2(12.9,2.1),Vector2(12.6,5.8),Vector2(9.0,5.3)]),Vector2.ZERO,across,col)
 	ci.draw_set_transform(Vector2.ZERO,0.0,Vector2.ONE)

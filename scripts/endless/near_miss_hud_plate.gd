@@ -23,17 +23,19 @@ extends "res://scripts/endless/near_miss_hud_handoff.gd"
 ##   pull-out) only ticks the total.
 ## - the bank: the multiplier folds into the total, which counts up to what
 ##   was banked; `bank` lands in the disc; the cream pennant unrolls under the
-##   plate, short of the wing: the line's runs stamped as seals (a flourish's
-##   ringed in red), then the money and the closest pass; the arc runs the
+##   plate, short of the wing: the line's runs stamped as seals (their glyphs
+##   in the ink ground, a flourish's ringed in red), then the money (the
+##   `coin` glyph, the money chip's) and the closest pass; the arc runs the
 ##   pennant's PENNANT s down. "Flight best" on the plate when it beat this
 ##   flight's best line (`show_best`, --chain-best=0 off). A new pass cuts it
 ##   short. `banked` fires as the money row shows; `pennant_money_anchor` is
 ##   where it is.
-## - lost (a scrape or crash with a line up): the disc rimmed coral round the
-##   cracked glyph of what was hit, LINE LOST and the loss, the trail's glyphs
-##   falling away grey, the block sagging.
-## - roll ready: `_ready_id`'s mark by the tag for READY_TIME s when the meter
-##   fills during a line.
+## - lost (a scrape or crash with a line up): the disc rimmed coral round how
+##   it was lost (`crash` or `scrape`, in the loss ground; under today's
+##   drawing the cracked glyph of what was hit), LINE LOST and the loss, the
+##   trail's glyphs falling away grey, the block sagging.
+## - roll ready: `_ready_id`'s mark (`roll`, the corner HUD's roll mark) by the
+##   tag for READY_TIME s when the meter fills during a line.
 ## No meter is drawn here: the charge belongs to the corner HUD.
 
 const Kit = preload("res://scripts/endless/ui/ui_kit.gd")
@@ -66,6 +68,10 @@ const LOSS_TIME_P := 1.4
 const READY_TIME := 2.2
 ## The most runs in the strip's trail and on the pennant.
 const BEADS_MOST := 5
+## The pennant's marks, M across their 24-unit box, in the mock-up's 18 M
+## seal: a run's glyph stamped in ink, and the money's coin.
+const SEAL := 17.0
+const COIN := 18.0
 
 const CLOSE_C := Color("f7dc8a")
 const RAZOR_C := Color("ffb640")
@@ -128,6 +134,7 @@ var _v_halo := 0.0
 var _v_halo_col := GOLD
 var _v_rim := Color(CREAM,0.3)
 var _v_glyph := ""
+var _v_glyph_variant := "icon"
 var _v_glyph_grow := 1.0
 var _v_glyph_a := 1.0
 var _v_flash := 0.0
@@ -394,6 +401,7 @@ func _compose(near: NearMiss) -> void:
 	_v_halo_col = GOLD
 	_v_rim = Color(CREAM,0.3)
 	_v_glyph = ""
+	_v_glyph_variant = "icon"
 	_v_glyph_grow = 1.0
 	_v_glyph_a = 1.0
 	_v_flash = 0.0
@@ -499,8 +507,15 @@ func _compose_loss() -> void:
 	_v_tot = "−"+_grouped(lost) if lost >= 1.0 else ""
 	_v_tot_col = LOST
 	_v_tot_grow = 1.0+0.15*(1.0-smoothstep(0.0,0.12,a))
-	_v_glyph = str(_loss.id)
-	_v_crack = smoothstep(0.0,0.08,a)
+	# How it was lost: `crash` or `scrape`, in the loss ground. Today's drawing
+	# has no crash: there, what was hit under a crack.
+	if Glyphs.mode() != "old":
+		_v_glyph = "crash" if bool(_loss.crash) else "scrape"
+		_v_glyph_variant = "loss"
+		_v_glyph_grow = _pop(a)
+	else:
+		_v_glyph = str(_loss.id)
+		_v_crack = smoothstep(0.0,0.08,a)
 	_v_rim = Color(LOST,0.75)
 	_v_halo = 0.5*(1.0-smoothstep(0.0,0.5,a))
 	_v_halo_col = LOST
@@ -714,7 +729,7 @@ func _paint_disc() -> void:
 	_circle(c,20.0*k,DISC)
 	_block.draw_arc(c,19.25*k,0.0,TAU,64,KEY if ring else _v_rim,1.5*k,true)
 	var at := c+_v_shake*k
-	if _v_glyph != "": _glyph(_v_glyph,at,28.0,_v_glyph_grow,Color(1,1,1,_v_glyph_a))
+	if _v_glyph != "": _glyph(_v_glyph,at,28.0,_v_glyph_grow,Color(1,1,1,_v_glyph_a),_v_glyph_variant)
 	if _v_crack > 0.01:
 		var crack := PackedVector2Array()
 		for p: Vector2 in [Vector2(8,5),Vector2(11,11),Vector2(9.5,13),Vector2(13,19)]: crack.append(at+(p-Vector2(12,12))*28.0/24.0*k)
@@ -803,8 +818,11 @@ func _paint_pennant() -> void:
 			if fl:
 				_circle(sc,12.0*k,Color(NAME_INK,a))
 				_circle(sc,10.5*k,Color(CLOTH,a))
-			_circle(sc,9.0*k,Color(DISC,a))
-			_glyph(str(bead.g),sc,14.0,1.0,Color(1,1,1,a))
+			# Stamped in ink on the cloth; today's drawing keeps its dark seal.
+			if Glyphs.mode() != "old": _glyph(str(bead.g),sc,SEAL,1.0,Color(1,1,1,a),"ink")
+			else:
+				_circle(sc,9.0*k,Color(DISC,a))
+				_glyph(str(bead.g),sc,14.0,1.0,Color(1,1,1,a))
 			if int(bead.n) > 1: Kit.text(_block,Kit.NUM,str(int(bead.n)),Vector2((18.0+(3.0 if fl else 0.0)+3.0-bw*0.5)*k,0.0),12.0,k,0.0,INK,0.0,a)
 			_block.draw_set_transform_matrix(Transform2D.IDENTITY)
 		x += bw+7.0
@@ -814,8 +832,13 @@ func _paint_pennant() -> void:
 	y += 22.0+3.0+10.0
 	x = ox+14.0
 	var dim := ra*lerpf(1.0,0.45,smoothstep(PAY_AT+COINS_AFTER,PAY_AT+COINS_AFTER+0.6,b))
-	_circle(_p(x+9.0,y),9.0*k,Color(DISC,dim))
-	_glyph("bank",_p(x+9.0,y),14.0,1.0,Color(1,1,1,dim))
+	# The money's coin, the chip's own mark (the coins in the air leave from it).
+	if Glyphs.mode() != "old":
+		_circle(_p(x+9.0,y)+Vector2(0.0,1.0)*k,COIN*0.41*k,Color(INK,0.4*dim))
+		_glyph("coin",_p(x+9.0,y),COIN,1.0,Color(1,1,1,dim))
+	else:
+		_circle(_p(x+9.0,y),9.0*k,Color(DISC,dim))
+		_glyph("bank",_p(x+9.0,y),14.0,1.0,Color(1,1,1,dim))
 	_text(Kit.NUM,pay,x+22.0,y,15.0,0.0,INK,dim)
 	if close_text == "": return
 	x += 22.0+pay_w+9.0

@@ -143,6 +143,7 @@ func _draw() -> void:
 		if a <= 0.003: continue
 		var d := SIZE*k*(0.9+0.35*sin(PI*u))
 		var at := _at(coin)
-		# Its light (the mock-up's 5 px gold shadow), then the chip's own coin.
+		# Its light (the mock-up's 5 px gold shadow), then the chip's own coin
+		# (the `coin` glyph, one texture at the coin's size at rest).
 		for g in 3: draw_circle(at,d*0.5+5.0*k*(g+1)/3.0,Color(GLOW,0.24*a),true,-1.0,true)
-		FlightHud.draw_coin(self,at,d,a)
+		FlightHud.draw_coin(self,at,d,a,0.0,SIZE*k)
