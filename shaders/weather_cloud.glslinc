@@ -52,6 +52,12 @@ const float WX_EVEN = 0.6;
 // (a flat grey polygon on its face seen from below).
 const float WX_BELLY = 0.6;
 const float WX_BOWL = 0.8;
+// A grown cloud over high ground (the Peak) lifted over it only this much less
+// at a whole push (recipe_lift): lifted whole it was squeezed under TOP_MAX
+// to a thin sheet or none (an open patch over the Peak in a storm); not lifted
+// at all the storm swallowed the towers to their feet. Half way, they stand up
+// into the base.
+const float WX_UNLIFT = 0.6;
 // The light (the march): the sky's and the sun's light on the cloud's lower
 // part dimmed to this at a whole storm (.x the base, .y how high in the cloud
 // the dimming reaches, a share of its height), more under a rain cell's
@@ -147,6 +153,22 @@ float wx_base_lift(float hh) {
 float wx_sun(float wsky, float hh) {
 	float sev = clamp(P.spare[7].y, 0.0, 1.0);
 	return mix(1.0, mix(WX_SUN, WX_TOP_SUN, sstep(0.4, 1.0, hh)), sev) * wsky;
+}
+
+// How far under the high layer's deck a low cloud's sample at `p` is (0..1, by
+// severity): a deck over it (the map's high span, standing higher than `p`;
+// a low cloud's top may reach into the deck's lowered base). The sun on it is
+// cut to WX_UNDER_SUN of the deck base's (the deck shades it). Where the map
+// has no deck straight over it (a gap, or the deck lifted over high ground)
+// a push past WX_UNDER_PUSH counts as one: a storm's (the push between its
+// cells is 0.9 of the cover), a shower's only under its rain cells.
+const float WX_UNDER_SUN = 0.25;
+const vec2 WX_UNDER_PUSH = vec2(0.6, 0.95);
+float wx_under(vec3 p) {
+	vec4 w = weather_map(p.xz);
+	float deck = sstep(10.0, 60.0, w.z - w.w) * sstep(0.0, 30.0, w.z - p.y);
+	deck = max(deck, sstep(WX_UNDER_PUSH.x, WX_UNDER_PUSH.y, wx_push(p.xz)));
+	return deck * clamp(P.spare[7].y, 0.0, 1.0);
 }
 
 // --- The far cloud (the march, past the map's reach) -------------------------------

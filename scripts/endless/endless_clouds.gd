@@ -180,6 +180,7 @@ const WX_EXT := 1.8
 const WX_EVEN := 0.6
 const WX_BELLY := 0.6
 const WX_BOWL := 0.8
+const WX_UNLIFT := 0.6
 const WEATHER_AT := 88
 
 ## The collar (endless_collar.gd): a ring of dense cloud the trunk stands with `set_collar`.
@@ -810,6 +811,7 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	if wx_on and k.low: wp = _weather_push(middle+_layer_drift(true))
 	var wx_grows: bool = wp > 0.0 and not k.low and k.kind != "wisp"
 	var r0 := r
+	k.wx = wp if wx_grows else 0.0
 	if wx_grows:
 		r = lerpf(r,cell*BIG_R2.y,WX_EVEN*wp*wp)*(1.0+WX_WIDE*wp*wp)
 		k.b0 = maxf(float(k.b0)-WX_DROP*wp,LOW_BASE.y+30.0)
@@ -851,7 +853,8 @@ func _recipe_lift(k: Dictionary) -> void:
 	var h := hash3(c.x,c.y,int(k.salt))
 	var s := hash3(c.x,c.y,int(k.salt)+1)
 	var fl := _cloud_floor(Vector2(k.middle)+_layer_drift(bool(k.low)),float(k.r)*float(k.ext),bool(k.low))
-	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
+	# Under weather a grown cloud lifted less, by its push (the march's note).
+	if fl.x > float(k.b0): k.b0 = lerpf(fl.x+30.0*fposmod(s.y*13.7+h.x,1.0),float(k.b0),float(k.get("wx",0.0))*WX_UNLIFT)
 	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
 	if bool(k.big) and _wx_on(): k.tall = minf(float(k.tall),maxf(TOP-float(k.b0),0.0)/((LIFT+1.2)*float(k.r)*float(k.main_r)))
 	k.H = minf(float(k.r)*float(k.main_r)*float(k.tall),TOP-float(k.b0))

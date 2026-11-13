@@ -445,7 +445,8 @@ float cluster_gate(vec2 f) {
 // The weather's push on the field and its light (scripts/endless/weather.gd).
 // The import rebuilds this shader only when this file changes: after an edit
 // to the include alone, change this file too (or it runs the old include).
-// Include edit: 2026-11-12 smooth build.
+// Include edit: 2026-11-13 cloud faults (under the deck).
+vec4 weather_map(vec2 xz);
 #include "weather_cloud.glslinc"
 
 // --- Cloud life (P.spare[1].x = 1; --cloud-life=0 is the rigid field) ---------------
@@ -489,6 +490,8 @@ struct Cloud {
 	float profile;
 	float ext;
 	bool low;
+	// The weather's push on it if it grows (0: fair, a low cloud, a wisp).
+	float wx;
 };
 
 // The cloud of cell `c` before it is lifted over the ground (false: none):
@@ -499,6 +502,7 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	k.life = cell_life(c, big, cyc);
 	uint salt = uint(P.drift.z) + (big ? 101u : 211u) + cyc * 977u;
 	k.salt = salt;
+	k.wx = 0.0;
 	bool lifed = P.spare[1].x > 0.5;
 	// (Under weather the life is raised below, so only none at all is out.)
 	if (lifed && k.life < (big && wx_on() ? 1e-6 : 0.01)) return false;
@@ -584,6 +588,7 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	if (by_weather && k.low) return false;
 	float r0 = k.r;
 	if (wx_grows) {
+		k.wx = wp;
 		// Spread by the push's square: a shower's cells grow a little and keep sky
 		// between them, a storm's run together.
 		k.r =mix(k.r, cell * BIG_R2.y, WX_EVEN * wp * wp) * (1.0 + WX_WIDE * wp * wp);
@@ -619,7 +624,12 @@ void recipe_lift(inout Cloud k, ivec2 c, bool big) {
 	vec3 h = hash3(c, salt);
 	vec3 s = hash3(c, salt + 1u);
 	vec2 fl = cloud_floor(k.middle + g_drift, k.r * k.ext, k.low);
-	if (fl.x > k.base) k.base = fl.x + 30.0 * fract(s.y * 13.7 + h.x);
+	// Under weather a grown cloud is lifted less, by its push: lifted whole over
+	// the Peak's towers it lost its height under TOP_MAX (a thin flat sheet,
+	// combed into strands, or none: an open patch in a storm). Unlifted, the
+	// map's floor (weather_texel) drapes its base over the high ground, so the
+	// towers stand up into it.
+	if (fl.x > k.base) k.base = mix(fl.x + 30.0 * fract(s.y * 13.7 + h.x), k.base, k.wx * WX_UNLIFT);
 	if (k.low) k.tall *= mix(1.0, 0.6, fl.y);
 	// Under weather a broad cloud's domes are held round under the slab's top
 	// (its tallest bubble stands base + H (LIFT + 1.2)): cut level there, a
@@ -1003,6 +1013,8 @@ struct Sample {
 	float pocket;
 	float free;
 	float collar;
+	// 1 where the low layer gives the sample.
+	float low;
 };
 
 // How far `p` stands clear of one layer's cloud (m, a lower bound) from its
@@ -1016,7 +1028,7 @@ float layer_free(float y, float top, float base) {
 }
 
 Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
-	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0);
+	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0, 0.0);
 	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
 	vec4 w = weather_smooth(p.xz);
 	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
@@ -1073,6 +1085,9 @@ Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
 		// Thin cloud in the high layer (the wisps, the mid cloud's very rims)
 		// frays into strands.
 		float thin = in_h > in_l ? 1.0 - sstep(10.0, 40.0, w.z - w.w) : 0.0;
+		// Under weather not on a grown cloud: its thin rims and sheets combed
+		// along x streaked its faces (seen from near x, a fan of bright rays).
+		if (thin > 0.0 && wx_on()) thin *= 1.0 - wx_push(p.xz);
 		if (thin > 0.0 && d > 0.0) {
 			// Streaked along the field's x, as wind-combed strands.
 			float strand = textureLod(cauliflower, (p + boil * 2.0) * vec3(1.0 / 260.0, 1.0 / 24.0, 1.0 / 55.0), 0.0).r;
@@ -1089,6 +1104,7 @@ Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
 		s.h = hh;
 		s.pocket = wisp;
 		s.sigma = mix(SIGMA, SIGMA_IN, immersed);
+		s.low = in_h > in_l ? 0.0 : 1.0;
 	}
 	return s;
 }
@@ -1596,10 +1612,16 @@ void march_pass() {
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0);
 			// The weather (weather_cloud.glslinc): dark low down, the tops lit.
 			if (wx_light_on() && s.collar < 0.5) {
-				float wsky = wx_sky(p, s.h);
-				ambient *= wsky * wx_base_lift(s.h);
+				// A cloud under the high layer's deck (a low cloud, the cloud you
+				// fly into) lit as that deck's base, not as a sunlit top: its own
+				// light taps never reach the deck, so it stayed a white lens under
+				// a storm (weather_cloud.glslinc wx_under).
+				float under = s.low > 0.5 ? wx_under(p) : 0.0;
+				float hw = mix(s.h, 0.0, under);
+				float wsky = wx_sky(p, hw);
+				ambient *= wsky * wx_base_lift(hw) * mix(1.0, 0.32 / mix(0.32, 1.0, s.h), under);
 				bounce *= wsky;
-				sun_light *= wx_sun(wsky, s.h) * wx_far_sun(length(p.xz - ro.xz));
+				sun_light *= wx_sun(wsky, hw) * wx_far_sun(length(p.xz - ro.xz)) * mix(1.0, WX_UNDER_SUN, under);
 			}
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
