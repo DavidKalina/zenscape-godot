@@ -52,13 +52,15 @@ TRIGLYPHS = [-H + i * T.BAY / 4 for i in range(5)]   # metopes 2.625 x 2.6
 # ---- helpers the library lacks (named in Notes for merge) ----------------
 
 def slab(p, center, size, yaw=0.0, tilt=(0.0, 0.0), bevel=T.BEVEL, chips=2, chip_depth=(0.15, 0.45),
-         step=0.8, wobble=0.035, breaks=(), floor=None, tone=None, far=False):
+         step=0.8, wobble=0.035, breaks=(), floor=None, tone=None, far=False, hide=()):
     """A long cut block with a grid of vertices on its faces (every `step`
     m), so the paint's streaks and blotches and a gentle wear (`wobble` m,
     noise along the normal) show on a beam 18 m long. `breaks` (+1/-1)
     snaps that x end off as a ragged fresh break. `floor` (Blender z)
     keeps every vertex at or above it: an architrave never sags below the
-    clear height under it."""
+    clear height under it. `hide`: faces no one sees (pressed on the next
+    stone, under the course above), flattened after the wear so they cost
+    one cap each (see _flatten)."""
     r = p.rng
     sx, sy, sz = size
     tmp = bmesh.new()
@@ -123,6 +125,7 @@ def slab(p, center, size, yaw=0.0, tilt=(0.0, 0.0), bevel=T.BEVEL, chips=2, chip
         _cut(tmp, corner - n * d, n, tk, tb)
     for f in tmp.faces:
         f[tt] = t
+    _flatten(tmp, tk, hide)
     m = (Matrix.Translation(Vector(center)) @ Matrix.Rotation(yaw, 4, "Z")
          @ Matrix.Rotation(tilt[1], 4, "Y") @ Matrix.Rotation(tilt[0], 4, "X"))
     if floor is not None:
@@ -134,6 +137,84 @@ def slab(p, center, size, yaw=0.0, tilt=(0.0, 0.0), bevel=T.BEVEL, chips=2, chip
     tmp.free()
     if far:
         p.far_box(center, size, yaw=yaw, tilt=tilt, tone=t)
+
+
+def _dirs(n):
+    """A face normal's directions as '+x', '-z', ...: every axis it leans
+    along by more than 0.3 (a flat face one, a bevel two, a corner three)."""
+    return [("+" if n[i] > 0 else "-") + "xyz"[i] for i in range(3) if abs(n[i]) > 0.3]
+
+
+def _flatten(bm, tk, hide):
+    """Dissolves the faces no one sees into one face per side. `hide` holds
+    directions ('+z', '-y') of the block's own frame, or (direction, x_max)
+    for a side covered only where x < x_max (a stepped break). A face goes
+    when every direction it leans along is hidden there (so a bevel between
+    a hidden top and a seen front stays); fresh breaks always stay. The
+    wear, chips and draws ran first, on the full grid, and the seen faces
+    keep every vertex: they look as before. Points left on a straight run
+    between two flattened faces go too."""
+    if not hide:
+        return
+    bm.normal_update()
+    lim = {}
+    for h in hide:
+        d, xm = (h, math.inf) if isinstance(h, str) else h
+        lim[d] = xm
+    groups = {}
+    for f in bm.faces:
+        if f[tk] == T.BROKEN:
+            continue
+        ds = _dirs(f.normal)
+        if not ds:
+            continue
+        cx = f.calc_center_median().x
+        if all(d in lim and cx < lim[d] for d in ds):
+            groups.setdefault(tuple(ds), []).append(f)
+    flat = set()
+    for fs in groups.values():
+        res = bmesh.ops.dissolve_faces(bm, faces=fs, use_verts=False)
+        flat.update(res["region"])
+    flat = {f for f in flat if f.is_valid}
+    lone = [v for v in bm.verts if len(v.link_edges) == 2 and all(f in flat for f in v.link_faces)]
+    if lone:
+        bmesh.ops.dissolve_verts(bm, verts=lone)
+
+
+def _drop(bm, tk, press=(), hide=()):
+    """Deletes faces no one sees from a small block: every face leaning
+    toward a `press` direction (the block sits flat on a stone that closes
+    it there: a bar's back on the frieze), and every face whose directions
+    all lie in `press` + `hide` (a bottom on the course below, but not the
+    bevel between it and a seen face). Fresh breaks stay."""
+    bm.normal_update()
+    gone = []
+    for f in bm.faces:
+        if f[tk] == T.BROKEN:
+            continue
+        ds = _dirs(f.normal)
+        if any(d in press for d in ds) or (ds and all(d in press or d in hide for d in ds)):
+            gone.append(f)
+    if gone:
+        bmesh.ops.delete(bm, geom=gone, context="FACES")
+
+
+def block(p, *a, press=(), hide=(), **k):
+    """The library's block, its unseen faces dropped (_drop). The block is
+    built on a scratch mesh, so the draws are the library's own."""
+    near = p.near
+    tmp = bmesh.new()
+    T._layers(tmp)
+    p.near = tmp
+    try:
+        out = p.block(*a, **k)
+    finally:
+        p.near = near
+    tk = T._layers(tmp)[0]
+    _drop(tmp, tk, press, hide)
+    T._append(near, tmp)
+    tmp.free()
+    return out
 
 
 def _cut(bm, co, n, tk, tb):
@@ -183,29 +264,39 @@ def _break_end(p, bm, sign, size, tk, tb):
 FASCIAE = (0.8, 0.95, 1.15)   # the architrave's three bands, bottom up; each steps out 0.07
 
 
-def architrave(p, side, ends=(H, H, H), breaks=()):
+def architrave(p, side, ends=(H, H, H), breaks=(), top_to=None, inner_to=math.inf):
     """One face's half of the architrave (`side` -1 front, +1 back), from
     the column centre at -H to `ends` (one x per fascia, bottom up), its
     face in three fasciae stepping out as they rise. One stone, one tone:
-    the fasciae are cut from it, so their seams are tight and unworn."""
+    the fasciae are cut from it, so their seams are tight and unworn.
+    Unseen and flattened: the inner face (on the other stone, to x
+    `inner_to`), each fascia's top (under the next, to x `top_to[i]`; the
+    whole length by default) and the upper two fasciae's bottoms (on the
+    one below, which reaches as far or further). The soffit stays whole."""
     r = p.rng
     tone = p.tone()
     z = Z0 + 0.01
+    inner = "-y" if side > 0 else "+y"
+    top_to = top_to or (math.inf,) * 3
     for i, (h, end) in enumerate(zip(FASCIAE, ends)):
         face = D - 0.07 * (2 - i)
         L = end + H - T.JOINT
         hh = h - (T.JOINT if i == 2 else 0.01)
-        slab(p, ((-H + end) / 2 + r.uniform(-0.015, 0.015), side * (face / 2 + T.JOINT / 4), z + hh / 2),
+        cx = (-H + end) / 2 + r.uniform(-0.015, 0.015)
+        hide = [(inner, inner_to - cx), ("+z", top_to[i] - cx)] + (["-z"] if i > 0 else [])
+        slab(p, (cx, side * (face / 2 + T.JOINT / 4), z + hh / 2),
              (L, face - T.JOINT / 2, hh),
              bevel=0.035 if i < 2 else T.BEVEL, chips=(1, 1, 3)[i], chip_depth=(0.15, 0.4), breaks=breaks,
-             floor=Z0 + 0.005, tone=tone, step=0.9)
+             floor=Z0 + 0.005, tone=tone, step=0.9, hide=hide)
         z += h
 
 
-def course(p, x0, x1, z, height, depth, y=0.0, length=(2.2, 3.6), drop=(), chips=2, shift=0.025, **kw):
+def course(p, x0, x1, z, height, depth, y=0.0, length=(2.2, 3.6), drop=(), chips=2, shift=0.025,
+           press=(), **kw):
     """A course of blocks along x (the library's, with each block set a
     little off true and `drop` block indices left out: missing stones).
-    Returns the x spans that stand, for the far LOD."""
+    Returns the x spans that stand, for the far LOD. `press`: sides closed
+    by a neighbour (_drop)."""
     r = p.rng
     x = x0
     i = 0
@@ -215,9 +306,9 @@ def course(p, x0, x1, z, height, depth, y=0.0, length=(2.2, 3.6), drop=(), chips
         if x1 - (x + L) < 0.9:
             L = x1 - x
         if i not in drop:
-            p.block((x + L / 2 + r.uniform(-shift, shift), y + r.uniform(-shift, shift), z + height / 2),
-                    (L - T.JOINT, depth, height - T.JOINT), yaw=r.uniform(-0.006, 0.006),
-                    chips=r.randint(1, chips), far=False, **kw)
+            block(p, (x + L / 2 + r.uniform(-shift, shift), y + r.uniform(-shift, shift), z + height / 2),
+                  (L - T.JOINT, depth, height - T.JOINT), yaw=r.uniform(-0.006, 0.006),
+                  chips=r.randint(1, chips), far=False, press=press, **kw)
             if spans and abs(spans[-1][1] - x) < 1e-6:
                 spans[-1][1] = x + L
             else:
@@ -243,8 +334,10 @@ def triglyph(p, xc, side, x_lo=-H, x_hi=H, z=Z_FRIEZE, top=None):
         b = min(xc + off + 0.25, x_hi)
         if b - a < 0.12:
             continue
-        p.block(((a + b) / 2, side * (FRIEZE_D + 0.16), z + hgt / 2), (b - a - T.JOINT * 0.5, 0.34, hgt),
-                bevel=0.04, chips=r.choice((0, 0, 1)), chip_depth=(0.05, 0.12), far=False)
+        # Its back sits on the frieze, its foot on the taenia: neither is seen.
+        block(p, ((a + b) / 2, side * (FRIEZE_D + 0.16), z + hgt / 2), (b - a - T.JOINT * 0.5, 0.34, hgt),
+              bevel=0.04, chips=r.choice((0, 0, 1)), chip_depth=(0.05, 0.12), far=False,
+              press=("-y" if side > 0 else "+y",), hide=("-z",))
 
 
 def regula(p, xc, side, x_lo=-H, x_hi=H):
@@ -253,8 +346,8 @@ def regula(p, xc, side, x_lo=-H, x_hi=H):
     b = min(xc + TRI_W / 2, x_hi)
     if b - a < 0.2:
         return
-    p.block(((a + b) / 2, side * (D + 0.05), Z0 + ARCH_H - 0.14), (b - a - T.JOINT, 0.14, 0.26),
-            bevel=0.03, chips=0, far=False)
+    block(p, ((a + b) / 2, side * (D + 0.05), Z0 + ARCH_H - 0.14), (b - a - T.JOINT, 0.14, 0.26),
+          bevel=0.03, chips=0, far=False, press=("-y" if side > 0 else "+y",), hide=("+z",))
 
 
 # ---- lintel ---------------------------------------------------------------
@@ -270,7 +363,8 @@ def build_lintel():
         architrave(p, side)
         # The taenia: a band jutting along the top of each face.
         slab(p, (0.0, side * (D - 0.15), Z0 + ARCH_H + TAENIA_H / 2), (L, 0.54, TAENIA_H - T.JOINT * 0.5),
-             bevel=0.04, chips=1, chip_depth=(0.05, 0.1), step=1.2, wobble=0.015)
+             bevel=0.04, chips=1, chip_depth=(0.05, 0.1), step=1.2, wobble=0.015,
+             hide=("-y" if side > 0 else "+y", "-z"))
         for xc in TRIGLYPHS:
             regula(p, xc, side)
     # The frieze: a core course, triglyphs proud of it on both faces.
@@ -282,8 +376,11 @@ def build_lintel():
     # it; one front corona block and the cap over it gone, another cap
     # block gone at the back.
     zc = Z_CORNICE
+    # The two halves meet in the middle: the back half's inner face closes
+    # the joint, so the front half's goes. (The back half keeps its own: a
+    # joint with no face on either side shows the sky through it.)
     front = course(p, -H, H, zc, CORONA_H, CORNICE_D - T.JOINT / 2, y=-CORNICE_D / 2, drop=(3,),
-                   chips=3, chip_depth=(0.2, 0.5))
+                   chips=3, chip_depth=(0.2, 0.5), press=("+y",))
     back = course(p, -H, H, zc, CORONA_H, CORNICE_D - T.JOINT / 2, y=CORNICE_D / 2, chips=3, chip_depth=(0.2, 0.5))
     # The cap over the missing corona block must go too; spans tell where.
     gap = [(a1, b0) for (a0, a1), (b0, b1) in zip(front, front[1:])]
@@ -343,10 +440,20 @@ def build_lintel_broken():
         # The stone broke in steps along its fasciae: the lowest band
         # reaches furthest, each one above it snapped shorter.
         ends = (end, end - r.uniform(0.6, 1.0), end - r.uniform(1.4, 2.0))
-        architrave(p, side, ends=ends, breaks=(1,))
+        # Unseen only where the stone above or beside still stands: each
+        # fascia's top to the next one's break (the top one's to the taenia's,
+        # drawn just after, at least 0.6 shorter, and the frieze's end), the
+        # front stone's inner face as far as the back stone reaches (its
+        # fasciae end 0 to 2 m short of back_end), the back's all along.
+        architrave(p, side, ends=ends, breaks=(1,), top_to=(ends[1], ends[2], min(ends[2] - 0.6, -H + 3.0)),
+                   inner_to=back_end - 2.0 if side < 0 else math.inf)
         tend = ends[2] - r.uniform(0.3, 0.6)
-        slab(p, ((-H + tend) / 2, side * (D - 0.15), Z0 + ARCH_H + TAENIA_H / 2), (tend + H, 0.54, TAENIA_H - T.JOINT * 0.5),
-             bevel=0.04, chips=1, chip_depth=(0.08, 0.15), step=1.2, wobble=0.015)
+        # Its foot on the fascia (longer), its inner face under the frieze
+        # (to the whole block's end).
+        tx = (-H + tend) / 2
+        slab(p, (tx, side * (D - 0.15), Z0 + ARCH_H + TAENIA_H / 2), (tend + H, 0.54, TAENIA_H - T.JOINT * 0.5),
+             bevel=0.04, chips=1, chip_depth=(0.08, 0.15), step=1.2, wobble=0.015,
+             hide=(("-y" if side > 0 else "+y", -H + 3.0 - tx), "-z"))
         regula(p, -H, side)
     # The frieze: one whole block on the column and a broken one beyond.
     fz = Z_FRIEZE
