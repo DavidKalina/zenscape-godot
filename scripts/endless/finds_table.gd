@@ -101,19 +101,11 @@ const WORLDS := {
 			"title":"The ring down the bay"},
 		{"id":"tower-ring","area":"meadow","kind":"relic","anchor":"way/bay","up":26.0,"offset":Vector3(42.0,0.0,0.0),
 			"title":"The ring at the old tower","hint":"A tower stands at the bay's far end"},
-		# The south meadows: the tower on the way, the door ruin, the strait to the isles.
+		# The south meadows: the tower on the way, the strait to the isles.
 		{"id":"south-tower","area":"south","kind":"relic","anchor":"way/south","up":26.0,"offset":Vector3(32.0,0.0,25.0),
 			"title":"The ring at the meadow tower"},
 		{"id":"gap-ring","area":"south","kind":"relic","at":Vector2(-1300.0,2900.0),"up":16.0,
 			"title":"The ring in the gap"},
-		{"id":"ridge-ring","area":"south","kind":"relic","anchor":"doors/amber-hall","up":10.0,"offset":Vector3(78.0,0.0,-128.0),
-			"title":"The ring at the ruin's door"},
-		{"id":"belfry-ring","area":"south","kind":"relic","anchor":"doors/amber-hall","up":72.0,
-			"title":"The ring between the belfries","hint":"High between the ruin's towers"},
-		{"id":"the-wall","area":"south","kind":"event","book":["door/amber-wall","door/amber-hall"],
-			"title":"The way to the Amberlands","hint":"There is a way out of here"},
-		{"id":"hall-deep","area":"south","kind":"relic","anchor":"doors/amber-hall/deep","hall":true,"up":0.0,
-			"title":"The ring deep in the hall","hint":"Deep inside, where no light should be"},
 		{"id":"strait-ring","area":"south","kind":"relic","at":Vector2(-880.0,3540.0),"up":8.0,
 			"title":"The ring in the strait"},
 		# The foothills: the glacier and its gorge (spec-icefield.md: the long

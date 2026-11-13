@@ -130,10 +130,14 @@ var _hold_began := 0
 ## The walls' height over their base (m): HEIGHT, or less with the Peak.
 var height := HEIGHT
 
-## Whether the doors run: the world has them, and not --doors=0.
+## Whether the doors run: the world has them, and --doors=1 (taken out of
+## play 2026-11-12: no door to the amberlands by default).
 static func wanted(world: RefCounted) -> bool:
-	if "--doors=0" in LaunchArgs.user_args(): return false
-	return world != null and world.has_method("side_of")
+	return flagged() and world != null and world.has_method("side_of")
+
+## Whether --doors=1 asks for the doors.
+static func flagged() -> bool:
+	return "--doors=1" in LaunchArgs.user_args()
 
 ## Placed round the start meadow `start` (XZ) whose takeoff heads along
 ## `heading` (radians, SkyGlide's: forward is (-sin, 0, -cos)).

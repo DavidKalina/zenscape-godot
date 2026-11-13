@@ -310,7 +310,7 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 		for t: RefCounted in field.tunnels_in(x0-pad,z0-pad,x1+pad,z1+pad):
 			out.append_array(preload("res://scripts/endless/tunnel_sites.gd").tree_keepouts(t))
 	# The ruin door's stone and its way in (hall_seat.gd).
-	if seed == 1: out.append_array(preload("res://scripts/endless/hall_seat.gd").tree_keepouts(x0,z0,x1,z1))
+	if seed == 1 and preload("res://scripts/endless/region_doors.gd").flagged(): out.append_array(preload("res://scripts/endless/hall_seat.gd").tree_keepouts(x0,z0,x1,z1))
 	# The way towers (way_towers.gd).
 	if seed == 1: out.append_array(preload("res://scripts/endless/way_towers.gd").tree_keepouts(x0,z0,x1,z1))
 	# The placed sites' clear footprints (placed_list.gd).
