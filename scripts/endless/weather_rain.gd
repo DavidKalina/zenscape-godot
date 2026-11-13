@@ -135,6 +135,11 @@ func step(delta: float, game: Node3D) -> void:
 	var raining := weather.rain_level() > 0.0
 	streaks.visible = here > 0.0
 	rain_air.visible = raining
+	# The rain's air rides the land (its rise is over the ground, as the
+	# clouds' bases are), so the ground under the eye each frame.
+	if raining:
+		var field = game.get("field")
+		if field != null: _air_mat.set_shader_parameter("ground_y",maxf(float(field.height(eye.x,eye.z)),Field.SEA_Y))
 	if streaks.visible:
 		_streak_mat.set_shader_parameter("eye_velocity",vel)
 		_streak_mat.set_shader_parameter("clock",fmod(_clock,4096.0))

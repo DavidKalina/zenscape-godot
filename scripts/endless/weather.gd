@@ -138,6 +138,8 @@ var held_build := 1.0
 ## on building at the clock (over BUILD.x s at pace 1, the cycle's own curve),
 ## for watching a part-built sky grow; -1 off.
 var build_from := -1.0
+## --weather-wet=F holds the land's wetness at F (judging wet land); -1 off.
+var held_wet := -1.0
 var debug := false
 var drift := Vector2.ZERO
 
@@ -168,6 +170,7 @@ static func from_args(flight_seed: int) -> Weather:
 		elif a == "--weather-debug": w.debug = true
 		elif a.begins_with("--weather-build="): w.held_build = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 		elif a.begins_with("--weather-build-from="): w.build_from = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+		elif a.begins_with("--weather-wet="): w.held_wet = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 	w._rng.seed = hash(s)^0x57ea7e
 	w._settle()
 	return w
@@ -180,7 +183,7 @@ func _settle() -> void:
 		if held != FAIR and build_from >= 0.0: _build = build_from
 		_kind_severity = _severity_of(kind)
 	_rain_here = rain_at(_eye)
-	_wet = _rain_here
+	_wet = _rain_here if held_wet < 0.0 else held_wet
 	_publish()
 	RenderingServer.global_shader_parameter_set("zs_lightning",Vector4(0.0,0.0,1e6,0.0))
 
@@ -204,6 +207,7 @@ func step(delta: float, eye: Vector3, wind_dir: Vector2, holding := false) -> vo
 	_rain_here = rain_at(_eye)
 	if _rain_here > _wet: _wet += (_rain_here-_wet)*(1.0-exp(-dt/WET_IN))
 	else: _wet = maxf(_rain_here,_wet-dt/DRY)
+	if held_wet >= 0.0: _wet = held_wet
 	_publish()
 
 func _cycle() -> void:

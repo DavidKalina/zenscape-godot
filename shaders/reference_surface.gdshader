@@ -27,6 +27,8 @@ shader_type spatial;
 // The kit isles' weathered rock (shaders/kit_weather.gdshaderinc; KitLook sets
 // `stone_weather` on its rock and ground, 0 everywhere else).
 #include "res://shaders/kit_weather.gdshaderinc"
+// The weather's wet (zs_soak_turf) on the grass blades.
+#include "res://shaders/weather.gdshaderinc"
 // The look pass's cloud bounce and sky fill (shaders/look_fill.gdshaderinc).
 #include "res://shaders/look_fill.gdshaderinc"
 // The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc; off at 0).
@@ -1148,6 +1150,8 @@ void fragment() {
 		tint = max(vec3(0.0), vec3(grey) + (tint - vec3(grey)) * mix(1.0, NIGHT_NEAR_RICH, night_near));
 		tint *= mix(1.0, NIGHT_NEAR_DIM * min(1.0, pow(NIGHT_NEAR_LEVEL.x / max(grey, 1e-3), NIGHT_NEAR_LEVEL.y)), night_near);
 	}
+	// Wet by the weather (weather lane rain), as the turf under it.
+	if (grass_blades) tint = zs_soak_turf(tint);
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);

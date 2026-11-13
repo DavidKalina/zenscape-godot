@@ -746,7 +746,7 @@ func _publish(delta: float) -> void:
 		# the field's at the eye; a light day's (zs_breeze's own) past its land.
 		var breeze := lerpf(BREEZE,WindField.breeze_of(at_eye),reach)
 		_breeze_here = breeze if _breeze_here < 0.0 else lerpf(_breeze_here,breeze,ease)
-		RenderingServer.global_shader_parameter_set("zs_breeze",_breeze_here)
+		RenderingServer.global_shader_parameter_set("zs_breeze",_breeze_here*_weather_wind(WX_BREEZE))
 		_publish_field()
 		if wind_map != null: wind_map.step(delta,_eye)
 	var travel := delta*AIR_SPEED*(0.5+0.5*minf(strength,2.0)/WIND)
@@ -763,10 +763,21 @@ func _publish(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_flow_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_wind_direction",Vector2(cos(angle),sin(angle)))
-	RenderingServer.global_shader_parameter_set("zs_wind_strength",strength)
+	RenderingServer.global_shader_parameter_set("zs_wind_strength",strength*_weather_wind(WX_STRENGTH))
 	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust)
 	RenderingServer.global_shader_parameter_set("zs_sheen_distance",_sheen)
 	RenderingServer.global_shader_parameter_set("zs_gust_speed",AIR_SPEED)
+
+## The weather's wind (Weather.wind(), 1 fair, up to 1.9 in a storm) as a
+## multiplier on the published wind only, `share` of its rise: the plants lean
+## and the sea works harder, nothing on the CPU reads it (the plane, the
+## gusts' travel and the clouds' drift keep the look's own wind). Exactly 1
+## with no weather or fair.
+const WX_STRENGTH := 0.65
+const WX_BREEZE := 0.45
+func _weather_wind(share: float) -> float:
+	if weather == null: return 1.0
+	return 1.0+share*(float(weather.wind())-1.0)
 
 ## The field's wind at the eye (eased; zs_wind_strength's scale) and how far
 ## the eye is in its land (0..1), or (-1, 0) with no field (other worlds,
@@ -786,7 +797,7 @@ func _publish_field() -> void:
 			RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
 	if _wind_texture == null and wind.n >= 2: RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
 	var fixed := wind.fixed if wind.mode == "fixed" else -1.0
-	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now,wind.come_in() if _wind_texture != null else 0.0,fixed,1.0))
+	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now*_weather_wind(WX_BREEZE),wind.come_in() if _wind_texture != null else 0.0,fixed,1.0))
 	for i in 5:
 		RenderingServer.global_shader_parameter_set("zs_wind_patch_%d" % i,wind.blobs[i] if i < wind.blobs.size() else Vector4(0.0,0.0,1.0,0.0))
 	var near := wind.spots_near(_eye.x,_eye.z)
