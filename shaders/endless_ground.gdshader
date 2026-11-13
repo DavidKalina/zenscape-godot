@@ -1584,7 +1584,9 @@ void fragment() {
 	if (grass_skip == 2 && skip_grass) albedo = vec3(1.0, 0.0, 1.0);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
 	// The land wet (weather lane rain; nothing when dry).
-	float soak = zs_weather.w * (1.0 - snowy);
+	// (Not the bed under the sea: glossed there, it shone through shallow
+	// water as a pale cyan-white sheet.)
+	float soak = zs_weather.w * (1.0 - snowy) * smoothstep(-0.5, 0.1, over);
 	if (soak > 0.0) albedo = mix(albedo, mix(vec3(luma(albedo)), albedo, ZS_SOAK_RICH) * mix(ZS_SOAK_DARK.x, ZS_SOAK_DARK.y, rocky), soak);
 	// Under a cloud's shadow the sun's share goes (the albedo the sun
 	// lights), the sky's fill (the emission below) stays.
@@ -1796,7 +1798,7 @@ void fragment() {
 		vec3 column = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
 		column = mix(column, river_tint_deep, smoothstep(river_tint_depths.x * 0.5, river_tint_depths.y, depth));
 		column *= zs_palette_water;
-		vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI;
+		vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 		vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
 		vec3 light = (ambient + key * 0.8) * river_light;
 		float through = depth / max(abs(eye.y), 0.15);
@@ -1954,6 +1956,7 @@ void fragment() {
 				sky = mix(sky, lit_cloud, cloud * river_cloud_mirror);
 			}
 		}
+		sky *= zs_wx_mirror(); // weather lane rain
 		float fres = river_fresnel.x + (1.0 - river_fresnel.x) * pow(1.0 - max(dot(eye, calm), 0.0), river_fresnel.y);
 		fres = clamp(fres * (1.0 + sl * river_slick.z), 0.0, 1.0);
 		fres *= 1.0 - river_paws.z * paw;

@@ -1441,7 +1441,7 @@ void fragment() {
 	column = mix(column, tint_abyss, smoothstep(tint_depths.z, tint_depths.w, water_depth));
 	column = mix(tint_shallow, column, smoothstep(0.0, tint_depths.x, water_depth) * 0.6 + 0.4);
 	column *= zs_palette_water;
-	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI;
+	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 	vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
 	vec3 light = (ambient + key * 0.8) * water_light;
 	// The body: the water's light across the wave, darker in the troughs and
@@ -1602,6 +1602,7 @@ void fragment() {
 			sky = mix(sky, lit_cloud, cloud * cloud_mirror);
 		}
 	}
+	sky *= zs_wx_mirror(); // weather lane rain
 	float mirrored = 0.0;
 	vec3 mirror = vec3(0.0);
 	if (mirror_steps > 0 && fresnel > 0.05) {
