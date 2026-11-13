@@ -10,14 +10,14 @@ extends Node3D
 ## the layout file wins, and a find on the handle follows. Trees keep off
 ## (`tree_keepouts`). Its stone is the flight's solid through LandArches `loose`.
 ## Only the wilderness has them: they go while the plane is anywhere else.
-## At `way/isle` the temple ruin (temple_site.gd) stands instead of the belfry,
-## unless `--temple=0`.
+## Each stands as a temple-kit ruin (temple_site.gd: the temple on the isle,
+## the colonnade at the bay, the shrine to the south) instead of the old
+## belfry, unless `--temple=0`.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const TempleSite = preload("res://scripts/endless/temple_site.gd")
-const TEMPLE_AT := "way/isle"
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -42,10 +42,9 @@ func setup(g: Node3D) -> void:
 	game = g
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
-		var temple: bool = site.name == TEMPLE_AT and TempleSite.wanted()
+		var temple: bool = TempleSite.has(str(site.name)) and TempleSite.wanted()
 		var coded := Transform3D(Basis(Vector3.UP,float(site.yaw)),Vector3(at.x,float(game.field.height(at.x,at.y)),at.y))
-		if temple: coded = Transform3D(Basis(Vector3.UP,TempleSite.YAW),
-			Vector3(TempleSite.AT.x,TempleSite.foot_y(game.field),TempleSite.AT.y))
+		if temple: coded = TempleSite.xform(game.field,str(site.name))
 		sites[site.name] = {"name":site.name,"coded":coded,"xf":LayoutOverrides.xform(str(site.name),coded),
 			"seed":absi(hash(str(site.name)))%100000,"state":"away","task":-1,"temple":temple}
 
@@ -60,8 +59,8 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	var temple := TempleSite.wanted()
 	for site: Dictionary in SITES:
 		var p: Vector2 = site.at
-		if temple and site.name == TEMPLE_AT:
-			var k: Array = TempleSite.keepout()
+		if temple and TempleSite.has(str(site.name)):
+			var k: Array = TempleSite.keepout(str(site.name))
 			var q: Vector2 = k[0]
 			if q.x > x0-500.0 and q.x < x1+500.0 and q.y > z0-500.0 and q.y < z1+500.0: out.append(k)
 			continue
@@ -72,12 +71,19 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 ## One frame: the towers streamed round the eye.
 func step(eye: Vector3) -> void:
 	var here := game.finds == null or str(game.finds.world) == "wilderness"
+	# One kit ruin builds at a time: its loads and MultiMeshes on two workers at
+	# once broke RIDs (headless).
+	var kit_busy := false
+	for handle: String in sites:
+		if sites[handle].temple and str(sites[handle].state) == "building": kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]
 		var d: float = (site.xf as Transform3D).origin.distance_to(eye) if here else INF
 		match str(site.state):
 			"away":
-				if d < REACH: _begin(site)
+				if d < REACH and not (site.temple and kit_busy):
+					_begin(site)
+					if site.temple: kit_busy = true
 			"building":
 				if WorkerThreadPool.is_task_completed(int(site.task)): _commit(site)
 			"up":
@@ -91,7 +97,7 @@ func _begin(site: Dictionary) -> void:
 ## On a worker: the piece, off the tree.
 func _make(site: Dictionary) -> void:
 	if site.temple:
-		site.made = TempleSite.build()
+		site.made = TempleSite.build(str(site.name))
 		return
 	site.made = RuinKit.piece("belfry_tower",int(site.seed),WEATHERED)
 
