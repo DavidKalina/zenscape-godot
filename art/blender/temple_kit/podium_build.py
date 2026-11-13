@@ -458,7 +458,66 @@ def _paving_span(p, fr, span, keep=None, hurt=None, rows=ROWS, keys=None):
 
 
 # ---------------------------------------------------------------------------
-STAIR_HALF = 6.0                 # the flight's half width (12 m)
+# podium_floor: a bay of the paved top only, for the platform's inside.
+FLOOR_FRONT = FRONT[2]                       # -3.0: where a podium's stylobate starts
+FLOOR_ROWS = [(FLOOR_FRONT, ROWS[0][0])] + ROWS  # a paving row where the stylobate was
+FLOOR_KEYS = ["rowf", "row0", "row1", "row2"]
+SHIFT["rowf"] = -0.6
+FLOOR_END = 0.6                              # the coursed blocks at each end of the fill
+
+
+def build_floor():
+    """One bay of the platform's floor: the paved top from y -3.0 (a
+    podium's stylobate front) back to 6.0 at the same height (3.0), on a
+    hidden core and a footing, no steps. The origin is podium's (the ground
+    under a column's centre on the top step line), so it swaps for a podium
+    bay one for one; a column stands on it at (0, 0, 3.0)."""
+    p = Podium("podium_floor", seed=14)
+    r = p.rng
+    fr = Frame()
+    # The fill under the paving; its ends are coursed stone (below).
+    emit(p, fr, 0.0, (FLOOR_FRONT + BACK) / 2, (-0.3 + SLAB_Z) / 2,
+         (2 * (HB - FLOOR_END), BACK - FLOOR_FRONT, SLAB_Z + 0.3),
+         bevel=0.0, chips=0, jitter=0.0, kind=T.JOINTFACE, tone=0.8)
+    p.far_box(fr.pt(0.0, (FLOOR_FRONT + BACK) / 2, SLAB_Z / 2), (2 * HB, BACK - FLOOR_FRONT, SLAB_Z), yaw=fr.a)
+    picked = {(0, 5): "hole", (3, 1): "hole", (1, 5): "tilt", (2, 0): "tilt", (3, 4): "crack"}
+
+    def hurt_pav(spec):
+        what = picked.get((spec["row"], spec["j"]))
+        if "--debug" in args and what:
+            print("FLOOR", what, spec["row"], spec["j"], "u %.2f L %.2f" % (spec["u"], spec["L"]))
+        if what == "hole":
+            hole(p, fr, spec)
+            return False
+        if what == "tilt":
+            tilted(spec, r)
+        if what == "crack":
+            spec["crack"] = True
+        return True
+
+    _paving_span(p, fr, lambda s: (-HB + s, HB + s), keep=column_zone(0.0), hurt=hurt_pav,
+                 rows=FLOOR_ROWS, keys=FLOOR_KEYS)
+    footing(p, fr, -HB, HB, front=FLOOR_FRONT)
+    # The fill's ends, where a run of floor stops at an open slot: three
+    # courses of rough blocks showing only their end faces (and the top
+    # course its top, where a paving row stops short), joints open onto
+    # the fill.
+    for side in (-1, 1):
+        out, inner = ("+x", "-x") if side > 0 else ("-x", "+x")
+        for c, (z0, z1) in enumerate(((0.0, 1.0), (1.0, 2.0), (2.0, SLAB_Z))):
+            for vc, Lv in lay(r, FLOOR_FRONT, BACK, (2.2, 3.6)):
+                hide = ("-z", "-y", "+y", inner) + (("+z",) if c < 2 else ())
+                emit(p, fr, side * (HB - FLOOR_END / 2), vc, (z0 + z1) / 2,
+                     (FLOOR_END, Lv - T.JOINT, z1 - z0 - T.JOINT), bevel=0.0, chips=0, jitter=0.02,
+                     tone=r.uniform(0.8, 0.95), hide=hide)
+    # The solid: one box, flat at the top (3.0) like a podium's stylobate and paving.
+    lo, hi = fr.aabb(-HB, HB, FLOOR_FRONT, BACK, FOOT, T.PODIUM_H)
+    p.solid(lo, hi)
+    p.export()
+
+
+# ---------------------------------------------------------------------------
+STAIR_HALF = 6.0                # the flight's half width (12 m)
 CHEEK = 1.2                      # a cheek wall's width
 RISE, TREAD, NSTEP = 0.25, 0.4, 12
 STAIR_FRONT = FRONT[0] - 1.6     # -7.8: the flight juts one tread of the big steps
@@ -580,6 +639,7 @@ def build_stair():
     p.export()
 
 
-for name, fn in (("podium", build_podium), ("podium_corner", build_corner), ("podium_stair", build_stair)):
+for name, fn in (("podium", build_podium), ("podium_corner", build_corner), ("podium_stair", build_stair),
+                 ("podium_floor", build_floor)):
     if ONLY is None or name in ONLY:
         fn()

@@ -21,6 +21,7 @@ const PIECES: Array[StringName] = [
 	&"podium",
 	&"podium_corner",
 	&"podium_stair",
+	&"podium_floor",
 	&"wall_door",
 	&"wall_broken",
 ]
