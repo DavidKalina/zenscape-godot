@@ -191,6 +191,10 @@ global uniform float zs_bow_grow;
 global uniform vec2 zs_bow_shape;
 global uniform float zs_bow_double;
 global uniform vec4 zs_aurora;
+// The aurora's shape (scripts/endless/weather_sky_lights.gd): x a floor under
+// its night gate, y its feet raised (dir.y), z its height's scale, w its light's
+// scale. (0, 0, 1, 1) is the isles' aurora as it was.
+global uniform vec4 zs_aurora_shape;
 // A moonbow's strength (scripts/shared/celestial.gd moon_bow), drawn about the antilunar point.
 global uniform float zs_moonbow;
 global uniform float zs_night;

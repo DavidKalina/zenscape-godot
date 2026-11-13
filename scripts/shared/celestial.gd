@@ -51,6 +51,10 @@ var moment_bow := 0.0
 var moon_bow := 0.0
 ## 1 on a double rainbow: brings the fainter second bow up (life_moments.gd).
 var moment_bow_double := 0.0
+## The endless flight's sky lights (scripts/endless/weather_sky_lights.gd): the
+## weather's double bow (0..1) and its aurora nights' strength.
+var weather_bow_double := 0.0
+var sky_aurora := 0.0
 var alpen_enabled := true
 var inversion_enabled := true
 var wind := 0.4
@@ -607,13 +611,13 @@ func update_rig() -> void:
 	_publish("zs_dusk_direction", warmth * 0.9)
 	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)) * (1.0 - 0.8 * blue))
 	# The aurora's heading is a bearing, so the room's turn simply adds to it.
-	_publish("zs_aurora", Vector4(maxf(maxf(aurora_strength, forced_aurora), _aurora), 1.0, 0.15, -1.2 + room_yaw))
+	_publish("zs_aurora", Vector4(maxf(maxf(maxf(aurora_strength, forced_aurora), _aurora), sky_aurora), 1.0, 0.15, -1.2 + room_yaw))
 	_publish("zs_room_yaw", room_yaw)
 	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)
 	_publish("zs_bow_shape", Vector2.ONE)
 	_publish("zs_moonbow", moon_bow * night * smoothstep(-0.02, 0.08, moon.y))
-	_publish("zs_bow_double", moment_bow_double)
+	_publish("zs_bow_double", maxf(moment_bow_double, weather_bow_double))
 
 ## The moon's direction at a phase: half a day round from the sun on a flatter
 ## ring, less the turn it has fallen behind this far into the month.

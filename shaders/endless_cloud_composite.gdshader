@@ -15,6 +15,7 @@ render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabl
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/weather.gdshaderinc"
 #include "res://shaders/weather_lightning.gdshaderinc"
+#include "res://shaders/weather_bow.gdshaderinc"
 
 uniform sampler2D cloud_light : filter_nearest, repeat_disable;
 uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
@@ -130,6 +131,8 @@ void fragment() {
 	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.45 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
 	col = mix(col, sky, fog);
 	col += flash * (1.0 - 0.7 * fog);
+	// The rainbow stands in the rain in front of far cloud (weather_bow).
+	col += zs_bow_far(rd, met, dome);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the
 	// sun's disc never shines through a thick body.

@@ -180,6 +180,8 @@ var land_shade: LandHorizon
 ## The weather (scripts/endless/weather.gd), or null (--weather=off): set by
 ## the flight, stepped there; the look takes its grade of the light.
 var weather: RefCounted
+## The rainbow and the aurora (scripts/endless/weather_sky_lights.gd).
+var sky_lights := WeatherSkyLights.new()
 ## The light pass (scripts/endless/endless_post.gd), or null (the default; --post=1 puts it in).
 var post: CompositorEffect
 ## The mood's key and fill scales on the sun and the sky's fill
@@ -287,6 +289,7 @@ func _frame_trades() -> void:
 func setup(land_seed: int) -> void:
 	name = "Look"
 	_land_seed = land_seed
+	sky_lights.setup(land_seed)
 	# The world's mood and hour (its paint), then the flags over them.
 	var world: RefCounted = WorldProfile.current()
 	var world_mood := str(world.paint.get("mood",MOOD))
@@ -698,6 +701,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	_land_phase = float(celestial.phase)
 	_collar_hour(eye)
 	if weather != null: weather.grade(celestial)
+	sky_lights.step(delta,celestial,weather,cycle,eye)
 	celestial.advance(delta,false)
 	if _light_on:
 		sun.light_energy *= _key

@@ -388,6 +388,7 @@ var _heading := 0.0
 ## turn to face the Peak.
 var _heading_given := false
 var _face_sun := false
+var _away_sun := false
 var _numbers := false
 var _alt := START_ALT
 var _alt_given := false
@@ -583,6 +584,10 @@ func _ready() -> void:
 			var p := arg.get_slice("=",1).split(",")
 			if p.size() >= 2: _start = Vector2(float(p[0]),float(p[1]))
 		elif arg == "--heading=sun": _face_sun = true
+		elif arg == "--heading=away":
+			# Back to the sun (the rainbow's side; weather_sky_lights.gd).
+			_face_sun = true
+			_away_sun = true
 		elif arg.begins_with("--heading="):
 			_heading = -deg_to_rad(float(arg.get_slice("=",1)))
 			_heading_given = true
@@ -714,7 +719,7 @@ func _ready() -> void:
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
-			_heading = atan2(-s.x,-s.z)
+			_heading = atan2(-s.x,-s.z)+(PI if _away_sun else 0.0)
 	else:
 		_build_light()
 		_build_sea()
@@ -2192,7 +2197,7 @@ func _show_region() -> void:
 
 func _show_hud() -> void:
 	_show_region()
-	if _weather_debug != null: _weather_debug.text = weather.note()+("\n"+lightning.note() if lightning != null else "")
+	if _weather_debug != null: _weather_debug.text = weather.note()+"  ·  "+look.sky_lights.note()+("\n"+lightning.note() if lightning != null else "")
 	_near_hud.key_name = "X" if Pad.using_pad() else "B"
 	if "plane_at" in _near_hud: _near_hud.plane_at = plane_figure.global_position
 	_near_hud.show_state(get_process_delta_time(),near,bool(plane.weighted) and not hand_landing.on_ground(),_events)
