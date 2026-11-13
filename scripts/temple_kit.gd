@@ -12,7 +12,11 @@ extends RefCounted
 ## on a BAY grid. The numbers are temple_lib.py's (the spec's contract).
 
 ## Every piece the kit has; a lane adds its ids here and the gallery shows them.
-const PIECES: Array[StringName] = [&"column"]
+const PIECES: Array[StringName] = [
+	&"column",
+	&"lintel",
+	&"lintel_broken",
+]
 
 const DIR := "res://assets/models/temple_kit/"
 const MATERIAL_SHADER := preload("res://shaders/temple_stone.gdshader")
