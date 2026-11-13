@@ -141,6 +141,19 @@ const float OVER = 70.0;
 // The shade pass's heights apart (m; shadow_pass).
 const float SHADE_PLANE = 10.0;
 const float SLOPE_MAX = 5.0;
+// Under weather a sample's height in its cloud (the light's `h`) is taken
+// against its column's top raised by its texel's slope times this (m), and
+// the sky's light on it no longer probes straight up for cloud overhead (the
+// crease). A grown cloud's belly (cloud overhead, h ~0.1) and its sloped
+// sides and crown beside it (open overhead, h 1 at a column's own top) were
+// lit as two classes, so its underside showed as a dark, hard-edged patch
+// shaped by the map's footprint inside a white rim. The weather's own height
+// terms (wx_sky, wx_sun, wx_base_lift) darken it low down instead. By the
+// cover up to WX_FORM_COVER, and out again from a shower's severity to a
+// storm's (WX_FORM_SEV): fair and a storm are as they were.
+const float WX_H_REACH = 120.0;
+const float WX_FORM_COVER = 0.3;
+const vec2 WX_FORM_SEV = vec2(0.5, 1.0);
 // How far past a rim (m) the billows may still reach.
 const float RIM_MARGIN = 50.0;
 // The slopes' stencil, in texels each way (wider is smoother).
@@ -197,6 +210,13 @@ ivec2 zs_block_offset(int frame) {
 float sstep(float a, float b, float x) {
 	float t = clamp((x - a) / (b - a), 0.0, 1.0);
 	return t * t * (3.0 - 2.0 * t);
+}
+
+// How far the weather's light form (WX_H_REACH) is in: by the cover (0 fair),
+// all of it to a shower's severity, none in a storm, whose closed overcast
+// keeps the crease's dark heaps (without it the deck read a flat milk grey).
+float wx_form() {
+	return sstep(0.0, WX_FORM_COVER, P.spare[5].x) * (1.0 - sstep(WX_FORM_SEV.x, WX_FORM_SEV.y, P.spare[7].y));
 }
 
 // pcg3d (Jarzynski and Olano), on the cell's integer coordinates.
@@ -1128,6 +1148,15 @@ Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
 	if (d > 0.0) {
 		s.density = d;
 		s.h = hh;
+		float form = wx_form();
+		if (form > 0.0) {
+			// Against the top up the slope (WX_H_REACH x the slope), not the
+			// column's own top.
+			bool hi = in_h > in_l;
+			float tp = hi ? w.z : w.x;
+			float bs = hi ? w.w : w.y;
+			s.h = clamp((p.y - bs) / max(tp + (hi ? slope.y : slope.x) * WX_H_REACH * form - bs, 4.0), 0.0, 1.0);
+		}
 		s.pocket = wisp;
 		s.sigma = mix(SIGMA, SIGMA_IN, immersed);
 		s.low = in_h > in_l ? 0.0 : 1.0;
@@ -1541,6 +1570,7 @@ void march_pass() {
 
 	bool faced = false;
 	float turned = 1.0;
+	float wx_form_k = wx_form();
 	int steps = min(int(P.quality.x), STEPS_MAX);
 	int taps_full = min(int(P.quality.y), TAPS_MAX);
 	float T = 1.0;
@@ -1618,8 +1648,13 @@ void march_pass() {
 			float tau = od * SUN_SIGMA;
 			float sky_open = 1.0;
 			if (T > 0.25) {
-				float up = density_cheap(p + vec3(0.0, 14.0, 0.0)) * 14.0 + density_cheap(p + vec3(0.0, 40.0, 0.0)) * 28.0;
-				sky_open = mix(CREASE, 1.0, exp(-up * UP_SIGMA * 2.0));
+				// Under weather the cloud is dark low down by its height (s.h,
+				// wx_sky): no probes (the collar keeps them).
+				float by_h = wx_form_k * (1.0 - s.collar);
+				if (by_h < 1.0) {
+					float up = density_cheap(p + vec3(0.0, 14.0, 0.0)) * 14.0 + density_cheap(p + vec3(0.0, 40.0, 0.0)) * 28.0;
+					sky_open = mix(mix(CREASE, 1.0, exp(-up * UP_SIGMA * 2.0)), 1.0, by_h);
+				}
 			}
 			float sun_light = 0.0;
 			float weight = 1.0;
