@@ -49,9 +49,24 @@ var scale := 2
 ## cycles old. 0 or 1: whole, when the driver says it is due (as before).
 ## The driver's march shader reads the slice's square from SLICE_SQUARE.
 var weather_slices := 0
+## Sliced, the map the passes read eased from the last whole map into the
+## newest over each cycle (shaders/cloud_weather_blend.glsl) while the
+## weather the map bakes (WEATHER_MAP: cover, severity, rain level) differs
+## between the two: a building or clearing sky grows every frame instead of
+## stepping at each swap (a pass a frame then, and the ceiling bounds both
+## maps). Fair, held weather and no weather draw nothing more and read the
+## newest map as before; the two more maps are kept (and rotated) all the
+## same. Set before the first `resize`.
+var weather_blend := false
+## Texel offsets of the last map from the newest (low xy, high zw) for the
+## ceiling's union, and its on (march Params spare[19], spare[20].y).
+const PREV_OFFSET := 144
+const PREV_ON := 149
 var history_ok := false
 ## Frames the passes actually ran (tests, probes).
 var runs := 0
+## Frames the map was eased (weather_blend; probes).
+var eased := 0
 
 const MARCH_FLOATS := 16+4*9+4*8+4*4*5+4*4+4*32*2
 const RESOLVE_FLOATS := 16+16+4*4
@@ -132,6 +147,20 @@ var _back_clock := 0.0
 ## driver writes it.
 const WEATHER_MAP := 88
 var _back_weather := PackedFloat32Array()
+## weather_blend: the last whole map (its square, drift, phase, weather), the
+## eased map the passes read, frames since the newest swapped in, and the
+## newest's weather.
+var _front_weather := PackedFloat32Array()
+var _weather_prev := RID()
+var _weather_show := RID()
+var _prev_square := Vector4.ZERO
+var _prev_drift := Vector4.ZERO
+var _prev_phase := Vector2.ZERO
+var _prev_weather := PackedFloat32Array()
+var _prev_ok := false
+var _since_swap := 0
+var _blend_shader := RID()
+var _blend_pipeline := RID()
 var _ceiling := RID()
 var _shadow := RID()
 var _scratch := RID()
@@ -208,6 +237,12 @@ func _allocate(want: Vector2i, whole: Vector2i) -> void:
 		_empty_body = _rd.texture_create(empty,RDTextureView.new(),[PackedFloat32Array([1000.0,1000.0]).to_byte_array()])
 		_weather = _target(Vector2i(WEATHER_TEXELS,WEATHER_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 		if weather_slices > 1: _weather_back = _target(Vector2i(WEATHER_TEXELS,WEATHER_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
+		if weather_slices > 1 and weather_blend:
+			_blend_shader = _compile(preload("res://shaders/cloud_weather_blend.glsl"))
+			if _blend_shader.is_valid():
+				_blend_pipeline = _rd.compute_pipeline_create(_blend_shader)
+				_weather_prev = _target(Vector2i(WEATHER_TEXELS,WEATHER_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
+				_weather_show = _target(Vector2i(WEATHER_TEXELS,WEATHER_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 		_ceiling = _target(Vector2i(CEILING_TEXELS,CEILING_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 		_shadow = _target(Vector2i(SHADOW_TEXELS,SHADOW_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 		# Stands in for whichever of those a pass does not write.
@@ -302,6 +337,7 @@ func _render_callback(_type: int, data: RenderData) -> void:
 			_front_square = want
 			_front_drift = drift_now
 			_front_phase = _phase(drift_now,want)
+			_front_weather = params.slice(WEATHER_MAP,WEATHER_MAP+8)
 			_slice = 0
 		else:
 			if _slice == 0:
@@ -326,6 +362,7 @@ func _render_callback(_type: int, data: RenderData) -> void:
 			params[LIFE_CLOCK] = _back_clock
 		for i in 4: params[DRIFT_SINCE+i] = drift_now[i]-_front_drift[i]
 		if not _weather_back.is_valid(): sliced = false
+	var ring := sliced and _weather_prev.is_valid() and _weather_show.is_valid() and _blend_pipeline.is_valid()
 	if layer_phase: _put_phase(params)
 	_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,params.to_byte_array())
 	_rd.buffer_update(_resolve_buffer,0,RESOLVE_FLOATS*4,resolve_params.to_byte_array())
@@ -334,10 +371,13 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	if _fresh or (not sliced and march_params[WEATHER_DUE] > 0.5):
 		_pass(PASS_WEATHER,depth,_weather,_flat,_scratch,_scratch,_flat,Vector2i(WEATHER_TEXELS,WEATHER_TEXELS))
 		_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
+		_prev_ok = false
+		_since_swap = 0
 	elif sliced:
 		var rows := ceili(WEATHER_TEXELS/float(weather_slices))
 		_pass(PASS_WEATHER,depth,_weather_back,_flat,_scratch,_scratch,_flat,Vector2i(WEATHER_TEXELS,rows),_slice*rows)
 		_slice = (_slice+1)%weather_slices
+		_since_swap += 1
 		if swap:
 			# Next frame's params carry the new front's square (the driver's
 			# want); this frame's passes after here read the new map, so the
@@ -345,20 +385,45 @@ func _render_callback(_type: int, data: RenderData) -> void:
 			var front := _weather
 			_weather = _weather_back
 			_weather_back = front
+			if ring:
+				# The last whole map kept (the shown map eases from it), the
+				# one before it drawn over next.
+				_weather_back = _weather_prev
+				_weather_prev = front
+				_prev_square = _front_square
+				_prev_drift = _front_drift
+				_prev_phase = _front_phase
+				_prev_weather = _front_weather
+				_prev_ok = true
+			_since_swap = 0
 			_front_square = _back_square
 			_front_drift = _back_drift
 			_front_phase = _back_phase
+			_front_weather = _back_weather
 			for i in 4:
 				params[WEATHER_SQUARE+i] = _front_square[i]
 				params[DRIFT_SINCE+i] = drift_now[i]-_front_drift[i]
 			if layer_phase: _put_phase(params)
+			# Eased, the ceiling bounds the last map too (the shown map lies
+			# between them through the cycle).
+			var with_prev := ring and _easing()
+			if with_prev:
+				var off := _prev_offsets()
+				var n := _prev_square.w
+				for i in 4: params[PREV_OFFSET+i] = roundf(off[i]*n)
+				params[PREV_ON] = 1.0
 			_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,params.to_byte_array())
-			_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
+			_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_weather_prev if with_prev else _flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
+	var blending := ring and _easing()
+	if blending:
+		_blend()
+		eased += 1
+	var shown := _weather_show if blending else _weather
 	_rd.capture_timestamp("Cloud weather done")
 	if march_params[SHADE_DUE] > 0.5 or _fresh:
-		_pass(PASS_SHADOW,depth,_scratch,_weather,_shadow,_scratch,_ceiling,Vector2i(SHADOW_TEXELS,SHADOW_TEXELS))
+		_pass(PASS_SHADOW,depth,_scratch,shown,_shadow,_scratch,_ceiling,Vector2i(SHADOW_TEXELS,SHADOW_TEXELS))
 	_rd.capture_timestamp("Cloud shade done")
-	_pass(PASS_MARCH,depth,_scratch,_weather,_scratch,_scratch,_ceiling,size)
+	_pass(PASS_MARCH,depth,_scratch,shown,_scratch,_scratch,_ceiling,size)
 	_rd.capture_timestamp("Cloud march done")
 	var resolve := UniformSetCacheRD.get_cache(_resolve_shader,0,[
 		_buffer(0,_resolve_buffer),
@@ -383,6 +448,46 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	_fresh = false
 	history_ok = true
 	runs += 1
+
+## weather_blend: whether the newest map bakes other weather than the last
+## (cover, severity, rain level, floor): a sky building or clearing. Held
+## and fair weather (all equal) ease nothing.
+func _easing() -> bool:
+	if not _prev_ok or _front_weather.size() != 8 or _prev_weather.size() != 8: return false
+	for i in [0,1,6,7]:
+		if _front_weather[i] != _prev_weather[i]: return true
+	return false
+
+## weather_blend: where the newest map's texels stand in the last map (its
+## uv), low layer (xy) and high layer (zw), past the newest map's own uv
+## scaled by its side over the last's: each layer's texel samples one field
+## point (the map's square less the layer's drift, plus its phase for the
+## high layer), so the last map's texel at that same point.
+func _prev_offsets() -> Vector4:
+	var side := maxf(_prev_square.z,1.0)
+	var corner := Vector2(_front_square.x-_prev_square.x,_front_square.y-_prev_square.y)
+	var low := corner-Vector2(_front_drift.x-_prev_drift.x,_front_drift.y-_prev_drift.y)
+	var high := corner-Vector2(_front_drift.z-_prev_drift.z,_front_drift.w-_prev_drift.w)
+	if layer_phase: high += _front_phase-_prev_phase
+	return Vector4(low.x,low.y,high.x,high.y)/side
+
+## weather_blend: the shown map, the last whole map eased into the newest by
+## how far this cycle has run (0 the frame a map swaps in).
+func _blend() -> void:
+	var t := clampf(float(_since_swap)/float(weather_slices),0.0,1.0)
+	var off := _prev_offsets()
+	var scale_by := _front_square.z/maxf(_prev_square.z,1.0)
+	var set := UniformSetCacheRD.get_cache(_blend_shader,0,[
+		_sampled(0,_linear,_weather_prev,_flat),
+		_sampled(1,_linear,_weather,_flat),
+		_image(2,_weather_show)])
+	var push := PackedFloat32Array([off.x,off.y,off.z,off.w,scale_by,t,1.0,0.0]).to_byte_array()
+	var list := _rd.compute_list_begin()
+	_rd.compute_list_bind_compute_pipeline(list,_blend_pipeline)
+	_rd.compute_list_bind_uniform_set(list,set,0)
+	_rd.compute_list_set_push_constant(list,push,push.size())
+	_rd.compute_list_dispatch(list,ceili(WEATHER_TEXELS/8.0),ceili(WEATHER_TEXELS/8.0),1)
+	_rd.compute_list_end()
 
 ## How far within a texel of `square` (corner xz, side, texels) the high
 ## layer's samples stand from the low layer's, for a map drawn at `drift`
@@ -436,5 +541,5 @@ func _notification(what: int) -> void:
 	march_depth.texture_rd_rid = RID()
 	weather.texture_rd_rid = RID()
 	shadow.texture_rd_rid = RID()
-	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b,_weather,_weather_back,_ceiling,_shadow,_scratch,_march_buffer,_resolve_buffer,_flat,_empty_body,_linear,_repeat,_nearest,_march_pipeline,_resolve_pipeline,_march_shader,_resolve_shader]:
+	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b,_weather,_weather_back,_weather_prev,_weather_show,_ceiling,_shadow,_scratch,_march_buffer,_resolve_buffer,_flat,_empty_body,_linear,_repeat,_nearest,_march_pipeline,_resolve_pipeline,_march_shader,_resolve_shader,_blend_pipeline,_blend_shader]:
 		if rid.is_valid(): _rd.free_rid(rid)

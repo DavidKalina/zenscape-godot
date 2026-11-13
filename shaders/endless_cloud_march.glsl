@@ -53,7 +53,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[20].x the shade pass stepped as before (--cloud-shade=old); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square; spare[3] the collar's centre xz, outer radius, inner radius; spare[4] its base y, top y (world), turn (rad), on
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[19] the last weather map's texel offsets for the ceiling (low xy, high zw), spare[20].x the shade pass stepped as before (--cloud-shade=old), .y the ceiling bounds the last map too (weather_blend); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square; spare[3] the collar's centre xz, outer radius, inner radius; spare[4] its base y, top y (world), turn (rad), on
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -445,7 +445,7 @@ float cluster_gate(vec2 f) {
 // The weather's push on the field and its light (scripts/endless/weather.gd).
 // The import rebuilds this shader only when this file changes: after an edit
 // to the include alone, change this file too (or it runs the old include).
-// Include edit: 2026-11-12 whole e.
+// Include edit: 2026-11-12 smooth build.
 #include "weather_cloud.glslinc"
 
 // --- Cloud life (P.spare[1].x = 1; --cloud-life=0 is the rigid field) ---------------
@@ -1269,10 +1269,23 @@ void ceiling_pass() {
 	ivec2 texels = textureSize(weather, 0);
 	float top = -1e3;
 	float bottom = 1e4;
+	// Eased (scripts/cloud_volume_effect.gd weather_blend, spare[20].y 1):
+	// the map the passes read runs from the last whole map (bound as
+	// `ceiling` here) into this one through the cycle, so the ceiling bounds
+	// both, the last map's texel at the same field point (spare[19], texel
+	// offsets low xy, high zw); a layer with body in either counts both.
+	bool with_prev = P.spare[20].y > 0.5;
+	ivec4 po = ivec4(P.spare[19]);
 	for (int y = -CEILING_BLOCK; y < 2 * CEILING_BLOCK; y += 2) {
 		for (int x = -CEILING_BLOCK; x < 2 * CEILING_BLOCK; x += 2) {
 			ivec2 t = clamp(block * CEILING_BLOCK + ivec2(x, y), ivec2(0), texels - 1);
 			vec4 w = texelFetch(weather, t, 0);
+			if (with_prev) {
+				vec2 al = texelFetch(ceiling, clamp(t + po.xy, ivec2(0), texels - 1), 0).xy;
+				vec2 ah = texelFetch(ceiling, clamp(t + po.zw, ivec2(0), texels - 1), 0).zw;
+				if (w.x > w.y || al.x > al.y) w.xy = vec2(max(w.x, al.x), min(w.y, al.y));
+				if (w.z > w.w || ah.x > ah.y) w.zw = vec2(max(w.z, ah.x), min(w.w, ah.y));
+			}
 			// Only a layer with any body counts.
 			if (w.x > w.y) {
 				top = max(top, w.x);

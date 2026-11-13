@@ -308,6 +308,8 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	# touch softer (docs/design/endless-flight/aa-view-handoff.md).
 	if preload("res://scripts/endless/land_stream.gd").high_end(): quality[2] = 2
 	effect.weather_slices = WEATHER_SLICES
+	# A building or clearing sky eased frame to frame (--cloud-ease=0: stepped at each swap).
+	effect.weather_blend = not "--cloud-ease=0" in LaunchArgs.user_args()
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-weather-slices="): effect.weather_slices = clampi(int(a.get_slice("=",1)),0,64)
 		if a == "--cloud-phase=old": effect.layer_phase = false
