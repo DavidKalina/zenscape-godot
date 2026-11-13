@@ -57,12 +57,16 @@ enum {NEAR, MID, FAR}
 static var _meshes := {}
 static var _boxes := {}
 static var _material: ShaderMaterial
+## Held round every load: the way sites build on workers, several at once.
+static var _lock := Mutex.new()
 
 ## The kit's one stone material.
 static func material() -> ShaderMaterial:
+	_lock.lock()
 	if _material == null:
 		_material = ShaderMaterial.new()
 		_material.shader = MATERIAL_SHADER
+	_lock.unlock()
 	return _material
 
 ## A piece's mesh (`far` its LOD), loaded once from its .glb.
@@ -73,8 +77,11 @@ static func mesh(id: StringName, far := false) -> Mesh:
 ## without a _mid.glb).
 static func lod(id: StringName, level: int) -> Mesh:
 	var key := String(id)+(["","_mid","_far"][level] as String)
+	_lock.lock()
 	if not _meshes.has(key): _load(id)
-	return _meshes.get(key)
+	var m: Mesh = _meshes.get(key)
+	_lock.unlock()
+	return m
 
 ## Whether the piece has a mid LOD (<id>_mid.glb).
 static func has_mid(id: StringName) -> bool:
@@ -136,6 +143,7 @@ static func piece(id: StringName) -> Node3D:
 ## The piece's solids in its own frame, written by the Blender export
 ## (<piece>.boxes.json beside the model).
 static func boxes(id: StringName) -> Array[AABB]:
+	_lock.lock()
 	if not _boxes.has(id):
 		var out: Array[AABB] = []
 		var text := FileAccess.get_file_as_string(DIR+String(id)+".boxes.json")
@@ -146,4 +154,6 @@ static func boxes(id: StringName) -> Array[AABB]:
 				out.append(AABB(Vector3(a[0],a[1],a[2]),Vector3(a[3],a[4],a[5])))
 		else: push_error("temple_kit: no boxes for %s" % id)
 		_boxes[id] = out
-	return _boxes[id]
+	var got: Array[AABB] = _boxes[id]
+	_lock.unlock()
+	return got

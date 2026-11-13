@@ -5,7 +5,8 @@ extends "res://scripts/endless/region_doors.gd"
 ## outside holds, and you come out of the other ruin in the other land.
 ##
 ##   the ruin     `doors/amber-hall` in wilderness, `doors/morning-hall` in
-##                amberlands: two belfries and a kit hall (BAYS_OUT bays, on a
+##                amberlands: two temple-kit gates (a column pair under a
+##                lintel either side, `PAIRS`) and a kit hall (BAYS_OUT bays, on a
 ##                plinth) with a gabled open front. Each stands in its frame
 ##                (origin the mouth's floor, z inward), which the layout file
 ##                can move. Its solids are analytic (`ground`).
@@ -37,6 +38,7 @@ extends "res://scripts/endless/region_doors.gd"
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const HallSeat = preload("res://scripts/endless/hall_seat.gd")
 const RuinKit_ = preload("res://scripts/ruin_kit.gd")
+const TempleKit_ = preload("res://scripts/temple_kit.gd")
 const LandTunnels_ = preload("res://scripts/endless/land_tunnels.gd")
 const LandHalls_ = preload("res://scripts/endless/land_halls.gd")
 const Arches_ = preload("res://scripts/endless/land_arches.gd")
@@ -61,14 +63,27 @@ const BAYS_OUT := 5
 const RADIUS := 430.0
 ## The clear height under the cross beams, as a share of the kit's (m).
 const ROOF := Hall.COLUMN_H
-## The solids over the floor (m, unscaled): the ruin's roof and a belfry's core.
+## The solids over the floor (m, unscaled): the ruin's roof and the top of
+## the gates' lintels.
 const SHELL_TOP := 17.0
-const TOWER_TOP := 96.0
-## The belfries: out from the middle (m), back from the mouth, half width of
-## their core's solid.
+const TOWER_TOP := 38.3
+## The gates (where the belfries stood): out from the middle (m), back from
+## the mouth, and how far round that their solids reach (m).
 const TOWER_X := 35.0
 const TOWER_Z := 10.0
 const TOWER_SOLID := 11.0
+## The gates' temple-kit pieces, [id, local position, quarter turns about y],
+## one column pair a bay apart along z either side: the left whole under its
+## lintel; the right's far column a stump, the broken lintel's stub on the
+## near one.
+const PAIRS := [
+	[&"column",Vector3(-TOWER_X,0.0,TOWER_Z-TempleKit_.BAY*0.5),0],
+	[&"column",Vector3(-TOWER_X,0.0,TOWER_Z+TempleKit_.BAY*0.5),0],
+	[&"lintel",Vector3(-TOWER_X,0.0,TOWER_Z),1],
+	[&"column",Vector3(TOWER_X,0.0,TOWER_Z-TempleKit_.BAY*0.5),0],
+	[&"column_broken",Vector3(TOWER_X,0.0,TOWER_Z+TempleKit_.BAY*0.5),3],
+	[&"lintel_broken",Vector3(TOWER_X,0.0,TOWER_Z),3],
+]
 ## The footprint's half width past the side walls (m).
 const FOOT_OVER := 2.0
 ## A swap this far past the middle (m) either way.
@@ -469,7 +484,7 @@ func _build_torches() -> void:
 		_hall.add_child(node)
 
 ## One side's ruin at its frame: the outside bays, the front, the plinth,
-## the belfries, the plug that shuts the hall off from outside, the daylight
+## the gates, the plug that shuts the hall off from outside, the daylight
 ## card, the spill.
 func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	var root := Node3D.new()
@@ -505,16 +520,12 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	for mi: Node in seat.find_children("*","MeshInstance3D",true,false):
 		(mi as MeshInstance3D).layers = layers
 		(mi as MeshInstance3D).material_override = lit
-	for s: float in [-1.0,1.0]:
-		var tower := RuinKit_.piece("belfry_tower",4300+i*3+int(s),0.55)
-		tower.position = Vector3(s*TOWER_X,0.0,TOWER_Z)
-		tower.rotation.y = PI*0.5*(s+1.0)
-		root.add_child(tower)
-		for mi: Node in tower.find_children("*","MeshInstance3D",true,false):
+	for e: Array in PAIRS:
+		var piece := TempleKit_.piece(e[0])
+		piece.transform = Transform3D(Basis(Vector3.UP,PI*0.5*int(e[2])),e[1])
+		root.add_child(piece)
+		for mi: Node in piece.find_children("*","MeshInstance3D",true,false):
 			(mi as MeshInstance3D).layers = layers
-			(mi as MeshInstance3D).material_override = lit
-		var body := tower.find_children("*","StaticBody3D",true,false)
-		for b: Node in body: b.queue_free()
 	# Shuts the hall off from outside: stone without, black within.
 	var plug := Node3D.new()
 	plug.name = "Plug"
@@ -608,13 +619,34 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 		if stone > -INF and (h == null or fl+stone > float(h)): h = fl+stone
 		if absf(l.x) > TOWER_X+TOWER_SOLID+grow or l.z < -TOWER_SOLID or l.z > _out+4.0+grow: continue
 		if l.y > TOWER_TOP+4.0: continue
-		for s: float in [-1.0,1.0]:
-			if absf(l.x-s*TOWER_X) < TOWER_SOLID+grow and absf(l.z-TOWER_Z) < TOWER_SOLID+grow: return fl+TOWER_TOP
+		var gate: Variant = _gate_over(p,l,fl,grow)
+		if gate != null: return gate
 		if absf(l.x) < _foot+grow and l.z > -4.0:
 			if _open() and absf(l.x)+grow < _room and l.y < _roof and l.z < _out+1.0:
 				return LandHalls_.over(p,fl,[Vector2(fl+_roof,fl+SHELL_TOP*_big)])
 			return fl+SHELL_TOP*_big
 	return h
+
+## The gates' solids over `l` (the frame's): LandHalls `over` of their boxes
+## there (the gap under a lintel stays open), or null with none there.
+func _gate_over(p: Vector3, l: Vector3, fl: float, grow: float) -> Variant:
+	var bands: Array = []
+	for box: AABB in _gate_boxes():
+		if l.x > box.position.x-grow and l.x < box.end.x+grow and l.z > box.position.z-grow and l.z < box.end.z+grow:
+			bands.append(Vector2(fl+box.position.y,fl+box.end.y))
+	if bands.is_empty(): return null
+	bands.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+	return LandHalls_.over(p,fl,bands)
+
+static var _gate_solids: Array = []
+
+## PAIRS' solids in the ruin's frame.
+static func _gate_boxes() -> Array:
+	if _gate_solids.is_empty():
+		for e: Array in PAIRS:
+			var xf := Transform3D(Basis(Vector3.UP,PI*0.5*int(e[2])),e[1])
+			for box: AABB in TempleKit_.boxes(e[0]): _gate_solids.append(xf*box)
+	return _gate_solids
 
 ## SkyGlide's `guide` in the hall: as LandTunnels `guide`, off the walls, the
 ## roof and the floor.
