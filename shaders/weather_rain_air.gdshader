@@ -56,8 +56,6 @@ uniform float brightness = 1.0;
 uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
 uniform float clouds_on = 0.0;
 
-uniform int debug_view = 0;
-
 const int TAPS = 16;
 
 float ra_hash(vec2 p) {
@@ -144,37 +142,9 @@ void fragment() {
 		tau += rain * up * heavy * nearby * dt * (before + (1.0 - before) * (1.0 - cover));
 	}
 	float a = (1.0 - exp(-tau * sigma)) * most * opacity;
-	if (debug_view == 7) {
-		ALBEDO = vec3(a, tau * 0.0002, 0.0);
-		ALPHA = 1.0;
-	} else if (debug_view == 6) {
-		vec3 fw = -INV_VIEW_MATRIX[2].xyz;
-		vec2 fxz = normalize(fw.xz);
-		ALBEDO = vec3(zs_rain_at(eye.xz + fxz * SCREEN_UV.x * 8000.0), 0.0, 0.0);
-		ALPHA = 1.0;
-	} else if (debug_view == 5) {
-		float tq = t0 + 5.5 * dt;
-		vec3 pq = eye + rd * tq;
-		vec2 sq = pq.xz - lean * (top - pq.y);
-		ALBEDO = vec3(zs_rain_field_at(sq, field), zs_rain_field_at(pq.xz, zs_rain_field), tq / 20000.0);
-		ALPHA = 1.0;
-	} else if (debug_view == 4) {
-		vec3 pp = eye + rd * 4500.0;
-		float uu = 1.0 - smoothstep(rise.x, rise.y, pp.y - sea_y);
-		vec2 ss = pp.xz - lean * (top - pp.y);
-		ALBEDO = vec3(uu, zs_rain_field_at(ss, field), (t1 - t0) / 10000.0);
-		ALPHA = 1.0;
-	} else if (debug_view == 3) {
-		ALBEDO = vec3(tau * 0.0002);
-		ALPHA = 1.0;
-	} else if (debug_view == 2) {
-		ALBEDO = vec3(tau * 0.0005, cover, t1 / 20000.0);
-		ALPHA = 1.0;
-	} else {
-		if (a < 0.002) discard;
-		vec3 bg = texture(screen_tex, SCREEN_UV).rgb;
-		float bl = dot(bg, vec3(0.2126, 0.7152, 0.0722));
-		ALBEDO = mix(tint * bl * behind_dark, v_light, own_light);
-		ALPHA = clamp(a, 0.0, 1.0);
-	}
+	if (a < 0.002) discard;
+	vec3 bg = texture(screen_tex, SCREEN_UV).rgb;
+	float bl = dot(bg, vec3(0.2126, 0.7152, 0.0722));
+	ALBEDO = mix(tint * bl * behind_dark, v_light, own_light);
+	ALPHA = clamp(a, 0.0, 1.0);
 }

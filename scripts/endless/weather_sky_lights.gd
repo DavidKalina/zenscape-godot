@@ -33,7 +33,9 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DayCycle = preload("res://scripts/endless/day_cycle.gd")
 
 ## The rainbow at its strongest (celestial weather_bow; the shader's scale).
-const BOW_MAX := 0.5
+const BOW_MAX := 0.38
+## Its bands this much wider and softer (celestial weather_bow_wide).
+const BOW_WIDE := 1.4
 ## Sun height (sin of its elevation): the bow comes in as the sun clears
 ## BOW_SUN_UP.x..y (direct light, not the last red sliver) and goes as it
 ## climbs BOW_SUN_HIGH.x..y (about 28 to 40 degrees: the top sinks under the
@@ -58,7 +60,7 @@ const DOUBLE_CHANCE := 0.25
 const DOUBLE_OVER := Vector2(0.55, 0.85)
 const DOUBLE_EASE := 10.0
 ## --rainbow alone forces this much.
-const BOW_FORCED := 0.5
+const BOW_FORCED := 0.38
 
 ## A night's chance of an aurora, its strength range (zs_aurora.x), and its
 ## onset: how deep into the blue hour it starts (0..1 of blue_hour's rise).
@@ -74,8 +76,8 @@ const AURORA_SEED := 0x4a7012
 ## for a full night), y how far the curtains' feet stand raised (in dir.y),
 ## z their height's scale, w the light's scale.
 const AURORA_LIFT := 0.3
-const AURORA_TALL := 1.0
-const AURORA_GAIN := 1.0
+const AURORA_TALL := 0.8
+const AURORA_GAIN := 0.7
 
 var bow := 0.0
 var bow_target := 0.0
@@ -157,6 +159,7 @@ func _step_bow(delta: float, celestial: RefCounted, weather: RefCounted, eye: Ve
 		shown = maxf(shown,forced_bow)
 		if forced_double: shown_double = 1.0
 	celestial.weather_bow = shown
+	celestial.weather_bow_wide = BOW_WIDE
 	celestial.weather_bow_double = shown_double
 	# The weather's bow fades in whole: celestial's grow (a sweep round the
 	# ring, for the isles' moments) is skipped while it shows.

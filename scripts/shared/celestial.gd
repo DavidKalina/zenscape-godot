@@ -33,6 +33,9 @@ var weather_dim := 1.0
 ## The weather's lift on the land's sky fill (an overcast lights the land from
 ## the whole bright dome; 1 none).
 var weather_fill := 1.0
+## The weather's bow this much wider and softer than the isles' (zs_bow_shape.y)
+## while it shows: at 1 it read crisp, like a sticker.
+var weather_bow_wide := 1.0
 var shroud := 0.0
 var _cycling := true
 var cycling: bool:
@@ -618,7 +621,7 @@ func update_rig() -> void:
 	_publish("zs_room_yaw", room_yaw)
 	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)
-	_publish("zs_bow_shape", Vector2.ONE)
+	_publish("zs_bow_shape", Vector2(1.0, lerpf(1.0, weather_bow_wide, smoothstep(0.0, 0.05, weather_bow))))
 	_publish("zs_moonbow", moon_bow * night * smoothstep(-0.02, 0.08, moon.y))
 	_publish("zs_bow_double", maxf(moment_bow_double, weather_bow_double))
 

@@ -27,7 +27,7 @@ uniform float wind_push = 5.0;
 // One exposure (s): a streak's length is its speed past the eye times it,
 // up to `longest` m.
 uniform float exposure = 0.022;
-uniform float eye_share = 0.28;
+uniform float eye_share = 0.17;
 uniform float longest = 1.6;
 // The streak's width (m) and opacity, and how near the eye a drop fades.
 uniform float width = 0.016;
