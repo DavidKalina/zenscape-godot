@@ -628,6 +628,18 @@ func _river_water(land_seed: int) -> void:
 		ground.set_shader_parameter("river_detail_a",EndlessSea._detail(land_seed,0.022,5))
 		ground.set_shader_parameter("river_detail_b",EndlessSea._detail(land_seed+7,0.035,4))
 	_river_live(land_seed)
+	# The water as a mirror (unless --river-look=old): no foam lines drawn out
+	# down the flow (they read as creases), more of the sky at a low angle,
+	# and the banks standing dark in it.
+	if not LaunchArgs.user_args().has("--river-look=old"):
+		ground.set_shader_parameter("river_foam",Vector4(0.7,0.35,1.0,0.0))
+		ground.set_shader_parameter("river_fresnel",Vector2(0.10,2.6))
+		ground.set_shader_parameter("river_bank_mirror",Vector2(2.5,0.85))
+		# And the bank as gritty dirt, not a smooth damp strand.
+		ground.set_shader_parameter("river_bank_grit",1.0)
+		# A rim of it at every shore, and the beach's sand with grain.
+		ground.set_shader_parameter("river_bank_rim",Vector2(2.6,10.0))
+		ground.set_shader_parameter("sand_grit",1.0)
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--river-knob="):
 			ground.set_shader_parameter(arg.get_slice("=",1),str_to_var(arg.get_slice("=",2)))
