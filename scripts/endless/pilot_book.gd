@@ -57,7 +57,8 @@ static func open() -> PilotBook:
 	if OS.has_environment("ZENSCAPE_NO_BOOK"): b.path = ""
 	# The launch args (a driver's `open` and the scene picker give theirs).
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
-		if arg == "--pilot=fresh": b.path = ""
+		# A replay (scripts/endless/flight_replay.gd) keeps no book either.
+		if arg == "--pilot=fresh" or arg.begins_with("--replay="): b.path = ""
 		elif arg.begins_with("--pilot-file="): b.path = arg.substr(13)
 		elif arg == "--fresh" or arg == "--fresh=keep": b._go_fresh(arg == "--fresh=keep")
 	b.load_book()

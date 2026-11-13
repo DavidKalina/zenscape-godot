@@ -511,6 +511,11 @@ var book: PilotBook
 var overlay: Object = null
 ## Photo mode (scripts/endless/photo_mode.gd): O; the flight held while up.
 var photo: PhotoMode
+## A taped flight drawn again (--replay=FILE; scripts/endless/flight_replay.gd,
+## tools/movie.py): it gives the tick the input, the plane's and the landing's
+## state and the camera, in the flying's place. `--record=FILE` tapes one
+## (scripts/endless/flight_tape.gd).
+var replay: FlightReplay
 ## The book's counting hooks (scripts/endless/pilot_tallies.gd), stepped in
 ## `tick`; the landing summary and the logbook (J) over the HUD.
 var tallies := PilotTallies.new()
@@ -594,6 +599,17 @@ func _ready() -> void:
 			# A cap the machine holds every frame, under the screen's rate:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
+	# A taped flight drawn again: its seed, the land stood where it starts, no
+	# title. Else the tape, if one is asked for.
+	replay = FlightReplay.from_args(preload("res://scripts/launch_args.gd").user_args())
+	if replay != null:
+		seed = replay.seed_of()
+		var first := replay.start_at()
+		_start = Vector2(first.x,first.z)
+		_heading = replay.start_heading()
+		_heading_given = true
+		_no_title = true
+	else: FlightTape.begin(preload("res://scripts/launch_args.gd").user_args())
 	FrameLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	StreamLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	if FrameLog.on and not GroundTally.on and "--ground-tally" in preload("res://scripts/launch_args.gd").user_args(): GroundTally.start()
@@ -1385,7 +1401,7 @@ func tick(delta: float) -> void:
 	FrameLog.start()
 	var tick_from := Time.get_ticks_usec()
 	flown += delta
-	var input := _fly_input(delta)
+	var input := _fly_input(delta) if replay == null else replay.input()
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)
 	# The roll button on a full meter is the surge roll (scripts/endless/surge_smash.gd).
@@ -1418,7 +1434,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"glance")
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
-	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
+	# A replay sets the plane and the landing from its tape in the step's place.
+	var events: Dictionary = replay.step(delta,self) if replay != null else ({} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked")))
 	FrameLog.mark(&"landing")
 	if events.has("lifted"): book.new_flight()
 	book.flight.t = float(book.flight.t)+delta
@@ -1444,7 +1461,7 @@ func tick(delta: float) -> void:
 	summary.step(delta)
 	FrameLog.mark(&"summary")
 	_feel_sink(events)
-	_rumble(delta,events,float(input.get("boost",0.0)))
+	if replay == null: _rumble(delta,events,float(input.get("boost",0.0)))
 	FrameLog.mark(&"rumble")
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
 	FrameLog.mark(&"sound")
@@ -1464,6 +1481,7 @@ func tick(delta: float) -> void:
 	if doors != null: doors.step(delta)
 	FrameLog.mark(&"doors")
 	_frame(delta)
+	if replay != null: replay.frame(delta,self)
 	_bury(camera.global_position)
 	FrameLog.mark(&"camera")
 	if FrameLog.on: _canary()
@@ -1528,6 +1546,7 @@ func tick(delta: float) -> void:
 	# The day's clock waits while the menu holds the flight: a flight starts
 	# at its opening hour.
 	if look != null: look.cycle.held = stage != null and stage.holding()
+	if look != null and replay != null: replay.hour(look)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	FrameLog.mark(&"look")
 	if react != null: _react(delta)
@@ -1537,6 +1556,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"hud")
 	if FrameLog.on and GroundTally.on: _tally_row()
 	if FrameLog.on: FrameLog.end((Time.get_ticks_usec()-tick_from)/1000.0,plane.position,float(plane.speed))
+	if FlightTape.on and stage == null: FlightTape.frame(self,delta,input,events)
 
 ## How hard the vapour pulls off the wingtips (0 to 1): the flight path's
 ## turn rate over VAPOUR_TURN, more past cruise.
@@ -1997,6 +2017,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not walk_ready: return
 	# The menu holds the flight: none of its keys while it is up.
 	if stage != null and stage.holding(): return
+	# A replay takes no keys but Esc, which ends it.
+	if replay != null:
+		if event is InputEventKey and event.pressed and (event as InputEventKey).keycode == KEY_ESCAPE: get_tree().quit()
+		return
 	# Photo mode: O opens it while no overlay is up, and it takes them all.
 	if photo.handle(event): return
 	# An overlay (the shop, the logbook, photo mode) takes the keys while up.
@@ -2040,6 +2064,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _exit_tree() -> void:
+	FlightTape.flush()
 	tallies.finish()
 	if book != null: book.save()
 	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
