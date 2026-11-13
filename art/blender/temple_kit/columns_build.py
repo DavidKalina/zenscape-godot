@@ -22,6 +22,11 @@ import temple_lib as T
 
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 only = next((a.split("=")[1] for a in args if a.startswith("--only=")), None)
+# Points per flute and turned work's segments round (the trim's numbers, as
+# column_build.py's); the mid LOD takes MID_SAMPLES, MID_SEG.
+SAMPLES = 2
+SEG = 40
+MID_SAMPLES, MID_SEG = 1, 20
 
 R_FOOT = T.COLUMN_D / 2
 R_NECK = T.COLUMN_D_TOP / 2
@@ -53,7 +58,7 @@ def placed(p, matrix, fn):
     tmp.free()
 
 
-def shatter(p, bm, cuts, rough=0.12):
+def shatter(p, bm, cuts, rough=0.12, rings=3):
     """Cuts bm with each plane in `cuts` ((point, normal), keeping the side
     the normal points away from) and fills the cut as a fresh break, poked
     and jittered so it reads split, not sawn."""
@@ -68,6 +73,14 @@ def shatter(p, bm, cuts, rough=0.12):
         cut = [e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge)]
         if not cut:
             continue
+        # A drum with true flute normals is open along each arris (twin
+        # vertices): the cut leaves two points there. Weld them so the cut
+        # closes into a loop holes_fill can fill.
+        cv = [v for v in res["geom_cut"] if isinstance(v, bmesh.types.BMVert) and v.is_valid]
+        bmesh.ops.remove_doubles(bm, verts=cv, dist=1e-4)
+        pc = Vector(co)
+        cut = [e for e in bm.edges if e.is_boundary
+               and all(abs((v.co - pc).dot(no)) < 1e-4 for v in e.verts)]
         made = bmesh.ops.holes_fill(bm, edges=cut, sides=0)["faces"]
         for f in made:
             f[kind] = T.BROKEN
@@ -76,7 +89,7 @@ def shatter(p, bm, cuts, rough=0.12):
                 v[broke] = 1.0
         if not hidden:
             for f in made:
-                rough_face(p, bm, f, no, rough)
+                rough_face(p, bm, f, no, rough, rings=rings)
 
 
 class Piece(T.Piece):
@@ -150,11 +163,44 @@ def rough_face(p, bm, f, no, rough, rings=3):
         g[tone] = t
 
 
-def drum_bm(p, i, chips, samples=6, shift=0.0, yaw=None, tone=None):
-    """Drum i of the shaft (its taper), its foot at the origin."""
+def drum_bm(p, i, chips, samples=None, shift=0.0, yaw=None, tone=None, caps=(True, True)):
+    """Drum i of the shaft (its taper), its foot at the origin: 2 points a
+    flute with the true flute's normals, as the standing column's shaft."""
+    samples = SAMPLES if samples is None else samples
     return scratch(p, lambda: p.drum((0, 0, T.JOINT / 2), T.DRUM_H - T.JOINT, radius_at(i), radius_at(i + 1),
                                      chips=chips, yaw=yaw, shift=shift, samples=samples, flute_depth=0.17,
-                                     bite=(0.15, 0.55), tone=tone))
+                                     bite=(0.15, 0.55), tone=tone, caps=caps, true_normals=True))
+
+
+def spall(p, center, size, yaw, tilt, kind=T.FACE):
+    """A small chip of stone, no bevel (too small to show one), from the
+    draws the bevelled block it replaces took: its tone, its bevel's draw
+    skipped, its chips. That block's jitter drew per vertex (more with the
+    bevel), so it is built into a scratch bmesh, only to leave the rng
+    where it left it (the spalls after this one fall as before) and to
+    give its box: the sharp chip is fitted to it, as its corners stand out
+    further than worn ones (the piece's bounds stay put)."""
+    r = p.rng
+    s0 = r.getstate()
+    old = scratch(p, lambda: p.block(center, size, yaw=yaw, tilt=tilt, bevel=0.04, chips=2,
+                                     chip_depth=(0.05, 0.15), far=False, kind=kind))
+    s1 = r.getstate()
+    r.setstate(s0)
+    t = p.tone()
+    r.uniform(0.6, 1.5)
+    new = scratch(p, lambda: p.block(center, size, yaw=yaw, tilt=tilt, bevel=0.0, chips=2,
+                                     chip_depth=(0.05, 0.15), far=False, kind=kind, tone=t))
+    r.setstate(s1)
+
+    def box(bm):
+        return ([min(v.co[i] for v in bm.verts) for i in range(3)],
+                [max(v.co[i] for v in bm.verts) for i in range(3)])
+    (olo, ohi), (nlo, nhi) = box(old), box(new)
+    for v in new.verts:
+        v.co = Vector([olo[i] + (v.co[i] - nlo[i]) * (ohi[i] - olo[i]) / (nhi[i] - nlo[i]) for i in range(3)])
+    T._append(p.near, new)
+    old.free()
+    new.free()
 
 
 def lie(axis_yaw, roll=0.0, pitch=0.0):
@@ -166,15 +212,19 @@ def lie(axis_yaw, roll=0.0, pitch=0.0):
 
 
 # ---- column_broken -------------------------------------------------------
-def column_broken(seed=11):
+def column_broken(seed=11, mid=False):
+    """`mid`: its mid LOD (column_broken_mid.glb), the same stones from the
+    same draws, turned work at MID_SEG and the drums MID_SAMPLES a flute."""
     p = Piece("column_broken", seed=seed)
     r = p.rng
-    # The base, as the standing column's.
+    seg, smp = (MID_SEG, MID_SAMPLES) if mid else (SEG, SAMPLES)
+    # The base, as the standing column's: the torus's foot sits on the
+    # plinth (no cap), its top cap the floor the shaft stands on.
     p.block((0, 0, T.PLINTH_H / 2), (T.PLINTH, T.PLINTH, T.PLINTH_H), bevel=0.09, chips=3,
             chip_depth=(0.2, 0.5))
     p.ring((0, 0, T.PLINTH_H), [(R_FOOT + 0.15, 0.0), (R_FOOT + 0.38, 0.12), (R_FOOT + 0.45, 0.3),
-                                (R_FOOT + 0.38, 0.48), (R_FOOT + 0.05, T.TORUS_H)], segments=56, chips=2,
-           bite=(0.12, 0.3))
+                                (R_FOOT + 0.38, 0.48), (R_FOOT + 0.05, T.TORUS_H)], segments=seg, chips=2,
+           bite=(0.12, 0.3), caps=(False, True))
 
     # Three whole drums, the upper two walked off true by the fall that
     # took the rest: slid sideways and rocked on their beds.
@@ -186,7 +236,9 @@ def column_broken(seed=11):
         off = slide[i]
         ax, ay = lean[i]
         m = (Matrix.Translation((off.x, off.y, z)) @ Matrix.Rotation(ax, 4, "X") @ Matrix.Rotation(ay, 4, "Y"))
-        bm = drum_bm(p, i, chips=r.choice((1, 2, 3)), shift=0.0)
+        # Each end cap kept but the lowest's foot (on the torus): the drums
+        # are slid, so a foot overhangs the drum under it and shows.
+        bm = drum_bm(p, i, chips=r.choice((1, 2, 3)), shift=0.0, samples=smp, caps=(i > 0, True))
         T._append(p.near, bm, m)
         bm.free()
         z += T.DRUM_H
@@ -213,8 +265,8 @@ def column_broken(seed=11):
              [neg(P1), S1, S1b, P2],
              [neg(P2), S1, S1b, S2, S3, P3])
     for k, cuts in enumerate(parts):
-        bm = drum_bm(p, 3, chips=(1 if k == 0 else 0), tone=t, yaw=0.3)
-        shatter(p, bm, cuts, rough=0.26 - 0.03 * k)
+        bm = drum_bm(p, 3, chips=(1 if k == 0 else 0), tone=t, yaw=0.3, samples=smp)
+        shatter(p, bm, cuts, rough=0.26 - 0.03 * k, rings=1 if mid else 3)
         T._append(p.near, bm, top_m)
         bm.free()
 
@@ -223,9 +275,11 @@ def column_broken(seed=11):
         a_ = r.uniform(-0.9, 0.9)
         d = r.uniform(3.0, 5.2)
         s = r.uniform(0.35, 0.8)
-        p.block((math.cos(a_) * d, math.sin(a_) * d, s * 0.3), (s * 1.3, s, s * 0.7), yaw=r.uniform(0, 3),
-                tilt=(r.uniform(-0.4, 0.4), r.uniform(-0.4, 0.4)), bevel=0.04, chips=2,
-                chip_depth=(0.05, 0.15), far=False, kind=T.FACE)
+        spall(p, (math.cos(a_) * d, math.sin(a_) * d, s * 0.3), (s * 1.3, s, s * 0.7), r.uniform(0, 3),
+              (r.uniform(-0.4, 0.4), r.uniform(-0.4, 0.4)))
+    if mid:
+        p.export(mid_of="column_broken")
+        return
 
     # Far LOD: the base and the stump to a mean break height, with the step.
     p.far_cylinder((0, 0, T.PLINTH_H), T.TORUS_H + 3 * T.DRUM_H + 0.9, R_FOOT + 0.1, radius_at(3.4), segments=12)
@@ -293,9 +347,10 @@ def column_drums(seed=23):
              @ Matrix.Rotation(0.35, 4, "Y") @ Matrix.Rotation(math.pi, 4, "X")
              @ Matrix.Translation((0, 0, -(T.ECHINUS_H + T.ABACUS_H) / 2)))
     RT = R_NECK
+    # Its top lies under the abacus (no cap); the neck's cap, turned up, shows.
     placed(p, cap_m, lambda: p.ring((0, 0, 0), [(RT - 0.05, 0.0), (RT + 0.05, 0.12), (RT + 0.45, 0.4),
                                                 (RT + 0.85, 0.75), (RT + 0.9, T.ECHINUS_H)],
-                                    segments=48, chips=3, bite=(0.15, 0.45)))
+                                    segments=SEG, chips=3, bite=(0.15, 0.45), caps=(True, False)))
     # The abacus through block(): it carries its own matrix by centre/yaw/tilt,
     # so build it in a scratch piece-bmesh and place it with the same matrix.
     keep_far = p.far
@@ -312,9 +367,8 @@ def column_drums(seed=23):
     for (cx, cy, n) in ((10.8, -2.3, 3), (16.4, -1.4, 3), (21.0, -2.2, 3), (22.5, 3.0, 2)):
         for _ in range(n):
             s = r.uniform(0.3, 0.7)
-            p.block((cx + r.uniform(-1.5, 1.5), cy + r.uniform(-1.2, 1.2), s * 0.25), (s * 1.4, s, s * 0.6),
-                    yaw=r.uniform(0, 3), tilt=(r.uniform(-0.4, 0.4), r.uniform(-0.4, 0.4)), bevel=0.04,
-                    chips=2, chip_depth=(0.05, 0.15), far=False)
+            spall(p, (cx + r.uniform(-1.5, 1.5), cy + r.uniform(-1.2, 1.2), s * 0.25), (s * 1.4, s, s * 0.6),
+                  r.uniform(0, 3), (r.uniform(-0.4, 0.4), r.uniform(-0.4, 0.4)))
 
     # Solids: each drum and the capital as a box around what stands proud
     # of the grass (coarse; the plane only needs the bulk).
@@ -327,5 +381,6 @@ def column_drums(seed=23):
 
 if only in (None, "column_broken"):
     column_broken()
+    column_broken(mid=True)
 if only in (None, "column_drums"):
     column_drums()

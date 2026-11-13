@@ -431,14 +431,20 @@ class Piece:
             g = g1
 
     def drum(self, base, height, r0, r1, flutes=FLUTES, flute_depth=0.13, chamfer=0.07,
-             chips=1, bite=(0.12, 0.4), samples=4, yaw=None, tone=None, shift=0.03, caps=(True, True)):
+             chips=1, bite=(0.12, 0.4), samples=4, yaw=None, tone=None, shift=0.03, caps=(True, True),
+             true_normals=False):
         """A fluted drum, its foot's centre at `base`, radius r0 at the foot
         and r1 at the top (the shaft's taper), sharp arrises between the
         flutes, the ends chamfered so the joint between drums reads open.
         `chips` bites out of its top or bottom edge; set slightly off true
         (`shift` m, a turn) as old drums sit. `caps` (foot, top): False
-        leaves that end open, for an end no one can see. (A standing stack
-        of drums: shaft(), cheaper.)"""
+        leaves that end open, for an end no one can see. `true_normals`
+        (as shaft()): the flank's faces take the true flute's normals
+        (custom split normals, each arris vertex split in two, one per
+        side), so samples=2 shades as round as the default's 4-6; the
+        flank is then open along each arris (a seam of twin vertices: a
+        bisect across it must weld its cut). Same draws from the rng either
+        way. (A standing stack of drums: shaft(), cheaper.)"""
         r = self.rng
         bx, by, bz = base
         bx += r.uniform(-shift, shift)
@@ -450,10 +456,23 @@ class Piece:
         bites = [(r.uniform(0, math.tau), r.uniform(0.15, 0.5), r.uniform(*bite), r.random() < 0.6)
                  for _ in range(chips)]
         bk, bt, bb = _layers(self.near)
+        nrm = _normals(self.near) if true_normals else None
+        span = math.tau / flutes
+        slope = (r1 - r0) / height
+
+        def flute_normal(a, u, rad):
+            # The true fluted surface's normal at angle a, u across the flute.
+            drda = -flute_depth * math.pi * math.cos(math.pi * u) / span
+            nv = Vector((math.cos(a), math.sin(a), 0.0)) - Vector((-math.sin(a), math.cos(a), 0.0)) * (drda / rad)
+            nv.z = -slope
+            return nv.normalized()
+
         zs = [(0.0, chamfer), (chamfer, 0.0), (height - chamfer, 0.0), (height, chamfer)]
         rings = []
+        lefts = []
         for zi, (z, inset) in enumerate(zs):
             ring = []
+            left = []
             rad_here = r0 + (r1 - r0) * (z / height)
             for i in range(n):
                 a = yaw + math.tau * i / n
@@ -473,15 +492,36 @@ class Piece:
                         rad -= d * w * (1.0 if zi in (0, 3) else 0.7)
                         zz += (-1 if top else 1) * d * 0.6 * w * (1.0 if zi in (1, 2) else 0.3)
                         broke = max(broke, w)
-                v = self.near.verts.new((bx + math.cos(a) * rad, by + math.sin(a) * rad, bz + zz))
+                co = (bx + math.cos(a) * rad, by + math.sin(a) * rad, bz + zz)
+                v = self.near.verts.new(co)
                 v[bb] = broke
                 ring.append(v)
+                if nrm is None or zi in (0, 3):
+                    left.append(v)
+                    continue
+                # The flank: the true flute's normal; an arris vertex gets a
+                # twin carrying the previous flute's side.
+                if broke < 0.3:
+                    _set_normal(v, nrm, flute_normal(a, u, rad_here))
+                if i % samples == 0:
+                    w = self.near.verts.new(co)
+                    w[bb] = broke
+                    if broke < 0.3:
+                        _set_normal(w, nrm, flute_normal(a, 1.0, rad_here))
+                    left.append(w)
+                else:
+                    left.append(v)
             rings.append(ring)
+            lefts.append(left)
         for zi in range(3):
             lo, hi = rings[zi], rings[zi + 1]
             for i in range(n):
                 j = (i + 1) % n
-                f = self.near.faces.new((lo[i], lo[j], hi[j], hi[i]))
+                if zi == 1:
+                    vs = (lo[i], lefts[1][j], lefts[2][j], hi[i])
+                else:
+                    vs = (lo[i], lo[j], hi[j], hi[i])
+                f = self.near.faces.new(vs)
                 f[bk] = FACE if zi == 1 else JOINTFACE
                 f[bt] = t
         for ring, z, flip, cap in ((rings[0], 0.0, True, caps[0]), (rings[3], height, False, caps[1])):
