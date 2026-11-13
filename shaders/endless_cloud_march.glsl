@@ -758,57 +758,84 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 	ivec2 g = ivec2(floor(f / cell));
 	// Under weather the broad cells' grown clouds reach WX_EXT cells: 5x5.
 	int span = big && wx_on() ? 2 : 1;
-	for (int y = -span; y <= span; y++) {
-		for (int x = -span; x <= span; x++) {
-			ivec2 c = g + ivec2(x, y);
-			Cloud k;
-			if (!recipe_shape(c, big, cover, k)) continue;
-			bool lifed = P.spare[1].x > 0.5;
-			if (lifed && k.low == g_high) continue;
-			recipe_lift(k, c, big);
-			float d = length(f - k.middle);
-			float top_c = -1e4;
-			float base_c = 1e4;
-			float out_c = d - k.ext * k.r;
-			// Whether a puff or a wisp yields is asked over its reach and a
-			// margin round it, where its rim's height could still be the
-			// nearest rim a texel keeps and so bend a neighbour's smoothed edge
-			// (farther off it only gives the leap a shorter, safe distance).
-			if (out_c < YIELD_NEAR && P.flash.z > 0.5 && (!big || k.kind == KIND_WISP)) {
-				float press = yields(k, c, big, cover);
-				if (press >= 0.999) continue;
-				k.life *= 1.0 - press;
-			}
-			if (lifed) {
-				if (k.life < 0.01) continue;
-				apply_life(k);
-				out_c = d - k.ext * k.r;
-			}
-			// Past the rims the map keeps the nearest rim's height as the
-			// base (the cloud's lowest point there would drag the smoothed
-			// base down at the rim into hanging strands).
-			float rim_c = k.base + k.H * 0.4;
-			if (out_c <= 0.0) {
-				out_c = 1e9;
-				for (int i = 0; i < 9; i++) {
-					if (i >= k.n) break;
-					vec3 b = bubble_span(k, c, k.salt, i, f);
-					if (b.x > -1e3) {
-						top_c = max(top_c, b.x);
-						base_c = min(base_c, b.y);
-					} else if (b.y < out_c) {
-						out_c = b.y;
-						rim_c = b.z;
-					}
+	bool lifed = P.spare[1].x > 0.5;
+	// A ring cell's cloud reaches at most `most` from its middle: one whose
+	// middle is farther than that past the layer's nearest rim so far can
+	// neither cover f nor give a nearer rim (take() would do nothing), so its
+	// recipe is skipped. Exact. The low pass's clouds never grow (EXT_MAX).
+	// The inner 3x3 first (ci < 9), so the gap the ring meets is tight.
+	float most = (lifed && !g_high ? EXT_MAX : WX_EXT) * cell;
+	int cells = span > 1 ? 25 : 9;
+	for (int ci = 0; ci < cells; ci++) {
+		ivec2 o;
+		if (ci < 9) o = ivec2(ci % 3 - 1, ci / 3 - 1);
+		else {
+			int r = ci - 9;
+			o = r < 5 ? ivec2(r - 2, -2) : r < 10 ? ivec2(r - 7, 2) : r < 13 ? ivec2(-2, r - 11) : ivec2(2, r - 14);
+		}
+		ivec2 c = g + o;
+		uint rcyc;
+		cell_life(c, big, rcyc);
+		uint rsalt = uint(P.drift.z) + (big ? 101u : 211u) + rcyc * 977u;
+		// The low pass keeps only low clouds: a broad cell is low only as a
+		// fair cumulus or a row (recipe_shape's kinds by s.y), never a cloud
+		// the weather stands up. Any other kind is skipped before its recipe.
+		if (big && lifed && !g_high) {
+			float sy = hash3(c, rsalt + 1u).y;
+			if (sy >= FAIR_SHARE && (sy < FAIR_SHARE + TOWER_SHARE2 || sy >= FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE)) continue;
+		}
+		if (ci >= 9) {
+			vec3 rh = hash3(c, rsalt);
+			float past = length(f - (vec2(c) + 0.5 + JIT * (rh.xy * 2.0 - 1.0)) * cell) - most;
+			float gap_now = lifed ? (g_high ? high_gap : low_gap) : max(low_gap, high_gap);
+			if (past > 0.0 && past >= gap_now) continue;
+		}
+		Cloud k;
+		if (!recipe_shape(c, big, cover, k)) continue;
+		if (lifed && k.low == g_high) continue;
+		recipe_lift(k, c, big);
+		float d = length(f - k.middle);
+		float top_c = -1e4;
+		float base_c = 1e4;
+		float out_c = d - k.ext * k.r;
+		// Whether a puff or a wisp yields is asked over its reach and a
+		// margin round it, where its rim's height could still be the
+		// nearest rim a texel keeps and so bend a neighbour's smoothed edge
+		// (farther off it only gives the leap a shorter, safe distance).
+		if (out_c < YIELD_NEAR && P.flash.z > 0.5 && (!big || k.kind == KIND_WISP)) {
+			float press = yields(k, c, big, cover);
+			if (press >= 0.999) continue;
+			k.life *= 1.0 - press;
+		}
+		if (lifed) {
+			if (k.life < 0.01) continue;
+			apply_life(k);
+			out_c = d - k.ext * k.r;
+		}
+		// Past the rims the map keeps the nearest rim's height as the
+		// base (the cloud's lowest point there would drag the smoothed
+		// base down at the rim into hanging strands).
+		float rim_c = k.base + k.H * 0.4;
+		if (out_c <= 0.0) {
+			out_c = 1e9;
+			for (int i = 0; i < 9; i++) {
+				if (i >= k.n) break;
+				vec3 b = bubble_span(k, c, k.salt, i, f);
+				if (b.x > -1e3) {
+					top_c = max(top_c, b.x);
+					base_c = min(base_c, b.y);
+				} else if (b.y < out_c) {
+					out_c = b.y;
+					rim_c = b.z;
 				}
 			}
-			if (top_c > -1e3) {
-				if (k.low) take(low, low_gap, sea + top_c, sea + base_c, 0.0);
-				else take(high, high_gap, sea + top_c, sea + base_c, 0.0);
-			} else {
-				if (k.low) take(low, low_gap, sea + rim_c, sea + rim_c, out_c);
-				else take(high, high_gap, sea + rim_c, sea + rim_c, out_c);
-			}
+		}
+		if (top_c > -1e3) {
+			if (k.low) take(low, low_gap, sea + top_c, sea + base_c, 0.0);
+			else take(high, high_gap, sea + top_c, sea + base_c, 0.0);
+		} else {
+			if (k.low) take(low, low_gap, sea + rim_c, sea + rim_c, out_c);
+			else take(high, high_gap, sea + rim_c, sea + rim_c, out_c);
 		}
 	}
 }
@@ -832,7 +859,7 @@ vec4 weather_texel(vec2 xz) {
 			g_drift = P.spare[1].zw;
 			f = xz + g_phase - g_drift;
 			lattice_new(f, true, sea, cover, low, low_gap, high, high_gap);
-			lattice_new(f, false, sea, cover, low, low_gap, high, high_gap);
+			// (The small cells' puffs are all low: none is kept here.)
 		}
 	} else {
 		lattice(f, true, sea, cover, low, low_gap, high, high_gap);
