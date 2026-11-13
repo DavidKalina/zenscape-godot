@@ -135,6 +135,9 @@ def slab(p, center, size, yaw=0.0, tilt=(0.0, 0.0), bevel=T.BEVEL, chips=2, chip
                 v.co = m.inverted() @ Vector((w.x, w.y, floor))
     T._append(p.near, tmp, m)
     tmp.free()
+    # The mid box keeps its bottom: a fascia's or the taenia's shows a
+    # strip where it steps out over the one below.
+    _mid_box(p, center, size, yaw, tilt, t, [h for h in hide if h != "-z"])
     if far:
         p.far_box(center, size, yaw=yaw, tilt=tilt, tone=t)
 
@@ -199,9 +202,11 @@ def _drop(bm, tk, press=(), hide=()):
         bmesh.ops.delete(bm, geom=gone, context="FACES")
 
 
-def block(p, *a, press=(), hide=(), **k):
+def block(p, *a, press=(), hide=(), mid=True, **k):
     """The library's block, its unseen faces dropped (_drop). The block is
-    built on a scratch mesh, so the draws are the library's own."""
+    built on a scratch mesh, so the draws are the library's own. On a mid
+    build (_mid_box) it stands as a plain box, or not at all (`mid`
+    False)."""
     near = p.near
     tmp = bmesh.new()
     T._layers(tmp)
@@ -210,11 +215,50 @@ def block(p, *a, press=(), hide=(), **k):
         out = p.block(*a, **k)
     finally:
         p.near = near
-    tk = T._layers(tmp)[0]
+    tk, tt, _ = T._layers(tmp)
+    if mid and tmp.faces:
+        center = a[0] if a else k["center"]
+        size = a[1] if len(a) > 1 else k["size"]
+        _mid_box(p, center, size, k.get("yaw", 0.0), k.get("tilt", (0.0, 0.0)), next(iter(tmp.faces))[tt],
+                 tuple(press) + tuple(hide))
     _drop(tmp, tk, press, hide)
     T._append(near, tmp)
     tmp.free()
     return out
+
+
+def _mid_box(p, center, size, yaw, tilt, tone, hide=()):
+    """On a mid build (p.mid set: the near goes on being built, every draw
+    as it was, and is thrown away), one stone as a plain box: six faces,
+    less those toward a `hide` direction (plain names only)."""
+    bm = getattr(p, "mid", None)
+    if bm is None:
+        return
+    tmp = bmesh.new()
+    tk, tt, _ = T._layers(tmp)
+    sx, sy, sz = (s / 2 for s in size)
+    vs = {}
+    for i in (-1, 1):
+        for j in (-1, 1):
+            for k in (-1, 1):
+                vs[i, j, k] = tmp.verts.new((i * sx, j * sy, k * sz))
+    quads = {"-x": [(-1, -1, -1), (-1, -1, 1), (-1, 1, 1), (-1, 1, -1)],
+             "+x": [(1, -1, -1), (1, 1, -1), (1, 1, 1), (1, -1, 1)],
+             "-y": [(-1, -1, -1), (1, -1, -1), (1, -1, 1), (-1, -1, 1)],
+             "+y": [(-1, 1, -1), (-1, 1, 1), (1, 1, 1), (1, 1, -1)],
+             "-z": [(-1, -1, -1), (-1, 1, -1), (1, 1, -1), (1, -1, -1)],
+             "+z": [(-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)]}
+    names = {h if isinstance(h, str) else h[0] for h in hide}
+    for d, q in quads.items():
+        if d in names:
+            continue
+        f = tmp.faces.new([vs[c] for c in q])
+        f[tk] = T.FACE
+        f[tt] = tone
+    m = (Matrix.Translation(Vector(center)) @ Matrix.Rotation(yaw, 4, "Z")
+         @ Matrix.Rotation(tilt[1], 4, "Y") @ Matrix.Rotation(tilt[0], 4, "X"))
+    T._append(bm, tmp, m)
+    tmp.free()
 
 
 def _cut(bm, co, n, tk, tb):
@@ -353,13 +397,20 @@ def regula(p, xc, side, x_lo=-H, x_hi=H):
     if b - a < 0.2:
         return
     block(p, ((a + b) / 2, side * (D + 0.05), Z0 + ARCH_H - 0.14), (b - a - T.JOINT, 0.14, 0.26),
-          bevel=0.03, chips=0, far=False, press=("-y" if side > 0 else "+y",), hide=("+z",))
+          bevel=0.03, chips=0, far=False, mid=False, press=("-y" if side > 0 else "+y",), hide=("+z",))
 
 
 # ---- lintel ---------------------------------------------------------------
 
-def build_lintel():
+def build_lintel(mid=False):
+    """With mid, the same build (every draw as in the near) as plain boxes:
+    lintel_mid.glb. The fasciae's steps, every triglyph bar and every
+    cornice block stand, the missing ones missing; no wear, chips,
+    bevels or regulae."""
     p = T.Piece("lintel", seed=11)
+    if mid:
+        p.mid = bmesh.new()
+        T._layers(p.mid)
     r = p.rng
     L = T.BAY - T.JOINT
     # The architrave: two stones side by side, each the bay's length,
@@ -404,6 +455,11 @@ def build_lintel():
     # The flight's solids: the beam, and the cornice wider over it.
     p.solid((-H, -D, Z0), (H, D, Z_CORNICE))
     p.solid((-H, -CORNICE_D, Z_CORNICE), (H, CORNICE_D, Z0 + T.ENTABLATURE_H))
+    if mid:
+        p.near.free()
+        p.near = p.mid
+        p.export(mid_of="lintel")
+        return
     p.export()
 
 
@@ -421,9 +477,9 @@ def _cap(p, side, gaps, drop=(), x0=-H, x1=H):
             L = x1 - x
         over_gap = any(x < b and x + L > a for a, b in gaps)
         if i not in drop and not over_gap:
-            p.block((x + L / 2 + r.uniform(-0.03, 0.03), side * CAP_D / 2 + r.uniform(-0.03, 0.03), z + CAP_H / 2),
-                    (L - T.JOINT, CAP_D - T.JOINT / 2, CAP_H - T.JOINT), yaw=r.uniform(-0.008, 0.008),
-                    chips=r.randint(1, 3), chip_depth=(0.1, 0.25), far=False)
+            block(p, (x + L / 2 + r.uniform(-0.03, 0.03), side * CAP_D / 2 + r.uniform(-0.03, 0.03), z + CAP_H / 2),
+                  (L - T.JOINT, CAP_D - T.JOINT / 2, CAP_H - T.JOINT), yaw=r.uniform(-0.008, 0.008),
+                  chips=r.randint(1, 3), chip_depth=(0.1, 0.25), far=False)
             if spans and abs(spans[-1][1] - x) < 1e-6:
                 spans[-1][1] = x + L
             else:
@@ -552,5 +608,6 @@ def build_lintel_broken():
 
 if only in ("", "lintel"):
     build_lintel()
+    build_lintel(mid=True)
 if only in ("", "lintel_broken"):
     build_lintel_broken()
