@@ -222,10 +222,36 @@ class Piece:
                 v[broke_layer] = 1.0
 
     # -- blocks -----------------------------------------------------------
+    @staticmethod
+    def _unseen_faces(bm, hide, seen=None):
+        """A block's faces (in its own frame, a convex cut box) nobody sees.
+        A face's sides are the axes its normal leans along (a face 1, a
+        bevel 2, a corner 3). Without `seen`: the faces that lean only
+        toward `hide` sides. With `seen`: every face that leans toward a
+        `hide` side and toward no `seen` one (so the bevels between a hidden
+        side and one in neither set, deep in a joint, go too)."""
+        hide = set(hide)
+        bm.normal_update()
+        out = []
+        for f in bm.faces:
+            n = f.normal
+            sides = {("+" if n[i] > 0 else "-") + "xyz"[i] for i in range(3) if abs(n[i]) > 0.3}
+            if not sides:
+                continue
+            if seen is None and sides <= hide or seen is not None and sides & hide and not sides & set(seen):
+                out.append(f)
+        return out
+
     def block(self, center, size, yaw=0.0, tilt=(0.0, 0.0), bevel=BEVEL, chips=2,
-              chip_depth=(0.12, 0.45), jitter=0.012, tone=None, far=True, kind=FACE):
+              chip_depth=(0.12, 0.45), jitter=0.012, tone=None, far=True, kind=FACE, hide=(), seen=None):
         """A cut block, centre and size (x, y, z), worn arrises and `chips`
-        corners knocked off. `tilt` (about x, about y) for a fallen one."""
+        corners knocked off. `tilt` (about x, about y) for a fallen one.
+        `hide`: sides nobody sees ("-z", "+y", ... in the block's own frame,
+        before yaw and tilt): their faces are left out, and so are the bevels
+        and corners (and chips) that touch only hidden sides; with `seen`
+        (the sides that show in full) also those touching a hidden side and
+        no seen one. The stone is cut and worn as without `hide` (same
+        random draws), then trimmed."""
         r = self.rng
         sx, sy, sz = size
         tmp = bmesh.new()
@@ -254,9 +280,12 @@ class Piece:
             self._chip(tmp, corner, size, d, tk, tb)
             for f in tmp.faces:
                 f[tt] = t
+        unseen = self._unseen_faces(tmp, hide, seen) if hide else []
         if jitter > 0.0:
             for v in tmp.verts:
                 v.co += Vector((r.uniform(-1, 1), r.uniform(-1, 1), r.uniform(-1, 1))) * jitter
+        if unseen:
+            bmesh.ops.delete(tmp, geom=unseen, context="FACES")
         m = (Matrix.Translation(Vector(center)) @ Matrix.Rotation(yaw, 4, "Z")
              @ Matrix.Rotation(tilt[1], 4, "Y") @ Matrix.Rotation(tilt[0], 4, "X"))
         _append(self.near, tmp, m)

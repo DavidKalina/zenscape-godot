@@ -86,13 +86,36 @@ class Podium(T.Piece):
                 f[k] = EARTH
                 f[t] = 1.0
 
-    def quad(self, pts, kind=EARTH):
+    def quad(self, pts, kind=EARTH, tone=1.0):
         """One face (corners in order, counter-clockwise from above)."""
         k, t, b = T._layers(self.near)
         vs = [self.near.verts.new(Vector(q)) for q in pts]
         f = self.near.faces.new(vs)
         f[k] = kind
-        f[t] = 1.0
+        f[t] = tone
+
+    def backing(self, fr, u0, u1, v, z0, z1):
+        """A dark wall facing the front (-v) behind a run whose blocks' ends
+        are left out, so an open joint shows stone, not sky."""
+        self.quad([fr.pt(u0, v, z0), fr.pt(u1, v, z0), fr.pt(u1, v, z1), fr.pt(u0, v, z1)],
+                  kind=T.JOINTFACE, tone=0.8)
+
+
+# What a block set in the platform never shows (block(hide=, seen=)): a
+# step block's bed and back (under the next step / the paving) and every
+# bevel and corner that leans that way; its ends stay, an open joint shows
+# them. A slab: its bed and the bevels round it.
+STEP_HIDE, STEP_SEEN = ("-z", "+y"), ("+z", "-y")
+SLAB_HIDE, SLAB_SEEN = ("-z",), ("+z",)
+
+
+def run_hide(base, j, n, keep=()):
+    """`base` for block j of a run of n; the run's end blocks hide nothing
+    (a bay's end shows them standing alone, overhanging), and `keep` sides
+    always show."""
+    if j == 0 or j == n - 1:
+        return ()
+    return tuple(sorted(set(base) - set(keep)))
 
 
 class Frame:
@@ -140,9 +163,10 @@ def settle(rng):
                 tip=rng.uniform(-0.012, 0.012))
 
 
-def step_course(p, fr, i, u0, u1, hurt=None, end_broken=None):
+def step_course(p, fr, i, u0, u1, hurt=None, end_broken=None, hide=STEP_HIDE):
     """Step i (0 bottom .. 2 the stylobate) along u0..u1. `hurt(index, n,
-    spec) -> bool` may change a block (or return False to drop it)."""
+    spec) -> bool` may change a block (or return False to drop it), and
+    set spec["keep"] to sides of it that show (see run_hide)."""
     r = p.rng
     z0 = T.STEP_H * i
     blocks = lay(r, u0, u1, (2.6, 4.6) if i < 2 else (2.4, 3.8))
@@ -155,7 +179,7 @@ def step_course(p, fr, i, u0, u1, hurt=None, end_broken=None):
             continue
         emit(p, fr, spec["u"], spec["v"], spec["z"], (spec["L"] - T.JOINT, DEPTH[i] - T.JOINT, spec["H"] - T.JOINT),
              yaw=spec["yaw"], tilt=spec["tilt"], chips=spec["chips"], chip_depth=spec["chip_depth"],
-             bevel=spec["bevel"])
+             bevel=spec["bevel"], hide=run_hide(hide, j, len(blocks), spec.get("keep", ())), seen=STEP_SEEN)
     lo_u, hi_u = u0, u1
     p.far_box(_mid(fr, (lo_u + hi_u) / 2, FRONT[i] + DEPTH[i] / 2, z0 + T.STEP_H / 2),
               (hi_u - lo_u, DEPTH[i], T.STEP_H), yaw=fr.a)
@@ -171,7 +195,7 @@ def broken_end(p, fr, i, u_end, side, spec_v):
     r = p.rng
     z0 = T.STEP_H * i
     emit(p, fr, u_end, spec_v, z0 + 0.28, (0.9, DEPTH[i] - 0.3, 0.56), chips=3, chip_depth=(0.2, 0.35),
-         bevel=0.1)
+         bevel=0.1, hide=("-z", "+y"))
     # The fallen corner on the step (or ground) below.
     zb = T.STEP_H * max(0, i - 1) if i > 0 else 0.0
     emit(p, fr, u_end + side * 0.4, FRONT[i] - 0.75, zb + 0.3, (1.0, 0.8, 0.62), yaw=r.uniform(-0.6, 0.6),
@@ -196,19 +220,25 @@ def footing(p, fr, u0, u1, front=FRONT[0], v_back=BACK, shift=(True, True), end_
         s = SHIFT[key]
         a = u0 + (s if shift[0] else 0.0)
         b = u1 + (s if shift[1] else 0.0) + (out if end_out else 0.0)
-        for uc, L in lay(r, a, b, (4.0, 6.5)):
+        blocks = lay(r, a, b, (4.0, 6.5))
+        # Below ground only the outer faces: the top course's front and
+        # lip, the lower one's front; a dark wall behind the joints.
+        base = ("-z", "+y", "-x", "+x") + (("+z",) if key == "foot1" else ())
+        for j, (uc, L) in enumerate(blocks):
             v0 = front - out - r.uniform(0.0, 0.08)
             emit(p, fr, uc, (v0 + v_back) / 2, (z0 + z1) / 2, (L - 0.05, v_back - v0, z1 - z0),
-                 bevel=0.0, chips=0, jitter=0.03, tone=r.uniform(0.75, 0.9))
+                 bevel=0.0, chips=0, jitter=0.03, tone=r.uniform(0.75, 0.9),
+                 hide=tuple(set(run_hide(base, j, len(blocks))) | set(base) - {"-x", "+x"}))
+        p.backing(fr, a, b, front - out + 0.35, z0, z1)
         p.far_box(fr.pt((a + b) / 2, (front - out + v_back) / 2, (z0 + z1) / 2),
                   (b - a, v_back - front + out, z1 - z0), yaw=fr.a)
 
 
-def paving(p, fr, u0, u1, rows=ROWS, keep=None, hurt=None):
+def paving(p, fr, u0, u1, keep=None, hurt=None, **kw):
     """The paved top: rows of slabs from the stylobate back. `keep(u, v)`
     True where a slab must stay flat (under a column); `hurt(spec)` may
     change a slab, set spec["crack"], or return False to drop it."""
-    _paving_span(p, fr, lambda s: (u0 + s, u1 + s), keep=keep, hurt=hurt)
+    _paving_span(p, fr, lambda s: (u0 + s, u1 + s), keep=keep, hurt=hurt, **kw)
 
 
 def _cracked(p, fr, spec):
@@ -280,6 +310,7 @@ def build_podium():
             spec["yaw"] += 0.035
             spec["z"] -= 0.05
             spec["tilt"] = (0.0, 0.02)
+            spec["keep"] = ("-z",)          # slipped forward: its bed's front edge shows
         return True
 
     def hurt2(j, n, spec):
@@ -398,13 +429,18 @@ def paving_from(p, fr, u_start, u1, **kw):
     _paving_span(p, fr, lambda s: (u_start, u1 + s), **kw)
 
 
-def _paving_span(p, fr, span, keep=None, hurt=None):
+def _paving_span(p, fr, span, keep=None, hurt=None, rows=ROWS, keys=None):
+    """Rows of slabs; `keys` their SHIFT names (row0.. by default). A
+    slab's bed and the bevels round it are left out, except under a
+    heaved slab and at a run's ends (a bay's end shows them overhanging)."""
     r = p.rng
+    keys = keys or ["row%d" % i for i in range(len(rows))]
     lo_all, hi_all = 1e9, -1e9
-    for ri, (v0, v1) in enumerate(ROWS):
-        a, b = span(SHIFT["row%d" % ri])
+    for ri, (v0, v1) in enumerate(rows):
+        a, b = span(SHIFT[keys[ri]])
         lo_all, hi_all = min(lo_all, a), max(hi_all, b)
-        for j, (uc, L) in enumerate(lay(r, a, b, (1.8, 3.4))):
+        slabs = lay(r, a, b, (1.8, 3.4))
+        for j, (uc, L) in enumerate(slabs):
             spec = dict(u=uc, L=L, v=(v0 + v1) / 2, D=v1 - v0, z=SLAB_Z + 0.225 - r.uniform(0.0, 0.03),
                         yaw=r.uniform(-0.006, 0.006), tilt=(0.0, 0.0), chips=r.randint(0, 2), row=ri, j=j)
             if hurt is not None and (keep is None or not keep(spec)):
@@ -413,10 +449,12 @@ def _paving_span(p, fr, span, keep=None, hurt=None):
             if spec.get("crack"):
                 _cracked(p, fr, spec)
                 continue
+            hide = run_hide(SLAB_HIDE, j, len(slabs)) if spec["tilt"] == (0.0, 0.0) else ()
             emit(p, fr, spec["u"], spec["v"], spec["z"], (spec["L"] - T.JOINT, spec["D"] - T.JOINT, 0.45),
-                 yaw=spec["yaw"], tilt=spec["tilt"], chips=spec["chips"], chip_depth=(0.08, 0.14), bevel=0.06)
-    p.far_box(fr.pt((lo_all + hi_all) / 2, (ROWS[0][0] + ROWS[-1][1]) / 2, SLAB_Z + 0.225),
-              (hi_all - lo_all, ROWS[-1][1] - ROWS[0][0], 0.45), yaw=fr.a)
+                 yaw=spec["yaw"], tilt=spec["tilt"], chips=spec["chips"], chip_depth=(0.08, 0.14), bevel=0.06,
+                 hide=hide, seen=SLAB_SEEN)
+    p.far_box(fr.pt((lo_all + hi_all) / 2, (rows[0][0] + rows[-1][1]) / 2, SLAB_Z + 0.225),
+              (hi_all - lo_all, rows[-1][1] - rows[0][0], 0.45), yaw=fr.a)
 
 
 # ---------------------------------------------------------------------------
