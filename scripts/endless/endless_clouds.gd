@@ -172,10 +172,14 @@ const YIELD_LEVEL := 0.5
 const WX_BETWEEN := Vector2(0.55,0.9)
 const WX_MORE := 0.6
 const WX_ADMIT := 0.3
-const WX_WIDE := 1.3
+const WX_WIDE := 2.0
 const WX_TALL := 0.4
 const WX_DROP := 45.0
-const WX_LIFE := 0.35
+const WX_LIFE := 0.25
+const WX_EXT := 1.8
+const WX_EVEN := 0.6
+const WX_BELLY := 0.6
+const WX_BOWL := 0.8
 const WEATHER_AT := 88
 
 ## The collar (endless_collar.gd): a ring of dense cloud the trunk stands with `set_collar`.
@@ -803,8 +807,9 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	if by_weather and k.low: return {}
 	if wx_on and k.low: wp = _weather_push(middle+_layer_drift(true))
 	var wx_grows: bool = wp > 0.0 and not k.low and k.kind != "wisp"
+	var r0 := r
 	if wx_grows:
-		r *= 1.0+WX_WIDE*wp
+		r = lerpf(r,cell*BIG_R2.y,WX_EVEN*wp*wp)*(1.0+WX_WIDE*wp*wp)
 		k.b0 = maxf(float(k.b0)-WX_DROP*wp,LOW_BASE.y+30.0)
 	k.W = float(p[2])
 	k.main_r = float(p[3])
@@ -812,7 +817,7 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	k.hs = p[5]
 	k.n = int(nr.x)+mini(int(m.z*(nr.y-nr.x+1.0)),int(nr.y-nr.x))
 	k.ext = Vector2(k.L,k.W).length()+maxf(k.br.y,k.main_r)*(1.0+WOB)
-	r = minf(r,EXT_MAX*cell/k.ext)
+	r = minf(r,(lerpf(EXT_MAX,WX_EXT,wp*wp) if wx_grows else EXT_MAX)*cell/k.ext)
 	k.r = r
 	var tall: Vector2 = p[6]
 	k.tall = lerpf(tall.x,tall.y,t2)*DOME
@@ -821,7 +826,10 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	k.belly = lerpf(bl.x,bl.y,fposmod(m.y*5.13+s.x,1.0))
 	k.qb = lerpf(qb.x,qb.y,fposmod(m.z*3.71+h.x,1.0))
 	if wp > 0.0:
-		if wx_grows: k.tall = float(k.tall)*(1.0+WX_TALL*wp)
+		if wx_grows:
+			k.tall = float(k.tall)*(1.0+WX_TALL*wp)/sqrt(maxf(r/r0,1.0))
+			k.belly = float(k.belly)*(1.0+WX_BELLY*wp)
+			k.qb = float(k.qb)*(1.0+WX_BOWL*wp)
 		k.life = pow(float(k.life),lerpf(1.0,WX_LIFE,wp))*admit
 	k.big = big
 	if lift: _recipe_lift(k)
@@ -843,6 +851,7 @@ func _recipe_lift(k: Dictionary) -> void:
 	var fl := _cloud_floor(Vector2(k.middle)+_layer_drift(bool(k.low)),float(k.r)*float(k.ext),bool(k.low))
 	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
 	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
+	if bool(k.big) and _wx_on(): k.tall = minf(float(k.tall),maxf(TOP-float(k.b0),0.0)/((LIFT+1.2)*float(k.r)*float(k.main_r)))
 	k.H = minf(float(k.r)*float(k.main_r)*float(k.tall),TOP-float(k.b0))
 
 ## Whether cloud `k` (a puff or a wisp) stands one over another of its
@@ -858,7 +867,7 @@ func _yields(k: Dictionary) -> bool:
 		var s0: int = salt+(101 if other_big else 211)
 		var mid0: Vector2 = k.middle
 		var g := Vector2i(floori(mid0.x/cell),floori(mid0.y/cell))
-		var most := reach+EXT_MAX*cell
+		var most := reach+(WX_EXT if other_big and _wx_on() else EXT_MAX)*cell
 		for y in range(-2,3):
 			for x in range(-2,3):
 				var n := g+Vector2i(x,y)
@@ -955,7 +964,7 @@ func _clouds_in_layer(at: Vector2, reach: float, layer_low: bool, out: Array) ->
 ## list kept a while as the plane moves). Slow (15-25 ms): pure reads, so
 ## a worker thread may build it (PilotTallies does).
 func clouds_near(xz: Vector2, margin := 0.0) -> Array:
-	return clouds_in(xz,(BIG*1.6 if organic else BIG*0.6)+margin)
+	return clouds_in(xz,((BIG*2.0 if _wx_on() else BIG*1.6) if organic else BIG*0.6)+margin)
 
 ## How far world point `p` is into a cloud's smooth body (m, up or down
 ## to its crown or its base; no billows, before the meadows lift the low
@@ -1119,6 +1128,10 @@ func _put_weather(p: PackedFloat32Array) -> void:
 
 ## How hard the weather pushes the field's cloud at world `xz` (the march's
 ## `wx_push`; 0 with none).
+## Whether the weather pushes the field (the march's wx_on).
+func _wx_on() -> bool:
+	return weather != null and float(weather.cover()) > 0.0
+
 func _weather_push(xz: Vector2) -> float:
 	if weather == null or not organic: return 0.0
 	var c: float = weather.cover()

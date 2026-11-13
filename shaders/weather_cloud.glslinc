@@ -35,15 +35,32 @@ const float WX_MORE = 0.6;
 const float WX_ADMIT = 0.3;
 // A high cloud at a whole push: this much wider, this much taller, its base
 // this far lower (m), its life whole this much sooner (the life's power).
-const float WX_WIDE = 1.3;
+const float WX_WIDE = 2.0;
 const float WX_TALL = 0.4;
 const float WX_DROP = 45.0;
-const float WX_LIFE = 0.35;
+const float WX_LIFE = 0.25;
+// A grown cloud's reach may run to this many cells at a whole push (the
+// fair field's EXT_MAX keeps every cloud inside the 3x3 cells round a texel;
+// under weather the map looks 5x5 round it: JIT + WX_EXT <= 2.5), so the
+// grown clouds can close the sky between them.
+const float WX_EXT = 1.8;
+// A grown cloud's size pulled this share of the way to the biggest (before
+// WX_WIDE), so the weather's sky is not a scatter of small heaps.
+const float WX_EVEN = 0.6;
+// A grown cloud's bellies this much deeper and rounder (the bowl's power) at a
+// whole push: spread wide, its flat underside met its flanks at a hard crease
+// (a flat grey polygon on its face seen from below).
+const float WX_BELLY = 0.6;
+const float WX_BOWL = 0.8;
 // The light (the march): the sky's and the sun's light on the cloud's lower
 // part dimmed to this at a whole storm (.x the base, .y how high in the cloud
 // the dimming reaches, a share of its height), more under a rain cell's
 // heaviest rain (WX_RAIN_DARK), the shower's share by its severity.
-const vec2 WX_DARK = vec2(0.32, 0.75);
+const vec2 WX_DARK = vec2(0.45, 0.75);
+// The dimming lifted and deepened in patches this wide (m) by this share, so a
+// storm's underside is darker heaps with lighter seams, never one grey.
+const float WX_PATCH = 650.0;
+const float WX_PATCH_SHARE = 0.3;
 const float WX_RAIN_DARK = 0.7;
 // The sun on the whole cloud at a storm (its top keeps more: WX_TOP_SUN).
 const float WX_SUN = 0.4;
@@ -111,7 +128,8 @@ float wx_sky(vec3 p, float hh) {
 	float sev = clamp(P.spare[7].y, 0.0, 1.0);
 	float rain = zs_rain_field_at(p.xz, P.spare[8]);
 	float low = 1.0 - sstep(0.0, WX_DARK.y, hh);
-	float dark = mix(1.0, WX_DARK.x, sev * mix(0.35, 1.0, low));
+	float wpatch = 1.0 + WX_PATCH_SHARE * (2.0 * zs_weather_vnoise((p.xz - P.drift.xy) / WX_PATCH + 3.1) - 1.0);
+	float dark = mix(1.0, clamp(WX_DARK.x * wpatch, 0.0, 1.0), sev * mix(0.35, 1.0, low));
 	return dark * mix(1.0, WX_RAIN_DARK, rain * mix(0.4, 1.0, low));
 }
 
@@ -119,4 +137,39 @@ float wx_sky(vec3 p, float hh) {
 float wx_sun(vec3 p, float hh) {
 	float sev = clamp(P.spare[7].y, 0.0, 1.0);
 	return mix(1.0, mix(WX_SUN, WX_TOP_SUN, sstep(0.4, 1.0, hh)), sev) * wx_sky(p, hh);
+}
+
+// --- The far cloud (the march, past the map's reach) -------------------------------
+// The map ends at the reach (8 km); past it a storm's overcast would end in a
+// band of open dome over the horizon. A ray still in the cloud's heights there
+// meets the far cloud: the same grown cumulus too far to resolve, lumped by
+// noise this wide (m), between these heights over the sea (m), as dense as
+// the cover lets (a shower's far sky broken, a storm's closed), counted this
+// many times the reach off for the haze (the composite greys it into the dome).
+const float WX_FAR_LUMP = 1800.0;
+const vec2 WX_FAR_SPAN = vec2(150.0, 900.0);
+const float WX_FAR_AT = 1.6;
+
+// Toward the reach a storm's cloud loses its lit flanks to this share, so it
+// greys into the far cloud (lit flecks along the horizon read as a rim).
+const float WX_FAR_SUN = 0.35;
+float wx_far_sun(float d) {
+	return mix(1.0, WX_FAR_SUN, sstep(0.5 * P.band.z, P.band.z, d) * clamp(P.spare[7].y, 0.0, 1.0));
+}
+
+// (ambient, sun, bounce, alpha) of the far cloud where the ray at `p` (the
+// reach) runs on into it.
+vec4 wx_far(vec3 p, vec3 key) {
+	float cover = P.spare[7].x;
+	vec2 at = p.xz - P.drift.xy;
+	float n = 0.65 * zs_weather_vnoise(at / WX_FAR_LUMP) + 0.35 * zs_weather_vnoise(at / (WX_FAR_LUMP * 0.37) + 7.3);
+	float hh = clamp((p.y - P.band.x - WX_FAR_SPAN.x) / (WX_FAR_SPAN.y - WX_FAR_SPAN.x), 0.0, 1.0);
+	// Its top a lumpy line: higher where the noise heaps it.
+	float top = mix(0.6, 1.0, n);
+	float a = sstep(0.9 - cover, 1.25 - cover, n) * (1.0 - sstep(top - 0.25, top, hh));
+	float sky = wx_sky(p, hh) * mix(0.8, 1.15, n);
+	float ambient = SKY * mix(0.32, 1.0, hh) * sky;
+	float sun = SUN_SCALE * 0.15 * mix(0.3, 1.0, hh) * wx_sun(p, hh) * sstep(-0.1, 0.4, key.y);
+	float bounce = BOUNCE * (1.0 - hh) * (1.0 - hh) * sky;
+	return vec4(ambient, sun, bounce, 0.95 * a);
 }
