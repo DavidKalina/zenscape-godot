@@ -177,6 +177,9 @@ var _sky_phase := -1.0
 var clouds: Node3D
 ## The land's shadows past the sun's map (--terrain-shadows=1, LandHorizon).
 var land_shade: LandHorizon
+## The weather (scripts/endless/weather.gd), or null (--weather=off): set by
+## the flight, stepped there; the look takes its grade of the light.
+var weather: RefCounted
 ## The light pass (scripts/endless/endless_post.gd), or null (the default; --post=1 puts it in).
 var post: CompositorEffect
 ## The mood's key and fill scales on the sun and the sky's fill
@@ -694,9 +697,11 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	else: cycle.follow(celestial.phase)
 	_land_phase = float(celestial.phase)
 	_collar_hour(eye)
+	if weather != null: weather.grade(celestial)
 	celestial.advance(delta,false)
 	if _light_on:
 		sun.light_energy *= _key
+		if weather != null: sun.light_energy *= weather.sun_shade()
 		RenderingServer.global_shader_parameter_set("zs_hemi_energy",float(celestial.state.zs_hemi_energy)*_fill)
 	_sheen_pace = WorldProfile.current().sheen_pace_at(eye.x,eye.z)
 	_eye = eye

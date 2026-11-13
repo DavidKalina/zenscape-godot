@@ -25,6 +25,11 @@ var daylight := 1.0
 var sun_height := 0.5
 var cloud := 0.06
 var storm := 0.0
+## The endless flight's weather (scripts/endless/weather.gd): how far the sky's
+## dome is greyed to an overcast (0..1), and that grey's brightness against the
+## clear sky's (1 as bright).
+var weather_grey := 0.0
+var weather_dim := 1.0
 var shroud := 0.0
 var _cycling := true
 var cycling: bool:
@@ -499,11 +504,25 @@ func update_rig() -> void:
 	up *= look.ratio("sky")
 	glow *= look.ratio("glow")
 	var sky_dim := clampf(up.dot(Vector3(0.2126, 0.7152, 0.0722)) / 0.14, 0.08, 1.0)
-	var cover := minf(1.0, cloud * 1.15)
+	# Under the endless flight's weather (weather_grey > 0) the dome is greyed
+	# below instead of darkened by these targets (drawn for the isles' sky).
+	var cover := minf(1.0, cloud * 1.15) * (1.0 - weather_grey)
+	var dome_storm := storm * (1.0 - weather_grey)
 	# Weather tint targets from weather.js; applied after the hour, as in the source.
-	down = down.lerp(Vector3(0.052, 0.058, 0.066) * sky_dim, cover).lerp(Vector3(0.022, 0.024, 0.028) * sky_dim, storm)
-	up = up.lerp(Vector3(0.085, 0.096, 0.112) * sky_dim, cover).lerp(Vector3(0.034, 0.038, 0.046) * sky_dim, storm)
-	glow = glow.lerp(Vector3(0.085, 0.085, 0.090) * sky_dim, cover).lerp(Vector3(0.040, 0.042, 0.048) * sky_dim, storm)
+	down = down.lerp(Vector3(0.052, 0.058, 0.066) * sky_dim, cover).lerp(Vector3(0.022, 0.024, 0.028) * sky_dim, dome_storm)
+	up = up.lerp(Vector3(0.085, 0.096, 0.112) * sky_dim, cover).lerp(Vector3(0.034, 0.038, 0.046) * sky_dim, dome_storm)
+	glow = glow.lerp(Vector3(0.085, 0.085, 0.090) * sky_dim, cover).lerp(Vector3(0.040, 0.042, 0.048) * sky_dim, dome_storm)
+	# The zenith's turn (the shade's hue below) is the clear sky's: a grey
+	# dome would turn the shade, and the paint leaning on it, red.
+	var hue_up := up
+	if weather_grey > 0.0:
+		# An overcast dome: even top to bottom, a cool grey as bright as the
+		# clear sky's own (by its hour), times weather_dim.
+		var flat := (_luma(up) * 0.5 + _luma(down) * 0.3 + _luma(glow) * 0.4) * weather_dim
+		var grey := Vector3(0.94, 0.97, 1.03) * flat
+		up = up.lerp(grey, weather_grey)
+		down = down.lerp(grey * 0.92, weather_grey)
+		glow = glow.lerp(grey * 0.15, weather_grey)
 	_publish("zs_sky_down", _temper_sky(down))
 	_publish("zs_sky_up", _temper_sky(up))
 	_publish("zs_sky_glow", glow)
@@ -514,7 +533,7 @@ func update_rig() -> void:
 	var sun_up := smoothstep(-0.03, 0.05, e) * (0.0 if moon_energy > sun_energy else 1.0)
 	var sun_hue := _hue(Vector3(key_color.r, key_color.g, key_color.b))
 	var fill_hue := _hue(surface_sky)
-	var zenith_turn := _hue(up) / _hue(_temper_sky(DAY_SKY[1] * look.ratio("sky")))
+	var zenith_turn := _hue(hue_up) / _hue(_temper_sky(DAY_SKY[1] * look.ratio("sky")))
 	var complement := (REF_SUN_HUE / sun_hue).clamp(Vector3.ONE * 0.2, Vector3.ONE * 5.0)
 	var shadow_hue := _hue(fill_hue * _vpow(zenith_turn, SHADOW_SKY * sun_up) * _vpow(complement, SHADOW_COMPLEMENT * sun_up))
 	shadow_hue = fill_hue.lerp(shadow_hue, follow)
