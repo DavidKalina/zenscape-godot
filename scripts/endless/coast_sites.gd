@@ -7,7 +7,8 @@ extends Node3D
 ## Handle: `coast/lighthouse` (LayoutOverrides), the ships' their own. The light's
 ## solid reaches the flight the way the land's stone does: `ground` and `inside`
 ## in plane_ground and _blocked, a StaticBody on layer 1 for the wing rays.
-## Model: art/blender/coast/coast_build.py.
+## Model: art/blender/coast/lighthouse_build.py, in the temple kit's stone
+## (shaders/temple_stone.gdshader); `--lighthouse=old` puts coast_build.py's back.
 
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
@@ -17,6 +18,14 @@ const PirateShip = preload("res://scripts/endless/pirate_ship.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const LIGHT_MODEL := "res://assets/models/lighthouse.glb"
+## The stone lighthouse (lighthouse_build.py): six meshes, its solids beside it.
+const STONE_MODEL := "res://assets/models/lighthouse_stone.glb"
+const STONE_BOXES := "res://assets/models/lighthouse_stone.boxes.json"
+const STONE_SHADER := preload("res://shaders/temple_stone.gdshader")
+## Where the stone lighthouse swaps from near to its mid LOD (`_mid`: the same
+## stones without arrises, chamfers and chips), and from mid to far (m from the camera).
+const STONE_MID_AT := 90.0
+const STONE_FAR_AT := 320.0
 const SEA_Y := -40.0
 ## The lamp over the lighthouse's foot (m; coast_build.py LAMP).
 const LAMP_Y := 50.0
@@ -25,7 +34,8 @@ const BEAM_LONG := 800.0
 const TURN := 16.0
 const BEAM_GLOW := 0.07
 const LAYER := 1
-## Local solids of the lighthouse (AABBs, its model's frame).
+## Local solids of the old lighthouse (AABBs, its model's frame); the stone
+## one's come from STONE_BOXES.
 const LIGHT_BOXES := [
 	[-12.0,-5.0,-12.0, 12.0,4.0,12.0], [-8.2,4.0,-8.2, 8.2,16.0,8.2], [-6.8,16.0,-6.8, 6.8,30.0,6.8],
 	[-5.8,30.0,-5.8, 5.8,46.0,5.8], [-7.6,46.0,-7.6, 7.6,47.6,7.6], [-3.7,47.6,-3.7, 3.7,56.5,3.7],
@@ -59,9 +69,14 @@ func setup(game: Node) -> void:
 		var at: Vector2 = isles.world("coast/light",Isles.LIGHT_AT.x,Isles.LIGHT_AT.y)
 		var coded := Transform3D(Basis(Vector3.UP,float(isles.yaw("coast/light"))),Vector3(at.x,SEA_Y+Isles.LIGHT_TOP,at.y))
 		var t: Transform3D = LayoutOverrides.xform("coast/lighthouse",coded)
-		var n := _place("Lighthouse",LIGHT_MODEL,t,mat,_grime_light)
+		var n: Node3D
+		if "--lighthouse=old" in LaunchArgs.user_args():
+			n = _place("Lighthouse",LIGHT_MODEL,t,mat,_grime_light)
+			_add_solid(t,LIGHT_BOXES,n)
+		else:
+			n = _place_stone("Lighthouse",t)
+			_add_solid(t,_stone_boxes(),n)
 		LayoutOverrides.track("coast/lighthouse",n,"coast",coded)
-		_add_solid(t,LIGHT_BOXES,n)
 		_lamp(n)
 		light_at = t.origin
 	var args := LaunchArgs.user_args()
@@ -163,6 +178,59 @@ func _place(nm: String, path: String, t: Transform3D, mat: Material, grime: Call
 	m.mesh = _bake(load(path) as PackedScene,grime,mat)
 	root.add_child(m)
 	return root
+
+## The stone lighthouse at `t`: its stone in the kit's shader near and far, the
+## iron and the glass near only, each with its own small material.
+func _place_stone(nm: String, t: Transform3D) -> Node3D:
+	var root := Node3D.new()
+	root.name = nm
+	root.transform = t
+	add_child(root)
+	var stone := ShaderMaterial.new()
+	stone.shader = STONE_SHADER
+	# The limewash and the red are in the vertex colours; less lichen over them.
+	stone.set_shader_parameter("lichen",0.3)
+	var iron := ShaderMaterial.new()
+	iron.shader = Shader.new()
+	iron.shader.code = "shader_type spatial;\nvoid fragment(){ALBEDO=COLOR.rgb;ROUGHNESS=0.55;EMISSION=COLOR.rgb*0.3;}"
+	var glass := ShaderMaterial.new()
+	glass.shader = Shader.new()
+	# Dark panes with a sheen; the lens (bright vertex colour) lit from within.
+	glass.shader.code = "shader_type spatial;\nvoid fragment(){float lens=smoothstep(0.3,0.7,COLOR.r);ALBEDO=COLOR.rgb*(1.0-0.6*lens);ROUGHNESS=0.06;SPECULAR=0.9;EMISSION=COLOR.rgb*mix(0.35,2.2,lens);}"
+	var scene: PackedScene = load(STONE_MODEL)
+	var model: Node = scene.instantiate()
+	for node in model.find_children("*","MeshInstance3D",true,false):
+		var src := node as MeshInstance3D
+		var m := MeshInstance3D.new()
+		m.name = String(src.name)
+		m.mesh = src.mesh
+		var named := String(src.name)
+		m.material_override = iron if named.contains("iron") else (glass if named.contains("glass") else stone)
+		if named.ends_with("_far"):
+			m.visibility_range_begin = STONE_FAR_AT
+		elif named.ends_with("_mid"):
+			m.visibility_range_begin = STONE_MID_AT
+			m.visibility_range_end = STONE_FAR_AT
+		elif named.contains("glass"):
+			m.visibility_range_end = STONE_FAR_AT
+		else:
+			m.visibility_range_end = STONE_MID_AT
+		if named.contains("glass"): m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(m)
+	model.free()
+	return root
+
+## The stone lighthouse's solids, from its export's boxes.json ([x, y, z, sx, sy, sz],
+## the model's frame), as [x0, y0, z0, x1, y1, z1].
+static func _stone_boxes() -> Array:
+	var out: Array = []
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(STONE_BOXES))
+	if not data is Dictionary:
+		push_error("coast_sites: no solids in %s" % STONE_BOXES)
+		return LIGHT_BOXES
+	for b: Array in (data as Dictionary).get("boxes",[]):
+		out.append([b[0],b[1],b[2],float(b[0])+float(b[3]),float(b[1])+float(b[4]),float(b[2])+float(b[5])])
+	return out
 
 static func _bake(scene: PackedScene, grime: Callable, mat: Material) -> ArrayMesh:
 	var st := SurfaceTool.new()
