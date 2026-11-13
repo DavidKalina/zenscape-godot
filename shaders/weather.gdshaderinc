@@ -60,4 +60,19 @@ float zs_rain_at(vec2 p) {
 	return zs_rain_field_at(p, zs_rain_field);
 }
 
+// Turf colour (an albedo) wet by Weather.wet() (zs_weather.w): darker by
+// ZS_SOAK_TURF with ZS_SOAK_TURF_RICH of its saturation kept, as the
+// ground's turf (endless_ground.gdshader ZS_SOAK_DARK.x, ZS_SOAK_RICH: keep
+// equal), so the grass blades and the far tufts agree with the turf under
+// them. Dry (fair, --weather=off): unchanged.
+const float ZS_SOAK_TURF = 0.84;
+const float ZS_SOAK_TURF_RICH = 1.12;
+
+vec3 zs_soak_turf(vec3 c) {
+	float w = zs_weather.w;
+	if (w <= 0.0) return c;
+	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+	return mix(c, max(mix(vec3(l), c, ZS_SOAK_TURF_RICH), vec3(0.0)) * ZS_SOAK_TURF, w);
+}
+
 #endif
