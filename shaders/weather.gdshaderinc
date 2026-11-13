@@ -7,6 +7,8 @@
 //   zs_lightning    (latest flash x, z, seconds since, strength)
 // A compute shader (GLSL) takes zs_rain_field through its own uniforms and
 // copies zs_weather_hash .. zs_rain_field_at as they are.
+#ifndef ZS_WEATHER_INC
+#define ZS_WEATHER_INC
 
 global uniform vec4 zs_weather;
 global uniform vec4 zs_weather_sky;
@@ -18,8 +20,10 @@ const vec2 ZS_RAIN_EDGE = vec2(0.42, 0.72);
 const int ZS_RAIN_PERIOD = 256;
 
 float zs_weather_hash(ivec2 i) {
-	uint x = uint(((i.x % ZS_RAIN_PERIOD) + ZS_RAIN_PERIOD) % ZS_RAIN_PERIOD);
-	uint y = uint(((i.y % ZS_RAIN_PERIOD) + ZS_RAIN_PERIOD) % ZS_RAIN_PERIOD);
+	// (GLSL's % on a negative int is undefined; the period is a power of two,
+	// so a mask is the CPU's posmod.)
+	uint x = uint(i.x & (ZS_RAIN_PERIOD - 1));
+	uint y = uint(i.y & (ZS_RAIN_PERIOD - 1));
 	uint h = x * 374761393u + y * 668265263u;
 	h = (h ^ (h >> 13u)) * 1274126177u;
 	h = h ^ (h >> 16u);
@@ -55,3 +59,5 @@ float zs_rain_field_at(vec2 p, vec4 field) {
 float zs_rain_at(vec2 p) {
 	return zs_rain_field_at(p, zs_rain_field);
 }
+
+#endif

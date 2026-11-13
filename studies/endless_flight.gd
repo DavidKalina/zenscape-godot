@@ -304,6 +304,8 @@ var look: Node3D
 ## look): stepped before the look each frame; --weather-debug's line.
 var weather: Weather
 var _weather_debug: Label
+## The weather's rain and wet (scripts/endless/weather_rain.gd), with weather.
+var weather_rain: Node3D
 ## The grass carpet round the eye (off at the start under --no-grass), or
 ## null under --plain-look.
 var grass: Node3D
@@ -685,6 +687,10 @@ func _ready() -> void:
 		sea = look.sea
 		weather = Weather.from_args(seed)
 		look.weather = weather
+		if weather != null:
+			weather_rain = preload("res://scripts/endless/weather_rain.gd").new()
+			add_child(weather_rain)
+			weather_rain.setup(weather)
 		# The start meadow clear of valley fog (EndlessClouds FOG_CLEAR).
 		if look.clouds != null: look.clouds.clear_fog_at(_start)
 		var collar_at := Vector3.ZERO
@@ -1564,6 +1570,7 @@ func tick(delta: float) -> void:
 	if look != null and replay != null: replay.hour(look)
 	if weather != null: weather.step(delta,camera.global_position,look.wind_direction,look.cycle.held)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
+	if weather_rain != null: weather_rain.step(delta,self)
 	FrameLog.mark(&"look")
 	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
