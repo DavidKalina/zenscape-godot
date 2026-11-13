@@ -127,6 +127,11 @@ var _slice := 0
 var _front_drift := Vector4.ZERO
 var _back_drift := Vector4.ZERO
 var _back_clock := 0.0
+## The endless march's weather push (shaders/weather_cloud.glslinc: P.spare[5],
+## [6], the map's), held for a slice cycle as the clock is; zeros where no
+## driver writes it.
+const WEATHER_MAP := 88
+var _back_weather := PackedFloat32Array()
 var _ceiling := RID()
 var _shadow := RID()
 var _scratch := RID()
@@ -304,6 +309,11 @@ func _render_callback(_type: int, data: RenderData) -> void:
 				_back_drift = drift_now
 				_back_clock = params[LIFE_CLOCK]
 				_back_phase = _phase(drift_now,want)
+				_back_weather = params.slice(WEATHER_MAP,WEATHER_MAP+8)
+			# The weather the map bakes, as the cycle began (one moment, as
+			# the drift and clock).
+			if _back_weather.size() == 8:
+				for i in 8: params[WEATHER_MAP+i] = _back_weather[i]
 			swap = _slice == weather_slices-1
 			for i in 4:
 				params[SLICE_SQUARE+i] = _back_square[i]

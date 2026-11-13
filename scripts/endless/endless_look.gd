@@ -712,6 +712,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	RenderingServer.global_shader_parameter_set("zs_camera_position",eye)
 	sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
 	if water != null: water.step(delta,eye,plane_at,facing,_time,view)
+	if clouds != null: clouds.weather = weather
 	if clouds != null: clouds.step(delta,view,wind_direction,_time)
 	if land_shade != null:
 		# The key light the clouds' shade takes: the sun, the moon by night.
