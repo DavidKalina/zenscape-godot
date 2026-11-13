@@ -56,6 +56,8 @@ uniform float fog_gain = 1.0;
 
 // How far the midday cloud moves toward cleaner cream and a cooler shade.
 const float CLEAN_DAY = 0.45;
+const vec3 WX_SHADE_COOL = vec3(0.86, 0.97, 1.16);
+const vec3 WX_SUN_COOL = vec3(0.93, 0.98, 1.05);
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -83,6 +85,10 @@ void fragment() {
 	float clean = smoothstep(0.2, 0.5, sun.y) * CLEAN_DAY;
 	c_sun = mix(c_sun, vec3(1.0, 0.975, 0.93) * max(c_sun.r, max(c_sun.g, c_sun.b)), clean);
 	c_shade *= mix(vec3(1.0), vec3(0.88, 0.97, 1.12), clean);
+	// Under weather (zs_weather.y its severity) the cloud keeps a little of the
+	// sky's cool blue: a storm's grey is a slate, never pure greyscale.
+	c_shade *= mix(vec3(1.0), WX_SHADE_COOL, zs_weather.y);
+	c_sun *= mix(vec3(1.0), WX_SUN_COOL, zs_weather.y);
 	float toward_sun = max(dot(rd, sun), 0.0);
 	vec4 terms = a / cloud_a;
 	float fog_share = clamp(terms.w, 0.0, 1.0);

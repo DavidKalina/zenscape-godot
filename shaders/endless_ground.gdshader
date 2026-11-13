@@ -85,7 +85,7 @@ float zs_silver_drive_smooth(vec2 p, float fp) {
 // (turf, rock) with ZS_SOAK_RICH of its saturation kept, a touch glossier
 // (ZS_SOAK_ROUGH, ZS_SOAK_SPEC: turf, rock). One global read when dry.
 #include "res://shaders/weather_rain_water.gdshaderinc"
-const vec2 ZS_SOAK_DARK = vec2(0.74, 0.66);
+const vec2 ZS_SOAK_DARK = vec2(0.84, 0.78);
 const float ZS_SOAK_RICH = 1.12;
 const vec2 ZS_SOAK_ROUGH = vec2(0.74, 0.42);
 const vec2 ZS_SOAK_SPEC = vec2(0.3, 0.45);

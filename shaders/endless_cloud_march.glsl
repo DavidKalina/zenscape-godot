@@ -445,6 +445,7 @@ float cluster_gate(vec2 f) {
 // The weather's push on the field and its light (scripts/endless/weather.gd).
 // The import rebuilds this shader only when this file changes: after an edit
 // to the include alone, change this file too (or it runs the old include).
+// Include edit: 2026-11-12 whole c.
 #include "weather_cloud.glslinc"
 
 // --- Cloud life (P.spare[1].x = 1; --cloud-life=0 is the rigid field) ---------------
@@ -1583,7 +1584,7 @@ void march_pass() {
 			// The weather (weather_cloud.glslinc): dark low down, the tops lit.
 			if (wx_light_on() && s.collar < 0.5) {
 				float wsky = wx_sky(p, s.h);
-				ambient *= wsky;
+				ambient *= wsky * wx_base_lift(s.h);
 				bounce *= wsky;
 				sun_light *= wx_sun(wsky, s.h) * wx_far_sun(length(p.xz - ro.xz));
 			}

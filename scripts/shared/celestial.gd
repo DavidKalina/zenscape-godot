@@ -30,6 +30,9 @@ var storm := 0.0
 ## clear sky's (1 as bright).
 var weather_grey := 0.0
 var weather_dim := 1.0
+## The weather's lift on the land's sky fill (an overcast lights the land from
+## the whole bright dome; 1 none).
+var weather_fill := 1.0
 var shroud := 0.0
 var _cycling := true
 var cycling: bool:
@@ -498,7 +501,7 @@ func update_rig() -> void:
 	var dusk_fill := smoothstep(DUSK_FILL_E.x, DUSK_FILL_E.y, e) * smoothstep(DUSK_FILL_E.z, DUSK_FILL_E.w, e) * lerpf(1.0, DUSK_FILL_CLOUD, minf(1.0, cloud * 1.3)) * lerpf(1.0, 0.4, storm)
 	var surface_sky := hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_fill * (1.0 - minf(1.0, cloud * 1.3)) * 0.5)
 	var dip := lerpf(GOLDEN_FILL_DIP * golden, GOLDEN_FILL_DIP_FOLLOW * golden_f, follow)
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - dip) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - dip) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * weather_fill * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(DAY_SKY[0], sky_day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(DAY_SKY[1], sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(DAY_SKY[2], sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)

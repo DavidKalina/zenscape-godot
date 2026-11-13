@@ -56,15 +56,15 @@ const float WX_BOWL = 0.8;
 // part dimmed to this at a whole storm (.x the base, .y how high in the cloud
 // the dimming reaches, a share of its height), more under a rain cell's
 // heaviest rain (WX_RAIN_DARK), the shower's share by its severity.
-const vec2 WX_DARK = vec2(0.45, 0.75);
+const vec2 WX_DARK = vec2(0.78, 0.75);
 // The dimming lifted and deepened in patches this wide (m) by this share, so a
 // storm's underside is darker heaps with lighter seams, never one grey.
 const float WX_PATCH = 650.0;
-const float WX_PATCH_SHARE = 0.3;
-const float WX_RAIN_DARK = 0.7;
+const float WX_PATCH_SHARE = 0.16;
+const float WX_RAIN_DARK = 0.85;
 // The sun on the whole cloud at a storm (its top keeps more: WX_TOP_SUN).
-const float WX_SUN = 0.4;
-const float WX_TOP_SUN = 0.75;
+const float WX_SUN = 0.3;
+const float WX_TOP_SUN = 0.55;
 
 // --- The rain field (shaders/weather.gdshaderinc, copied as it is) ---------------
 const float ZS_RAIN_CELL = 2600.0;
@@ -133,6 +133,15 @@ float wx_sky(vec3 p, float hh) {
 	return dark * mix(1.0, WX_RAIN_DARK, rain * mix(0.4, 1.0, low));
 }
 
+// An overcast's underside is lit by the whole dome round it, not the patch of
+// open sky over a fair cloud's foot: under weather the sky's light on the
+// lower cloud is lifted toward this share of its top's (the fair 0.32 floor in
+// the march), by severity, so a storm's base is a mid grey, not near black.
+const float WX_BASE_LIFT = 2.2;
+float wx_base_lift(float hh) {
+	return mix(1.0, mix(WX_BASE_LIFT, 1.0, hh), clamp(P.spare[7].y, 0.0, 1.0));
+}
+
 // The share of the sun's light left (the tops keep more).
 // `wsky` the sample's wx_sky (worked out once).
 float wx_sun(float wsky, float hh) {
@@ -170,7 +179,7 @@ vec4 wx_far(vec3 p, vec3 key) {
 	float a = sstep(0.9 - cover, 1.25 - cover, n) * (1.0 - sstep(top - 0.25, top, hh));
 	float wsky = wx_sky(p, hh);
 	float sky = wsky * mix(0.8, 1.15, n);
-	float ambient = SKY * mix(0.32, 1.0, hh) * sky;
+	float ambient = SKY * mix(0.32, 1.0, hh) * sky * wx_base_lift(hh);
 	float sun = SUN_SCALE * 0.15 * mix(0.3, 1.0, hh) * wx_sun(wsky, hh) * sstep(-0.1, 0.4, key.y);
 	float bounce = BOUNCE * (1.0 - hh) * (1.0 - hh) * sky;
 	return vec4(ambient, sun, bounce, 0.95 * a);

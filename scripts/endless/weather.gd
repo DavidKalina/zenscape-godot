@@ -110,11 +110,19 @@ const CLOUD_GRADE := 0.85
 ## The dome: celestial's own cloud/storm targets turn this sky near black, so
 ## the dome is greyed instead (celestial weather_grey = cover()) to a grey as
 ## bright as the clear sky's by its hour, times DOME_STORM under a storm.
-const DOME_STORM := 0.75
+const DOME_STORM := 0.88
+## The grey is lifted this much over the clear sky's luma first: a blue sky's
+## luma is low (blue weighs 0.07), so an overcast as bright as it read as a
+## slate dusk with white clouds in front (a shower's gaps).
+const DOME_LIFT := 1.6
+## The land's sky fill lifted this much at a whole cover (celestial
+## weather_fill): with the sun cut, an overcast still lights the land from its
+## whole dome, so a storm's land stays readable (a heavy overcast afternoon).
+const FILL_OVERCAST := 2.2
 const STORM_GRADE := 0.25
-const STORM_CAP := 0.3
-const SUN_LEFT := 0.6
-const CELL_SUN := 0.7
+const STORM_CAP := 0.12
+const SUN_LEFT := 0.8
+const CELL_SUN := 0.85
 
 var state := FAIR
 var kind := FAIR
@@ -293,7 +301,8 @@ func _publish() -> void:
 func grade(celestial: RefCounted) -> void:
 	celestial.cloud = CLOUD_GRADE*cover()
 	celestial.weather_grey = cover()
-	celestial.weather_dim = lerpf(1.0,DOME_STORM,severity())
+	celestial.weather_dim = DOME_LIFT*lerpf(1.0,DOME_STORM,severity())
+	celestial.weather_fill = lerpf(1.0,FILL_OVERCAST,cover())
 	celestial.storm = minf(STORM_GRADE*severity(),STORM_CAP)
 
 ## The sun's share left (each frame, times its energy after the look set it).
