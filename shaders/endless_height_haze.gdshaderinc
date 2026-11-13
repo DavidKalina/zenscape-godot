@@ -8,6 +8,7 @@
 // reaching the full cut `haze_height.y` m higher. Strength 0 is the engine's
 // own look again, only drawn here.
 // Needs reference_sky_common and reference_display included, and `sea_y`.
+#include "res://shaders/weather_bow.gdshaderinc"
 uniform vec4 haze_depth = vec4(120.0, 7600.0, 0.75, 1.0);
 uniform vec4 haze_height = vec4(350.0, 300.0, 0.6, 0.0);
 uniform vec3 haze_light = vec3(0.5, 0.6, 0.8);
@@ -24,5 +25,8 @@ vec4 zs_land_haze(vec3 view_pos, float ground_y, mat4 inv_view) {
 	dome *= 0.98 / max(max(max(dome.r, dome.g), dome.b), 0.98);
 	vec3 col = mix(haze_light, scene_linear_for_display(dome), haze_mix.x);
 	col += haze_sun * pow(max(dot(rd, zs_sun_direction), 0.0), 8.0) * haze_mix.y;
+	// The rainbow in the air before far land (shaders/weather_bow.gdshaderinc):
+	// laid in the haze's colour so the fog's blend leaves it whole on top.
+	col += zs_bow_far(rd, length(view_pos), dome) / max(amount, 0.1);
 	return vec4(col, amount);
 }

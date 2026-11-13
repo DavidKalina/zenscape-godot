@@ -17,8 +17,10 @@
   
 
   vec3 zsAurora(vec3 dir) {
-    float visible = zs_aurora.x * smoothstep(0.35, 0.9, zs_night)
-      * zs_celestial_clear * zs_celestial_clear * smoothstep(-0.65, -0.4, dir.y);
+    // zs_aurora_shape (reference_globals): the endless flight's blue-hour
+    // night lifts the gate, raises the feet and scales the light.
+    float visible = zs_aurora.x * max(smoothstep(0.35, 0.9, zs_night), zs_aurora_shape.x)
+      * zs_celestial_clear * zs_celestial_clear * smoothstep(-0.65, -0.4, dir.y - zs_aurora_shape.y) * zs_aurora_shape.w;
     if (visible < 0.0001) return vec3(0.0);
 
     float t = zs_motion_time * zs_aurora.y;
@@ -36,9 +38,9 @@
         + 0.14 * sin(a * 9.0 + t * 0.045 + layer * 1.3);
       // As with the stars, the lower edge extends below the horizon: this
       // world's sky surrounds a floating diorama viewed from above.
-      float foot = -0.28 + 0.115 * fold + layer * 0.085;
+      float foot = -0.28 + 0.115 * fold + layer * 0.085 + zs_aurora_shape.y;
       float h = dir.y - foot;
-      float height = 0.38 + 0.13 * sin(a * 3.0 + layer * 1.7 + t * 0.035);
+      float height = (0.38 + 0.13 * sin(a * 3.0 + layer * 1.7 + t * 0.035)) * zs_aurora_shape.z;
       float u = max(0.0, h) / height;
       float curtain = smoothstep(-0.025, 0.035, h) * exp(-u * 2.2)
         * (1.0 - smoothstep(0.65, 1.2, u));
