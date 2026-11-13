@@ -827,7 +827,7 @@ func _ambience(on_wheels: bool) -> void:
 ## Weather.rain_here), `air` the speed as a share of cruise. Louder and a
 ## touch brighter at speed, the drops drumming on the plane. Made on the
 ## first call with rain.
-const RAIN := 0.25
+const RAIN := 0.17
 const RAIN_FAST := 0.45
 func rain_to(amount: float, air: float) -> void:
 	if rain == null:

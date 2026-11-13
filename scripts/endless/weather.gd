@@ -68,10 +68,11 @@ enum { FAIR, BUILDING, SHOWER, STORM, CLEARING }
 const NAMES := ["fair","building","shower","storm","clearing"]
 
 ## The cycle (s of flight at pace 1): fair spells between FAIR_GAP.x and .y,
-## the first never shorter than FIRST_GAP (a flight never starts in rain);
+## the first between FIRST_GAP and FAIR_GAP.x (a flight never starts in rain,
+## and meets its first weather within about a quarter hour);
 ## STORM_SHARE of the spells are storms. Each spell builds over BUILD,
 ## holds (SHOWER_HOLD, STORM_HOLD) and clears over CLEAR.
-const FAIR_GAP := Vector2(360.0,720.0)
+const FAIR_GAP := Vector2(900.0,1950.0)
 const FIRST_GAP := 360.0
 const STORM_SHARE := 0.25
 const BUILD := Vector2(150.0,240.0)
@@ -250,7 +251,7 @@ static func _end_of(s: Array) -> float:
 func _lay() -> void:
 	var from := 0.0 if _spells.is_empty() else _end_of(_spells.back())
 	var gap := _rng.randf_range(FAIR_GAP.x,FAIR_GAP.y)
-	if _spells.is_empty(): gap = maxf(gap,FIRST_GAP)
+	if _spells.is_empty(): gap = lerpf(FIRST_GAP,FAIR_GAP.x,inverse_lerp(FAIR_GAP.x,FAIR_GAP.y,gap))
 	var k := STORM if _rng.randf() < STORM_SHARE else SHOWER
 	var hold := _rng.randf_range(STORM_HOLD.x,STORM_HOLD.y) if k == STORM else _rng.randf_range(SHOWER_HOLD.x,SHOWER_HOLD.y)
 	_spells.append([from+gap,k,_rng.randf_range(BUILD.x,BUILD.y),hold,_rng.randf_range(CLEAR.x,CLEAR.y)])
