@@ -445,8 +445,7 @@ float cluster_gate(vec2 f) {
 // The weather's push on the field and its light (scripts/endless/weather.gd).
 // The import rebuilds this shader only when this file changes: after an edit
 // to the include alone, change this file too (or it runs the old include).
-// Include edit: 2026-11-13 cloud faults (under the deck).
-vec4 weather_map(vec2 xz);
+// Include edit: 2026-11-13 cost.
 #include "weather_cloud.glslinc"
 
 // --- Cloud life (P.spare[1].x = 1; --cloud-life=0 is the rigid field) ---------------

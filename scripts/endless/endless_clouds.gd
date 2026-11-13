@@ -180,7 +180,7 @@ const WX_EXT := 1.8
 const WX_EVEN := 0.6
 const WX_BELLY := 0.6
 const WX_BOWL := 0.8
-const WX_UNLIFT := 0.6
+const WX_UNLIFT := 0.3
 const WEATHER_AT := 88
 
 ## The collar (endless_collar.gd): a ring of dense cloud the trunk stands with `set_collar`.
