@@ -4,9 +4,14 @@ extends RefCounted
 ## .glb each under assets/models/temple_kit/, drawn with one stone shader.
 ##
 ##   const TempleKit = preload("res://scripts/temple_kit.gd")
-##   var col: Node3D = TempleKit.piece(&"column")     # Mesh + Far children
+##   var col: Node3D = TempleKit.piece(&"column")     # Mesh (+ Mid) + Far children
 ##   var solids: Array[AABB] = TempleKit.boxes(&"column")
 ##   var m: Mesh = TempleKit.mesh(&"column")           # for a MultiMesh
+##   var mid: Mesh = TempleKit.lod(&"column",TempleKit.MID)  # null without a mid
+##
+## LODs: NEAR is <id>.glb's mesh, FAR its `<id>_far` mesh, MID the one mesh
+## in <id>_mid.glb when that file exists (a piece without one draws near
+## until FAR_AT, as before). A new _mid.glb is picked up with no code change.
 ##
 ## A piece's origin is on the ground at its snap point; column centres sit
 ## on a BAY grid. The numbers are temple_lib.py's (the spec's contract).
@@ -42,6 +47,12 @@ const COURSE_H := 1.25
 
 ## Where a piece swaps to its far LOD (m from the camera).
 const FAR_AT := 170.0
+## Where a piece with a mid swaps near -> mid (m): the trim lanes' stills read
+## the same at 50 and 90 m and show the mid's facets at 30 m.
+const MID_AT := 60.0
+
+## LOD levels for lod().
+enum {NEAR, MID, FAR}
 
 static var _meshes := {}
 static var _boxes := {}
@@ -56,33 +67,62 @@ static func material() -> ShaderMaterial:
 
 ## A piece's mesh (`far` its LOD), loaded once from its .glb.
 static func mesh(id: StringName, far := false) -> Mesh:
-	var key := String(id)+("_far" if far else "")
+	return lod(id,FAR if far else NEAR)
+
+## A piece's mesh at one LOD (NEAR, MID, FAR); null when it has none (MID
+## without a _mid.glb).
+static func lod(id: StringName, level: int) -> Mesh:
+	var key := String(id)+(["","_mid","_far"][level] as String)
 	if not _meshes.has(key): _load(id)
 	return _meshes.get(key)
 
+## Whether the piece has a mid LOD (<id>_mid.glb).
+static func has_mid(id: StringName) -> bool:
+	return lod(id,MID) != null
+
 static func _load(id: StringName) -> void:
+	_meshes[String(id)] = null
+	_meshes[String(id)+"_mid"] = null
+	_meshes[String(id)+"_far"] = null
 	var scene: PackedScene = load(DIR+String(id)+".glb")
 	if scene == null:
 		push_error("temple_kit: no model for %s" % id)
 		return
+	_take(scene,String(id),false)
+	var mid_path := DIR+String(id)+"_mid.glb"
+	if ResourceLoader.exists(mid_path):
+		_take(load(mid_path) as PackedScene,String(id),true)
+
+## Files a model's meshes under their keys (a _mid.glb's one mesh as `<id>_mid`).
+static func _take(scene: PackedScene, id: String, mid: bool) -> void:
+	if scene == null: return
 	var root := scene.instantiate()
 	for node in root.find_children("*","MeshInstance3D",true,false):
 		var mi := node as MeshInstance3D
-		var far := mi.name.ends_with("_far")
+		var key := id+("_mid" if mid else ("_far" if mi.name.ends_with("_far") else ""))
 		var m: Mesh = mi.mesh.duplicate()
 		for s in m.get_surface_count(): m.surface_set_material(s,material())
-		_meshes[String(id)+("_far" if far else "")] = m
+		_meshes[key] = m
 	root.free()
 
-## A piece as a Node3D: a `Mesh` child drawn near, a `Far` child past FAR_AT.
+## A piece as a Node3D: a `Mesh` child drawn near, a `Mid` child from MID_AT
+## when the piece has one, a `Far` child past FAR_AT.
 static func piece(id: StringName) -> Node3D:
 	var node := Node3D.new()
 	node.name = String(id)
+	var mid_mesh := lod(id,MID)
 	var near := MeshInstance3D.new()
 	near.name = "Mesh"
 	near.mesh = mesh(id)
-	near.visibility_range_end = FAR_AT
+	near.visibility_range_end = MID_AT if mid_mesh != null else FAR_AT
 	node.add_child(near)
+	if mid_mesh != null:
+		var mid := MeshInstance3D.new()
+		mid.name = "Mid"
+		mid.mesh = mid_mesh
+		mid.visibility_range_begin = MID_AT
+		mid.visibility_range_end = FAR_AT
+		node.add_child(mid)
 	var far_mesh := mesh(id,true)
 	if far_mesh != null:
 		var far := MeshInstance3D.new()

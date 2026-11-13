@@ -8,14 +8,15 @@ extends RefCounted
 ## The frame: origin on the platform's foot at its middle, x along the long
 ## side (four bays), +z the front (two bays deep). The platform is the kit's
 ## podium bays round the edge and three rows of bays inside for the floor
-## (each row's steps buried under the next row's paving). Standing: the front
+## (podium_floor bays, paved with no steps). Standing: the front
 ## colonnade with two lintels, an inner porch row with a lintel and the broken
 ## lintel, a run down the left side with a lintel, two lone corner columns.
 ## Fallen: the front right corner (its drums down the right side) and one back
 ## column (its drums along the back), a stump beside it. The inner wall with
 ## its doorway stands behind the porch. The line through the front's left
 ## middle gap, the broken bay and the doorway is straight (x = -BAY/2).
-## Every id placed more than once is one MultiMesh (near and far).
+## Every id is one MultiMesh per LOD (near, mid when the kit has one, far),
+## swapped whole (MID_NEAREST, FAR_NEAREST).
 
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -26,13 +27,17 @@ const AT := Vector2(930.0,2690.0)
 const YAW := PI
 ## The trees' keep-out, half across (x) and half along (z), m.
 const CLEAR := Vector2(50.0,32.0)
-## Where the site's sets swap to their far models (m, camera to each set's
-## box centre): later than the kit's FAR_AT, since each MultiMesh swaps
-## whole and at 170 m the near columns' drums and flutes going smooth read
-## as a pop on approach (captures/shots/swap_before_*). The near models are
-## cut by the import's own mesh LODs by then, so the extra cost is small
-## (no extra draw calls).
-const FAR_AT := 320.0
+## Where the site's sets swap LODs, as the least distance (m) from the camera
+## to any of the set's pieces. Each set is one MultiMesh and Godot swaps it
+## whole by the camera's distance to its box centre, so a set's ranges are
+## these plus its radius (the farthest piece corner from that centre): a mid
+## or far model is never drawn closer than this. Mids (the trim lanes' stills)
+## read the same as near from 50 m out. The far models popped at the kit's
+## 170 m (smooth darker tubes for columns, captures/shots/swap_before_*), so
+## the far swap stays where the last iteration's 320 m to the centre put the
+## columns' nearest piece.
+const MID_NEAREST := 50.0
+const FAR_NEAREST := 280.0
 ## The footprint sampled for the platform's foot (half x, half z, m).
 const FOOT_HALF := Vector2(44.0,25.0)
 
@@ -53,9 +58,10 @@ static func layout() -> Array:
 	for x in [-B,0.0,B]: out.append([&"podium",Vector3(x,0,-B),2])
 	out.append([&"podium",Vector3(2*B,0,0),1])
 	out.append([&"podium",Vector3(-2*B,0,0),3])
-	# The floor: rows facing front, the last a hair low under the back row.
+	# The floor: rows of paved bays (podium_floor: a podium bay with no steps,
+	# same origin and top) facing front, the last a hair low under the back row.
 	for row: Vector2 in [Vector2(9.5,0.0),Vector2(0.5,0.0),Vector2(-8.5,-0.05)]:
-		for x in [-B,0.0,B]: out.append([&"podium",Vector3(x,row.y,row.x),0])
+		for x in [-B,0.0,B]: out.append([&"podium_floor",Vector3(x,row.y,row.x),0])
 	# Standing columns.
 	for p: Vector2 in [Vector2(-2*B,B),Vector2(-B,B),Vector2(0,B),Vector2(B,B),
 			Vector2(-B,0.5),Vector2(0,0.5),Vector2(B,0.5),
@@ -124,26 +130,38 @@ static func build() -> Dictionary:
 				reach = maxf(reach,(corner as Vector2).length())
 	for id: StringName in by_id:
 		var xfs: Array = by_id[id]
-		for far in [false,true]:
-			var m := TempleKit.mesh(id,far)
+		var meshes: Array = [TempleKit.lod(id,TempleKit.NEAR),TempleKit.lod(id,TempleKit.MID),
+				TempleKit.lod(id,TempleKit.FAR)]
+		# One box for all three LODs, so the three swap at the same distance.
+		var piece_box := AABB()
+		var first := true
+		for m: Mesh in meshes:
 			if m == null: continue
-			var gi: GeometryInstance3D
-			if xfs.size() == 1:
-				var mi := MeshInstance3D.new()
-				mi.mesh = m
-				mi.transform = xfs[0]
-				gi = mi
-			else:
-				var mm := MultiMesh.new()
-				mm.transform_format = MultiMesh.TRANSFORM_3D
-				mm.mesh = m
-				mm.instance_count = xfs.size()
-				for i in range(xfs.size()): mm.set_instance_transform(i,xfs[i])
-				var mmi := MultiMeshInstance3D.new()
-				mmi.multimesh = mm
-				gi = mmi
-			gi.name = String(id)+("_far" if far else "")
-			if far: gi.visibility_range_begin = FAR_AT
-			else: gi.visibility_range_end = FAR_AT
-			root.add_child(gi)
+			piece_box = m.get_aabb() if first else piece_box.merge(m.get_aabb())
+			first = false
+		var set_box: AABB = xfs[0]*piece_box
+		for xf: Transform3D in xfs: set_box = set_box.merge(xf*piece_box)
+		var centre := set_box.get_center()
+		var radius := 0.0
+		for xf: Transform3D in xfs:
+			var b: AABB = xf*piece_box
+			for k in 8: radius = maxf(radius,b.get_endpoint(k).distance_to(centre))
+		var far_at := FAR_NEAREST+radius
+		var mid_at := MID_NEAREST+radius if meshes[1] != null else far_at
+		var ranges := [Vector2(0.0,mid_at),Vector2(mid_at,far_at),Vector2(far_at,0.0)]
+		for level in 3:
+			var m: Mesh = meshes[level]
+			if m == null: continue
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = m
+			mm.instance_count = xfs.size()
+			for i in range(xfs.size()): mm.set_instance_transform(i,xfs[i])
+			mm.custom_aabb = set_box
+			var mmi := MultiMeshInstance3D.new()
+			mmi.multimesh = mm
+			mmi.name = String(id)+(["","_mid","_far"][level] as String)
+			mmi.visibility_range_begin = ranges[level].x
+			mmi.visibility_range_end = ranges[level].y
+			root.add_child(mmi)
 	return {"node":root,"boxes":boxes,"reach":reach}
