@@ -913,7 +913,7 @@ func _ready() -> void:
 	# come back (pirate_ship.gd `refill`).
 	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
 	if RegionDoors.wanted(world):
-		doors = HallDoors.new() if HallDoors.wanted_hall() else RegionDoors.new()
+		doors = HallDoors.new()
 		add_child(doors)
 		doors.setup(self,_start,_heading,seed)
 	if Finds.wanted(seed):
