@@ -123,6 +123,9 @@ var time := 0.0
 var pace := 1.0
 ## FAIR, SHOWER or STORM held by a flag; -1 cycling.
 var held := -1
+## With a held shower or storm, the build it holds (--weather-build=F, for
+## judging a part-built sky; 1 by default).
+var held_build := 1.0
 var debug := false
 var drift := Vector2.ZERO
 
@@ -151,6 +154,7 @@ static func from_args(flight_seed: int) -> Weather:
 		elif a.begins_with("--weather-pace="): w.pace = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--weather-seed="): s = a.get_slice("=",1).to_int()
 		elif a == "--weather-debug": w.debug = true
+		elif a.begins_with("--weather-build="): w.held_build = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 	w._rng.seed = hash(s)^0x57ea7e
 	w._settle()
 	return w
@@ -159,7 +163,7 @@ func _settle() -> void:
 	if held >= 0:
 		kind = held
 		state = held
-		_build = 0.0 if held == FAIR else 1.0
+		_build = 0.0 if held == FAIR else held_build
 		_kind_severity = _severity_of(kind)
 	_rain_here = rain_at(_eye)
 	_wet = _rain_here

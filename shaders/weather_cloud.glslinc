@@ -134,9 +134,10 @@ float wx_sky(vec3 p, float hh) {
 }
 
 // The share of the sun's light left (the tops keep more).
-float wx_sun(vec3 p, float hh) {
+// `wsky` the sample's wx_sky (worked out once).
+float wx_sun(float wsky, float hh) {
 	float sev = clamp(P.spare[7].y, 0.0, 1.0);
-	return mix(1.0, mix(WX_SUN, WX_TOP_SUN, sstep(0.4, 1.0, hh)), sev) * wx_sky(p, hh);
+	return mix(1.0, mix(WX_SUN, WX_TOP_SUN, sstep(0.4, 1.0, hh)), sev) * wsky;
 }
 
 // --- The far cloud (the march, past the map's reach) -------------------------------
@@ -167,9 +168,10 @@ vec4 wx_far(vec3 p, vec3 key) {
 	// Its top a lumpy line: higher where the noise heaps it.
 	float top = mix(0.6, 1.0, n);
 	float a = sstep(0.9 - cover, 1.25 - cover, n) * (1.0 - sstep(top - 0.25, top, hh));
-	float sky = wx_sky(p, hh) * mix(0.8, 1.15, n);
+	float wsky = wx_sky(p, hh);
+	float sky = wsky * mix(0.8, 1.15, n);
 	float ambient = SKY * mix(0.32, 1.0, hh) * sky;
-	float sun = SUN_SCALE * 0.15 * mix(0.3, 1.0, hh) * wx_sun(p, hh) * sstep(-0.1, 0.4, key.y);
+	float sun = SUN_SCALE * 0.15 * mix(0.3, 1.0, hh) * wx_sun(wsky, hh) * sstep(-0.1, 0.4, key.y);
 	float bounce = BOUNCE * (1.0 - hh) * (1.0 - hh) * sky;
 	return vec4(ambient, sun, bounce, 0.95 * a);
 }

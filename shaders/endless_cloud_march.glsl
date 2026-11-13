@@ -1585,7 +1585,7 @@ void march_pass() {
 				float wsky = wx_sky(p, s.h);
 				ambient *= wsky;
 				bounce *= wsky;
-				sun_light *= wx_sun(p, s.h) * wx_far_sun(length(p.xz - ro.xz));
+				sun_light *= wx_sun(wsky, s.h) * wx_far_sun(length(p.xz - ro.xz));
 			}
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
