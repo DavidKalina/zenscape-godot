@@ -249,14 +249,20 @@ def _break_end(p, bm, sign, size, tk, tb):
             f[tk] = T.BROKEN
         # Split the break's edges once more so it has points to jostle.
         faces = [f for f in bm.faces if f[tk] == T.BROKEN]
-        edges = list({e for f in faces for e in f.edges})
+        # In index order, not a set's: a set of BMesh elements iterates by
+        # memory address, which made every build of a broken piece come out
+        # different (the jostle's draws landed on other vertices, and the
+        # chips after it drew a different number of times).
+        bm.edges.index_update()
+        edges = sorted({e for f in faces for e in f.edges}, key=lambda e: e.index)
         bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=False)
         bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if f[tk] == T.BROKEN and len(f.verts) > 3])
         for f in bm.faces:
             if f[tk] == T.BROKEN:
                 for v in f.verts:
                     v[tb] = 1.0
-        rough = {v for f in bm.faces if f[tk] == T.BROKEN for v in f.verts}
+        bm.verts.index_update()
+        rough = sorted({v for f in bm.faces if f[tk] == T.BROKEN for v in f.verts}, key=lambda v: v.index)
         for v in rough:
             v.co += Vector((sign * r.uniform(-0.2, 0.1), r.uniform(-0.05, 0.05), r.uniform(-0.05, 0.05)))
 
@@ -455,21 +461,29 @@ def build_lintel_broken():
              bevel=0.04, chips=1, chip_depth=(0.08, 0.15), step=1.2, wobble=0.015,
              hide=(("-y" if side > 0 else "+y", -H + 3.0 - tx), "-z"))
         regula(p, -H, side)
-    # The frieze: one whole block on the column and a broken one beyond.
+    # The frieze: one whole block on the column. The broken one beyond it
+    # (x -6.25..-4.25) came down: its back half had nothing under it (the
+    # back architrave is snapped off at -6.8 and shorter), so it lies on
+    # the ground under the stub, with the cornice block it carried and its
+    # broken triglyph bar. (Same sizes and draws as when they stood.)
     fz = Z_FRIEZE
     p.block((-H + 1.5, 0, fz + T.FRIEZE_H / 2), (3.0 - T.JOINT, 2 * FRIEZE_D, T.FRIEZE_H - T.JOINT), chips=2)
-    slab(p, (-H + 3.0 + 1.0, 0.0, fz + 1.0), (2.0 - T.JOINT, 2 * FRIEZE_D, 2.0), chips=1, breaks=(1,),
+    slab(p, (-3.4, 0.8, 0.8), (2.0 - T.JOINT, 2 * FRIEZE_D, 2.0), yaw=1.3, tilt=(0.06, -0.08), chips=1, breaks=(1,),
          step=1.0, wobble=0.03, far=True)
     for side in (-1, 1):
         triglyph(p, -H, side)
-    triglyph(p, TRIGLYPHS[1], -1, x_hi=TRIGLYPHS[1] - 0.3, top=2.1)   # a bar and a half, broken short
-    # The cornice: a block each side on the column, the front one shifted
-    # out and tipped a little where the frieze under it gave.
+    # The bar and a half, broken short: the half is clipped away, the bar
+    # lies on its side by the frieze block.
+    r_chips = r.choice((0, 0, 1))
+    block(p, (-1.6, -1.7, 0.16), (0.5 - T.JOINT * 0.5, 0.34, 2.1 - 0.08), yaw=0.15, tilt=(0.0, 1.52),
+          bevel=0.04, chips=r_chips, chip_depth=(0.05, 0.12), far=False)
+    # The cornice: a block each side on the column; the front one's broken
+    # neighbour fell with the frieze block under it.
     zc = Z_CORNICE
     p.block((-H + 1.4, -CORNICE_D / 2, zc + CORONA_H / 2), (2.8 - T.JOINT, CORNICE_D - T.JOINT, CORONA_H - T.JOINT),
             chips=3, chip_depth=(0.2, 0.5))
-    slab(p, (-H + 2.9 + 0.8, -CORNICE_D / 2 - 0.25, zc + CORONA_H / 2 - 0.06), (1.6, CORNICE_D - 0.1, CORONA_H - T.JOINT),
-         yaw=0.04, tilt=(0.0, 0.05), chips=1, breaks=(1,), step=1.0, wobble=0.02, far=True)
+    slab(p, (0.6, -0.3, 0.42), (1.6, CORNICE_D - 0.1, CORONA_H - T.JOINT),
+         yaw=0.3, tilt=(0.05, -0.06), chips=1, breaks=(1,), step=1.0, wobble=0.02, far=True)
     p.block((-H + 1.9, CORNICE_D / 2, zc + CORONA_H / 2), (3.8 - T.JOINT, CORNICE_D - T.JOINT, CORONA_H - T.JOINT),
             chips=3, chip_depth=(0.2, 0.5))
     p.block((-H + 1.3, -CAP_D / 2, zc + CORONA_H + CAP_H / 2), (2.6 - T.JOINT, CAP_D, CAP_H - T.JOINT), chips=2,
@@ -528,6 +542,7 @@ def build_lintel_broken():
     p.solid((3.8, 3.2, 0.0), (7.2, 6.0, 2.3))          # a frieze block
     p.solid((-7.4, -10.2, 0.0), (8.6, -6.2, 1.3))      # cornice blocks, front
     p.solid((-7.6, 5.4, 0.0), (4.6, 9.8, 1.3))         # cornice blocks, back
+    p.solid((-6.0, -2.0, 0.0), (2.0, 2.4, 2.0))        # the stub's broken frieze block, its cornice, a bar
     p.export()
 
 
