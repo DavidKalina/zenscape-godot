@@ -70,6 +70,7 @@ func setup(w: Weather) -> void:
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--rain-opacity="): _streak_mat.set_shader_parameter("opacity",a.get_slice("=",1).to_float())
 		elif a.begins_with("--rain-air="): _air_mat.set_shader_parameter("opacity",a.get_slice("=",1).to_float())
+		elif a.begins_with("--rain-slant="): _streak_mat.set_shader_parameter("slant",a.get_slice("=",1).to_float())
 		elif a.begins_with("--rain-sigma="): _air_mat.set_shader_parameter("sigma",a.get_slice("=",1).to_float())
 	streaks.visible = false
 	rain_air.visible = false
