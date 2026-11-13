@@ -450,6 +450,9 @@ const SURGE_STREAK := 0.45
 ## The streaks' lift at a parry (Parry `streak`, 1 at the hit).
 const PARRY_STREAK := 1.2
 const STREAK_FLOW := 30.0
+## The rain at the eye (WeatherRain `here`) over which the streaks give way
+## to the rain's own (gone by .y).
+const STREAK_RAIN := Vector2(0.02,0.3)
 var _streaks: ColorRect
 var _streak_scale := 1.0
 var _wide := 0.0
@@ -1950,6 +1953,10 @@ func _streak_step(delta: float) -> void:
 	if not hand_landing.on_ground() and _streak_scale > 0.0:
 		var boost := Input.get_action_strength(&"fly_boost")*smoothstep(30.0,50.0,v)
 		want = (STREAK_TOP*smoothstep(STREAK_SPEED.x,STREAK_SPEED.y,v)+LOW_STREAK*_low_k+BOOST_STREAK*boost+SURGE_STREAK*float(plane.surge)+(PARRY_STREAK*float(parry.streak) if parry != null else 0.0))*_streak_scale
+		# In rain the wind lines, running out from the travel's point, read
+		# as drops radiating like stars against the dark sky: the rain's own
+		# streaks carry the speed there, so the lines give way to them.
+		if weather_rain != null: want *= 1.0-smoothstep(STREAK_RAIN.x,STREAK_RAIN.y,float(weather_rain.here))
 		var ahead: Vector3 = camera.global_position+plane.velocity.normalized()*200.0
 		if not camera.is_position_behind(ahead):
 			var view := get_viewport().get_visible_rect().size

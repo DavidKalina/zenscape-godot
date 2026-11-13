@@ -120,8 +120,16 @@ void fragment() {
 	t1 = min(t1, reach);
 	if (t1 <= t0) discard;
 	float dt = (t1 - t0) / float(TAPS);
-	// Taps nudged per pixel (interleaved gradient noise) so they never band.
-	float jit = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+	// Each tap at the middle of its stretch, the same for every pixel. A
+	// per-pixel nudge (interleaved gradient noise) once kept the taps from
+	// banding, but along a long ray a tap's stretch is hundreds of metres,
+	// over which a cell's kilometre feather changes the rain a good deal, so
+	// the nudge laid a fixed cross-hatch stipple over the far grey (seen in
+	// the gaps between far clouds, the rain air on vs off in one frame). The
+	// field is smooth and the stretches move smoothly from pixel to pixel,
+	// so fixed taps give a smooth result; the cloud's distance is already a
+	// share of its stretch (`before`), not a step.
+	float jit = 0.5;
 	float cover = 0.0;
 	float t_cloud = 1e9;
 	if (clouds_on > 0.5) {

@@ -29,6 +29,10 @@ uniform float wind_push = 5.0;
 uniform float exposure = 0.022;
 uniform float eye_share = 0.17;
 uniform float longest = 1.6;
+// The most a streak leans from straight down (radians), by the wind and the
+// eye's speed together, looking level; gone looking up (see vertex()).
+uniform float slant = 0.3;
+uniform vec2 slant_up = vec2(0.05, 0.5);
 // The streak's width (m) and opacity, and how near the eye a drop fades.
 uniform float width = 0.016;
 uniform float opacity = 0.75;
@@ -75,9 +79,26 @@ void vertex() {
 		// The eye's own motion shared in part only: all of it draws every
 		// streak from the point ahead like stars in a warp.
 		vec3 rel = vel - eye_velocity * eye_share;
-		vec3 trail = rel * exposure;
-		float tl = length(trail);
-		if (tl > longest) trail *= longest / tl;
+		// Every streak in one world direction draws as lines meeting at that
+		// direction's point in the sky (its vanishing point). Tipped far from
+		// the vertical by the eye's speed, that point climbs into the frame
+		// ahead and the streaks high against the sky radiate from it like
+		// stars. So the streak's direction is held within `slant` of straight
+		// down (the point stays above the frame looking level), always
+		// falling (a dive never lays it flat), and only its length takes the
+		// full speed past the eye. Looking up, the frame's top climbs to that
+		// point, and the lines far from it (a wide lens) lie nearly flat: the
+		// lean gives way as the view tips up (`slant_up`: the view's rise, the
+		// sine of its pitch, over which it goes), so there the rain falls from
+		// straight overhead.
+		float tl = min(length(rel) * exposure, longest);
+		float down = min(rel.y, -fall.x * 0.5);
+		vec2 lean = rel.xz;
+		float pitch = -INV_VIEW_MATRIX[2].y;
+		float most_lean = -down * tan(slant * (1.0 - smoothstep(slant_up.x, slant_up.y, pitch)));
+		float ll = length(lean);
+		if (ll > most_lean) lean *= most_lean / ll;
+		vec3 trail = normalize(vec3(lean.x, down, lean.y)) * tl;
 		// A long streak is a drop smeared thin: fainter.
 		float smear = clamp(0.6 / max(min(tl, longest), 0.01), 0.35, 1.0);
 		vec3 head = p;
