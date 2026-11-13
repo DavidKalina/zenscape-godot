@@ -132,6 +132,22 @@ read right, and says so in its notes.
      exact line. The site's triangles and draw calls against the belfry
      it replaced, in the commit's Checks.
 
+## Side lanes (asked while the loop ran)
+
+Each runs in its own worktree beside the trunk and is cherry-picked in.
+The trunk's tasks don't wait on them and don't edit their files.
+
+- **`wall` rework:** `wall_door` and `wall_broken` rebuilt in larger,
+  flat-faced stones on the scale of the column's drums (the first pass
+  read as brickwork). Same ids, origins, doorway and interlock.
+- **`lighthouse`** (asked 2026-11-12, "it kinda sucks right now"): the
+  lighthouse on Light Rock (`scripts/endless/coast_sites.gd`,
+  `assets/models/lighthouse.glb`, `art/blender/coast/coast_build.py`)
+  rebuilt as a new Blender model in the kit's stone, with its lamp, beam,
+  handle `coast/lighthouse`, solids and the `lamp-ring` find's place kept.
+  `--lighthouse=old` puts the old model back. It edits `coast_sites.gd`
+  and its own new files only.
+
 ## Checks
 
 - Smoke: `python tools/smoke.py studies/temple_kit_gallery.tscn` and, from
@@ -145,8 +161,8 @@ read right, and says so in its notes.
 
 ## Not in this loop
 
-- The cracked chamber on Long Isle (`cracked/long-isle`) and the
-  lighthouse. Both were shown to the user with the tower; the tower goes
-  first. Dressing the chamber in the kit is a later round.
+- The cracked chamber on Long Isle (`cracked/long-isle`). It was shown to
+  the user with the tower; the tower goes first. Dressing the chamber in
+  the kit is a later round.
 - Breaking the new pieces, ivy, and swapping the old kit's other places.
 - The cap and the budget are the skill's defaults.
