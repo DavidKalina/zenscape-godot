@@ -21,6 +21,8 @@ const PIECES: Array[StringName] = [
 	&"podium",
 	&"podium_corner",
 	&"podium_stair",
+	&"wall_door",
+	&"wall_broken",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
