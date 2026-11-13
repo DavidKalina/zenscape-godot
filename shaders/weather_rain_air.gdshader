@@ -23,16 +23,22 @@ uniform sampler2D depth_tex : hint_depth_texture, filter_nearest, repeat_disable
 // grey ("own_light"), so a shaft reads darker against a bright sky and
 // greys dark land beyond, at any hour.
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear, repeat_disable;
-uniform float behind_dark = 0.6;
-uniform float own_light = 0.35;
+uniform float behind_dark = 0.42;
+uniform float own_light = 0.25;
 uniform float sea_y = -40.0;
-// The rain's air: whole up to rise.x m over the sea, gone by rise.y (the
-// cloud's bases are 115-190 m over the sea, its towers' feet lower; the
-// shaft's top frays into them).
-uniform vec2 rise = vec2(450.0, 1250.0);
+// The ground under the eye (m; weather_rain.gd, the land's field there, at
+// least the sea).
+uniform float ground_y = -40.0;
+// The rain's air: whole up to rise.x m over the ground, gone by rise.y. The
+// clouds' bases ride the land 115-190 m over it (EndlessClouds MID_BASE,
+// TOWER_BASE), so the shaft hangs from them and its top frays into them; over
+// the sea's level instead, high land had no rain over it and the sky over
+// the low land a grey band above the clouds. The ground along a ray is the
+// eye's eased to the ray's hit (the sky's rays keep the eye's).
+uniform vec2 rise = vec2(170.0, 420.0);
 // Extinction per metre at a rain of 1: 3 km through a cell's heart about
 // half grey.
-uniform float sigma = 0.0007;
+uniform float sigma = 0.0012;
 // The share of the rain between the cells (a storm's floor) that greys the
 // air: less than the cells', so the cells stand out as shafts.
 uniform float floor_share = 0.5;
@@ -90,8 +96,11 @@ void fragment() {
 	vec4 view = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
 	vec3 vp = view.xyz / view.w;
 	vec3 rd = normalize(mat3(INV_VIEW_MATRIX) * vp);
-	float t1 = depth <= 1e-6 ? 1e6 : length(vp);
-	float top = sea_y + rise.y;
+	bool hit = depth > 1e-6;
+	float t1 = hit ? length(vp) : 1e6;
+	float g0 = max(ground_y, sea_y);
+	float g1 = hit ? max(eye.y + rd.y * t1, sea_y) : g0;
+	float top = max(g0, g1) + rise.y;
 	// Clipped to the air under the rain's top and over the sea.
 	float t0 = near_eye.x;
 	if (abs(rd.y) > 1e-5) {
@@ -107,6 +116,7 @@ void fragment() {
 	} else if (eye.y > top || eye.y < sea_y) {
 		discard;
 	}
+	float t_hit = hit ? max(length(vp), 1.0) : 1e9;
 	t1 = min(t1, reach);
 	if (t1 <= t0) discard;
 	float dt = (t1 - t0) / float(TAPS);
@@ -127,7 +137,7 @@ void fragment() {
 	for (int k = 0; k < TAPS; k++) {
 		float t = t0 + (float(k) + jit) * dt;
 		vec3 p = eye + rd * t;
-		float h = p.y - sea_y;
+		float h = p.y - mix(g0, g1, clamp(t / t_hit, 0.0, 1.0));
 		float up = 1.0 - smoothstep(rise.x, rise.y, h);
 		// Where this drop left the cloud: upwind of it, the higher the more.
 		vec2 src = p.xz - lean * (top - p.y);
