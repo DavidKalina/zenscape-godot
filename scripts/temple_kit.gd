@@ -16,6 +16,8 @@ const PIECES: Array[StringName] = [
 	&"column",
 	&"column_broken",
 	&"column_drums",
+	&"lintel",
+	&"lintel_broken",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
