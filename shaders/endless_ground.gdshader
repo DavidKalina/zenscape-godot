@@ -312,6 +312,17 @@ uniform float river_calm = 0.85;
 // darker over `.y` m. `river_edge` is retired: the bank foam
 // (`river_bank_foam`) draws the water's edge now.
 uniform vec2 river_bank = vec2(3.5, 1.4);
+// The bank as dirt: crumbled earth with grain and the odd stone, dull mud
+// with a ragged edge at the water (0 the smooth strand before, 1 full).
+uniform float river_bank_grit = 0.0;
+// A rim of that bank at every shore, however narrow the bank there (m, x
+// by a river, y by a pond or lake, whose ground meets the water further out; 0
+// none): a pond's turf ran straight into its water.
+uniform vec2 river_bank_rim = vec2(0.0);
+// The beach's sand with grain: damp and dry patches, coarse grains, shell
+// bits and dark grit, a little relief, and a duller wet edge (0 the smooth
+// sand before, 1 full).
+uniform float sand_grit = 0.0;
 uniform float river_edge = 0.55;
 // A wall in a river's plan footprint: the faces steep enough to keep dry above
 // the water (their normal's y, all steep to none), and how far over the
@@ -351,6 +362,9 @@ uniform float river_sea_body = 0.9;
 // The banks in the mirror: from reflected rays this high (.x) to this
 // low (.y), this much of them.
 uniform vec3 river_shore_mirror = vec3(0.28, 0.04, 0.7);
+// The bank standing in the mirror: its height with what grows on it (.x,
+// m) and how much of it shows (.y; 0 none, the look before).
+uniform vec2 river_bank_mirror = vec2(2.5, 0.0);
 // The current's pale streaks down the flow (0 none).
 uniform float river_streaks = 1.0;
 // Still water (a pond, land_ponds.gd; a river's still pool): lily pads in
@@ -781,6 +795,14 @@ float zs_patch(vec2 p, float scale, float fp) {
 
 // A point turned and shifted for the carpet grain's two lattices, so no
 // grid lines up with the world's axes.
+// The bank's shingle as a height (0..~1.6): pebbles and, sparser, cobbles.
+// The bank's dirt as a height (0..1): crumbled clods, creased between.
+// (By the world point, not the sheared plan: the bank's side is steep, and
+// the plan's noise ran down it in zigzag stripes.)
+float zs_bank_clods(vec3 q) {
+	return abs(er_vnoise(q / 0.34) * 2.0 - 1.0) * 0.6 + abs(er_vnoise(q / 0.11 + 3.7) * 2.0 - 1.0) * 0.4;
+}
+
 vec2 turned_speck(vec2 p, int k) {
 	return k == 0 ? mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * p + vec2(13.1, 7.7)
 		: mat2(vec2(0.28, -0.96), vec2(0.96, 0.28)) * p + vec2(3.3, 51.9);
@@ -950,6 +972,12 @@ void fragment() {
 	float r_ragged = (zs_noise(p.xz / 3.3) - 0.5) * 0.9 * (1.0 - smoothstep(0.5, 2.0, fp));
 	// How far outside the water's edge (m; negative in the water).
 	float r_out = r_s - r_w + r_ragged;
+	// The way out of the water over the ground (toward the nearer bank), for
+	// the banks in the mirror; taken here in uniform control flow.
+	float r_bd = r_s - r_w;
+	vec2 r_bdd = vec2(dFdx(r_bd), dFdy(r_bd));
+	float r_bdet = dpx.x * dpy.y - dpx.y * dpy.x;
+	vec2 r_bank_way = abs(r_bdet) > 1e-9 ? vec2(r_bdd.x * dpy.y - dpx.y * r_bdd.y, dpx.x * r_bdd.y - r_bdd.x * dpy.x) / r_bdet : vec2(0.0);
 	// (At a mouth the paint goes on under the sea's still water, giving way
 	// to the bed as it sinks.)
 	float r_level = mix(smoothstep(river_mouth, river_mouth + 0.3, river.z - sea_y), smoothstep(-1.6, -0.3, over), river_mouth_blend);
@@ -976,6 +1004,7 @@ void fragment() {
 	// (endless_patch's noise, which the grass mirrors (EndlessPatch.river_bank),
 	// so the tufts stop where the stones start.)
 	float bank_w = river_bank.x * mix(0.0, 1.8, smoothstep(0.42, 0.62, ep_noise(p.xz / 55.0 + 11.0) * 0.45 + ep_noise(p.xz / 19.0 + 5.0) * 0.55));
+	bank_w = max(bank_w, mix(river_bank_rim.x, river_bank_rim.y, smoothstep(18.0, 30.0, r_w)) * mix(0.5, 1.6, zs_noise(p.xz / 4.7 + 9.0)));
 	float banked = r_here * (1.0 - smoothstep(bank_w * 0.55, bank_w + r_aa, r_out + (zs_noise(p.xz / 6.1 + 3.0) - 0.5) * 2.0 * min(bank_w, 2.5) * (1.0 - smoothstep(1.0, 4.0, fp))));
 
 	// --- The grass carpet ---------------------------------------------------
@@ -1431,6 +1460,25 @@ void fragment() {
 	rock = hued(rock, rock_hue) * rock_tint * pow(PEAK_BASALT_TINT, vec3(pk_dark));
 
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);
+	vec2 sand_tilt = vec2(0.0);
+	if (sand_grit > 0.0 && sandy > 0.0 && over > -1.5) {
+		// (By the world point, as the bank's dirt: no stripes down a slope.)
+		float s_mid = (1.0 - smoothstep(1.0, 3.5, fp)) * sand_grit;
+		float s_grit = (1.0 - smoothstep(0.08, 0.4, fp)) * sand_grit;
+		float s_grain = (1.0 - smoothstep(0.03, 0.12, fp)) * sand_grit;
+		sand *= mix(1.0, mix(0.78, 1.1, er_vnoise(p / 2.9 + 3.1) * 0.6 + er_vnoise(p / 0.9 + 8.2) * 0.4), s_mid);
+		if (s_grit > 0.0) {
+			float g1 = er_vnoise(p / 0.035);
+			float g2 = er_vnoise(p / 0.12 + 5.3);
+			sand *= 1.0 + (g1 - 0.5) * 0.5 * s_grain + (g2 - 0.5) * 0.4 * s_grit;
+			float sn = er_vnoise(p / 0.07 + 2.6);
+			sand = mix(sand, vec3(0.74, 0.71, 0.65), smoothstep(0.86, 0.9, sn) * 0.7 * s_grit);
+			sand *= 1.0 - 0.45 * smoothstep(0.2, 0.16, sn) * s_grit;
+			float e = max(0.02, fp * 0.7);
+			float cl = zs_bank_clods(p * 1.6);
+			sand_tilt = vec2(zs_bank_clods((p + vec3(e, 0.0, 0.0)) * 1.6) - cl, zs_bank_clods((p + vec3(0.0, 0.0, e)) * 1.6) - cl) / e * 0.022 * s_grit;
+		}
+	}
 	sand = mix(sand, SAND_WET, smoothstep(0.7, -0.1, over));
 	// The seabed: the sand darkening and greying with depth.
 	sand = mix(sand, SEABED * (1.0 + wide), smoothstep(-0.5, -12.0, over));
@@ -1438,6 +1486,8 @@ void fragment() {
 	// A river's bank: sand with pebbles in it, wet and darker at the water.
 	vec3 bank_c = vec3(0.0);
 	float damp = 0.0;
+	vec2 bank_tilt = vec2(0.0);
+	float damp_c = 1.0;
 	if (banked > 0.0) {
 		float stones = smoothstep(0.6, 0.82, zs_noise(turned_speck(gxz, 0) / 0.3)) * (1.0 - smoothstep(0.06, 0.25, fp));
 		float cobbles = smoothstep(0.62, 0.86, zs_noise(turned_speck(gxz + 5.1, 1) / 0.8)) * (1.0 - smoothstep(0.15, 0.6, fp));
@@ -1449,8 +1499,36 @@ void fragment() {
 		// At a mouth the stones give way to the beach's sand.
 		bank_c = mix(bank_c, SAND * (1.0 + fine * 0.25 + mid * 0.2), r_mouth * 0.85);
 		damp = 1.0 - smoothstep(0.0, river_bank.y, r_out);
-		bank_c = mix(bank_c, SAND_WET * 0.85, damp * 0.85);
+		if (river_bank_grit > 0.0) {
+			// Dirt, not a smooth strand (river_bank_grit): dark crumbled
+			// earth in lighter and darker patches, coarse grain in it, the odd
+			// pale stone and dark fleck, mud at the water with a ragged edge.
+			float mid_k = 1.0 - smoothstep(1.0, 3.5, fp);
+			float k_grain = 1.0 - smoothstep(0.03, 0.12, fp);
+			float k_grit = 1.0 - smoothstep(0.08, 0.4, fp);
+			float patchy = mix(0.5, er_vnoise(p / 2.7 + 7.7) * 0.6 + er_vnoise(p / 0.8 + 1.3) * 0.4, mid_k);
+			vec3 dirt = mix(vec3(0.150, 0.110, 0.072), vec3(0.330, 0.255, 0.165), smoothstep(0.25, 0.75, patchy));
+			if (k_grit > 0.0) {
+				float g1 = er_vnoise(p / 0.04);
+				float g2 = er_vnoise(p / 0.13 + 2.1);
+				dirt *= 1.0 + (g1 - 0.5) * 0.7 * k_grain + (g2 - 0.5) * 0.6 * k_grit;
+				float sn = er_vnoise(p / 0.085 + 9.4);
+				dirt = mix(dirt, ROCK_PALE * mix(0.7, 1.15, g2), smoothstep(0.83, 0.87, sn) * 0.8 * k_grit);
+				dirt *= 1.0 - 0.5 * smoothstep(0.22, 0.17, sn) * k_grit;
+				float e = max(0.02, fp * 0.7);
+				float cl = zs_bank_clods(p);
+				bank_tilt = vec2(zs_bank_clods(p + vec3(e, 0.0, 0.0)) - cl, zs_bank_clods(p + vec3(0.0, 0.0, e)) - cl) / e * 0.045 * k_grit * river_bank_grit;
+				dirt *= 0.82 + 0.3 * mix(0.6, cl, k_grit);
+			}
+			dirt = mix(dirt, SAND * (1.0 + fine * 0.25 + mid * 0.2), r_mouth * 0.85);
+			bank_c = mix(bank_c, dirt, river_bank_grit);
+			damp = 1.0 - smoothstep(0.0, river_bank.y * mix(1.0, mix(0.35, 1.7, er_vnoise(p / 1.3 + 4.2)), mid_k * river_bank_grit), r_out);
+			bank_c = mix(bank_c, bank_c * 0.5, damp * 0.85 * river_bank_grit);
+			damp_c = mix(1.0, 0.0, river_bank_grit);
+		}
+		bank_c = mix(bank_c, SAND_WET * 0.85, damp * 0.85 * damp_c);
 	}
+	lit_n = normalize(lit_n + vec3(-bank_tilt.x, 0.0, -bank_tilt.y) * banked + vec3(-sand_tilt.x, 0.0, -sand_tilt.y) * sandy * (1.0 - banked));
 
 	vec3 snow = SNOW * (1.0 + fine * 0.06);
 	// The Peak's granite: the rock's own light, grey and a little cool, its
@@ -1527,7 +1605,9 @@ void fragment() {
 		}
 	}
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
-	albedo = mix(albedo, bank_c, banked * (1.0 - rocky * 0.7));
+	// (With the bank's dirt, the bank's steep side is dirt too: the cliffs'
+	// pale rock showed through it in a soft patch.)
+	albedo = mix(albedo, bank_c, banked * (1.0 - rocky * 0.7 * (1.0 - river_bank_grit)));
 	// The Peak's valley floor: scree of granite on the boulder field; ice
 	// down the icefall and the glacier, streaked along its flow and dirtied
 	// toward its edges, its steep faces (crevasse walls, the icefall's
@@ -1587,7 +1667,8 @@ void fragment() {
 	float r_damp = r_steep * r_here * r_level * (1.0 - smoothstep(-r_aa, r_aa, r_out)) * (1.0 - smoothstep(0.0, river_wall_damp.x * (1.0 + r_ragged), r_rise - river_wall.z));
 	albedo *= 1.0 - river_wall_damp.y * r_damp;
 	ALBEDO = (albedo + ps_glit * snowy * ps_on) * (1.0 - shaded) * horizon.x;
-	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
+	// (The bank's damp band with grit: dull, not a wet sheen.)
+	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over) * mix(1.0, 0.45, sand_grit), damp * banked * mix(1.0, 0.25, river_bank_grit));
 	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
 	ROUGHNESS = mix(ROUGHNESS, pt_rw.x, pt_rw.y);
 	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(max(snowy, wet_sand), pk.y)) * (1.0 - shaded) * horizon.x;
@@ -1912,6 +1993,18 @@ void fragment() {
 		// band toward the horizon of the reflection.
 		vec3 shore_tone = zs_scene_to_display((ambient * 0.9 + key * 0.35) * vec3(0.16, 0.22, 0.12));
 		sky = mix(sky, shore_tone, smoothstep(river_shore_mirror.x, river_shore_mirror.y, refl.y) * river_shore_mirror.z);
+		// The bank itself in the mirror (river_bank_mirror): where the
+		// reflected ray, followed over the water, meets the bank's side
+		// before it clears the bank's height, the water shows the bank, dark;
+		// so a band lies under the far bank, wider the lower the eye.
+		if (river_bank_mirror.y > 0.0) {
+			float flat_len = max(length(refl.xz), 1e-3);
+			float toward = clamp(dot(refl.xz / flat_len, r_bank_way), -1.0, 1.0);
+			float reach = min(d_in / max(toward, 0.05), max(2.0 * r_w - d_in, 0.0) / max(-toward, 0.05));
+			float tall = river_bank_mirror.x * mix(0.5, 1.5, zs_noise(p.xz / 11.0 + 5.1));
+			float in_bank = 1.0 - smoothstep(0.6, 1.4, refl.y / flat_len * reach / tall);
+			sky = mix(sky, shore_tone, in_bank * river_bank_mirror.y);
+		}
 		// The cloud field mirrored, as the sea has it (endless_sea.gdshader):
 		// where the reflected ray meets the clouds' height, the shade map's
 		// spot under that cloud along the sun's line.
