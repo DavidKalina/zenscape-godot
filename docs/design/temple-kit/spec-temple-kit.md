@@ -61,6 +61,33 @@ into this section (`ITER(temple-kit): spec change: the kit's numbers`).
   It lays out `PIECES` by itself, so a lane adds its ids to the list and
   the gallery shows them.
 
+### The numbers (iteration 1, the base)
+
+The constants live in `art/blender/temple_kit/temple_lib.py` (the source
+of truth) and are mirrored in `scripts/temple_kit.gd`. Metres; Blender z up,
+Godot y up; a piece's origin is on the surface it stands on, at its snap
+point.
+
+| What | Value |
+|---|---|
+| Bay, column centre to centre | 18.5 |
+| Column: shaft diameter foot / neck | 4.0 / 3.4 (20 flutes) |
+| Column: plinth (square) and torus | 5.0 x 0.6, then 0.6; base 1.2 |
+| Column: shaft | 11 drums x 2.5 = 27.5 |
+| Column: echinus, abacus (square) | 1.0; 5.2 x 0.8; capital 1.8 |
+| Column height (lintel underside over the stylobate) | 30.5 |
+| Clear gap between two columns | 14.5 at the shafts' feet, 13.3 at the abacus (narrowest) |
+| Clear height under a lintel | 30.5 (over 2 x 14.5) |
+| Entablature: architrave / frieze / cornice | 3.2 / 2.6 / 1.7 = 7.5; depth 5.2, cornice 0.6 out each side |
+| Podium: steps | 3 steps of 1.0 high, 1.6 tread; stylobate top at 3.0 over the ground |
+| Wall: thickness, course | 2.4; courses 1.25 high, blocks 2.2-3.6 long |
+| Doorway, clear | 14.0 wide, 24.0 high (at least) |
+| Open joint between blocks or drums; worn arris | 0.03; bevel 0.06 |
+| Far LOD swap | 170 m from the camera (`TempleKit.FAR_AT`) |
+
+Column: 11.8k triangles near, 112 far. The model budget's 5-15k holds per
+piece; repeated columns are one MultiMesh (`TempleKit.mesh(id)`).
+
 ## The pieces
 
 | Built by | Piece ids | What |
