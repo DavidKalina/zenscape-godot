@@ -177,9 +177,12 @@ def step_course(p, fr, i, u0, u1, hurt=None, end_broken=None, hide=STEP_HIDE):
                     chips=r.randint(1, 3), chip_depth=(0.15, 0.45), bevel=r.uniform(0.06, 0.11))
         if hurt is not None and hurt(j, len(blocks), spec) is False:
             continue
+        # spec["hide"] / spec["seen"] (set by `hurt`) override run_hide, for
+        # a run's end block whose end is closed (a corner).
         emit(p, fr, spec["u"], spec["v"], spec["z"], (spec["L"] - T.JOINT, DEPTH[i] - T.JOINT, spec["H"] - T.JOINT),
              yaw=spec["yaw"], tilt=spec["tilt"], chips=spec["chips"], chip_depth=spec["chip_depth"],
-             bevel=spec["bevel"], hide=run_hide(hide, j, len(blocks), spec.get("keep", ())), seen=STEP_SEEN)
+             bevel=spec["bevel"], hide=spec.get("hide", run_hide(hide, j, len(blocks), spec.get("keep", ()))),
+             seen=spec.get("seen", STEP_SEEN))
     lo_u, hi_u = u0, u1
     p.far_box(_mid(fr, (lo_u + hi_u) / 2, FRONT[i] + DEPTH[i] / 2, z0 + T.STEP_H / 2),
               (hi_u - lo_u, DEPTH[i], T.STEP_H), yaw=fr.a)
@@ -210,7 +213,7 @@ def core(p, fr, u0, u1, v_back=BACK):
              bevel=0.0, chips=0, jitter=0.0, kind=T.JOINTFACE, tone=0.8)
 
 
-def footing(p, fr, u0, u1, front=FRONT[0], v_back=BACK, shift=(True, True), end_out=False):
+def footing(p, fr, u0, u1, front=FRONT[0], v_back=BACK, shift=(True, True), end_out=False, inset=0.0):
     """The plain footing to 6.5 m under the ground line: two courses of
     big rough blocks, the top one stepping 0.15 m out of the steps' face.
     `shift` per end: False holds that end fixed (a corner); `end_out`
@@ -229,7 +232,9 @@ def footing(p, fr, u0, u1, front=FRONT[0], v_back=BACK, shift=(True, True), end_
             emit(p, fr, uc, (v0 + v_back) / 2, (z0 + z1) / 2, (L - 0.05, v_back - v0, z1 - z0),
                  bevel=0.0, chips=0, jitter=0.03, tone=r.uniform(0.75, 0.9),
                  hide=tuple(set(run_hide(base, j, len(blocks))) | set(base) - {"-x", "+x"}))
-        p.backing(fr, a, b, front - out + 0.35, z0, z1)
+        # `inset`: the wall stops short of the run's ends (inside the end
+        # blocks), so it never reaches past the stone.
+        p.backing(fr, a + inset, b - inset, front - out + 0.35, z0, z1)
         p.far_box(fr.pt((a + b) / 2, (front - out + v_back) / 2, (z0 + z1) / 2),
                   (b - a, v_back - front + out, z1 - z0), yaw=fr.a)
 
@@ -363,12 +368,18 @@ def build_corner():
                 spec["tilt"] = (0.02, -0.03)
                 spec["chips"] = 3
                 spec["chip_depth"] = (0.3, 0.5)
+            # The corner block (j == n - 1) keeps every face: trimming its
+            # bed and back (tried) changed how its outer arris shades at 60 m.
             return True
 
         def hurt_s(j, n, spec, i=i):
             if i == 1 and j == 1:
                 spec["v"] -= 0.16
                 spec["yaw"] -= 0.03
+            if j == 0:
+                # The side run's first block starts behind the corner block:
+                # its bed and back go as an inner block's; its start end stays.
+                spec["hide"] = STEP_HIDE
             return True
 
         step_course(p, front, i, -HB + s, corner_u, hurt=hurt_f)
@@ -382,7 +393,7 @@ def build_corner():
         for fr, (u0, u1) in ((front, (-HB, -f0)), (side, (BACK, HB))):
             lo, hi = fr.aabb(u0, u1, f0, BACK, z0, z1)
             p.block(((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (z0 + z1) / 2), (hi[0] - lo[0], hi[1] - lo[1], z1 - z0),
-                    bevel=0.0, chips=0, jitter=0.0, kind=T.JOINTFACE, tone=0.8, far=False)
+                    bevel=0.0, chips=0, jitter=0.0, kind=T.JOINTFACE, tone=0.8, far=False, hide=("-z",))
     # Paving: the front rows to the side stylobate's inner edge (x 0.4),
     # then the side rows from y 6 on.
     inner = FRONT[2] + DEPTH[2]          # -0.4
@@ -406,11 +417,11 @@ def build_corner():
             tilted(spec, r)
         return True
 
-    paving_to(p, front, -HB, -inner, keep=column_zone(0.0), hurt=hurt_pf)
-    paving_from(p, side, BACK, HB, hurt=hurt_ps)
+    paving_to(p, front, -HB, -inner, keep=column_zone(0.0), hurt=hurt_pf, fixed=(False, True))
+    paving_from(p, side, BACK, HB, hurt=hurt_ps, fixed=(True, False))
     # The footing: front strip to the corner, side strip behind it.
-    footing(p, front, -HB, -FRONT[0], shift=(True, False), end_out=True)
-    footing(p, side, BACK, HB, shift=(False, True))
+    footing(p, front, -HB, -FRONT[0], shift=(True, False), end_out=True, inset=0.1)
+    footing(p, side, BACK, HB, shift=(False, True), inset=0.1)
     # Solids.
     step_solids(p, front, -HB, -FRONT[0])
     for i in range(3):
@@ -429,10 +440,11 @@ def paving_from(p, fr, u_start, u1, **kw):
     _paving_span(p, fr, lambda s: (u_start, u1 + s), **kw)
 
 
-def _paving_span(p, fr, span, keep=None, hurt=None, rows=ROWS, keys=None):
+def _paving_span(p, fr, span, keep=None, hurt=None, rows=ROWS, keys=None, fixed=(False, False)):
     """Rows of slabs; `keys` their SHIFT names (row0.. by default). A
     slab's bed and the bevels round it are left out, except under a
-    heaved slab and at a run's ends (a bay's end shows them overhanging)."""
+    heaved slab and at a run's ends (a bay's end shows them overhanging),
+    unless that end is `fixed` (closed by stone, at a corner)."""
     r = p.rng
     keys = keys or ["row%d" % i for i in range(len(rows))]
     lo_all, hi_all = 1e9, -1e9
@@ -449,7 +461,8 @@ def _paving_span(p, fr, span, keep=None, hurt=None, rows=ROWS, keys=None):
             if spec.get("crack"):
                 _cracked(p, fr, spec)
                 continue
-            hide = run_hide(SLAB_HIDE, j, len(slabs)) if spec["tilt"] == (0.0, 0.0) else ()
+            closed = j == 0 and fixed[0] or j == len(slabs) - 1 and fixed[1]
+            hide = (SLAB_HIDE if closed else run_hide(SLAB_HIDE, j, len(slabs))) if spec["tilt"] == (0.0, 0.0) else ()
             emit(p, fr, spec["u"], spec["v"], spec["z"], (spec["L"] - T.JOINT, spec["D"] - T.JOINT, 0.45),
                  yaw=spec["yaw"], tilt=spec["tilt"], chips=spec["chips"], chip_depth=(0.08, 0.14), bevel=0.06,
                  hide=hide, seen=SLAB_SEEN)
@@ -553,18 +566,45 @@ def build_stair():
     core(p, fr, -HB, HB)
 
     # The flight: twelve fine steps, each a course of blocks; the right
-    # side's upper steps gone where the cheek came down.
-    for k in range(NSTEP):
-        v0 = STAIR_FRONT + TREAD * k
-        D = TREAD + 0.25
-        top = RISE * (k + 1)
-        for uc, L in lay(r, -STAIR_HALF, STAIR_HALF, (1.6, 3.2)):
-            lost = uc > 2.2 and 3 <= k <= 9 and r.random() < 0.8
-            if lost:
-                continue
-            s = settle(r)
-            emit(p, fr, uc, v0 + D / 2 + s["dv"] * 0.5, top - 0.25 + s["dz"] * 0.4, (L - T.JOINT, D - T.JOINT, 0.5 - T.JOINT),
-                 yaw=s["yaw"], chips=r.randint(0, 2), chip_depth=(0.06, 0.14), bevel=0.05)
+    # side's upper steps gone where the cheek came down. A block's bed
+    # (on the step below and the core) and back (under the next step) go
+    # as a big step's do, except where the step below or above is gone
+    # over it (the hole shows them) and at a run's ends. Which blocks are
+    # gone is only known once the flight is laid, so it is laid twice:
+    # a dry run into a throwaway mesh, then again from the same draws.
+    def flight(gone_before):
+        gone = {}
+        for k in range(NSTEP):
+            v0 = STAIR_FRONT + TREAD * k
+            D = TREAD + 0.25
+            top = RISE * (k + 1)
+            blocks = lay(r, -STAIR_HALF, STAIR_HALF, (1.6, 3.2))
+            for j, (uc, L) in enumerate(blocks):
+                lost = uc > 2.2 and 3 <= k <= 9 and r.random() < 0.8
+                if lost:
+                    gone.setdefault(k, []).append((uc - L / 2, uc + L / 2))
+                    continue
+                s = settle(r)
+                hide = ()
+                if gone_before is not None:
+                    a, b = uc - L / 2 - 0.1, uc + L / 2 + 0.1
+
+                    def open_at(kk):
+                        return any(x0 < b and a < x1 for x0, x1 in gone_before.get(kk, ()))
+                    keep = (("-z",) if open_at(k - 1) else ()) + (("+y",) if open_at(k + 1) else ())
+                    hide = run_hide(STEP_HIDE, j, len(blocks), keep)
+                emit(p, fr, uc, v0 + D / 2 + s["dv"] * 0.5, top - 0.25 + s["dz"] * 0.4, (L - T.JOINT, D - T.JOINT, 0.5 - T.JOINT),
+                     yaw=s["yaw"], chips=r.randint(0, 2), chip_depth=(0.06, 0.14), bevel=0.05, hide=hide, seen=STEP_SEEN)
+        return gone
+
+    real, state = p.near, r.getstate()
+    p.near = bmesh.new()
+    T._layers(p.near)
+    gone = flight(None)
+    p.near.free()
+    p.near = real
+    r.setstate(state)
+    flight(gone)
     # The flight's core, under its treads.
     for v0, z1 in ((-6.9, 0.6), (-5.3, 1.6), (-3.7, 2.6)):
         emit(p, fr, 0.0, (v0 + FRONT[2]) / 2, z1 / 2 - 0.15, (2 * STAIR_HALF, FRONT[2] - v0, z1 + 0.3),
@@ -586,6 +626,9 @@ def build_stair():
             if side == 1:
                 courses = 1 if j == 0 else 0
             for c in range(courses):
+                # The cheek keeps every face: its blocks' chips (up to 0.3 m)
+                # open the faces they abut (tried: hiding the backs and tops
+                # under the next length and the caps showed holes at 6 m).
                 emit(p, fr, uc + r.uniform(-0.02, 0.02), v0 + 0.8, c + 0.5, (CHEEK - T.JOINT, 1.6 - T.JOINT, 1.0 - T.JOINT),
                      yaw=r.uniform(-0.01, 0.01), chips=r.randint(1, 2), chip_depth=(0.12, 0.3), bevel=0.08)
             if side == -1:
@@ -605,6 +648,8 @@ def build_stair():
         ground = stair_top(v) if abs(u) < STAIR_HALF else (0.0 if v < FRONT[0] else 1.0)
         if u > 2.2 and -6.6 < v < -3.8:
             ground = max(0.9, stair_top(v) - 0.6)
+        # Every face kept: tipped up to 26 deg, no face of a spilled block
+        # lies wholly under the soil (checked corner by corner) or the ground.
         emit(p, fr, u, v, ground + size[2] * 0.45 + lift, size, yaw=r.uniform(0, math.pi),
              tilt=(r.uniform(-0.35, 0.35), r.uniform(-0.45, 0.45)), chips=3, chip_depth=(0.15, 0.35), bevel=0.1)
         if big:
@@ -622,7 +667,7 @@ def build_stair():
         return True
 
     paving(p, fr, -HB, HB, keep=column_zone(0.0), hurt=hurt_pav)
-    footing(p, fr, -HB, HB)
+    footing(p, fr, -HB, HB, inset=0.1)
     # The footing under the flight's jut.
     emit(p, fr, 0.0, (STAIR_FRONT - 0.15 + FRONT[0]) / 2, -3.25, (2 * edge, FRONT[0] - STAIR_FRONT + 0.15, 6.5),
          bevel=0.0, chips=0, jitter=0.02, tone=0.82)
