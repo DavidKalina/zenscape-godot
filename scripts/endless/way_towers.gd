@@ -10,10 +10,14 @@ extends Node3D
 ## the layout file wins, and a find on the handle follows. Trees keep off
 ## (`tree_keepouts`). Its stone is the flight's solid through LandArches `loose`.
 ## Only the wilderness has them: they go while the plane is anywhere else.
+## At `way/isle` the temple ruin (temple_site.gd) stands instead of the belfry,
+## unless `--temple=0`.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const TempleSite = preload("res://scripts/endless/temple_site.gd")
+const TEMPLE_AT := "way/isle"
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -38,9 +42,12 @@ func setup(g: Node3D) -> void:
 	game = g
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
+		var temple: bool = site.name == TEMPLE_AT and TempleSite.wanted()
 		var coded := Transform3D(Basis(Vector3.UP,float(site.yaw)),Vector3(at.x,float(game.field.height(at.x,at.y)),at.y))
+		if temple: coded = Transform3D(Basis(Vector3.UP,TempleSite.YAW),
+			Vector3(TempleSite.AT.x,TempleSite.foot_y(game.field),TempleSite.AT.y))
 		sites[site.name] = {"name":site.name,"coded":coded,"xf":LayoutOverrides.xform(str(site.name),coded),
-			"seed":absi(hash(str(site.name)))%100000,"state":"away","task":-1}
+			"seed":absi(hash(str(site.name)))%100000,"state":"away","task":-1,"temple":temple}
 
 ## Where a tower's foot stands (world), or Vector3.INF for no such tower.
 func at(handle: String) -> Vector3:
@@ -50,8 +57,14 @@ func at(handle: String) -> Vector3:
 ## TreePlan's keep-outs, [centre XZ, cos, sin, half across, half along].
 static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	var out: Array = []
+	var temple := TempleSite.wanted()
 	for site: Dictionary in SITES:
 		var p: Vector2 = site.at
+		if temple and site.name == TEMPLE_AT:
+			var k: Array = TempleSite.keepout()
+			var q: Vector2 = k[0]
+			if q.x > x0-500.0 and q.x < x1+500.0 and q.y > z0-500.0 and q.y < z1+500.0: out.append(k)
+			continue
 		if p.x < x0-500.0 or p.x > x1+500.0 or p.y < z0-500.0 or p.y > z1+500.0: continue
 		out.append([p,1.0,0.0,CLEAR,CLEAR])
 	return out
@@ -72,11 +85,14 @@ func step(eye: Vector3) -> void:
 
 func _begin(site: Dictionary) -> void:
 	site.state = "building"
-	RuinKit.Build.materials()
+	if not site.temple: RuinKit.Build.materials()
 	site.task = WorkerThreadPool.add_task(_make.bind(site),false,"Way tower")
 
 ## On a worker: the piece, off the tree.
 func _make(site: Dictionary) -> void:
+	if site.temple:
+		site.made = TempleSite.build()
+		return
 	site.made = RuinKit.piece("belfry_tower",int(site.seed),WEATHERED)
 
 ## On the main thread: the piece in the tree, its boxes for its hulls.
@@ -90,6 +106,9 @@ func _commit(site: Dictionary) -> void:
 	add_child(root)
 	site.node = root
 	LayoutOverrides.track(str(site.name),root,"piece",site.coded)
+	if site.temple:
+		_commit_temple(site,root)
+		return
 	var piece: Node3D = site.made
 	site.erase("made")
 	for old in piece.find_children("*","StaticBody3D",true,false):
@@ -122,6 +141,35 @@ func _commit(site: Dictionary) -> void:
 	GroundNative.bump_loose()
 	site.state = "up"
 
+## The temple's commit: its kit pieces, their boxes for the flight and the body.
+func _commit_temple(site: Dictionary, root: Node3D) -> void:
+	var made: Dictionary = site.made
+	site.erase("made")
+	root.add_child(made.node as Node3D)
+	var boxes: Array = made.boxes
+	root.add_child(_body(boxes))
+	var xf: Transform3D = site.xf
+	var yaw := xf.basis.get_euler().y
+	site.record = {"name":str(site.name),"kind":"way","node":root,"pos":xf.origin,"cos":cos(yaw),"sin":sin(yaw),
+		"solid":BoxSolid.build(boxes),"reach":float(made.reach)+BoxSolid.grow_most()+10.0,"spec":{},"no_break":true}
+	game.arches.loose.append(site.record)
+	GroundNative.bump_loose()
+	site.state = "up"
+
+func _body(boxes: Array) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	body.collision_layer = game.arches.LAYER
+	body.collision_mask = 0
+	for box: AABB in boxes:
+		var cs := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = box.size
+		cs.shape = shape
+		cs.position = box.get_center()
+		body.add_child(cs)
+	return body
+
 func _free(site: Dictionary) -> void:
 	game.arches.loose.erase(site.record)
 	GroundNative.bump_loose()
@@ -135,4 +183,6 @@ func _exit_tree() -> void:
 		var site: Dictionary = sites[handle]
 		if int(site.task) >= 0: WorkerThreadPool.wait_for_task_completion(int(site.task))
 		site.task = -1
-		if site.has("made"): (site.made as Node).free()
+		if site.has("made"):
+			if site.temple: ((site.made as Dictionary).node as Node).free()
+			else: (site.made as Node).free()
