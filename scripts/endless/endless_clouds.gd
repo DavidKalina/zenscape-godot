@@ -167,6 +167,20 @@ const LIFT := 0.3
 const DOME := 1.6
 ## The march's YIELD_LEVEL (`clash`).
 const YIELD_LEVEL := 0.5
+## The weather's push (shaders/weather_cloud.glslinc WX_*; keep equal) and
+## where it goes in the march's block (P.spare[5..8]).
+const WX_BETWEEN := Vector2(0.55,0.9)
+const WX_MORE := 0.6
+const WX_ADMIT := 0.3
+const WX_WIDE := 2.0
+const WX_TALL := 0.4
+const WX_DROP := 45.0
+const WX_LIFE := 0.25
+const WX_EXT := 1.8
+const WX_EVEN := 0.6
+const WX_BELLY := 0.6
+const WX_BOWL := 0.8
+const WEATHER_AT := 88
 
 ## The collar (endless_collar.gd): a ring of dense cloud the trunk stands with `set_collar`.
 var collar := Collar.new()
@@ -178,6 +192,9 @@ var celestial: RefCounted
 var land_seed := 0
 var salt := 0
 var cover := 1.0
+## The weather (scripts/endless/weather.gd; null with --weather=off): the look
+## hands it in each frame. It grows and darkens the field (_put_weather).
+var weather: RefCounted
 ## The march's quality this run (QUALITY; --cloud-full-res marches every
 ## pixel, --cloud-steps=N sets the steps).
 var quality: Array = QUALITY.duplicate()
@@ -730,13 +747,27 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var cell: float = BIG if big else SMALL
 	var lf := _cell_life(cx,cy,big)
 	var lifed := _lifed()
-	if lifed and lf.x < 0.01: return {}
+	var wx_on := big and weather != null and float(weather.cover()) > 0.0
+	if lifed and lf.x < (1e-6 if wx_on else 0.01): return {}
 	var s0: int = salt+(101 if big else 211)+int(lf.y)*977
 	var h := hash3(cx,cy,s0)
 	var middle := (Vector2(cx,cy)+Vector2(0.5,0.5)+JIT*(Vector2(h.x,h.y)*2.0-Vector2.ONE))*cell
 	var gate := _cluster_gate(middle)
 	if not big: gate = lerpf(0.02,1.0,gate*gate)
-	if h.z >= _region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate*(LIFE_COVER if lifed else 1.0): return {}
+	var region := _region(middle)
+	var here := region*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate*(LIFE_COVER if lifed else 1.0)
+	# The weather (the march's weather_cloud.glslinc).
+	var wp := 0.0
+	var admit := 1.0
+	var by_weather := false
+	if wx_on:
+		wp = _weather_push(middle+_layer_drift(false))
+		if h.z >= here:
+			var here_w := lerpf(region,REGION_SCALE.y,wp)*cover*BIG_COVER2*lerpf(gate,1.0,wp)*(LIFE_COVER if lifed else 1.0)*(1.0+WX_MORE*wp)
+			if h.z >= here_w: return {}
+			admit = smoothstep(0.0,WX_ADMIT,here_w-h.z)
+			by_weather = true
+	if h.z >= here and not by_weather: return {}
 	var s := hash3(cx,cy,s0+1)
 	var m := hash3(cx,cy,s0+2)
 	var rr: Vector2 = BIG_R2 if big else SMALL_R2
@@ -747,22 +778,24 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var k := {"cell":Vector2i(cx,cy),"salt":s0,"life":lf.x,"middle":middle,"axis":Vector2(cos(spin),sin(spin)),"profile":PROFILE,"low":false}
 	# [kind, n range, L, W, main_r, br, hs, tall, belly, qb]
 	var p: Array
+	# A cell the weather alone stands up is a mid cumulus (the march's kind_at).
+	var kind_at := 1.0 if by_weather else s.y
 	if not big:
 		k.kind = "puff"; k.low = true; k.b0 = lerpf(SMALL_BASE.x,SMALL_BASE.y,s.y)
 		p = [Vector2(2,5),0.45,0.35,0.65,Vector2(0.4,0.62),Vector2(0.7,1.1),Vector2(0.6,1.25),Vector2(0.35,0.55),Vector2(0.5,0.85)]
-	elif s.y < FAIR_SHARE:
+	elif kind_at < FAIR_SHARE:
 		k.kind = "fair"; k.low = true; k.b0 = lerpf(LOW_BASE.x,LOW_BASE.y,s.z)
 		p = [Vector2(3,6),0.55,0.38,0.62,Vector2(0.35,0.6),Vector2(0.7,1.1),Vector2(0.55,1.0),Vector2(0.3,0.5),Vector2(0.45,0.8)]
-	elif s.y < FAIR_SHARE+TOWER_SHARE2:
+	elif kind_at < FAIR_SHARE+TOWER_SHARE2:
 		k.kind = "tower"; k.b0 = lerpf(TOWER_BASE.x,TOWER_BASE.y,s.z)
 		p = [Vector2(5,9),0.5,0.45,0.6,Vector2(0.4,0.6),Vector2(0.6,1.0),Vector2(1.0,1.5),Vector2(0.25,0.4),Vector2(0.45,0.7)]
 		k.profile = 0.4
 		r *= 1.2
-	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE:
+	elif kind_at < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE:
 		k.kind = "row"; k.low = t3 < 0.4
 		k.b0 = lerpf(LOW_BASE.x,LOW_BASE.y+30.0,s.z) if k.low else lerpf(MID_BASE.x,MID_BASE.y,s.z)
 		p = [Vector2(6,9),1.15,0.18,0.5,Vector2(0.36,0.55),Vector2(0.8,1.15),Vector2(0.55,0.95),Vector2(0.32,0.5),Vector2(0.5,0.8)]
-	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE+WISP_SHARE:
+	elif kind_at < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE+WISP_SHARE:
 		k.kind = "wisp"; k.b0 = lerpf(180.0,320.0,s.z)
 		p = [Vector2(2,4),1.0,0.4,0.6,Vector2(0.5,0.8),Vector2(0.9,1.1),Vector2(0.08,0.16),Vector2(0.45,0.5),Vector2(0.6,0.7)]
 		r *= 1.3
@@ -771,13 +804,20 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 		p = [Vector2(4,8),0.6,0.45,0.6,Vector2(0.35,0.62),Vector2(0.7,1.15),Vector2(0.6,1.2),Vector2(0.35,0.55),Vector2(0.5,0.85)]
 	var nr: Vector2 = p[0]
 	k.L = float(p[1])*lerpf(0.8,1.45,m.y)
+	if by_weather and k.low: return {}
+	if wx_on and k.low: wp = _weather_push(middle+_layer_drift(true))
+	var wx_grows: bool = wp > 0.0 and not k.low and k.kind != "wisp"
+	var r0 := r
+	if wx_grows:
+		r = lerpf(r,cell*BIG_R2.y,WX_EVEN*wp*wp)*(1.0+WX_WIDE*wp*wp)
+		k.b0 = maxf(float(k.b0)-WX_DROP*wp,LOW_BASE.y+30.0)
 	k.W = float(p[2])
 	k.main_r = float(p[3])
 	k.br = p[4]
 	k.hs = p[5]
 	k.n = int(nr.x)+mini(int(m.z*(nr.y-nr.x+1.0)),int(nr.y-nr.x))
 	k.ext = Vector2(k.L,k.W).length()+maxf(k.br.y,k.main_r)*(1.0+WOB)
-	r = minf(r,EXT_MAX*cell/k.ext)
+	r = minf(r,(lerpf(EXT_MAX,WX_EXT,wp*wp) if wx_grows else EXT_MAX)*cell/k.ext)
 	k.r = r
 	var tall: Vector2 = p[6]
 	k.tall = lerpf(tall.x,tall.y,t2)*DOME
@@ -785,6 +825,12 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var qb: Vector2 = p[8]
 	k.belly = lerpf(bl.x,bl.y,fposmod(m.y*5.13+s.x,1.0))
 	k.qb = lerpf(qb.x,qb.y,fposmod(m.z*3.71+h.x,1.0))
+	if wp > 0.0:
+		if wx_grows:
+			k.tall = float(k.tall)*(1.0+WX_TALL*wp)/sqrt(maxf(r/r0,1.0))
+			k.belly = float(k.belly)*(1.0+WX_BELLY*wp)
+			k.qb = float(k.qb)*(1.0+WX_BOWL*wp)
+		k.life = pow(float(k.life),lerpf(1.0,WX_LIFE,wp))*admit
 	k.big = big
 	if lift: _recipe_lift(k)
 	return k
@@ -805,6 +851,7 @@ func _recipe_lift(k: Dictionary) -> void:
 	var fl := _cloud_floor(Vector2(k.middle)+_layer_drift(bool(k.low)),float(k.r)*float(k.ext),bool(k.low))
 	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
 	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
+	if bool(k.big) and _wx_on(): k.tall = minf(float(k.tall),maxf(TOP-float(k.b0),0.0)/((LIFT+1.2)*float(k.r)*float(k.main_r)))
 	k.H = minf(float(k.r)*float(k.main_r)*float(k.tall),TOP-float(k.b0))
 
 ## Whether cloud `k` (a puff or a wisp) stands one over another of its
@@ -820,7 +867,7 @@ func _yields(k: Dictionary) -> bool:
 		var s0: int = salt+(101 if other_big else 211)
 		var mid0: Vector2 = k.middle
 		var g := Vector2i(floori(mid0.x/cell),floori(mid0.y/cell))
-		var most := reach+EXT_MAX*cell
+		var most := reach+(WX_EXT if other_big and _wx_on() else EXT_MAX)*cell
 		for y in range(-2,3):
 			for x in range(-2,3):
 				var n := g+Vector2i(x,y)
@@ -917,7 +964,7 @@ func _clouds_in_layer(at: Vector2, reach: float, layer_low: bool, out: Array) ->
 ## list kept a while as the plane moves). Slow (15-25 ms): pure reads, so
 ## a worker thread may build it (PilotTallies does).
 func clouds_near(xz: Vector2, margin := 0.0) -> Array:
-	return clouds_in(xz,(BIG*1.6 if organic else BIG*0.6)+margin)
+	return clouds_in(xz,((BIG*2.0 if _wx_on() else BIG*1.6) if organic else BIG*0.6)+margin)
 
 ## How far world point `p` is into a cloud's smooth body (m, up or down
 ## to its crown or its base; no billows, before the meadows lift the low
@@ -1028,6 +1075,7 @@ func _fill() -> void:
 	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,1.0 if stack_yield else 0.0,1.0 if puff_lobes else 0.0))
 	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
 	_put4(p,148,Vector4(0.0 if shade_planes else 1.0,0.0,0.0,0.0))
+	_put_weather(p)
 	# The sea draws after this frame's passes: the square they leave in the map.
 	if sea_material != null:
 		var now := shade_square if shade_due or _shade_drawn == Vector4.ZERO else _shade_drawn
@@ -1064,6 +1112,32 @@ func _publish_shade(on: bool, light := Vector3.UP, square := Vector4.ZERO) -> vo
 	shade_at = square
 	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_at",shade_at)
 	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_light",Vector4(light.x,light.y,light.z,Field.SEA_Y))
+
+## The weather's push on the field and its light (shaders/weather_cloud.glslinc:
+## P.spare[5..8]); all zero in fair weather or with none, the field as before.
+func _put_weather(p: PackedFloat32Array) -> void:
+	if weather == null or weather.cover() <= 0.0:
+		for i in 16: p[WEATHER_AT+i] = 0.0
+		return
+	var field := Vector4(weather.drift.x,weather.drift.y,weather.rain_level(),weather.rain_floor())
+	var sky := Vector4(weather.cover(),weather.severity(),1.0,0.0)
+	_put4(p,WEATHER_AT,sky)
+	_put4(p,WEATHER_AT+4,field)
+	_put4(p,WEATHER_AT+8,sky)
+	_put4(p,WEATHER_AT+12,field)
+
+## How hard the weather pushes the field's cloud at world `xz` (the march's
+## `wx_push`; 0 with none).
+## Whether the weather pushes the field (the march's wx_on).
+func _wx_on() -> bool:
+	return weather != null and float(weather.cover()) > 0.0
+
+func _weather_push(xz: Vector2) -> float:
+	if weather == null or not organic: return 0.0
+	var c: float = weather.cover()
+	if c <= 0.0: return 0.0
+	var between := lerpf(WX_BETWEEN.x,WX_BETWEEN.y,clampf(weather.severity(),0.0,1.0))
+	return c*lerpf(between,1.0,weather.cell_at(xz))
 
 static func _put4(p: PackedFloat32Array, at: int, v: Vector4) -> void:
 	p[at] = v.x
