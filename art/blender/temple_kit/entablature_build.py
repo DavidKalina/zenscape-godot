@@ -469,7 +469,7 @@ def build_lintel_broken():
     fz = Z_FRIEZE
     p.block((-H + 1.5, 0, fz + T.FRIEZE_H / 2), (3.0 - T.JOINT, 2 * FRIEZE_D, T.FRIEZE_H - T.JOINT), chips=2)
     slab(p, (-3.4, 0.8, 0.8), (2.0 - T.JOINT, 2 * FRIEZE_D, 2.0), yaw=1.3, tilt=(0.06, -0.08), chips=1, breaks=(1,),
-         step=1.0, wobble=0.03, far=True)
+         step=1.0, wobble=0.03, far=True, hide=("-z",))
     for side in (-1, 1):
         triglyph(p, -H, side)
     # The bar and a half, broken short: the half is clipped away, the bar
@@ -480,14 +480,17 @@ def build_lintel_broken():
     # The cornice: a block each side on the column; the front one's broken
     # neighbour fell with the frieze block under it.
     zc = Z_CORNICE
-    p.block((-H + 1.4, -CORNICE_D / 2, zc + CORONA_H / 2), (2.8 - T.JOINT, CORNICE_D - T.JOINT, CORONA_H - T.JOINT),
-            chips=3, chip_depth=(0.2, 0.5))
+    # The front corona and cap blocks' inner faces are on the back ones,
+    # which reach further.
+    block(p, (-H + 1.4, -CORNICE_D / 2, zc + CORONA_H / 2), (2.8 - T.JOINT, CORNICE_D - T.JOINT, CORONA_H - T.JOINT),
+          chips=3, chip_depth=(0.2, 0.5), press=("+y",))
     slab(p, (0.6, -0.3, 0.42), (1.6, CORNICE_D - 0.1, CORONA_H - T.JOINT),
-         yaw=0.3, tilt=(0.05, -0.06), chips=1, breaks=(1,), step=1.0, wobble=0.02, far=True)
+         yaw=0.3, tilt=(0.05, -0.06), chips=1, breaks=(1,), step=1.0, wobble=0.02, far=True,
+         hide=("-z",))
     p.block((-H + 1.9, CORNICE_D / 2, zc + CORONA_H / 2), (3.8 - T.JOINT, CORNICE_D - T.JOINT, CORONA_H - T.JOINT),
             chips=3, chip_depth=(0.2, 0.5))
-    p.block((-H + 1.3, -CAP_D / 2, zc + CORONA_H + CAP_H / 2), (2.6 - T.JOINT, CAP_D, CAP_H - T.JOINT), chips=2,
-            chip_depth=(0.1, 0.22))
+    block(p, (-H + 1.3, -CAP_D / 2, zc + CORONA_H + CAP_H / 2), (2.6 - T.JOINT, CAP_D, CAP_H - T.JOINT), chips=2,
+          chip_depth=(0.1, 0.22), press=("+y",))
     p.block((-H + 1.6, CAP_D / 2, zc + CORONA_H + CAP_H / 2), (3.2 - T.JOINT, CAP_D, CAP_H - T.JOINT), chips=2,
             chip_depth=(0.1, 0.22))
     # The stub's far LOD by hand (blocks added their own boxes above).
@@ -504,7 +507,8 @@ def build_lintel_broken():
         ((-2.0, 3.9, 1.20), (5.0, 2.6, 2.9), -0.12, (0.04, 0.06), (1,)),
     ]
     for c, s, yaw, tilt, br in fall:
-        slab(p, c, s, yaw=yaw, tilt=tilt, chips=3, chip_depth=(0.2, 0.5), breaks=br, step=1.0, wobble=0.04, far=True)
+        slab(p, c, s, yaw=yaw, tilt=tilt, chips=3, chip_depth=(0.2, 0.5), breaks=br, step=1.0, wobble=0.04, far=True,
+             hide=("-z",))   # the face it lies on, sunk in the ground
     # The piece that came down on its end and leans on the far column's
     # shaft (x = H - 2, z 2.7), its top 4.8 m up.
     phi = math.radians(35.0)
