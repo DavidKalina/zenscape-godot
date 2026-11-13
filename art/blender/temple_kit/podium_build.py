@@ -30,7 +30,7 @@ import sys
 
 import bmesh
 import temple_lib as T
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ONLY = next((a.split("=")[1].split(",") for a in args if a.startswith("--only=")), None)
@@ -46,7 +46,12 @@ SHIFT = {"step0": 1.3, "step1": -0.9, "step2": 0.5, "row0": 1.7, "row1": -1.1, "
          "foot0": 2.1, "foot1": -1.6}
 ROWS = [(-0.4, 1.9), (1.9, 4.0), (4.0, BACK)]   # paving rows (v0, v1)
 
-EARTH = 3                              # a face kind of our own: soil showing in a gap
+# The pieces whose mid LOD (<id>_mid.glb) a plain run builds. Empty: the
+# mids (--only=podium_mid etc.) don't yet read as the near at 50-90 m (the
+# near's pale chip facets lighten its step fronts; the mid's are darker).
+MIDS = ()
+
+EARTH = 3                             # a face kind of our own: soil showing in a gap
 EARTH_COL = (0.30, 0.29, 0.19)
 
 
@@ -66,33 +71,43 @@ class Podium(T.Piece):
                 loop[col] = T.srgb_to_linear(c) + (1.0,)
         return col
 
+    # On a mid build (`mid` a bmesh) the near is still built, every draw as
+    # it was, and thrown away; each stone also goes into `mid` as a plain
+    # box (put), and soil and quads go into both.
+    mid = None
+
+    def _targets(self):
+        return [self.near] + ([self.mid] if self.mid is not None else [])
+
     def soil(self, fr, u0, u1, v0, v1, height, nu=5, nv=6, tuck=0.25):
         """A lumpy patch of soil over u0..u1 x v0..v1: `height(u, v)` its
         mean, its rim dropped `tuck` so it tucks under the stones round it."""
-        k, t, b = T._layers(self.near)
-        grid = []
-        for i in range(nu + 1):
-            row = []
-            for j in range(nv + 1):
-                u = u0 + (u1 - u0) * i / nu
-                v = v0 + (v1 - v0) * j / nv
-                rim = i in (0, nu) or j in (0, nv)
-                z = height(u, v) + T.noise.noise(Vector((u * 0.9, v * 0.9, 7.0))) * 0.1 - (tuck if rim else 0.0)
-                row.append(self.near.verts.new(Vector(fr.pt(u, v, z))))
-            grid.append(row)
-        for i in range(nu):
-            for j in range(nv):
-                f = self.near.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
-                f[k] = EARTH
-                f[t] = 1.0
+        for bm in self._targets():
+            k, t, b = T._layers(bm)
+            grid = []
+            for i in range(nu + 1):
+                row = []
+                for j in range(nv + 1):
+                    u = u0 + (u1 - u0) * i / nu
+                    v = v0 + (v1 - v0) * j / nv
+                    rim = i in (0, nu) or j in (0, nv)
+                    z = height(u, v) + T.noise.noise(Vector((u * 0.9, v * 0.9, 7.0))) * 0.1 - (tuck if rim else 0.0)
+                    row.append(bm.verts.new(Vector(fr.pt(u, v, z))))
+                grid.append(row)
+            for i in range(nu):
+                for j in range(nv):
+                    f = bm.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
+                    f[k] = EARTH
+                    f[t] = 1.0
 
     def quad(self, pts, kind=EARTH, tone=1.0):
         """One face (corners in order, counter-clockwise from above)."""
-        k, t, b = T._layers(self.near)
-        vs = [self.near.verts.new(Vector(q)) for q in pts]
-        f = self.near.faces.new(vs)
-        f[k] = kind
-        f[t] = tone
+        for bm in self._targets():
+            k, t, b = T._layers(bm)
+            vs = [bm.verts.new(Vector(q)) for q in pts]
+            f = bm.faces.new(vs)
+            f[k] = kind
+            f[t] = tone
 
     def backing(self, fr, u0, u1, v, z0, z1):
         """A dark wall facing the front (-v) behind a run whose blocks' ends
@@ -154,7 +169,58 @@ def lay(rng, u0, u1, length):
 
 def emit(p, fr, u, v, z, size, yaw=0.0, tilt=(0.0, 0.0), **kw):
     """A block by its local centre (u, v, z) and size (along u, along v, z)."""
-    p.block(fr.pt(u, v, z), size, yaw=fr.a + yaw, tilt=tilt, far=False, **kw)
+    put(p, fr.pt(u, v, z), size, yaw=fr.a + yaw, tilt=tilt, **kw)
+
+
+def put(p, center, size, yaw=0.0, tilt=(0.0, 0.0), **kw):
+    """p.block (no far box); on a mid build also the stone as a mid_box,
+    in its tone."""
+    p.block(center, size, yaw=yaw, tilt=tilt, far=False, **kw)
+    if p.mid is not None:
+        kind, tone, _ = T._layers(p.near)
+        p.near.faces.ensure_lookup_table()
+        mid_box(p.mid, center, size, yaw, tilt, p.near.faces[-1][tone], kw.get("bevel", T.BEVEL),
+                kw.get("kind", T.FACE), kw.get("hide", ()))
+
+
+def mid_box(bm, center, size, yaw, tilt, tone, bevel, kind, hide):
+    """A stone for the mid LOD: a plain box, no chips, its top's four edges
+    chamfered `bevel` (painted as joints, as the near's bevels are: the
+    course and joint lines), its `hide` sides (and their chamfers) left
+    out; placed as block() places it."""
+    sx, sy, sz = (s / 2 for s in size)
+    hide = set(hide)
+    b = 0.0 if "+z" in hide or bevel <= 0.0 else min(bevel, 0.3 * min(size))
+    tmp = bmesh.new()
+    tk, tt, _ = T._layers(tmp)
+
+    def ring(z, d):
+        return [tmp.verts.new((x, y, z)) for x, y in ((-sx + d, -sy + d), (sx - d, -sy + d), (sx - d, sy - d), (-sx + d, sy - d))]
+
+    def face(vs, k):
+        f = tmp.faces.new(vs)
+        f[tk] = k
+        f[tt] = tone
+
+    bot, edge, top = ring(-sz, 0.0), ring(sz - b, 0.0), ring(sz, b)
+    if "+z" not in hide:
+        face(top, kind)
+    for name, (i, j) in (("-y", (0, 1)), ("+x", (1, 2)), ("+y", (2, 3)), ("-x", (3, 0))):
+        if name in hide:
+            continue
+        if b > 0.0:
+            face([edge[i], edge[j], top[j], top[i]], T.JOINTFACE)
+        face([bot[i], bot[j], (edge if b > 0.0 else top)[j], (edge if b > 0.0 else top)[i]], kind)
+    if "-z" not in hide:
+        face(list(reversed(bot)), kind)
+    bmesh.ops.remove_doubles(tmp, verts=list(tmp.verts), dist=1e-5)
+    unused = [v for v in tmp.verts if not v.link_faces]
+    if unused:
+        bmesh.ops.delete(tmp, geom=unused, context="VERTS")
+    m = (Matrix.Translation(Vector(center)) @ Matrix.Rotation(yaw, 4, "Z")
+         @ Matrix.Rotation(tilt[1], 4, "Y") @ Matrix.Rotation(tilt[0], 4, "X"))
+    T._append(bm, tmp, m)
+    tmp.free()
 
 
 def settle(rng):
@@ -295,8 +361,27 @@ def step_solids(p, fr, u0, u1, front=FRONT, v_back=BACK):
 
 
 # ---------------------------------------------------------------------------
-def build_podium():
-    p = Podium("podium", seed=11)
+def start(name, seed, mid):
+    """A Podium; with `mid` a mid build (see Podium.mid)."""
+    p = Podium(name, seed=seed)
+    if mid:
+        p.mid = bmesh.new()
+        T._layers(p.mid)
+    return p
+
+
+def finish(p):
+    """Exports the piece, or on a mid build only its mid (<name>_mid.glb)."""
+    if p.mid is None:
+        p.export()
+        return
+    p.near.free()
+    p.near, p.mid = p.mid, None
+    p.export(mid_of=p.name)
+
+
+def build_podium(mid=False):
+    p = start("podium", 11, mid)
     r = p.rng
     fr = Frame()
 
@@ -347,11 +432,11 @@ def build_podium():
     paving(p, fr, -HB, HB, keep=column_zone(0.0), hurt=hurt_pav)
     footing(p, fr, -HB, HB)
     step_solids(p, fr, -HB, HB)
-    p.export()
+    finish(p)
 
 
-def build_corner():
-    p = Podium("podium_corner", seed=12)
+def build_corner(mid=False):
+    p = start("podium_corner", 12, mid)
     r = p.rng
     front = Frame()
     side = Frame(a=math.pi / 2)
@@ -385,15 +470,15 @@ def build_corner():
         step_course(p, front, i, -HB + s, corner_u, hurt=hurt_f)
         step_course(p, side, i, FRONT[i] + DEPTH[i], HB + s, hurt=hurt_s)
     # A fallen block off the outer corner, lying on the ground.
-    p.block((7.4, -7.0, 0.42), (2.3, 1.0, 0.95), yaw=0.5, tilt=(0.1, 0.32), chips=3, chip_depth=(0.2, 0.4), far=False)
+    put(p, (7.4, -7.0, 0.42), (2.3, 1.0, 0.95), yaw=0.5, tilt=(0.1, 0.32), chips=3, chip_depth=(0.2, 0.4))
     # The core, stepped per level: the front strip to each step's side
     # face, and the side strip behind it.
     for i, (z0, z1) in enumerate(((-0.3, 0.95), (0.95, 1.95), (1.95, SLAB_Z))):
         f0 = FRONT[i] + 0.2
         for fr, (u0, u1) in ((front, (-HB, -f0)), (side, (BACK, HB))):
             lo, hi = fr.aabb(u0, u1, f0, BACK, z0, z1)
-            p.block(((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (z0 + z1) / 2), (hi[0] - lo[0], hi[1] - lo[1], z1 - z0),
-                    bevel=0.0, chips=0, jitter=0.0, kind=T.JOINTFACE, tone=0.8, far=False, hide=("-z",))
+            put(p, ((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (z0 + z1) / 2), (hi[0] - lo[0], hi[1] - lo[1], z1 - z0),
+                bevel=0.0, chips=0, jitter=0.0, kind=T.JOINTFACE, tone=0.8, hide=("-z",))
     # Paving: the front rows to the side stylobate's inner edge (x 0.4),
     # then the side rows from y 6 on.
     inner = FRONT[2] + DEPTH[2]          # -0.4
@@ -428,7 +513,7 @@ def build_corner():
         z0 = FOOT if i == 0 else T.STEP_H * i
         lo, hi = side.aabb(BACK, HB, FRONT[i], BACK, z0, T.STEP_H * (i + 1))
         p.solid(lo, hi)
-    p.export()
+    finish(p)
 
 
 def paving_to(p, fr, u0, u_end, **kw):
@@ -479,13 +564,13 @@ SHIFT["rowf"] = -0.6
 FLOOR_END = 0.6                              # the coursed blocks at each end of the fill
 
 
-def build_floor():
+def build_floor(mid=False):
     """One bay of the platform's floor: the paved top from y -3.0 (a
     podium's stylobate front) back to 6.0 at the same height (3.0), on a
     hidden core and a footing, no steps. The origin is podium's (the ground
     under a column's centre on the top step line), so it swaps for a podium
     bay one for one; a column stands on it at (0, 0, 3.0)."""
-    p = Podium("podium_floor", seed=14)
+    p = start("podium_floor", 14, mid)
     r = p.rng
     fr = Frame()
     # The fill under the paving; its ends are coursed stone (below).
@@ -526,7 +611,7 @@ def build_floor():
     # The solid: one box, flat at the top (3.0) like a podium's stylobate and paving.
     lo, hi = fr.aabb(-HB, HB, FLOOR_FRONT, BACK, FOOT, T.PODIUM_H)
     p.solid(lo, hi)
-    p.export()
+    finish(p)
 
 
 # ---------------------------------------------------------------------------
@@ -544,8 +629,8 @@ def stair_top(v):
     return RISE * (k + 1)
 
 
-def build_stair():
-    p = Podium("podium_stair", seed=13)
+def build_stair(mid=False):
+    p = start("podium_stair", 13, mid)
     r = p.rng
     fr = Frame()
     edge = STAIR_HALF + CHEEK          # 7.2
@@ -597,12 +682,12 @@ def build_stair():
                      yaw=s["yaw"], chips=r.randint(0, 2), chip_depth=(0.06, 0.14), bevel=0.05, hide=hide, seen=STEP_SEEN)
         return gone
 
-    real, state = p.near, r.getstate()
-    p.near = bmesh.new()
+    real, state, mid = p.near, r.getstate(), p.mid
+    p.near, p.mid = bmesh.new(), None
     T._layers(p.near)
     gone = flight(None)
     p.near.free()
-    p.near = real
+    p.near, p.mid = real, mid
     r.setstate(state)
     flight(gone)
     # The flight's core, under its treads.
@@ -681,10 +766,13 @@ def build_stair():
     for j in range(3):
         lo, hi = fr.aabb(-edge, -STAIR_HALF, STAIR_FRONT + 1.6 * j, FRONT[2], 0.0, j + 1.6)
         p.solid(lo, hi)
-    p.export()
+    finish(p)
 
 
+# A piece, then its mid (--only=podium_mid builds podium's mid alone).
 for name, fn in (("podium", build_podium), ("podium_corner", build_corner), ("podium_stair", build_stair),
                  ("podium_floor", build_floor)):
     if ONLY is None or name in ONLY:
         fn()
+    if (ONLY is None and name in MIDS) or (ONLY is not None and name + "_mid" in ONLY):
+        fn(mid=True)
