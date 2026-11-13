@@ -26,6 +26,13 @@ const AT := Vector2(930.0,2690.0)
 const YAW := PI
 ## The trees' keep-out, half across (x) and half along (z), m.
 const CLEAR := Vector2(50.0,32.0)
+## Where the site's sets swap to their far models (m, camera to each set's
+## box centre): later than the kit's FAR_AT, since each MultiMesh swaps
+## whole and at 170 m the near columns' drums and flutes going smooth read
+## as a pop on approach (captures/shots/swap_before_*). The near models are
+## cut by the import's own mesh LODs by then, so the extra cost is small
+## (no extra draw calls).
+const FAR_AT := 320.0
 ## The footprint sampled for the platform's foot (half x, half z, m).
 const FOOT_HALF := Vector2(44.0,25.0)
 
@@ -136,7 +143,7 @@ static func build() -> Dictionary:
 				mmi.multimesh = mm
 				gi = mmi
 			gi.name = String(id)+("_far" if far else "")
-			if far: gi.visibility_range_begin = TempleKit.FAR_AT
-			else: gi.visibility_range_end = TempleKit.FAR_AT
+			if far: gi.visibility_range_begin = FAR_AT
+			else: gi.visibility_range_end = FAR_AT
 			root.add_child(gi)
 	return {"node":root,"boxes":boxes,"reach":reach}
