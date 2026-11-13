@@ -42,8 +42,9 @@ func _init() -> void:
 		paint.globals["zs_grass_lean"] = swell.x*swell.y
 	# Every dressing layer. The rock shapes: sea stacks along the coasts
 	# (--no-rocks turns them off). No hoodoos (taken out 2026-10-27: they
-	# read as clay; --hoodoos=2.5 brings back the pockets they had).
-	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"tunnels":1.0,"arches":1.0,"splits":1.0,"split_kinds":{"slot":0.7,"winding":1.0,"gorge":1.8,"grand":2.5},
+	# read as clay; --hoodoos=2.5 brings back the pockets they had). No
+	# mountain tunnels (sealed off 2026-11-12; --tunnels=1 brings them back).
+	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"tunnels":0.0,"arches":1.0,"splits":1.0,"split_kinds":{"slot":0.7,"winding":1.0,"gorge":1.8,"grand":2.5},
 		"stacks":1.5,"traffic":-1}
 	# The start: over the origin, 45 m up (endless_flight START_ALT), north.
 	spawn = {"at":Vector2.ZERO,"alt":45.0,"heading":0.0}

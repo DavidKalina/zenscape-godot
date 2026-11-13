@@ -20,6 +20,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Who's at a point, what a ray hits | in a driver: `say(hit_text(ray(a, b)))`, `pierce(a, b)`, `what_is_at(p, r)`, `what_is_in(box)`, `colliders(node)` (drive.gd, Collider probes) |
 | Parse-check a script without running it | `python tools/godot.py --check-only -s res://scratch/x.gd` (one script; exit 1 with the parse error) |
 | Check a land outline (bowtie, wrong winding) | `KitLand.outline_problems(outline, winding)`; `KitLand.island` warns on its own |
+| A flight taped and filmed again from any camera (trailer shots: no HUD, no dropped frames, any size) | fly with `python tools/play.py -- --record`, then `python tools/movie.py last --from 12 --to 20 --cam flyby` (`--list`, `--preview`; movie.py, below) |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | A still of a moment in a driven run (the plane touching down, a piece by its AABB) | in a driver: `await shot_at("side", node, {"when": cond})`, then step frames; run with `drive.py --rendered` (drive.gd, Shots) |
 | A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
@@ -153,6 +154,45 @@ The views are three, front, back, left, right, top and close. The HUD is
 hidden unless you pass `--hud`. Files go to `captures/shots/<scene>_<view>.png`
 unless `--out` says otherwise. Read the PNGs and judge them yourself.
 Headless runs can't take stills.
+
+## movie.py: a taped flight, filmed
+
+```
+python tools/play.py -- --record                    # fly; writes scratch/flights/<date>.flight
+python tools/movie.py --list                        # the tapes, their takes and lengths
+python tools/movie.py last --preview --cam orbit    # watch it in a window, nothing written
+python tools/movie.py last --from 12 --to 20 --cam flyby,dist=12 --size 2560x1440
+python tools/movie.py last --from 30 --to 33 --speed 0.5 -- --hour=17.5 --no-clouds
+```
+
+`--record[=FILE]` tapes the flight proper, a row a frame: the camera, the
+hour, the input and every number the plane and the landing hold
+(`scripts/endless/flight_tape.gd`). `--replay=FILE` draws it again
+(`scripts/endless/flight_replay.gd`): the plane and the landing are set from
+the tape, mixed between its rows, and the rest of the tick runs as in play,
+with the HUD hidden and no book kept. movie.py launches that under Godot's
+Movie Maker on the tape's seed, world, weight and flags, the Full preset and
+the 3D at the window's own resolution, then cuts off the frames before the
+take starts. A film is `captures/movie/<name>/frame000001.jpg` on and
+`sound.wav` (an editor opens them as one clip), and an `.mp4` when ffmpeg
+is on the PATH. JPEG frames take about 0.06 s each at 1080p and 0.18 s at
+4K; `--lossless` writes PNGs at about 0.3 to 0.5 s each. A launch takes
+about 45 s before the first frame.
+
+- **Cameras** (`--cam NAME,knob=value`): `flown` (the eye as it was), `chase`
+  (the game's chase camera afresh), `orbit`, `side`, `front`, `top`, `flyby`
+  (stood where the plane will pass, a long lens following it). The knobs
+  and their defaults are `CAMS` in flight_replay.gd.
+- **Takes.** The scene standing again (a door, a restart) starts a new take
+  in the same tape: `--take N`.
+- **Size.** Movie Maker films at the project's window size and scales every
+  frame to it, so movie.py writes the size to `override.cfg` for the launch
+  and deletes it once the first frame is out. The window is borderless, so
+  it can pass the screen's size.
+- **Flags after `--`** go to the game: a look to A/B, `--hour=`, `--frame-log=`.
+- Only the plane, the landing, the camera and the hour come from the tape.
+  The clouds and the wildlife run on their own clocks from the launch, so
+  expect them elsewhere than in the flight (not compared).
 
 ## blender.py: Blender scripts
 

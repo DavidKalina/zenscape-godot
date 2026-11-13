@@ -44,3 +44,6 @@ __pycache__/
 # Throwaway drivers and checks (tools/README.md); Godot skips it (.gdignore, kept in Git).
 /scratch/*
 !/scratch/.gdignore
+
+# tools/movie.py: the film size for one launch, taken away once the game is up.
+/override.cfg
