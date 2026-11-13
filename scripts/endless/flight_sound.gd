@@ -438,6 +438,8 @@ func _ready() -> void:
 		# The bore (tools/generate_bore_audio.py): a spur's three layers, the tell's grind.
 		"bore-thump":_takes(BORE_AUDIO+"bore-thump-%d.wav",4),"bore-crack":_takes(BORE_AUDIO+"bore-crack-%d.wav",4),
 		"bore-debris":_takes(BORE_AUDIO+"bore-debris-%d.wav",4),"bore-grind":_takes(BORE_AUDIO+"bore-grind-%d.wav",3),
+		# A storm's thunder (scripts/endless/weather_lightning.gd).
+		"thunder":_takes("res://assets/audio/thunder-%d.mp3",3),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:

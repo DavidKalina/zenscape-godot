@@ -13,6 +13,8 @@ render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabl
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/cumulus_light.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+#include "res://shaders/weather.gdshaderinc"
+#include "res://shaders/weather_lightning.gdshaderinc"
 
 uniform sampler2D cloud_light : filter_nearest, repeat_disable;
 uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
@@ -105,6 +107,8 @@ void fragment() {
 	vec3 col = lit + glow_col * glow * (1.0 + 0.7 * pow(toward_sun, 3.0)) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	vec3 painted = mix(c_shade * 0.55, c_sun * 0.9, bright) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	col = mix(col, painted, NIGHT_TINT * zs_night);
+	// A storm's lightning lighting the cloud from inside (weather_lightning.gdshaderinc).
+	vec3 flash = zs_lightning_cloud(eye + rd * met, b.z / cloud_a, zs_lightning_lum(col), sea_y);
 
 	// The haze between: the land's own by distance, thinner the higher the
 	// air it crosses (exponential air over the sea).
@@ -125,6 +129,7 @@ void fragment() {
 	// SUN_SCATTER_SUN over SUN_SCATTER, with zs_haze_sun).
 	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.45 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
 	col = mix(col, sky, fog);
+	col += flash * (1.0 - 0.7 * fog);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the
 	// sun's disc never shines through a thick body.
