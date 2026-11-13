@@ -18,11 +18,13 @@ const PirateShip = preload("res://scripts/endless/pirate_ship.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const LIGHT_MODEL := "res://assets/models/lighthouse.glb"
-## The stone lighthouse (lighthouse_build.py): four meshes, its solids beside it.
+## The stone lighthouse (lighthouse_build.py): six meshes, its solids beside it.
 const STONE_MODEL := "res://assets/models/lighthouse_stone.glb"
 const STONE_BOXES := "res://assets/models/lighthouse_stone.boxes.json"
 const STONE_SHADER := preload("res://shaders/temple_stone.gdshader")
-## Where the stone lighthouse swaps to its far LOD (m from the camera).
+## Where the stone lighthouse swaps from near to its mid LOD (`_mid`: the same
+## stones without arrises, chamfers and chips), and from mid to far (m from the camera).
+const STONE_MID_AT := 90.0
 const STONE_FAR_AT := 320.0
 const SEA_Y := -40.0
 ## The lamp over the lighthouse's foot (m; coast_build.py LAMP).
@@ -203,12 +205,16 @@ func _place_stone(nm: String, t: Transform3D) -> Node3D:
 		m.name = String(src.name)
 		m.mesh = src.mesh
 		var named := String(src.name)
+		m.material_override = iron if named.contains("iron") else (glass if named.contains("glass") else stone)
 		if named.ends_with("_far"):
-			m.material_override = stone
 			m.visibility_range_begin = STONE_FAR_AT
-		else:
-			m.material_override = iron if named.contains("iron") else (glass if named.contains("glass") else stone)
+		elif named.ends_with("_mid"):
+			m.visibility_range_begin = STONE_MID_AT
 			m.visibility_range_end = STONE_FAR_AT
+		elif named.contains("glass"):
+			m.visibility_range_end = STONE_FAR_AT
+		else:
+			m.visibility_range_end = STONE_MID_AT
 		if named.contains("glass"): m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(m)
 	model.free()

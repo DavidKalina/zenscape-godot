@@ -98,10 +98,12 @@
    1.3
   ]
  ],
- "tris": 48166,
+ "tris": 22530,
  "far_tris": 776,
- "iron_tris": 2388,
+ "iron_tris": 1780,
  "glass_tris": 136,
+ "mid_tris": 5458,
+ "iron_mid_tris": 940,
  "lamp": 50.0,
  "courses": 27
 }

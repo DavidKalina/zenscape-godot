@@ -17,10 +17,20 @@ Frame (Blender, z up): origin on the rock under the tower's axis, the door
 facing -y (Godot +z), the house on -x. The lamp at z = LAMP
 (scripts/endless/coast_sites.gd LAMP_Y). Godot (x, y, z) = Blender (x, z, -y).
 
-The glb holds four meshes: `lighthouse_stone` (near, the kit's stone
-shader, its paint in the vertex colours), `lighthouse_stone_far` (far LOD,
-the same shader), `lighthouse_iron` and `lighthouse_glass` (near only, their
-own small materials in coast_sites.gd). Colour is per vertex, linear.
+The glb holds six meshes: `lighthouse_stone` (near, the kit's stone
+shader, its paint in the vertex colours), `lighthouse_stone_mid` (the same
+stones, laid by the same draws, without arrises, chamfers and chips),
+`lighthouse_stone_far` (far LOD, the same shader), `lighthouse_iron` and
+`lighthouse_iron_mid`, and `lighthouse_glass` (near and mid; the iron and
+glass have their own small materials in coast_sites.gd). Colour is per
+vertex, linear. coast_sites.gd swaps near to mid at STONE_MID_AT, mid to
+far at STONE_FAR_AT.
+
+Cost: only faces something can see are built. Blocks laid into a wall or
+a floor (`vblock`) are temple_lib's block, same draws, with the faces
+turned away from every seen side taken out, and a `backing` quad behind
+their joints; the shaft's face stones above the door's courses have 1.8 m
+facets in one row. Each part's triangles print as PART lines.
 """
 
 import json
@@ -233,28 +243,146 @@ p = Light(NAME, seed=SEED)
 rng = p.rng
 p.ground = 0.6
 
+# Where the triangles go: mark(part) books the near mesh's triangles laid
+# since the last mark to `part` (printed at the end).
+TALLY = {}
+_seen = [0]
+
+
+def mark(part):
+    bm = p.near
+    bm.faces.ensure_lookup_table()
+    n = len(bm.faces)
+    tris = sum(len(bm.faces[i].verts) - 2 for i in range(_seen[0], n))
+    TALLY[part] = TALLY.get(part, 0) + tris
+    _seen[0] = n
+
 
 def new_layers(bm):
     return T._layers(bm)
 
 
+# The mid LOD (drawn from STONE_MID_AT in coast_sites.gd to the far swap):
+# the same stones, laid by the same draws, without their arrises, chamfers
+# and chips, and only the faces the world sees.
+MID = bmesh.new()
+T._layers(MID)
+
+
+def mid_box(center, size, show=None, yaw=0.0, tilt=(0.0, 0.0), tone=1.0, kind=T.FACE):
+    tmp = bmesh.new()
+    tk, tt, tb = T._layers(tmp)
+    bmesh.ops.create_cube(tmp, size=1.0)
+    for v in tmp.verts:
+        v.co = Vector((v.co.x * size[0], v.co.y * size[1], v.co.z * size[2]))
+    for f_ in tmp.faces:
+        f_[tk] = kind
+        f_[tt] = tone
+    if show:
+        tmp.normal_update()
+        dirs = [DIRS[k] for k in show]
+        bmesh.ops.delete(tmp, geom=[f_ for f_ in tmp.faces if max(f_.normal.dot(d) for d in dirs) < 0.3],
+                         context="FACES")
+    m = (Matrix.Translation(Vector(center)) @ Matrix.Rotation(yaw, 4, "Z")
+         @ Matrix.Rotation(tilt[1], 4, "Y") @ Matrix.Rotation(tilt[0], 4, "X"))
+    T._append(MID, tmp, m)
+    tmp.free()
+
+
+# ---- Blocks with only the faces that can be seen -------------------------
+DIRS = {"+x": Vector((1, 0, 0)), "-x": Vector((-1, 0, 0)), "+y": Vector((0, 1, 0)),
+        "-y": Vector((0, -1, 0)), "+z": Vector((0, 0, 1)), "-z": Vector((0, 0, -1))}
+
+
+def vblock(center, size, show, yaw=0.0, tilt=(0.0, 0.0), bevel=T.BEVEL, chips=2,
+           chip_depth=(0.12, 0.45), jitter=0.012, tone=None, kind=T.FACE, mid=True):
+    """temple_lib's Piece.block, the same random draws in the same order (so
+    the same stone, chips and all), then every face that turns away from
+    all the `show` sides (local "+x", "-y", ...: the sides the world sees)
+    taken out: the backs, bottoms and joint sides buried in a wall or a
+    floor, and the arrises between them. What is left is what was seen.
+    A wall of these needs a `backing` behind its joints. Near only."""
+    r = rng
+    sx, sy, sz = size
+    tmp = bmesh.new()
+    tk, tt, tb = T._layers(tmp)
+    bmesh.ops.create_cube(tmp, size=1.0)
+    for v in tmp.verts:
+        v.co = Vector((v.co.x * sx, v.co.y * sy, v.co.z * sz))
+    t = p.tone() if tone is None else tone
+    for f in tmp.faces:
+        f[tk] = kind
+        f[tt] = t
+    if bevel > 0.0:
+        b = min(bevel * r.uniform(0.6, 1.5), 0.3 * min(size))
+        res = bmesh.ops.bevel(tmp, geom=list(tmp.edges), offset=b, segments=1,
+                              profile=0.5, affect="EDGES", clamp_overlap=True)
+        for f in res["faces"]:
+            f[tk] = T.JOINTFACE
+            f[tt] = t
+    for _ in range(chips):
+        corner = Vector((r.choice((-1, 1)) * sx / 2, r.choice((-1, 1)) * sy / 2, r.choice((-1, 1)) * sz / 2))
+        axis = r.randrange(4)
+        if axis < 3:
+            corner[axis] *= r.uniform(-0.7, 0.7)
+        d = r.uniform(*chip_depth) * min(1.0, min(size) / 0.8)
+        p._chip(tmp, corner, size, d, tk, tb)
+        for f in tmp.faces:
+            f[tt] = t
+    if jitter > 0.0:
+        for v in tmp.verts:
+            v.co += Vector((r.uniform(-1, 1), r.uniform(-1, 1), r.uniform(-1, 1))) * jitter
+    tmp.normal_update()
+    dirs = [DIRS[k] for k in show]
+    gone = [f for f in tmp.faces if max(f.normal.dot(d) for d in dirs) < 0.3]
+    bmesh.ops.delete(tmp, geom=gone, context="FACES")
+    m = (Matrix.Translation(Vector(center)) @ Matrix.Rotation(yaw, 4, "Z")
+         @ Matrix.Rotation(tilt[1], 4, "Y") @ Matrix.Rotation(tilt[0], 4, "X"))
+    T._append(p.near, tmp, m)
+    tmp.free()
+    if mid:
+        mid_box(center, size, show, yaw=yaw, tilt=tilt, tone=t, kind=kind)
+
+
+def backing(corners, kind=T.JOINTFACE, mid=True, near=True):
+    """One quad (Blender frame, counter-clockwise seen from its front) behind
+    open joints whose stones have no backs: what a joint shows."""
+    for bm in ((p.near,) if near else ()) + ((MID,) if mid else ()):
+        k, tt, _ = new_layers(bm)
+        f = bm.faces.new([bm.verts.new(c) for c in corners])
+        f[k] = kind
+        f[tt] = 0.9
+
+
 # ---- The shaft's face stones ----------------------------------------------
+FINE_BELOW = 9.0   # courses starting under this keep the fine face (seen close from the door)
+
+
 def face_stone(a0, a1, z0, z1, segs=None, proud=0.0, chips=0):
     """One face stone of a round course: its outer face from angle a0 to a1
     and z0 to z1, following the taper, pillowed a little proud in the
     middle, its arrises chamfered back into an open joint. Only the face
-    and its chamfers are built: the joint shows the dark core behind."""
+    and its chamfers are built: the joint shows the dark core behind.
+    Courses low enough to be seen close (under FINE_BELOW) get a face grid
+    of 0.9 m columns and a pillowed middle row; higher ones 1.8 m columns
+    and one row, pillowed across (the curve and the outline the same)."""
     bm = p.near
     kind, tone, broke = new_layers(bm)
     t = p.tone()
     span = (a1 - a0) * r_at(z0)
-    segs = segs or max(2, int(round(span / 0.9)))
+    fine = z0 < FINE_BELOW
+    # The pillows are drawn as many as the fine grid would, so the random
+    # stream (every later stone's length and chips) stays as it was.
+    old_segs = max(2, int(round(span / 0.9)))
+    segs = segs or max(2, int(round(span / (0.9 if fine else 1.8))))
+    nr = 2 if fine else 1             # rows of face quads
     ch = rng.uniform(0.05, 0.1)      # the chamfer, at the face
     j = T.JOINT / 2
     # Corners knocked off: (i-end 0/1, top 0/1, depth).
     bites = []
     for _ in range(chips):
         bites.append((rng.randrange(2), rng.randrange(2), rng.uniform(0.05, 0.14)))
+    draws = [rng.random() for _ in range(old_segs - 1)]
 
     def at(a, z, inset, out=0.0):
         rad = r_at(z) - inset + out
@@ -263,21 +391,20 @@ def face_stone(a0, a1, z0, z1, segs=None, proud=0.0, chips=0):
     # The face grid: columns along the arc, rows 0..2 up (middle pillowed).
     da = (j + ch) / r_at(z0)
     angs = [a0 + da + (a1 - a0 - 2 * da) * i / segs for i in range(segs + 1)]
-    zs = [z0 + j + ch, (z0 + z1) / 2, z1 - j - ch]
+    zs = [z0 + j + ch, (z0 + z1) / 2, z1 - j - ch] if fine else [z0 + j + ch, z1 - j - ch]
     grid = []
     for ri, z in enumerate(zs):
         row = []
         for ci, a in enumerate(angs):
             pillow = 0.0
-            if ri == 1 and 0 < ci < segs:
-                pillow = 0.025 + 0.03 * rng.random()
+            if (ri == 1 or not fine) and 0 < ci < segs:
+                pillow = (0.025 + 0.03 * draws[(ci - 1) % len(draws)]) * (1.0 if fine else 0.7)
             nz = noise.noise(Vector((math.cos(a) * 4.0, math.sin(a) * 4.0, z * 2.0))) * 0.015
             co = at(a, z, 0.0, proud + pillow + nz)
             bv = 0.0
             for (end, top, d) in bites:
                 ce = 0 if end == 0 else segs
-                cz = 0 if top == 0 else 2
-                w = max(0.0, 1.0 - (abs(ci - ce) / max(1, segs * 0.5) + abs(ri - cz) / 2.0))
+                w = max(0.0, 1.0 - (abs(ci - ce) / max(1, segs * 0.5) + abs(ri / nr - top)))
                 if w > 0.0:
                     co -= Vector((math.cos(a), math.sin(a), 0.0)) * d * w
                     bv = max(bv, w)
@@ -286,15 +413,15 @@ def face_stone(a0, a1, z0, z1, segs=None, proud=0.0, chips=0):
             row.append(v)
         grid.append(row)
     faces = []
-    for ri in range(2):
+    for ri in range(nr):
         for ci in range(segs):
             f = bm.faces.new((grid[ri][ci], grid[ri][ci + 1], grid[ri + 1][ci + 1], grid[ri + 1][ci]))
             f[kind] = T.FACE
             f[tone] = t
             faces.append(f)
     # The chamfer ring: from the face's rim back into the joint.
-    rim = ([grid[0][ci] for ci in range(segs + 1)] + [grid[1][segs]]
-           + [grid[2][ci] for ci in range(segs, -1, -1)] + [grid[1][0]])
+    rim = ([grid[0][ci] for ci in range(segs + 1)] + [grid[ri][segs] for ri in range(1, nr)]
+           + [grid[nr][ci] for ci in range(segs, -1, -1)] + [grid[ri][0] for ri in range(nr - 1, 0, -1)])
     back = []
     for v in rim:
         co = v.co
@@ -303,7 +430,7 @@ def face_stone(a0, a1, z0, z1, segs=None, proud=0.0, chips=0):
         # Push out to the joint line and back into the wall.
         if abs(z - zs[0]) < 1e-4:
             z = z0 + j
-        elif abs(z - zs[2]) < 1e-4:
+        elif abs(z - zs[-1]) < 1e-4:
             z = z1 - j
         if abs(a - angs[0]) < 1e-6:
             a = a0 + j / r_at(z0)
@@ -318,12 +445,28 @@ def face_stone(a0, a1, z0, z1, segs=None, proud=0.0, chips=0):
         f = bm.faces.new((rim[k2], rim[i], back[i], back[k2]))
         f[kind] = T.JOINTFACE
         f[tone] = t
+    # The mid: the face alone, as the near's (its chamfer's width left open,
+    # so the joints read as wide as the near's).
+    mk, mt, mb = new_layers(MID)
+    mg = []
+    for row in grid:
+        mrow = []
+        for v in row:
+            nv = MID.verts.new(v.co)
+            nv[mb] = v[broke]
+            mrow.append(nv)
+        mg.append(mrow)
+    for ri in range(nr):
+        for ci in range(segs):
+            f = MID.faces.new((mg[ri][ci], mg[ri][ci + 1], mg[ri + 1][ci + 1], mg[ri + 1][ci]))
+            f[mk] = T.FACE
+            f[mt] = t
 
 
-def core_ring(z0, z1, gaps=(), segs=40, inset=BLOCK_DEPTH + 0.02):
+def core_ring(z0, z1, gaps=(), segs=20, inset=BLOCK_DEPTH + 0.02, bm=None):
     """The dark core behind a course's face stones (what an open joint
     shows), with holes where the course has openings."""
-    bm = p.near
+    bm = bm or p.near
     kind, tone, broke = new_layers(bm)
     if gaps:
         g = sorted(((ga - hw) % math.tau, 2 * hw) for ga, hw in gaps)
@@ -351,10 +494,15 @@ def core_ring(z0, z1, gaps=(), segs=40, inset=BLOCK_DEPTH + 0.02):
 def recess(a, hw, z0, z1, depth, back_kind=K_DARK, sill=True):
     """An opening's deep reveal through the wall at angle a, half width hw
     (m at the face), from z0 to z1: stone sides, sill and head, and a back
-    of `back_kind` (dark, or the door's boards)."""
-    bm = p.near
-    kind, tone, broke = new_layers(bm)
+    of `back_kind` (dark, or the door's boards). The mid gets it too."""
     t = p.tone()
+    for bm in (p.near, MID):
+        out, tang = _recess(bm, t, a, hw, z0, z1, depth, back_kind)
+    return out, tang
+
+
+def _recess(bm, t, a, hw, z0, z1, depth, back_kind):
+    kind, tone, broke = new_layers(bm)
     c, s = math.cos(a), math.sin(a)
     tang = Vector((-s, c, 0.0))
     out = Vector((c, s, 0.0))
@@ -447,7 +595,10 @@ for ci, (z0, h) in enumerate(COURSES):
             chips = rng.choice((0, 0, 1, 1, 2))
             proud = rng.uniform(-0.03, 0.04) - (0.06 if rng.random() < 0.08 else 0.0)
             face_stone(b0, b1, z0, z1, proud=proud, chips=chips)
+    mark("shaft face stones")
     core_ring(z0, z1, gaps=gaps)
+    core_ring(z0, z1, gaps=gaps, segs=16, bm=MID)
+    mark("shaft core")
     prev_gaps = gaps
 
 # The openings' reveals, deep through the wall; the door's boards set in.
@@ -457,11 +608,13 @@ for (wa, whw, wz0, wz1) in WINDOWS:
     zz0 = max(c[0] for c in COURSES if c[0] <= wz0 + 0.1 + 1e-6) if any(c[0] <= wz0 + 0.1 for c in COURSES) else wz0
     zz1 = min(c[0] + c[1] for c in COURSES if c[0] + c[1] >= wz1 - 0.1)
     recess(wa, whw, zz0, zz1, 1.2)
+    mark("door and window reveals")
     # A projecting sill stone under each window.
     c, s = math.cos(wa), math.sin(wa)
     rr = r_at(zz0)
-    p.block((c * (rr + 0.08), s * (rr + 0.08), zz0 - 0.09), (2 * whw + 0.5, 0.36, 0.18),
-            yaw=wa + math.pi / 2, chips=1, chip_depth=(0.05, 0.12), far=False)
+    vblock((c * (rr + 0.08), s * (rr + 0.08), zz0 - 0.09), (2 * whw + 0.5, 0.36, 0.18),
+           ("+x", "-x", "+y", "-y", "+z", "-z"), yaw=wa + math.pi / 2, chips=1, chip_depth=(0.05, 0.12))
+    mark("window sills")
 
 # The door: boards and iron straps, a step of a threshold, a lintel stone.
 door_courses = [c for c in COURSES if c[0] < PLINTH_TOP + DOOR_H - 0.1]
@@ -473,21 +626,43 @@ for k in range(5):
     p.block((c * (rr - 1.02) - s * x, s * (rr - 1.02) + c * x, (PLINTH_TOP + door_top) / 2),
             ((DOOR_W - 0.12) / 5 - 0.02, 0.1, door_top - PLINTH_TOP - 0.05),
             yaw=DOOR_A + math.pi / 2, bevel=0.015, chips=0, jitter=0.004, kind=K_WOOD, far=False)
+mark("door boards")
 
 # ---- The plinth: a square stepped base, a stair up to the door -----------
-def lay(x0, x1, z, h, depth, off, yaw, chips=1, length=(2.0, 3.4), kind=T.FACE):
+def lay(x0, x1, z, h, depth, off, yaw, chips=1, length=(2.0, 3.4), kind=T.FACE,
+        show=("-y",), ends=(), back=0.22):
     """A straight course of blocks along a side: x along the side from x0
-    to x1, `off` the side's distance out from the centre, turned `yaw`."""
+    to x1, `off` the side's distance out from the centre, turned `yaw`.
+    `show`: the sides of each block the world sees (local, before `yaw`;
+    its first is the face); `ends`: "-x" and/or "+x" when the course's
+    first or last block shows its end (a corner). Behind the run's joints,
+    `back` m in from the face, a backing quad."""
     m = Matrix.Rotation(yaw, 4, "Z")
     x = x0
+    first = True
     while x < x1 - 0.3:
         L = min(rng.uniform(*length), x1 - x)
         if x1 - (x + L) < 0.8:
             L = x1 - x
         cen = m @ Vector((x + L / 2, off, z + h / 2))
-        p.block(tuple(cen), (L - T.JOINT, depth, h - T.JOINT), yaw=yaw, chips=rng.randint(0, chips),
-                far=False, kind=kind)
+        sides = list(show)
+        if first and "-x" in ends:
+            sides.append("-x")
+        if x + L >= x1 - 1e-6 and "+x" in ends:
+            sides.append("+x")
+        vblock(tuple(cen), (L - T.JOINT, depth, h - T.JOINT), sides, yaw=yaw, chips=rng.randint(0, chips),
+               kind=kind)
         x += L
+        first = False
+    if back > 0.0:
+        sgn = -1.0 if show[0] == "-y" else 1.0
+        yb = off + sgn * (depth / 2 - back)
+        # Short of the blocks' tops and ends, or its edge shows through them.
+        za, zb_, xa, xb = z - 0.02, z + h - 0.03, x0 + 0.05, x1 - 0.05
+        q = [(xa, yb, za), (xb, yb, za), (xb, yb, zb_), (xa, yb, zb_)]
+        if sgn > 0:
+            q.reverse()
+        backing([tuple(m @ Vector(c)) for c in q])
 
 
 PLINTH = [(-4.0, 2.4, 11.4), (-1.6, 2.2, 11.0), (0.6, 1.95, PLINTH_HALF + 0.25)]
@@ -495,8 +670,10 @@ for i, (z, h, half) in enumerate(PLINTH):
     for side in range(4):
         # Each side runs from one corner and stops short of the next, which
         # the next side's first stone turns (a pinwheel, so they interlock).
-        lay(-half, half - 1.2, z, h, 1.2, -half + 0.6, side * math.pi / 2, chips=2)
+        lay(-half, half - 1.2, z, h, 1.2, -half + 0.6, side * math.pi / 2, chips=2,
+            show=("-y", "+z"), ends=("-x",))
     p.far_box((0, 0, z + h / 2), (2 * half, 2 * half, h))
+mark("plinth courses")
 # The paving round the foot: slabs in rows, cut where the shaft stands.
 pz = PLINTH[-1][0] + PLINTH[-1][1]
 pave_h = PLINTH_TOP - pz
@@ -514,12 +691,28 @@ while yv < PLINTH_HALF - 0.2:
         # Skip slabs wholly under the shaft.
         far_corner = max(math.hypot(xx, yy) for xx in (xv, xv + L) for yy in (yv, yv + d))
         if far_corner > R_FOOT - 0.3:
-            p.block((cx, cy, pz + pave_h / 2 - rng.uniform(0.0, 0.03)),
-                    (L - 0.04, d - 0.04, pave_h), chips=rng.choice((0, 0, 1)), chip_depth=(0.06, 0.18),
-                    yaw=rng.uniform(-0.01, 0.01), far=False)
+            rim = ["+z"]
+            if xv < -PLINTH_HALF + 0.05:
+                rim.append("-x")
+            if xv + L > PLINTH_HALF - 0.05:
+                rim.append("+x")
+            if yv < -PLINTH_HALF + 0.05:
+                rim.append("-y")
+            if yv + d > PLINTH_HALF - 0.05:
+                rim.append("+y")
+            vblock((cx, cy, pz + pave_h / 2 - rng.uniform(0.0, 0.03)),
+                   (L - 0.04, d - 0.04, pave_h), rim, chips=rng.choice((0, 0, 1)), chip_depth=(0.06, 0.18),
+                   yaw=rng.uniform(-0.01, 0.01), mid=False)
         xv += L
     yv += d
 p.far_box((0, 0, pz + pave_h / 2), (2 * PLINTH_HALF, 2 * PLINTH_HALF, pave_h))
+_zb = PLINTH_TOP - 0.25
+_ph = PLINTH_HALF - 0.1      # short of the rim slabs' sides, or its edge shows through them
+backing([(-_ph, -_ph, _zb), (_ph, -_ph, _zb),
+         (_ph, _ph, _zb), (-_ph, _ph, _zb)], mid=False)
+mid_box((0, 0, pz + (pave_h - 0.015) / 2), (2 * PLINTH_HALF, 2 * PLINTH_HALF, pave_h - 0.015),
+        ("+z", "+x", "-x", "+y", "-y"), tone=0.95)
+mark("paving")
 # The stair: three steps up the plinth's front to the door, two cheeks.
 SW = 3.6
 TREAD = 0.75
@@ -529,15 +722,16 @@ for k in range(1, 5):
     y_out = y_in - TREAD
     # The step's nosing row, then a plain block under it down to the rock.
     lay(-SW / 2, SW / 2, zt - 0.8, 0.8, TREAD + 0.2, (y_in + y_out) / 2 - 0.1, 0.0, chips=1,
-        length=(1.1, 1.9))
+        length=(1.1, 1.9), show=("-y", "+z"), ends=("-x", "+x"))
     if zt - 0.8 > -1.6:
-        p.block((0, (y_in + y_out) / 2, (zt - 0.8 - 1.6) / 2), (SW, TREAD, zt - 0.8 + 1.6), chips=0,
-                bevel=0.0, far=False, jitter=0.0)
+        vblock((0, (y_in + y_out) / 2, (zt - 0.8 - 1.6) / 2), (SW, TREAD, zt - 0.8 + 1.6),
+               ("-y", "+x", "-x"), chips=0, bevel=0.0, jitter=0.0)
 for sx in (-1, 1):
     for lo, hi, ylen in ((-1.6, 0.8, 3.0), (0.8, 2.4, 1.5)):
-        p.block((sx * (SW / 2 + 0.45), -PLINTH_HALF - ylen / 2, (lo + hi) / 2),
-                (0.9, ylen, hi - lo - T.JOINT), chips=2, far=False)
+        vblock((sx * (SW / 2 + 0.45), -PLINTH_HALF - ylen / 2, (lo + hi) / 2),
+               (0.9, ylen, hi - lo - T.JOINT), ("+x", "-x", "-y", "+z"), chips=2)
 p.far_box((0, -PLINTH_HALF - 1.5, 0.4), (SW + 1.8, 3.0, 4.0))
+mark("stair and cheeks")
 
 # ---- The gallery: corbels, a slab deck, the lantern's stone drum ---------
 NCORB = 24
@@ -552,15 +746,43 @@ for tier in range(CORBELS):
         L = reach + 0.6
         cen = (c * (rr + reach - L / 2), s * (rr + reach - L / 2), z0 + CORBEL_H / 2)
         w = 0.8 + 0.15 * tier
-        p.block(cen, (L, w, CORBEL_H - T.JOINT), yaw=a, chips=rng.choice((0, 1)),
-                chip_depth=(0.05, 0.15), far=False)
+        vblock(cen, (L, w, CORBEL_H - T.JOINT), ("+x", "+y", "-y", "-z") + (("+z",) if tier < CORBELS - 1 else ()),
+               yaw=a,
+               chips=rng.choice((0, 1)), chip_depth=(0.05, 0.15))
+mark("corbels")
 # The deck: radial slabs, closed, their outer ends a cornice.
 NDECK = 22
 
 
-def arc_block(r0, r1, a0, a1, z0, z1, segs=3, bevel=0.05, kind=T.FACE):
-    """A closed annular-sector block with worn arrises (deck slabs, the
-    lantern's drum)."""
+_ARC_VERTS = {}
+
+
+def _arc_verts(segs, bevel):
+    """How many verts a bevelled arc block of `segs` facets has."""
+    key = (segs, bevel > 0)
+    if key not in _ARC_VERTS:
+        tmp = bmesh.new()
+        rows = [[tmp.verts.new((math.cos(0.1 * i) * rr_, math.sin(0.1 * i) * rr_, zz)) for i in range(segs + 1)]
+                for rr_, zz in ((3.0, 0.0), (4.0, 0.0), (4.0, 1.0), (3.0, 1.0))]
+        for k in range(4):
+            lo, hi = rows[k], rows[(k + 1) % 4]
+            for i in range(segs):
+                tmp.faces.new((lo[i], lo[i + 1], hi[i + 1], hi[i]))
+        tmp.faces.new([rows[0][0], rows[3][0], rows[2][0], rows[1][0]])
+        tmp.faces.new([rows[0][-1], rows[1][-1], rows[2][-1], rows[3][-1]])
+        bmesh.ops.recalc_face_normals(tmp, faces=list(tmp.faces))
+        if bevel > 0:
+            bmesh.ops.bevel(tmp, geom=list(tmp.edges), offset=0.05, segments=1, profile=0.5,
+                            affect="EDGES", clamp_overlap=True)
+        _ARC_VERTS[key] = len(tmp.verts)
+        tmp.free()
+    return _ARC_VERTS[key]
+
+
+def arc_block(r0, r1, a0, a1, z0, z1, segs=3, bevel=0.05, kind=T.FACE, drop=("in",), mid_segs=1, draws_as=None):
+    """An annular-sector block with worn arrises (deck slabs, the lantern's
+    drum), less the faces that look only where no one sees: `drop` "in"
+    (towards the axis), "down". A plain one, `mid_segs` along, in the mid."""
     tmp = bmesh.new()
     tk, tt, tb = T._layers(tmp)
     t = p.tone()
@@ -584,9 +806,42 @@ def arc_block(r0, r1, a0, a1, z0, z1, segs=3, bevel=0.05, kind=T.FACE):
         for f in res["faces"]:
             f[tk] = T.JOINTFACE
             f[tt] = t
-    for v in tmp.verts:
-        v.co += Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1))) * 0.01
+    # The wobble: as many draws as a block of `draws_as` facets took, so the
+    # random stream (the house's stones, the roof's slates) stays as it was.
+    n_draws = 3 * max(len(tmp.verts), _arc_verts(draws_as or segs, bevel))
+    wob = [rng.uniform(-1, 1) for _ in range(n_draws)]
+    for i, v in enumerate(tmp.verts):
+        v.co += Vector((wob[3 * i], wob[3 * i + 1], wob[3 * i + 2])) * 0.01
+
+    def hidden(f_):
+        c_ = f_.calc_center_median()
+        radial = Vector((c_.x, c_.y, 0.0)).normalized()
+        return (("in" in drop and f_.normal.dot(radial) < -0.7)
+                or ("down" in drop and f_.normal.z < -0.7))
+    tmp.normal_update()
+    bmesh.ops.delete(tmp, geom=[f_ for f_ in tmp.faces if hidden(f_)], context="FACES")
     T._append(p.near, tmp)
+    tmp.free()
+    # The mid's.
+    tmp = bmesh.new()
+    tk, tt, tb = T._layers(tmp)
+    rows = []
+    for rr_, zz in ((r0, z0), (r1, z0), (r1, z1), (r0, z1)):
+        rows.append([tmp.verts.new((math.cos(a0 + (a1 - a0) * i / mid_segs) * rr_,
+                                    math.sin(a0 + (a1 - a0) * i / mid_segs) * rr_, zz)) for i in range(mid_segs + 1)])
+    for k in range(4):
+        lo, hi = rows[k], rows[(k + 1) % 4]
+        for i in range(mid_segs):
+            tmp.faces.new((lo[i], lo[i + 1], hi[i + 1], hi[i]))
+    tmp.faces.new([rows[0][0], rows[3][0], rows[2][0], rows[1][0]])
+    tmp.faces.new([rows[0][-1], rows[1][-1], rows[2][-1], rows[3][-1]])
+    bmesh.ops.recalc_face_normals(tmp, faces=list(tmp.faces))
+    for f_ in tmp.faces:
+        f_[tk] = kind
+        f_[tt] = t
+    tmp.normal_update()
+    bmesh.ops.delete(tmp, geom=[f_ for f_ in tmp.faces if hidden(f_)], context="FACES")
+    T._append(MID, tmp)
     tmp.free()
 
 
@@ -594,18 +849,31 @@ ga = T.JOINT / 2 / DECK_R
 for i in range(NDECK):
     a0 = math.tau * i / NDECK + ga
     a1 = math.tau * (i + 1) / NDECK - ga
-    arc_block(LANTERN_R - 0.2, DECK_R, a0, a1, DECK_Z, DECK_TOP, segs=3, bevel=0.06)
+    arc_block(LANTERN_R - 0.2, DECK_R, a0, a1, DECK_Z, DECK_TOP, segs=2, bevel=0.06, draws_as=3)
+mark("gallery deck")
 # The lantern's stone drum.
 NL = 8
 for i in range(NL):
     a0 = math.tau * i / NL + 0.01
     a1 = math.tau * (i + 1) / NL - 0.01
-    arc_block(LANTERN_R - 0.45, LANTERN_R, a0, a1, DECK_TOP, LANTERN_WALL, segs=3, bevel=0.04)
+    arc_block(LANTERN_R - 0.45, LANTERN_R, a0, a1, DECK_TOP, LANTERN_WALL, segs=3, bevel=0.04,
+              drop=("in", "down"), mid_segs=2)
+mark("lantern drum")
 # The lantern room's floor, under the glass (seen from the gallery).
 p.ring((0, 0, LANTERN_WALL - 0.02), [(LANTERN_R - 0.45, 0.0), (LANTERN_R - 0.45, 0.02)], segments=24, chips=0)
 p.ring((0, 0, SHAFT_TOP - 0.02), [(r_at(SHAFT_TOP) - BLOCK_DEPTH - 0.05, 0.0),
                                    (r_at(SHAFT_TOP) - BLOCK_DEPTH - 0.05, DECK_Z - SHAFT_TOP + 0.04)],
        segments=24, chips=0)
+_sr = r_at(SHAFT_TOP) - BLOCK_DEPTH - 0.05
+_mk, _mt, _ = new_layers(MID)
+_lo = [MID.verts.new((math.cos(math.tau * i / 16) * _sr, math.sin(math.tau * i / 16) * _sr, SHAFT_TOP - 0.02))
+       for i in range(16)]
+_hi = [MID.verts.new((v_.co.x, v_.co.y, DECK_Z + 0.02)) for v_ in _lo]
+for i in range(16):
+    f_ = MID.faces.new((_lo[i], _lo[(i + 1) % 16], _hi[(i + 1) % 16], _hi[i]))
+    f_[_mk] = T.FACE
+    f_[_mt] = 0.95
+mark("lantern floor and deck soffit")
 
 # ---- The keeper's house ----------------------------------------------------
 HX0, HX1 = -20.0, -7.4     # west gable to the tower
@@ -648,9 +916,11 @@ for ci, (z, h) in enumerate(hc):
         runs.append((lo, HX1))
         for a, b in runs:
             if b - a > 0.3:
-                lay(a, b, z, h, WALL, y_face + sgn * WALL / 2, 0.0, chips=1, length=(1.0, 2.0))
+                lay(a, b, z, h, WALL, y_face + sgn * WALL / 2, 0.0, chips=1, length=(1.0, 2.0),
+                    show=("-y",) if sgn > 0 else ("+y",), ends=("-x",) if a <= HX0 + 1e-6 else ())
     # The west gable wall (along y).
-    lay(HY0 + WALL, HY1 - WALL, z, h, WALL, -(HX0 + WALL / 2), math.pi / 2, chips=1, length=(1.0, 2.0))
+    lay(HY0 + WALL, HY1 - WALL, z, h, WALL, -(HX0 + WALL / 2), math.pi / 2, chips=1, length=(1.0, 2.0),
+        show=("+y",))
 # The gable above the eaves, stepped in under the roof.
 z = EAVES
 slope = (RIDGE - EAVES) / ((HY1 - HY0) / 2)
@@ -659,14 +929,19 @@ while z < RIDGE - 0.4:
     half = ((RIDGE - (z + h)) / slope)
     if half > 0.3:
         lay(RIDGE_Y - half, RIDGE_Y + half, z, h, WALL, -(HX0 + WALL / 2), math.pi / 2, chips=0,
-            length=(0.9, 1.6))
+            length=(0.9, 1.6), show=("+y", "+z"), ends=("-x", "+x"))
     z += h
+mark("house walls and gable")
 
 
 def house_recess(x0, x1, z0, z1, yf, back_kind):
-    bm = p.near
-    kind, tone, broke = new_layers(bm)
     t = p.tone()
+    for bm in (p.near, MID):
+        _house_recess(bm, t, x0, x1, z0, z1, yf, back_kind)
+
+
+def _house_recess(bm, t, x0, x1, z0, z1, yf, back_kind):
+    kind, tone, broke = new_layers(bm)
     yi = yf + WALL * (1 if yf == HY0 else -1)
     q = [
         ((x0, yf, z0), (x0, yi, z0), (x0, yi, z1), (x0, yf, z1)),
@@ -691,11 +966,12 @@ for g in HWIN:
 house_recess(NWIN[0], NWIN[1], wz0, wz1, HY1, K_DARK)
 # Lintels over the house's openings: one long stone each.
 for (g0, g1), top in ((HDOOR, dz1), (HWIN[0], wz1), (HWIN[1], wz1)):
-    p.block(((g0 + g1) / 2, HY0 + WALL / 2 - 0.04, top + 0.25), (g1 - g0 + 0.9, WALL + 0.08, 0.5),
-            chips=1, chip_depth=(0.05, 0.15), far=False)
-p.block((-15.5, HY1 - WALL / 2 + 0.04, wz1 + 0.25), (1.9, WALL + 0.08, 0.5), chips=1, far=False)
+    vblock(((g0 + g1) / 2, HY0 + WALL / 2 - 0.04, top + 0.25), (g1 - g0 + 0.9, WALL + 0.08, 0.5),
+           ("-y", "-z", "+x", "-x"), chips=1, chip_depth=(0.05, 0.15))
+vblock((-15.5, HY1 - WALL / 2 + 0.04, wz1 + 0.25), (1.9, WALL + 0.08, 0.5), ("+y", "-z", "+x", "-x"), chips=1)
 # A step at the house door.
-p.block(((HDOOR[0] + HDOOR[1]) / 2, HY0 - 0.45, dz0 - 0.2), (2.2, 0.9, 0.5), chips=2, far=False)
+vblock(((HDOOR[0] + HDOOR[1]) / 2, HY0 - 0.45, dz0 - 0.2), (2.2, 0.9, 0.5), ("-y", "+z", "+x", "-x"), chips=2)
+mark("house reveals, lintels, step")
 # The roof: rows of slates up each slope, a ridge, overhanging the walls.
 OVER = 0.7
 rx0, rx1 = HX0 - 0.5, HX1 + 0.2
@@ -704,29 +980,83 @@ rise = slope * run
 ang = math.atan2(rise, run)
 lenslope = math.hypot(run, rise)
 rows = int(lenslope / 0.42)
+pitch = lenslope / rows
+SLATE_T = 0.07
+_ca, _sa = math.cos(ang), math.sin(ang)
+
+
+def roof_pt(sgn, x, sl, h):
+    """A point on the roof: `sl` m down the slope from the ridge, `h` up off it."""
+    return Vector((x, RIDGE_Y + sgn * (sl * _ca + h * _sa), RIDGE + 0.12 - SLATE_T / 2 - sl * _sa + h * _ca))
+
+
+def quad(bm, pts, kind_, tone_, up):
+    k_, t_, _ = new_layers(bm)
+    vs = [bm.verts.new(q) for q in pts]
+    f_ = bm.faces.new(vs)
+    f_.normal_update()
+    if f_.normal.dot(up) < 0:
+        f_.normal_flip()
+    f_[k_] = kind_
+    f_[t_] = tone_
+    return f_
+
+
 for sgn in (-1, 1):
+    up = Vector((0.0, sgn * _sa, _ca))
+    out = Vector((0.0, sgn * _ca, -_sa))
     for k in range(rows):
-        u = (k + 0.5) / rows
-        d = run * (1 - u)        # distance out from the ridge
-        yc = RIDGE_Y + sgn * d
-        zc = RIDGE + 0.12 - slope * d
+        s_head = k * pitch - 0.12 if k else -0.12
+        s_butt = (k + 1) * pitch
         x = rx0
+        mk_rows = []
         while x < rx1 - 0.2:
             L = min(rng.uniform(1.4, 2.6), rx1 - x)
             if rx1 - (x + L) < 0.6:
                 L = rx1 - x
-            p.block((x + L / 2, yc, zc + rng.uniform(-0.01, 0.01)), (L - 0.02, lenslope / rows + 0.12, 0.07),
-                    tilt=(sgn * ang, 0.0), bevel=0.012, chips=rng.choice((0, 0, 0, 1)),
-                    chip_depth=(0.04, 0.1), jitter=0.006, kind=K_SLATE, far=False)
+            t = p.tone()
+            lift = rng.uniform(-0.01, 0.01)
+            xa, xb = x + 0.01, x + L - 0.01
+            # A broken corner at the butt, now and then.
+            bite = rng.uniform(0.04, 0.1) if rng.random() < 0.25 else 0.0
+            side = rng.randrange(2)
+            bl = [roof_pt(sgn, xa, s_head, lift), roof_pt(sgn, xb, s_head, lift),
+                  roof_pt(sgn, xb - (bite if side else 0.0), s_butt - (bite if side else 0.0), SLATE_T + lift),
+                  roof_pt(sgn, xa + (0.0 if side else bite), s_butt - (0.0 if side else bite), SLATE_T + lift)]
+            quad(p.near, bl, K_SLATE, t, up)
+            quad(p.near, [bl[3], bl[2], roof_pt(sgn, xb - (bite if side else 0.0), s_butt - (bite if side else 0.0),
+                                                 lift),
+                          roof_pt(sgn, xa + (0.0 if side else bite), s_butt - (0.0 if side else bite), lift)],
+                 K_SLATE, t * 0.85, out)
             x += L
-p.block(((rx0 + rx1) / 2, RIDGE_Y, RIDGE + 0.18), (rx1 - rx0, 0.42, 0.22), bevel=0.04, chips=2,
-        kind=K_SLATE, far=False)
+        # The mid: the row as one strip, its top and its butt.
+        t = p.tone()
+        quad(MID, [roof_pt(sgn, rx0, s_head, 0.0), roof_pt(sgn, rx1, s_head, 0.0),
+                   roof_pt(sgn, rx1, s_butt, SLATE_T), roof_pt(sgn, rx0, s_butt, SLATE_T)], K_SLATE, t, up)
+        quad(MID, [roof_pt(sgn, rx0, s_butt, SLATE_T), roof_pt(sgn, rx1, s_butt, SLATE_T),
+                   roof_pt(sgn, rx1, s_butt, 0.0), roof_pt(sgn, rx0, s_butt, 0.0)], K_SLATE, t * 0.85, out)
+    # Under the slates: an underlay seen through their joints, and the
+    # eaves' soffit seen from below.
+    for bm in (p.near, MID):
+        quad(bm, [roof_pt(sgn, rx0, -0.12, -0.005), roof_pt(sgn, rx1, -0.12, -0.005),
+                  roof_pt(sgn, rx1, lenslope, -0.005), roof_pt(sgn, rx0, lenslope, -0.005)], K_SLATE, 0.8, up)
+        quad(bm, [roof_pt(sgn, rx0, -0.12, -0.01), roof_pt(sgn, rx1, -0.12, -0.01),
+                  roof_pt(sgn, rx1, lenslope, -0.01), roof_pt(sgn, rx0, lenslope, -0.01)], K_SLATE, 0.7, -up)
+        # The verges: the roof's edge over each gable end.
+        for xe, dx in ((rx0, -1.0), (rx1, 1.0)):
+            quad(bm, [roof_pt(sgn, xe, -0.12, -0.01), roof_pt(sgn, xe, lenslope, -0.01),
+                      roof_pt(sgn, xe, lenslope, SLATE_T), roof_pt(sgn, xe, -0.12, SLATE_T)], K_SLATE, 0.8,
+                 Vector((dx, 0.0, 0.0)))
+vblock(((rx0 + rx1) / 2, RIDGE_Y, RIDGE + 0.18), (rx1 - rx0, 0.42, 0.22), ("+y", "-y", "+z", "+x", "-x"),
+       bevel=0.04, chips=2, kind=K_SLATE)
+mark("roof slates and ridge")
 # The chimney: a stack of stones through the north slope, a cap.
 cz = 4.0
 while cz < RIDGE + 1.6:
-    p.block((-17.0, 1.4, cz + 0.4), (1.3, 1.1, 0.78), chips=1, chip_depth=(0.05, 0.15), far=False)
+    vblock((-17.0, 1.4, cz + 0.4), (1.3, 1.1, 0.78), ("+x", "-x", "+y", "-y"), chips=1, chip_depth=(0.05, 0.15))
     cz += 0.8
-p.block((-17.0, 1.4, cz + 0.12), (1.6, 1.4, 0.24), chips=1, far=False)
+vblock((-17.0, 1.4, cz + 0.12), (1.6, 1.4, 0.24), ("+x", "-x", "+y", "-y", "+z", "-z"), chips=1)
+mark("chimney")
 
 # ---- The far LOD -----------------------------------------------------------
 # The shaft in stacked cylinders split at the band edges, so the bands hold.
@@ -816,10 +1146,10 @@ for i in range(NPOST):
     a = math.tau * i / NPOST
     c, s = math.cos(a), math.sin(a)
     tube(iron, iron_paint, [(c * RAIL_R, s * RAIL_R, rail_z - 0.02), (c * RAIL_R, s * RAIL_R, rail_z + RAIL_H)],
-         0.04, n=4)
+         0.04, n=3)
 for hz, rad in ((RAIL_H, 0.045), (RAIL_H * 0.5, 0.03)):
-    pts = [(math.cos(math.tau * i / 64) * RAIL_R, math.sin(math.tau * i / 64) * RAIL_R, rail_z + hz) for i in range(64)]
-    tube(iron, iron_paint, pts, rad, n=4, closed=True)
+    pts = [(math.cos(math.tau * i / 40) * RAIL_R, math.sin(math.tau * i / 40) * RAIL_R, rail_z + hz) for i in range(40)]
+    tube(iron, iron_paint, pts, rad, n=3, closed=True)
 # The lantern: the glazing's frame, a cornice, the dome with ribs, the vent.
 NG = 10
 GR = LANTERN_R - 0.25
@@ -864,6 +1194,36 @@ lathe(glass, painter(gcol, (1.0, 0.86, 0.55)), [(0.55, LAMP - 1.1), (0.95, LAMP 
                                                  (0.95, LAMP + 0.6), (0.55, LAMP + 1.1)], 12)
 
 
+# The iron's mid: the rail thinner in sides, the frame, the cap and vent
+# without ribs, ball or vane.
+iron_mid = bmesh.new()
+imcol = iron_mid.loops.layers.float_color.new("Col")
+im_paint = painter(imcol, IRON, rust=0.6)
+im_cap = painter(imcol, VERDIGRIS, streak_top=True)
+for i in range(NPOST):
+    a = math.tau * i / NPOST
+    c, s = math.cos(a), math.sin(a)
+    tube(iron_mid, im_paint, [(c * RAIL_R, s * RAIL_R, rail_z - 0.02), (c * RAIL_R, s * RAIL_R, rail_z + RAIL_H)],
+         0.045, n=3)
+for hz, rad in ((RAIL_H, 0.05), (RAIL_H * 0.5, 0.035)):
+    pts = [(math.cos(math.tau * i / 24) * RAIL_R, math.sin(math.tau * i / 24) * RAIL_R, rail_z + hz) for i in range(24)]
+    tube(iron_mid, im_paint, pts, rad, n=3, closed=True)
+for i in range(NG):
+    a = math.tau * (i + 0.5) / NG
+    c, s = math.cos(a), math.sin(a)
+    tube(iron_mid, im_paint, [(c * GR, s * GR, LANTERN_WALL - 0.05), (c * GR, s * GR, GLASS_TOP + 0.05)], 0.09, n=3)
+for hz in (LANTERN_WALL + 0.05, (LANTERN_WALL + GLASS_TOP) / 2 + 0.6, GLASS_TOP - 0.05):
+    pts = [(math.cos(math.tau * (i + 0.5) / NG) * (GR + 0.02), math.sin(math.tau * (i + 0.5) / NG) * (GR + 0.02), hz)
+           for i in range(NG)]
+    tube(iron_mid, im_paint, pts, 0.06, n=3, closed=True)
+lathe(iron_mid, im_paint, [(GR - 0.05, GLASS_TOP), (LANTERN_R + 0.35, GLASS_TOP + 0.1),
+                           (LANTERN_R + 0.35, GLASS_TOP + 0.35)], NG, closed_top=False)
+lathe(iron_mid, im_cap, [(LANTERN_R + 0.35, GLASS_TOP + 0.35), (LANTERN_R + 0.1, GLASS_TOP + 0.6),
+                         (2.6, GLASS_TOP + 1.5), (1.3, GLASS_TOP + 2.25), (0.6, CAP_TOP)], NG)
+lathe(iron_mid, im_cap, [(0.5, CAP_TOP - 0.05), (0.5, CAP_TOP + 0.7), (0.95, CAP_TOP + 0.75),
+                         (0.4, CAP_TOP + 1.2), (0.12, CAP_TOP + 1.35)], 8)
+
+
 # ---- Solids (Blender frame, z up): few and coarse ------------------------
 def box(lo, hi):
     p.solid(lo, hi)
@@ -902,7 +1262,9 @@ for ob in list(bpy.data.objects):
     bpy.data.objects.remove(ob, do_unlink=True)
 near, near_tris = p._object(p.near, NAME, False)
 far, far_tris = p._object(p.far, NAME + "_far", True)
+mid, mid_tris = p._object(MID, NAME + "_mid", False)
 iron_ob, iron_tris = plain_object(iron, "lighthouse_iron", "lighthouse_iron")
+iron_mid_ob, iron_mid_tris = plain_object(iron_mid, "lighthouse_iron_mid", "lighthouse_iron")
 glass_ob, glass_tris = plain_object(glass, "lighthouse_glass", "lighthouse_glass")
 glb = OUT / f"{NAME}.glb"
 bpy.ops.export_scene.gltf(
@@ -916,11 +1278,19 @@ for lo, hi in p.boxes:
     boxes.append([round(lo[0], 3), round(lo[2], 3), round(-hi[1], 3),
                   round(hi[0] - lo[0], 3), round(hi[2] - lo[2], 3), round(hi[1] - lo[1], 3)])
 info = {"piece": NAME, "boxes": boxes, "tris": near_tris, "far_tris": far_tris,
-        "iron_tris": iron_tris, "glass_tris": glass_tris, "lamp": LAMP, "courses": len(COURSES)}
+        "iron_tris": iron_tris, "glass_tris": glass_tris, "mid_tris": mid_tris, "iron_mid_tris": iron_mid_tris,
+        "lamp": LAMP, "courses": len(COURSES)}
 (OUT / f"{NAME}.boxes.json").write_text(json.dumps(info, indent=1) + "\n")
+for k_, v_ in sorted(TALLY.items(), key=lambda kv: -kv[1]):
+    print(f"PART {k_:32s} {v_:6d}")
+print(f"PART {'(sum, before triangulate)':32s} {sum(TALLY.values()):6d}")
+print(f"LIGHTHOUSE mid: {mid_tris} stone + {iron_mid_tris} iron + {glass_tris} glass = "
+      f"{mid_tris + iron_mid_tris + glass_tris}; near total {near_tris + iron_tris + glass_tris}")
 print(f"LIGHTHOUSE {NAME}: {near_tris} tris stone, {iron_tris} iron, {glass_tris} glass, {far_tris} far, "
       f"{len(boxes)} boxes, {len(COURSES)} courses -> {glb}")
 p.near.free()
 p.far.free()
+MID.free()
+iron_mid.free()
 iron.free()
 glass.free()
