@@ -104,6 +104,7 @@ MOSS = (0.42, 0.47, 0.26)        # on what looks up
 GROUND_DAMP = (0.50, 0.49, 0.38) # the splash band at the foot
 
 FACE, JOINTFACE, BROKEN = 0, 1, 2   # face kinds: cut face, arris/joint, fresh break
+DEEP_DARK = 0.75                    # how dark a `deep` vertex (the bottom of a shaft's joint) goes
 
 
 def srgb_to_linear(c):
@@ -122,15 +123,56 @@ def _layers(bm):
     return kind, tone, broke
 
 
+def _deep(bm, make=True):
+    """The optional vertex layer `deep` (0..1): how far into an open joint a
+    vertex sits; paint() darkens toward CREVICE by it. Absent = 0."""
+    lay = bm.verts.layers.float.get("deep")
+    if lay is None and make:
+        lay = bm.verts.layers.float.new("deep")
+    return lay
+
+
+NORMAL_LAYERS = ("nx", "ny", "nz")
+
+
+def _normals(bm, make=True):
+    """Optional vertex layers nx, ny, nz: a vertex's given normal (all 0 =
+    none). export() writes it as the custom normal of that vertex's corners
+    on cut faces (FACE); every other corner keeps the auto normal."""
+    lays = [bm.verts.layers.float.get(k) for k in NORMAL_LAYERS]
+    if lays[0] is None:
+        if not make:
+            return None
+        lays = [bm.verts.layers.float.new(k) for k in NORMAL_LAYERS]
+    return lays
+
+
+def _set_normal(v, lays, n):
+    for lay, x in zip(lays, n):
+        v[lay] = x
+
+
 def _append(dst, src, matrix=None):
     """Copies src's verts and faces (with the kit's layers) into dst."""
     dk, dt, db = _layers(dst)
     sk, st, sb = _layers(src)
+    sd = _deep(src, make=False)
+    dd = _deep(dst) if sd is not None else None
+    sn = _normals(src, make=False)
+    dn = _normals(dst) if sn is not None else None
+    rot = matrix.to_3x3() if matrix is not None else None
     vmap = {}
     for v in src.verts:
         co = matrix @ v.co if matrix is not None else v.co.copy()
         nv = dst.verts.new(co)
         nv[db] = v[sb]
+        if sd is not None:
+            nv[dd] = v[sd]
+        if sn is not None:
+            n = Vector([v[x] for x in sn])
+            if rot is not None and n.length > 0.0:
+                n = (rot @ n).normalized()
+            _set_normal(nv, dn, n)
         vmap[v] = nv
     for f in src.faces:
         try:
@@ -238,13 +280,165 @@ class Piece:
             self.far_box(((x0 + x1) / 2, y, z + height / 2), (x1 - x0, depth, height))
 
     # -- round work --------------------------------------------------------
+    def shaft(self, base, drums, drum_h, r_foot, r_neck, flutes=FLUTES, samples=2, flute_depth=0.17,
+              chamfer=0.07, groove=0.05, chips=(1, 2, 2, 3), bite=(0.15, 0.5), shift=0.06, yaw=0.0):
+        """A standing shaft of `drums` fluted drums, its foot's centre at
+        `base`, tapering r_foot -> r_neck, as one mesh: each drum's flank
+        (two rings, `samples` points per flute, its faces given the true
+        flute's normals so even two points shade round) and between drums
+        one shared groove ring (the flute's outline `chamfer` + `groove` m
+        in) that both chamfers run into, painted dark (`deep`). Looks like
+        a stack of drum()s with open joints at about a quarter of the
+        triangles: no end caps (faces in the joint), no flute detail beyond
+        what the outline and the light need. The shaft's foot and top rings
+        sit on the planes of what is under and over it (a torus's top, an
+        echinus's foot), which must cover them. Same draws from the rng per
+        drum as drum() (`chips` a choice per drum)."""
+        r = self.rng
+        bx0, by0, bz0 = base
+        n = flutes * samples
+        m = n
+        span = math.tau / flutes
+        slope = (r_neck - r_foot) / (drums * drum_h)
+        bk, bt, bb = _layers(self.near)
+        bd = _deep(self.near)
+        nrm = _normals(self.near)
+        info = []
+        for i in range(drums):
+            nch = r.choice(chips)
+            dx = r.uniform(-shift, shift)
+            dy = r.uniform(-shift, shift)
+            t = self.tone()
+            bites = [(r.uniform(0, math.tau), r.uniform(0.15, 0.5), r.uniform(*bite), r.random() < 0.6)
+                     for _ in range(nch)]
+            info.append((dx, dy, t, bites))
+
+        def rad_at(z):
+            return r_foot + (r_neck - r_foot) * (z - bz0) / (drums * drum_h)
+
+        def bitten(bites, a, top, depth_w, z_w):
+            dr = dz = 0.0
+            broke = 0.0
+            for (ba, hw, d, at_top) in bites:
+                if at_top != top:
+                    continue
+                da = math.atan2(math.sin(a - ba), math.cos(a - ba))
+                w = max(0.0, 1.0 - abs(da) / hw)
+                if w <= 0.0:
+                    continue
+                w = w ** 0.7
+                dr -= d * w * depth_w
+                dz += (-1 if top else 1) * d * 0.6 * w * z_w
+                broke = max(broke, w)
+            return dr, dz, broke
+
+        def flute_normal(a, u, rad):
+            """The true fluted surface's normal at angle a, u across the
+            flute (0 one arris, 1 the next)."""
+            drda = -flute_depth * math.pi * math.cos(math.pi * u) / span
+            nv = Vector((math.cos(a), math.sin(a), 0.0)) - Vector((-math.sin(a), math.cos(a), 0.0)) * (drda / rad)
+            nv.z = -slope
+            return nv.normalized()
+
+        def flank(i, z, top):
+            """A flank ring: (R, L), the vertex each face starting / ending
+            at point k uses (two at an arris, its sides' normals apart)."""
+            dx, dy, t, bites = info[i]
+            ring, left = [], []
+            for k in range(n):
+                a = yaw + math.tau * k / n
+                u = (k % samples) / samples
+                rad = rad_at(z) - flute_depth * math.sin(math.pi * u)
+                rad += noise.noise(Vector((math.cos(a) * 3.0, math.sin(a) * 3.0, z * 0.9))) * 0.035
+                dr, dz, broke = bitten(bites, a, top, 0.7, 1.0)
+                co = (bx0 + dx + math.cos(a) * (rad + dr), by0 + dy + math.sin(a) * (rad + dr), z + dz)
+                v = self.near.verts.new(co)
+                v[bb] = broke
+                if broke < 0.3:
+                    _set_normal(v, nrm, flute_normal(a, u, rad))
+                ring.append(v)
+                if k % samples == 0:
+                    w = self.near.verts.new(co)
+                    w[bb] = broke
+                    if broke < 0.3:
+                        _set_normal(w, nrm, flute_normal(a, 1.0, rad))
+                    left.append(w)
+                else:
+                    left.append(v)
+            return ring, left
+
+        def groove_ring(j, z):
+            # Between drum j-1 (its top) and drum j (its foot); the ends of
+            # the shaft have one neighbour.
+            below = info[j - 1] if j > 0 else None
+            above = info[j] if j < drums else None
+            nb = [x for x in (below, above) if x is not None]
+            dx = sum(x[0] for x in nb) / len(nb)
+            dy = sum(x[1] for x in nb) / len(nb)
+            ring = []
+            for k in range(m):
+                a = yaw + math.tau * k / m
+                rad = rad_at(z) - flute_depth * math.sin(math.pi * (k % samples) / samples) - chamfer - groove
+                rad += noise.noise(Vector((math.cos(a) * 3.0, math.sin(a) * 3.0, z * 0.9))) * 0.035
+                dr = 0.0
+                broke = 0.0
+                for x, top in ((below, True), (above, False)):
+                    if x is None:
+                        continue
+                    d_, _, b_ = bitten(x[3], a, top, 1.0, 0.0)
+                    dr = min(dr, d_)
+                    broke = max(broke, b_)
+                v = self.near.verts.new((bx0 + dx + math.cos(a) * (rad + dr), by0 + dy + math.sin(a) * (rad + dr), z))
+                v[bb] = broke
+                v[bd] = 1.0
+                ring.append(v)
+            return ring
+
+        def band(lo, hi, kind, t):
+            """Faces between two rings round the axis, any counts (a zipper
+            by angle), outward."""
+            i = j = 0
+            nl, nh = len(lo), len(hi)
+            while i < nl or j < nh:
+                if j >= nh or (i < nl and (i + 1) / nl <= (j + 1) / nh):
+                    f = self.near.faces.new((lo[i % nl], lo[(i + 1) % nl], hi[j % nh]))
+                    i += 1
+                else:
+                    f = self.near.faces.new((lo[i % nl], hi[(j + 1) % nh], hi[j % nh]))
+                    j += 1
+                f[bk] = kind
+                f[bt] = t
+
+        def quads(lo, hi, kind, t):
+            (lr, ll), (hr, hl) = lo, hi
+            for k in range(n):
+                k1 = (k + 1) % n
+                f = self.near.faces.new((lr[k], ll[k1], hl[k1], hr[k]))
+                f[bk] = kind
+                f[bt] = t
+
+        top_z = bz0 + drums * drum_h
+        g = groove_ring(0, bz0)
+        for i in range(drums):
+            z0 = bz0 + i * drum_h
+            t = info[i][2]
+            f0 = flank(i, z0 + JOINT / 2 + chamfer, False)
+            f1 = flank(i, z0 + drum_h - JOINT / 2 - chamfer, True)
+            g1 = groove_ring(i + 1, top_z if i == drums - 1 else z0 + drum_h)
+            band(g, f0[0], JOINTFACE, t)
+            quads(f0, f1, FACE, t)
+            band(f1[0], g1, JOINTFACE, t)
+            g = g1
+
     def drum(self, base, height, r0, r1, flutes=FLUTES, flute_depth=0.13, chamfer=0.07,
-             chips=1, bite=(0.12, 0.4), samples=4, yaw=None, tone=None, shift=0.03):
+             chips=1, bite=(0.12, 0.4), samples=4, yaw=None, tone=None, shift=0.03, caps=(True, True)):
         """A fluted drum, its foot's centre at `base`, radius r0 at the foot
         and r1 at the top (the shaft's taper), sharp arrises between the
         flutes, the ends chamfered so the joint between drums reads open.
         `chips` bites out of its top or bottom edge; set slightly off true
-        (`shift` m, a turn) as old drums sit."""
+        (`shift` m, a turn) as old drums sit. `caps` (foot, top): False
+        leaves that end open, for an end no one can see. (A standing stack
+        of drums: shaft(), cheaper.)"""
         r = self.rng
         bx, by, bz = base
         bx += r.uniform(-shift, shift)
@@ -290,7 +484,9 @@ class Piece:
                 f = self.near.faces.new((lo[i], lo[j], hi[j], hi[i]))
                 f[bk] = FACE if zi == 1 else JOINTFACE
                 f[bt] = t
-        for ring, z, flip in ((rings[0], 0.0, True), (rings[3], height, False)):
+        for ring, z, flip, cap in ((rings[0], 0.0, True, caps[0]), (rings[3], height, False, caps[1])):
+            if not cap:
+                continue
             c = self.near.verts.new((bx, by, bz + z))
             for i in range(n):
                 j = (i + 1) % n
@@ -299,9 +495,11 @@ class Piece:
                 f[bk] = JOINTFACE
                 f[bt] = t
 
-    def ring(self, base, profile, segments=48, tone=None, chips=1, bite=(0.1, 0.3), far=False):
+    def ring(self, base, profile, segments=48, tone=None, chips=1, bite=(0.1, 0.3), far=False, caps=(True, True)):
         """A turned moulding (a torus, an echinus): `profile` is
-        [(radius, z), ...] from the bottom up, revolved round `base`."""
+        [(radius, z), ...] from the bottom up, revolved round `base`.
+        `caps` (bottom, top): False leaves that end open (it sits on, or
+        under, something that covers it)."""
         r = self.rng
         bx, by, bz = base
         t = self.tone() if tone is None else tone
@@ -332,7 +530,9 @@ class Piece:
                 f = self.near.faces.new((lo[i], lo[j], hi[j], hi[i]))
                 f[bk] = FACE
                 f[bt] = t
-        for row, z, flip in ((rows[0], profile[0][1], True), (rows[-1], profile[-1][1], False)):
+        for row, z, flip, cap in ((rows[0], profile[0][1], True, caps[0]), (rows[-1], profile[-1][1], False, caps[1])):
+            if not cap:
+                continue
             c = self.near.verts.new((bx, by, bz + z))
             for i in range(segments):
                 j = (i + 1) % segments
@@ -392,6 +592,7 @@ class Piece:
         what looks up."""
         bm.normal_update()
         kind, tone, broke = _layers(bm)
+        deep = _deep(bm, make=False)
         col = bm.loops.layers.float_color.get("Col") or bm.loops.layers.float_color.new("Col")
         stone = STONE
         for f in bm.faces:
@@ -404,6 +605,8 @@ class Piece:
                 c = tuple(x * t for x in stone)
                 if k == JOINTFACE and not far:
                     c = mix(c, CREVICE, 0.35 if nz < 0.5 else 0.15)
+                if deep is not None and not far:
+                    c = mix(c, CREVICE, DEEP_DARK * v[deep])
                 if not far:
                     c = mix(c, STONE_FRESH, 0.75 * v[broke])
                 # Rain streaks: long vertical runs, darker under ledges.
@@ -432,31 +635,72 @@ class Piece:
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
         me.color_attributes.active_color = me.color_attributes["Col"]
-        for a in ("kind", "tone", "broke"):
+        given = None
+        if "nx" in me.attributes and not far:
+            xs = [[d.value for d in me.attributes[k].data] for k in NORMAL_LAYERS]
+            kinds = [d.value for d in me.attributes["kind"].data]
+            given = (xs, kinds)
+        for a in ("kind", "tone", "broke", "deep") + NORMAL_LAYERS:
             if a in me.attributes:
                 me.attributes.remove(me.attributes[a])
         me.polygons.foreach_set("use_smooth", [True] * len(me.polygons))
         me.set_sharp_from_angle(angle=math.radians(40.0 if not far else 30.0))
         me.update()
+        if given is not None:
+            (nx, ny, nz), kinds = given
+            corner = [tuple(c.vector) for c in me.corner_normals]
+            for poly in me.polygons:
+                if kinds[poly.index] != FACE:
+                    continue
+                for li in poly.loop_indices:
+                    vi = me.loops[li].vertex_index
+                    if nx[vi] or ny[vi] or nz[vi]:
+                        corner[li] = (nx[vi], ny[vi], nz[vi])
+            me.normals_split_custom_set(corner)
+            me.update()
         ob = bpy.data.objects.new(name, me)
         bpy.context.scene.collection.objects.link(ob)
         mat = bpy.data.materials.get("temple_stone") or bpy.data.materials.new("temple_stone")
         me.materials.append(mat)
         return ob, sum(len(p.vertices) - 2 for p in me.polygons)
 
-    def export(self):
+    def export(self, mid_of=None):
+        """Writes <name>.glb (meshes <name>, <name>_far) and
+        <name>.boxes.json. With `mid_of` (a piece's id) this Piece is that
+        piece's mid LOD instead: <mid_of>_mid.glb holding one mesh,
+        <mid_of>_mid, its count added to <mid_of>.boxes.json as mid_tris.
+        (A file of its own: scripts/temple_kit.gd takes every mesh in a
+        piece's .glb not named *_far as the near one.)"""
         for ob in list(bpy.data.objects):
             bpy.data.objects.remove(ob, do_unlink=True)
+        MODELS.mkdir(parents=True, exist_ok=True)
+        if mid_of is not None:
+            mid, mid_tris = self._object(self.near, mid_of + "_mid", False)
+            glb = MODELS / f"{mid_of}_mid.glb"
+            self._gltf(glb)
+            side = MODELS / f"{mid_of}.boxes.json"
+            info = json.loads(side.read_text())
+            info["mid_tris"] = mid_tris
+            side.write_text(json.dumps(info, indent=1) + "\n")
+            print(f"TEMPLE {mid_of}_mid: {mid_tris} tris -> {glb}")
+            self.near.free()
+            self.far.free()
+            return
         near, near_tris = self._object(self.near, self.name, False)
         far, far_tris = self._object(self.far, self.name + "_far", True)
-        MODELS.mkdir(parents=True, exist_ok=True)
         glb = MODELS / f"{self.name}.glb"
+        self._gltf(glb)
+        self._sidecar(glb, near_tris, far_tris)
+
+    def _gltf(self, glb):
         bpy.ops.export_scene.gltf(
             filepath=str(glb), export_format="GLB", use_selection=False, export_apply=False,
             export_yup=True, export_materials="EXPORT", export_vertex_color="NAME", export_vertex_color_name="Col",
             export_all_vertex_colors=False,
             export_normals=True, export_tangents=False, export_animations=False, export_cameras=False,
             export_lights=False, export_morph=False, export_skins=False)
+
+    def _sidecar(self, glb, near_tris, far_tris):
         boxes = []
         for lo, hi in self.boxes:
             # Godot (x, y, z) = Blender (x, z, -y).
