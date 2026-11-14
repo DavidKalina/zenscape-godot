@@ -80,6 +80,15 @@ float zs_silver_drive_smooth(vec2 p, float fp) {
 #include "res://shaders/reference_lake_glint.gdshaderinc"
 // The light's leans: the paint's warm and cool tones turn with the light.
 #include "res://shaders/light_leans.gdshaderinc"
+// Weather lane rain: rings on the rivers and lakes (zs_rain_pocks), and the
+// land wet by Weather.wet() (zs_weather.w): its colour times ZS_SOAK_DARK
+// (turf, rock) with ZS_SOAK_RICH of its saturation kept, a touch glossier
+// (ZS_SOAK_ROUGH, ZS_SOAK_SPEC: turf, rock). One global read when dry.
+#include "res://shaders/weather_rain_water.gdshaderinc"
+const vec2 ZS_SOAK_DARK = vec2(0.84, 0.78);
+const float ZS_SOAK_RICH = 1.12;
+const vec2 ZS_SOAK_ROUGH = vec2(0.74, 0.42);
+const vec2 ZS_SOAK_SPEC = vec2(0.3, 0.45);
 global uniform vec3 zs_palette_water;
 
 // Rock round: the painted rock (shaders/endless_rock.gdshaderinc); true is
@@ -1654,6 +1663,11 @@ void fragment() {
 	if (peak_tarn.w > 0.5) albedo = peak_tarn_shore(albedo, p, fp, pt_rw);
 	if (grass_skip == 2 && skip_grass) albedo = vec3(1.0, 0.0, 1.0);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
+	// The land wet (weather lane rain; nothing when dry).
+	// (Not the bed under the sea: glossed there, it shone through shallow
+	// water as a pale cyan-white sheet.)
+	float soak = zs_weather.w * (1.0 - snowy) * smoothstep(-0.5, 0.1, over);
+	if (soak > 0.0) albedo = mix(albedo, mix(vec3(luma(albedo)), albedo, ZS_SOAK_RICH) * mix(ZS_SOAK_DARK.x, ZS_SOAK_DARK.y, rocky), soak);
 	// Under a cloud's shadow the sun's share goes (the albedo the sun
 	// lights), the sky's fill (the emission below) stays.
 	float shade = zs_cloud_volume_shade(p);
@@ -1672,7 +1686,11 @@ void fragment() {
 	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
 	ROUGHNESS = mix(ROUGHNESS, pt_rw.x, pt_rw.y);
 	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(max(snowy, wet_sand), pk.y)) * (1.0 - shaded) * horizon.x;
-	NORMAL = normalize((VIEW_MATRIX * vec4(lit_n, 0.0)).xyz);
+	if (soak > 0.0) {
+		ROUGHNESS = mix(ROUGHNESS, mix(ZS_SOAK_ROUGH.x, ZS_SOAK_ROUGH.y, rocky), soak);
+		SPECULAR = mix(SPECULAR, mix(ZS_SOAK_SPEC.x, ZS_SOAK_SPEC.y, rocky) * (1.0 - shaded) * horizon.x, soak);
+	}
+	NORMAL =normalize((VIEW_MATRIX * vec4(lit_n, 0.0)).xyz);
 	// The hemisphere fill, as the isles' surfaces take it (environment
 	// ambient is off under LandscapeLighting).
 	// (On the ground's ice by its own normal: its triangles' tilts aren't its shape,
@@ -1846,6 +1864,8 @@ void fragment() {
 				rough += river_paws.x * river_paws.x * paw * smoothstep(river_paw_ripple.y * 0.04, river_paw_ripple.x * 0.22, r_fp);
 			}
 		}
+		float rain_on = zs_rain_on_water(p.xz); // weather lane rain
+		slope += zs_rain_pocks(p.xz, rain_on, r_fp, t);
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
@@ -1859,7 +1879,7 @@ void fragment() {
 		vec3 column = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
 		column = mix(column, river_tint_deep, smoothstep(river_tint_depths.x * 0.5, river_tint_depths.y, depth));
 		column *= zs_palette_water;
-		vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI;
+		vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 		vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
 		vec3 light = (ambient + key * 0.8) * river_light;
 		float through = depth / max(abs(eye.y), 0.15);
@@ -2029,6 +2049,7 @@ void fragment() {
 				sky = mix(sky, lit_cloud, cloud * river_cloud_mirror);
 			}
 		}
+		sky *= zs_wx_mirror(); // weather lane rain
 		float fres = river_fresnel.x + (1.0 - river_fresnel.x) * pow(1.0 - max(dot(eye, calm), 0.0), river_fresnel.y);
 		fres = clamp(fres * (1.0 + sl * river_slick.z), 0.0, 1.0);
 		fres *= 1.0 - river_paws.z * paw;
@@ -2039,6 +2060,7 @@ void fragment() {
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
 		vec3 warm_c = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y)));
 		disp = mix(disp, warm_c, clamp(spark, 0.0, 1.0));
+		disp = zs_rain_beaten(disp, sky * 0.5 + vec3(0.45), p.xz, rain_on, r_fp, t); // weather lane rain
 		if (peak_tarn.w > 0.5) disp = mix(disp, peak_tarn_water(p, eye, r_fp, t, ambient, key, shaded), peak_tarn_in(p.xz));
 		vec3 water_em = scene_linear_for_display(clamp(disp, vec3(0.0), vec3(1.0)));
 		ALBEDO = mix(ALBEDO, vec3(0.0), wet);

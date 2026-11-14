@@ -1,6 +1,6 @@
 extends "res://scripts/endless/region_doors.gd"
-## The ruin door between the regions (the default door of the doors world;
-## --door=cloud keeps the cloud walls of region_doors.gd): a ruin stands in
+## The ruin door between the regions (the door of the doors world; what it
+## shares with the lands is region_doors.gd): a ruin stands in
 ## each land, and flying into one, a ruined hall runs on far longer than its
 ## outside holds, and you come out of the other ruin in the other land.
 ##
@@ -153,10 +153,6 @@ var swaps := 0
 var _day := Color(1.0,0.95,0.86)
 var _glare := 0.0
 var _from_last := INF
-
-## Whether the ruin door runs (the cloud walls with --door=cloud).
-static func wanted_hall() -> bool:
-	return not "--door=cloud" in LaunchArgs.user_args()
 
 func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 	name = "Doors"

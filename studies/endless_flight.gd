@@ -300,6 +300,14 @@ var flaps := false
 var sea: MeshInstance3D
 ## The look (sky, light, haze, ground, sea), or null under --plain-look.
 var look: Node3D
+## The weather (scripts/endless/weather.gd), or null (--weather=off, or no
+## look): stepped before the look each frame; --weather-debug's line.
+var weather: Weather
+var _weather_debug: Label
+## A storm's lightning (scripts/endless/weather_lightning.gd), with the weather.
+var lightning: Node3D
+## The weather's rain and wet (scripts/endless/weather_rain.gd), with weather.
+var weather_rain: Node3D
 ## The grass carpet round the eye (off at the start under --no-grass), or
 ## null under --plain-look.
 var grass: Node3D
@@ -382,6 +390,7 @@ var _heading := 0.0
 ## turn to face the Peak.
 var _heading_given := false
 var _face_sun := false
+var _away_sun := false
 var _numbers := false
 var _alt := START_ALT
 var _alt_given := false
@@ -441,6 +450,9 @@ const SURGE_STREAK := 0.45
 ## The streaks' lift at a parry (Parry `streak`, 1 at the hit).
 const PARRY_STREAK := 1.2
 const STREAK_FLOW := 30.0
+## The rain at the eye (WeatherRain `here`) over which the streaks give way
+## to the rain's own (gone by .y).
+const STREAK_RAIN := Vector2(0.02,0.3)
 var _streaks: ColorRect
 var _streak_scale := 1.0
 var _wide := 0.0
@@ -577,6 +589,10 @@ func _ready() -> void:
 			var p := arg.get_slice("=",1).split(",")
 			if p.size() >= 2: _start = Vector2(float(p[0]),float(p[1]))
 		elif arg == "--heading=sun": _face_sun = true
+		elif arg == "--heading=away":
+			# Back to the sun (the rainbow's side; weather_sky_lights.gd).
+			_face_sun = true
+			_away_sun = true
 		elif arg.begins_with("--heading="):
 			_heading = -deg_to_rad(float(arg.get_slice("=",1)))
 			_heading_given = true
@@ -679,6 +695,15 @@ func _ready() -> void:
 		add_child(look)
 		look.setup(seed)
 		sea = look.sea
+		weather = Weather.from_args(seed)
+		look.weather = weather
+		if weather != null:
+			lightning = preload("res://scripts/endless/weather_lightning.gd").new()
+			add_child(lightning)
+			lightning.setup(self,weather)
+			weather_rain = preload("res://scripts/endless/weather_rain.gd").new()
+			add_child(weather_rain)
+			weather_rain.setup(weather)
 		# The start meadow clear of valley fog (EndlessClouds FOG_CLEAR).
 		if look.clouds != null: look.clouds.clear_fog_at(_start)
 		var collar_at := Vector3.ZERO
@@ -702,7 +727,7 @@ func _ready() -> void:
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
-			_heading = atan2(-s.x,-s.z)
+			_heading = atan2(-s.x,-s.z)+(PI if _away_sun else 0.0)
 	else:
 		_build_light()
 		_build_sea()
@@ -891,7 +916,7 @@ func _ready() -> void:
 	# come back (pirate_ship.gd `refill`).
 	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
 	if RegionDoors.wanted(world):
-		doors = HallDoors.new() if HallDoors.wanted_hall() else RegionDoors.new()
+		doors = HallDoors.new()
 		add_child(doors)
 		doors.setup(self,_start,_heading,seed)
 	if Finds.wanted(seed):
@@ -1146,6 +1171,15 @@ func _build_ui() -> void:
 			_region_debug.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 			_region_debug.add_theme_constant_override("outline_size",4)
 			layer.add_child(_region_debug)
+	if weather != null and weather.debug:
+		_weather_debug = Label.new()
+		_weather_debug.anchor_top = 1.0
+		_weather_debug.anchor_bottom = 1.0
+		_weather_debug.offset_top = -100.0
+		_weather_debug.offset_left = 16.0
+		_weather_debug.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
+		_weather_debug.add_theme_constant_override("outline_size",4)
+		layer.add_child(_weather_debug)
 	# The pause menu, over the rest of the layer: it takes Esc and the pad's
 	# Start in flight before `_unhandled_input` below does.
 	if not (_has_arg("--menus=old") or ui_old()):
@@ -1547,7 +1581,10 @@ func tick(delta: float) -> void:
 	# at its opening hour.
 	if look != null: look.cycle.held = stage != null and stage.holding()
 	if look != null and replay != null: replay.hour(look)
+	if weather != null: weather.step(delta,camera.global_position,look.wind_direction,look.cycle.held)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
+	if lightning != null: lightning.step(delta,look.cycle.held)
+	if weather_rain != null: weather_rain.step(delta,self)
 	FrameLog.mark(&"look")
 	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
@@ -1916,6 +1953,10 @@ func _streak_step(delta: float) -> void:
 	if not hand_landing.on_ground() and _streak_scale > 0.0:
 		var boost := Input.get_action_strength(&"fly_boost")*smoothstep(30.0,50.0,v)
 		want = (STREAK_TOP*smoothstep(STREAK_SPEED.x,STREAK_SPEED.y,v)+LOW_STREAK*_low_k+BOOST_STREAK*boost+SURGE_STREAK*float(plane.surge)+(PARRY_STREAK*float(parry.streak) if parry != null else 0.0))*_streak_scale
+		# In rain the wind lines, running out from the travel's point, read
+		# as drops radiating like stars against the dark sky: the rain's own
+		# streaks carry the speed there, so the lines give way to them.
+		if weather_rain != null: want *= 1.0-smoothstep(STREAK_RAIN.x,STREAK_RAIN.y,float(weather_rain.here))
 		var ahead: Vector3 = camera.global_position+plane.velocity.normalized()*200.0
 		if not camera.is_position_behind(ahead):
 			var view := get_viewport().get_visible_rect().size
@@ -2169,6 +2210,7 @@ func _show_region() -> void:
 
 func _show_hud() -> void:
 	_show_region()
+	if _weather_debug != null: _weather_debug.text = weather.note()+"  ·  "+look.sky_lights.note()+("\n"+lightning.note() if lightning != null else "")
 	_near_hud.key_name = "X" if Pad.using_pad() else "B"
 	if "plane_at" in _near_hud: _near_hud.plane_at = plane_figure.global_position
 	_near_hud.show_state(get_process_delta_time(),near,bool(plane.weighted) and not hand_landing.on_ground(),_events)

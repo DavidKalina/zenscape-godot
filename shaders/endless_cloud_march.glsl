@@ -53,7 +53,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[20].x the shade pass stepped as before (--cloud-shade=old); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square; spare[3] the collar's centre xz, outer radius, inner radius; spare[4] its base y, top y (world), turn (rad), on
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[19] the last weather map's texel offsets for the ceiling (low xy, high zw), spare[20].x the shade pass stepped as before (--cloud-shade=old), .y the ceiling bounds the last map too (weather_blend); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square; spare[3] the collar's centre xz, outer radius, inner radius; spare[4] its base y, top y (world), turn (rad), on
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -141,6 +141,19 @@ const float OVER = 70.0;
 // The shade pass's heights apart (m; shadow_pass).
 const float SHADE_PLANE = 10.0;
 const float SLOPE_MAX = 5.0;
+// Under weather a sample's height in its cloud (the light's `h`) is taken
+// against its column's top raised by its texel's slope times this (m), and
+// the sky's light on it no longer probes straight up for cloud overhead (the
+// crease). A grown cloud's belly (cloud overhead, h ~0.1) and its sloped
+// sides and crown beside it (open overhead, h 1 at a column's own top) were
+// lit as two classes, so its underside showed as a dark, hard-edged patch
+// shaped by the map's footprint inside a white rim. The weather's own height
+// terms (wx_sky, wx_sun, wx_base_lift) darken it low down instead. By the
+// cover up to WX_FORM_COVER, and out again from a shower's severity to a
+// storm's (WX_FORM_SEV): fair and a storm are as they were.
+const float WX_H_REACH = 120.0;
+const float WX_FORM_COVER = 0.3;
+const vec2 WX_FORM_SEV = vec2(0.5, 1.0);
 // How far past a rim (m) the billows may still reach.
 const float RIM_MARGIN = 50.0;
 // The slopes' stencil, in texels each way (wider is smoother).
@@ -199,6 +212,13 @@ float sstep(float a, float b, float x) {
 	return t * t * (3.0 - 2.0 * t);
 }
 
+// How far the weather's light form (WX_H_REACH) is in: by the cover (0 fair),
+// all of it to a shower's severity, none in a storm, whose closed overcast
+// keeps the crease's dark heaps (without it the deck read a flat milk grey).
+float wx_form() {
+	return sstep(0.0, WX_FORM_COVER, P.spare[5].x) * (1.0 - sstep(WX_FORM_SEV.x, WX_FORM_SEV.y, P.spare[7].y));
+}
+
 // pcg3d (Jarzynski and Olano), on the cell's integer coordinates.
 uvec3 pcg3d(uvec3 v) {
 	v = v * 1664525u + 1013904223u;
@@ -246,6 +266,8 @@ float region_cover(vec2 f) {
 // covering top and the lowest covering base; while nothing covers, the
 // nearest cloud's base and a top falling away past its rim, so the map
 // filters smoothly into clear air.
+bool wx_on();
+const float WX_SEAM = 160.0;
 void take(inout vec2 layer, inout float gap, float top, float base, float out_by) {
 	if (out_by <= 0.0) {
 		if (gap > 0.0) {
@@ -255,6 +277,16 @@ void take(inout vec2 layer, inout float gap, float top, float base, float out_by
 			// Two clouds one over the other, apart: the thicker keeps the
 			// texel (joined, they would stand as a pillar between them).
 			if (top - base > layer.x - layer.y) layer = vec2(top, base);
+		} else if (g_new && wx_on()) {
+			// Under weather grown clouds overlap at unlike bases: the lower
+			// base is taken only as deep as the lower piece is thick here, so
+			// at its bubbles' rims the base climbs to the other's (a hard step
+			// there showed as a flat grey polygon on the cloud's face).
+			bool new_low = base < layer.y;
+			float lo_th = new_low ? top - base : layer.x - layer.y;
+			float lo_b = min(base, layer.y);
+			float hi_b = max(base, layer.y);
+			layer = vec2(max(layer.x, top), mix(hi_b, lo_b, sstep(0.0, WX_SEAM, lo_th)));
 		} else {
 			layer = vec2(max(layer.x, top), min(layer.y, base));
 		}
@@ -430,6 +462,12 @@ float cluster_gate(vec2 f) {
 	return sstep(CLUSTER_GATE.x, CLUSTER_GATE.y, n);
 }
 
+// The weather's push on the field and its light (scripts/endless/weather.gd).
+// The import rebuilds this shader only when this file changes: after an edit
+// to the include alone, change this file too (or it runs the old include).
+// Include edit: 2026-11-13 cost.
+#include "weather_cloud.glslinc"
+
 // --- Cloud life (P.spare[1].x = 1; --cloud-life=0 is the rigid field) ---------------
 // Each cell keeps its own clock: a cycle of PERIOD seconds (by the cell's own
 // pace) in which its cloud grows from a thin wisp, stands, and thins away to
@@ -471,6 +509,8 @@ struct Cloud {
 	float profile;
 	float ext;
 	bool low;
+	// The weather's push on it if it grows (0: fair, a low cloud, a wisp).
+	float wx;
 };
 
 // The cloud of cell `c` before it is lifted over the ground (false: none):
@@ -481,14 +521,30 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	k.life = cell_life(c, big, cyc);
 	uint salt = uint(P.drift.z) + (big ? 101u : 211u) + cyc * 977u;
 	k.salt = salt;
+	k.wx = 0.0;
 	bool lifed = P.spare[1].x > 0.5;
-	if (lifed && k.life < 0.01) return false;
+	// (Under weather the life is raised below, so only none at all is out.)
+	if (lifed && k.life < (big && wx_on() ? 1e-6 : 0.01)) return false;
 	vec3 h = hash3(c, salt);
 	k.middle = (vec2(c) + 0.5 + JIT * (h.xy * 2.0 - 1.0)) * cell;
 	float gate = cluster_gate(k.middle);
 	if (!big) gate = mix(0.02, 1.0, gate * gate);
-	float here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate * (lifed ? LIFE_COVER : 1.0);
-	if (h.z >= here) return false;
+	float region = region_cover(k.middle);
+	float here = region * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate * (lifed ? LIFE_COVER : 1.0);
+	// The weather (weather_cloud.glslinc): the broad cells pushed.
+	float wp = 0.0;
+	float admit = 1.0;
+	bool by_weather = false;
+	if (big && wx_on()) {
+		wp = wx_push(k.middle + g_drift);
+		if (h.z >= here) {
+			float here_w = mix(region, REGION_SCALE.y, wp) * cover * BIG_COVER2 * mix(gate, 1.0, wp) * (lifed ? LIFE_COVER : 1.0) * (1.0 + WX_MORE * wp);
+			if (h.z >= here_w) return false;
+			admit = sstep(0.0, WX_ADMIT, here_w - h.z);
+			by_weather = true;
+		}
+	}
+	if (h.z >= here && !by_weather) return false;
 	vec3 s = hash3(c, salt + 1u);
 	vec3 m = hash3(c, salt + 2u);
 	vec2 rr = big ? BIG_R2 : SMALL_R2;
@@ -503,32 +559,34 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	vec2 qb;
 	k.profile = PROFILE;
 	k.low = false;
+	// A cell the weather alone stands up is a mid cumulus: no towers, no low cloud.
+	float kind_at = by_weather ? 1.0 : s.y;
 	if (!big) {
 		k.kind = KIND_PUFF;
 		k.low = true;
 		k.base = mix(SMALL_BASE.x, SMALL_BASE.y, s.y);
 		nr = vec2(2.0, 5.0); k.L = 0.45; k.W = 0.35; k.main_r = 0.65; k.br = vec2(0.4, 0.62); k.hs = vec2(0.7, 1.1);
 		tall = vec2(0.6, 1.25); belly = vec2(0.35, 0.55); qb = vec2(0.5, 0.85);
-	} else if (s.y < FAIR_SHARE) {
+	} else if (kind_at < FAIR_SHARE) {
 		k.kind = KIND_FAIR;
 		k.low = true;
 		k.base = mix(LOW_BASE.x, LOW_BASE.y, s.z);
 		nr = vec2(3.0, 6.0); k.L = 0.55; k.W = 0.38; k.main_r = 0.62; k.br = vec2(0.35, 0.6); k.hs = vec2(0.7, 1.1);
 		tall = vec2(0.55, 1.0); belly = vec2(0.3, 0.5); qb = vec2(0.45, 0.8);
-	} else if (s.y < FAIR_SHARE + TOWER_SHARE2) {
+	} else if (kind_at < FAIR_SHARE + TOWER_SHARE2) {
 		k.kind = KIND_TOWER;
 		k.base = mix(TOWER_BASE.x, TOWER_BASE.y, s.z);
 		nr = vec2(5.0, 9.0); k.L = 0.5; k.W = 0.45; k.main_r = 0.6; k.br = vec2(0.4, 0.6); k.hs = vec2(0.6, 1.0);
 		tall = vec2(1.0, 1.5); belly = vec2(0.25, 0.4); qb = vec2(0.45, 0.7);
 		k.profile = 0.4;
 		k.r *= 1.2;
-	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE) {
+	} else if (kind_at < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE) {
 		k.kind = KIND_ROW;
 		k.low = t3 < 0.4;
 		k.base = k.low ? mix(LOW_BASE.x, LOW_BASE.y + 30.0, s.z) : mix(MID_BASE.x, MID_BASE.y, s.z);
 		nr = vec2(6.0, 9.0); k.L = 1.15; k.W = 0.18; k.main_r = 0.5; k.br = vec2(0.36, 0.55); k.hs = vec2(0.8, 1.15);
 		tall = vec2(0.55, 0.95); belly = vec2(0.32, 0.5); qb = vec2(0.5, 0.8);
-	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE + WISP_SHARE) {
+	} else if (kind_at < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE + WISP_SHARE) {
 		k.kind = KIND_WISP;
 		k.base = mix(180.0, 320.0, s.z);
 		nr = vec2(2.0, 4.0); k.L = 1.0; k.W = 0.4; k.main_r = 0.6; k.br = vec2(0.5, 0.8); k.hs = vec2(0.9, 1.1);
@@ -542,12 +600,37 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	}
 	// Stretched along its axis by up to half again.
 	k.L *= mix(0.8, 1.45, m.y);
+	// The weather: only the high layer grows (no scud at the plane's height),
+	// wider, its base lower; a low cloud the weather alone would stand up is
+	// never placed.
+	bool wx_grows = wp > 0.0 && !k.low && k.kind != KIND_WISP;
+	if (by_weather && k.low) return false;
+	float r0 = k.r;
+	if (wx_grows) {
+		k.wx = wp;
+		// Spread by the push's square: a shower's cells grow a little and keep sky
+		// between them, a storm's run together.
+		k.r =mix(k.r, cell * BIG_R2.y, WX_EVEN * wp * wp) * (1.0 + WX_WIDE * wp * wp);
+		k.base = max(k.base - WX_DROP * wp, LOW_BASE.y + 30.0);
+	}
 	k.n = int(nr.x) + min(int(m.z * (nr.y - nr.x + 1.0)), int(nr.y - nr.x));
 	k.ext = length(vec2(k.L, k.W)) + max(k.br.y, k.main_r) * (1.0 + WOB);
-	k.r = min(k.r, EXT_MAX * cell / k.ext);
+	k.r = min(k.r, (wx_grows ? mix(EXT_MAX, WX_EXT, wp * wp) : EXT_MAX) * cell / k.ext);
 	k.tall = mix(tall.x, tall.y, t2) * DOME;
 	k.belly = mix(belly.x, belly.y, fract(m.y * 5.13 + s.x));
 	k.qb = mix(qb.x, qb.y, fract(m.z * 3.71 + h.x));
+	if (wp > 0.0) {
+		// Wider far more than taller: its domes flatten as it spreads (a
+		// heaped mass, not a stack of towers).
+		if (wx_grows) {
+			k.tall *= (1.0 + WX_TALL * wp) / sqrt(max(k.r / r0, 1.0));
+			k.belly *= 1.0 + WX_BELLY * wp;
+			k.qb *= 1.0 + WX_BOWL * wp;
+		}
+		// Whole for more of its life, and a cell the weather stood up grown
+		// in from a wisp as the cover lifts past its hash.
+		k.life = pow(k.life, mix(1.0, WX_LIFE, wp)) * admit;
+	}
 	return true;
 }
 
@@ -560,8 +643,17 @@ void recipe_lift(inout Cloud k, ivec2 c, bool big) {
 	vec3 h = hash3(c, salt);
 	vec3 s = hash3(c, salt + 1u);
 	vec2 fl = cloud_floor(k.middle + g_drift, k.r * k.ext, k.low);
-	if (fl.x > k.base) k.base = fl.x + 30.0 * fract(s.y * 13.7 + h.x);
+	// Under weather a grown cloud is lifted less, by its push: lifted whole over
+	// the Peak's towers it lost its height under TOP_MAX (a thin flat sheet,
+	// combed into strands, or none: an open patch in a storm). Unlifted, the
+	// map's floor (weather_texel) drapes its base over the high ground, so the
+	// towers stand up into it.
+	if (fl.x > k.base) k.base = mix(fl.x + 30.0 * fract(s.y * 13.7 + h.x), k.base, k.wx * WX_UNLIFT);
 	if (k.low) k.tall *= mix(1.0, 0.6, fl.y);
+	// Under weather a broad cloud's domes are held round under the slab's top
+	// (its tallest bubble stands base + H (LIFT + 1.2)): cut level there, a
+	// grown cloud showed a flat grey roof.
+	if (big && wx_on()) k.tall = min(k.tall, max(TOP_MAX - k.base, 0.0) / ((LIFT + 1.2) * k.r * k.main_r));
 	k.H = min(k.r * k.main_r * k.tall, TOP_MAX - k.base);
 }
 
@@ -609,7 +701,7 @@ float yields(Cloud k, ivec2 c, bool big, float cover) {
 		if (big && !other_big) continue;
 		float cell = other_big ? BIG : SMALL;
 		ivec2 g = ivec2(floor(k.middle / cell));
-		float most = reach + EXT_MAX * cell;
+		float most = reach + (other_big && wx_on() ? WX_EXT : EXT_MAX) * cell;
 		for (int y = -2; y <= 2; y++) {
 			for (int x = -2; x <= 2; x++) {
 				ivec2 n = g + ivec2(x, y);
@@ -684,57 +776,86 @@ vec3 bubble_span(Cloud k, ivec2 c, uint salt, int i, vec2 f) {
 void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout float low_gap, inout vec2 high, inout float high_gap) {
 	float cell = big ? BIG : SMALL;
 	ivec2 g = ivec2(floor(f / cell));
-	for (int y = -1; y <= 1; y++) {
-		for (int x = -1; x <= 1; x++) {
-			ivec2 c = g + ivec2(x, y);
-			Cloud k;
-			if (!recipe_shape(c, big, cover, k)) continue;
-			bool lifed = P.spare[1].x > 0.5;
-			if (lifed && k.low == g_high) continue;
-			recipe_lift(k, c, big);
-			float d = length(f - k.middle);
-			float top_c = -1e4;
-			float base_c = 1e4;
-			float out_c = d - k.ext * k.r;
-			// Whether a puff or a wisp yields is asked over its reach and a
-			// margin round it, where its rim's height could still be the
-			// nearest rim a texel keeps and so bend a neighbour's smoothed edge
-			// (farther off it only gives the leap a shorter, safe distance).
-			if (out_c < YIELD_NEAR && P.flash.z > 0.5 && (!big || k.kind == KIND_WISP)) {
-				float press = yields(k, c, big, cover);
-				if (press >= 0.999) continue;
-				k.life *= 1.0 - press;
-			}
-			if (lifed) {
-				if (k.life < 0.01) continue;
-				apply_life(k);
-				out_c = d - k.ext * k.r;
-			}
-			// Past the rims the map keeps the nearest rim's height as the
-			// base (the cloud's lowest point there would drag the smoothed
-			// base down at the rim into hanging strands).
-			float rim_c = k.base + k.H * 0.4;
-			if (out_c <= 0.0) {
-				out_c = 1e9;
-				for (int i = 0; i < 9; i++) {
-					if (i >= k.n) break;
-					vec3 b = bubble_span(k, c, k.salt, i, f);
-					if (b.x > -1e3) {
-						top_c = max(top_c, b.x);
-						base_c = min(base_c, b.y);
-					} else if (b.y < out_c) {
-						out_c = b.y;
-						rim_c = b.z;
-					}
+	// Under weather the broad cells' grown clouds reach WX_EXT cells: 5x5.
+	int span = big && wx_on() ? 2 : 1;
+	bool lifed = P.spare[1].x > 0.5;
+	// A ring cell's cloud reaches at most `most` from its middle: one whose
+	// middle is farther than that past the layer's nearest rim so far can
+	// neither cover f nor give a nearer rim (take() would do nothing), so its
+	// recipe is skipped. Exact. The low pass's clouds never grow (EXT_MAX).
+	// The inner 3x3 first (ci < 9), so the gap the ring meets is tight.
+	float most = (lifed && !g_high ? EXT_MAX : WX_EXT) * cell;
+	int cells = span > 1 ? 25 : 9;
+	for (int ci = 0; ci < cells; ci++) {
+		ivec2 o;
+		if (ci < 9) o = ivec2(ci % 3 - 1, ci / 3 - 1);
+		else {
+			int r = ci - 9;
+			o = r < 5 ? ivec2(r - 2, -2) : r < 10 ? ivec2(r - 7, 2) : r < 13 ? ivec2(-2, r - 11) : ivec2(2, r - 14);
+		}
+		ivec2 c = g + o;
+		uint rcyc;
+		cell_life(c, big, rcyc);
+		uint rsalt = uint(P.drift.z) + (big ? 101u : 211u) + rcyc * 977u;
+		// The low pass keeps only low clouds: a broad cell is low only as a
+		// fair cumulus or a row (recipe_shape's kinds by s.y), never a cloud
+		// the weather stands up. Any other kind is skipped before its recipe.
+		if (big && lifed && !g_high) {
+			float sy = hash3(c, rsalt + 1u).y;
+			if (sy >= FAIR_SHARE && (sy < FAIR_SHARE + TOWER_SHARE2 || sy >= FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE)) continue;
+		}
+		if (ci >= 9) {
+			vec3 rh = hash3(c, rsalt);
+			float past = length(f - (vec2(c) + 0.5 + JIT * (rh.xy * 2.0 - 1.0)) * cell) - most;
+			float gap_now = lifed ? (g_high ? high_gap : low_gap) : max(low_gap, high_gap);
+			if (past > 0.0 && past >= gap_now) continue;
+		}
+		Cloud k;
+		if (!recipe_shape(c, big, cover, k)) continue;
+		if (lifed && k.low == g_high) continue;
+		recipe_lift(k, c, big);
+		float d = length(f - k.middle);
+		float top_c = -1e4;
+		float base_c = 1e4;
+		float out_c = d - k.ext * k.r;
+		// Whether a puff or a wisp yields is asked over its reach and a
+		// margin round it, where its rim's height could still be the
+		// nearest rim a texel keeps and so bend a neighbour's smoothed edge
+		// (farther off it only gives the leap a shorter, safe distance).
+		if (out_c < YIELD_NEAR && P.flash.z > 0.5 && (!big || k.kind == KIND_WISP)) {
+			float press = yields(k, c, big, cover);
+			if (press >= 0.999) continue;
+			k.life *= 1.0 - press;
+		}
+		if (lifed) {
+			if (k.life < 0.01) continue;
+			apply_life(k);
+			out_c = d - k.ext * k.r;
+		}
+		// Past the rims the map keeps the nearest rim's height as the
+		// base (the cloud's lowest point there would drag the smoothed
+		// base down at the rim into hanging strands).
+		float rim_c = k.base + k.H * 0.4;
+		if (out_c <= 0.0) {
+			out_c = 1e9;
+			for (int i = 0; i < 9; i++) {
+				if (i >= k.n) break;
+				vec3 b = bubble_span(k, c, k.salt, i, f);
+				if (b.x > -1e3) {
+					top_c = max(top_c, b.x);
+					base_c = min(base_c, b.y);
+				} else if (b.y < out_c) {
+					out_c = b.y;
+					rim_c = b.z;
 				}
 			}
-			if (top_c > -1e3) {
-				if (k.low) take(low, low_gap, sea + top_c, sea + base_c, 0.0);
-				else take(high, high_gap, sea + top_c, sea + base_c, 0.0);
-			} else {
-				if (k.low) take(low, low_gap, sea + rim_c, sea + rim_c, out_c);
-				else take(high, high_gap, sea + rim_c, sea + rim_c, out_c);
-			}
+		}
+		if (top_c > -1e3) {
+			if (k.low) take(low, low_gap, sea + top_c, sea + base_c, 0.0);
+			else take(high, high_gap, sea + top_c, sea + base_c, 0.0);
+		} else {
+			if (k.low) take(low, low_gap, sea + rim_c, sea + rim_c, out_c);
+			else take(high, high_gap, sea + rim_c, sea + rim_c, out_c);
 		}
 	}
 }
@@ -758,7 +879,7 @@ vec4 weather_texel(vec2 xz) {
 			g_drift = P.spare[1].zw;
 			f = xz + g_phase - g_drift;
 			lattice_new(f, true, sea, cover, low, low_gap, high, high_gap);
-			lattice_new(f, false, sea, cover, low, low_gap, high, high_gap);
+			// (The small cells' puffs are all low: none is kept here.)
 		}
 	} else {
 		lattice(f, true, sea, cover, low, low_gap, high, high_gap);
@@ -938,6 +1059,8 @@ struct Sample {
 	float pocket;
 	float free;
 	float collar;
+	// 1 where the low layer gives the sample.
+	float low;
 };
 
 // How far `p` stands clear of one layer's cloud (m, a lower bound) from its
@@ -951,7 +1074,7 @@ float layer_free(float y, float top, float base) {
 }
 
 Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
-	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0);
+	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0, 0.0);
 	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
 	vec4 w = weather_smooth(p.xz);
 	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
@@ -1008,6 +1131,9 @@ Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
 		// Thin cloud in the high layer (the wisps, the mid cloud's very rims)
 		// frays into strands.
 		float thin = in_h > in_l ? 1.0 - sstep(10.0, 40.0, w.z - w.w) : 0.0;
+		// Under weather not on a grown cloud: its thin rims and sheets combed
+		// along x streaked its faces (seen from near x, a fan of bright rays).
+		if (thin > 0.0 && wx_on()) thin *= 1.0 - wx_push(p.xz);
 		if (thin > 0.0 && d > 0.0) {
 			// Streaked along the field's x, as wind-combed strands.
 			float strand = textureLod(cauliflower, (p + boil * 2.0) * vec3(1.0 / 260.0, 1.0 / 24.0, 1.0 / 55.0), 0.0).r;
@@ -1022,8 +1148,18 @@ Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
 	if (d > 0.0) {
 		s.density = d;
 		s.h = hh;
+		float form = wx_form();
+		if (form > 0.0) {
+			// Against the top up the slope (WX_H_REACH x the slope), not the
+			// column's own top.
+			bool hi = in_h > in_l;
+			float tp = hi ? w.z : w.x;
+			float bs = hi ? w.w : w.y;
+			s.h = clamp((p.y - bs) / max(tp + (hi ? slope.y : slope.x) * WX_H_REACH * form - bs, 4.0), 0.0, 1.0);
+		}
 		s.pocket = wisp;
 		s.sigma = mix(SIGMA, SIGMA_IN, immersed);
+		s.low = in_h > in_l ? 0.0 : 1.0;
 	}
 	return s;
 }
@@ -1204,10 +1340,23 @@ void ceiling_pass() {
 	ivec2 texels = textureSize(weather, 0);
 	float top = -1e3;
 	float bottom = 1e4;
+	// Eased (scripts/cloud_volume_effect.gd weather_blend, spare[20].y 1):
+	// the map the passes read runs from the last whole map (bound as
+	// `ceiling` here) into this one through the cycle, so the ceiling bounds
+	// both, the last map's texel at the same field point (spare[19], texel
+	// offsets low xy, high zw); a layer with body in either counts both.
+	bool with_prev = P.spare[20].y > 0.5;
+	ivec4 po = ivec4(P.spare[19]);
 	for (int y = -CEILING_BLOCK; y < 2 * CEILING_BLOCK; y += 2) {
 		for (int x = -CEILING_BLOCK; x < 2 * CEILING_BLOCK; x += 2) {
 			ivec2 t = clamp(block * CEILING_BLOCK + ivec2(x, y), ivec2(0), texels - 1);
 			vec4 w = texelFetch(weather, t, 0);
+			if (with_prev) {
+				vec2 al = texelFetch(ceiling, clamp(t + po.xy, ivec2(0), texels - 1), 0).xy;
+				vec2 ah = texelFetch(ceiling, clamp(t + po.zw, ivec2(0), texels - 1), 0).zw;
+				if (w.x > w.y || al.x > al.y) w.xy = vec2(max(w.x, al.x), min(w.y, al.y));
+				if (w.z > w.w || ah.x > ah.y) w.zw = vec2(max(w.z, ah.x), min(w.w, ah.y));
+			}
 			// Only a layer with any body counts.
 			if (w.x > w.y) {
 				top = max(top, w.x);
@@ -1421,6 +1570,7 @@ void march_pass() {
 
 	bool faced = false;
 	float turned = 1.0;
+	float wx_form_k = wx_form();
 	int steps = min(int(P.quality.x), STEPS_MAX);
 	int taps_full = min(int(P.quality.y), TAPS_MAX);
 	float T = 1.0;
@@ -1498,8 +1648,13 @@ void march_pass() {
 			float tau = od * SUN_SIGMA;
 			float sky_open = 1.0;
 			if (T > 0.25) {
-				float up = density_cheap(p + vec3(0.0, 14.0, 0.0)) * 14.0 + density_cheap(p + vec3(0.0, 40.0, 0.0)) * 28.0;
-				sky_open = mix(CREASE, 1.0, exp(-up * UP_SIGMA * 2.0));
+				// Under weather the cloud is dark low down by its height (s.h,
+				// wx_sky): no probes (the collar keeps them).
+				float by_h = wx_form_k * (1.0 - s.collar);
+				if (by_h < 1.0) {
+					float up = density_cheap(p + vec3(0.0, 14.0, 0.0)) * 14.0 + density_cheap(p + vec3(0.0, 40.0, 0.0)) * 28.0;
+					sky_open = mix(mix(CREASE, 1.0, exp(-up * UP_SIGMA * 2.0)), 1.0, by_h);
+				}
 			}
 			float sun_light = 0.0;
 			float weight = 1.0;
@@ -1516,6 +1671,19 @@ void march_pass() {
 			float beer = exp(-tau);
 			float ambient = SKY * sky_open * mix(mix(0.32, COLLAR_UNDER, s.collar), 1.0, s.h) * mix(1.0, DEEP, deep * (1.0 - COLLAR_DEEP_CUT * s.collar)) * mix(1.0, 0.45, beer) * mix(1.0, COLLAR_SKY, s.collar);
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0);
+			// The weather (weather_cloud.glslinc): dark low down, the tops lit.
+			if (wx_light_on() && s.collar < 0.5) {
+				// A cloud under the high layer's deck (a low cloud, the cloud you
+				// fly into) lit as that deck's base, not as a sunlit top: its own
+				// light taps never reach the deck, so it stayed a white lens under
+				// a storm (weather_cloud.glslinc wx_under).
+				float under = s.low > 0.5 ? wx_under(p) : 0.0;
+				float hw = mix(s.h, 0.0, under);
+				float wsky = wx_sky(p, hw);
+				ambient *= wsky * wx_base_lift(hw) * mix(1.0, 0.32 / mix(0.32, 1.0, s.h), under);
+				bounce *= wsky;
+				sun_light *= wx_sun(wsky, hw) * wx_far_sun(length(p.xz - ro.xz)) * mix(1.0, WX_UNDER_SUN, under);
+			}
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
 			acc_a += w * (1.0 - immersed) * vec4(ambient, sun_light, bounce, 0.0);
@@ -1536,6 +1704,22 @@ void march_pass() {
 			// After a leap the next step jittered afresh, so where the steps
 			// fall on the cloud never shows as contours.
 			if (s.free > step) started = false;
+		}
+	}
+	// Under weather the overcast runs on past the map's reach to the horizon
+	// (weather_cloud.glslinc wx_far): a ray leaving the slab at the reach
+	// still in the cloud's heights meets the far cloud there.
+	if (wx_light_on() && T > 0.03 && P.band.w > 0.0) {
+		float t_r = P.band.z / level;
+		if (t_out >= t_r * 0.999 && t_solid > t_r) {
+			vec4 far = wx_far(ro + rd * t_r, key);
+			float w = T * far.w;
+			acc_a += w * (1.0 - immersed) * vec4(far.xyz, 0.0);
+			float t_far = t_r * WX_FAR_AT;
+			met += w * t_far;
+			crown += w * 0.4;
+			if (!hit) t_first = t_far;
+			T *= 1.0 - far.w;
 		}
 	}
 	// The fog and the cloud, the nearer over the farther (they seldom share

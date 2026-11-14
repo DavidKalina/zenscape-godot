@@ -13,6 +13,9 @@ render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabl
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/cumulus_light.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+#include "res://shaders/weather.gdshaderinc"
+#include "res://shaders/weather_lightning.gdshaderinc"
+#include "res://shaders/weather_bow.gdshaderinc"
 
 uniform sampler2D cloud_light : filter_nearest, repeat_disable;
 uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
@@ -53,6 +56,8 @@ uniform float fog_gain = 1.0;
 
 // How far the midday cloud moves toward cleaner cream and a cooler shade.
 const float CLEAN_DAY = 0.45;
+const vec3 WX_SHADE_COOL = vec3(0.86, 0.97, 1.16);
+const vec3 WX_SUN_COOL = vec3(0.93, 0.98, 1.05);
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -80,6 +85,10 @@ void fragment() {
 	float clean = smoothstep(0.2, 0.5, sun.y) * CLEAN_DAY;
 	c_sun = mix(c_sun, vec3(1.0, 0.975, 0.93) * max(c_sun.r, max(c_sun.g, c_sun.b)), clean);
 	c_shade *= mix(vec3(1.0), vec3(0.88, 0.97, 1.12), clean);
+	// Under weather (zs_weather.y its severity) the cloud keeps a little of the
+	// sky's cool blue: a storm's grey is a slate, never pure greyscale.
+	c_shade *= mix(vec3(1.0), WX_SHADE_COOL, zs_weather.y);
+	c_sun *= mix(vec3(1.0), WX_SUN_COOL, zs_weather.y);
 	float toward_sun = max(dot(rd, sun), 0.0);
 	vec4 terms = a / cloud_a;
 	float fog_share = clamp(terms.w, 0.0, 1.0);
@@ -105,6 +114,8 @@ void fragment() {
 	vec3 col = lit + glow_col * glow * (1.0 + 0.7 * pow(toward_sun, 3.0)) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	vec3 painted = mix(c_shade * 0.55, c_sun * 0.9, bright) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	col = mix(col, painted, NIGHT_TINT * zs_night);
+	// A storm's lightning lighting the cloud from inside (weather_lightning.gdshaderinc).
+	vec3 flash = zs_lightning_cloud(eye + rd * met, b.z / cloud_a, zs_lightning_lum(col), sea_y);
 
 	// The haze between: the land's own by distance, thinner the higher the
 	// air it crosses (exponential air over the sea).
@@ -125,6 +136,9 @@ void fragment() {
 	// SUN_SCATTER_SUN over SUN_SCATTER, with zs_haze_sun).
 	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.45 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
 	col = mix(col, sky, fog);
+	col += flash * (1.0 - 0.7 * fog);
+	// The rainbow stands in the rain in front of far cloud (weather_bow).
+	col += zs_bow_far(rd, met, dome);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the
 	// sun's disc never shines through a thick body.

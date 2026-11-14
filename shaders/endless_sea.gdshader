@@ -26,12 +26,15 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+#include "res://shaders/weather_bow.gdshaderinc"
 #include "res://shaders/reference_tonemap.gdshaderinc"
 #include "res://shaders/reference_lake_lighting.gdshaderinc"
 #include "res://shaders/reference_lake_glint.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 // The sun's glint turns with the sun's hue (light_leans).
 #include "res://shaders/light_leans.gdshaderinc"
+// Weather lane rain: rings and a beaten grey where it rains (zs_rain_pocks).
+#include "res://shaders/weather_rain_water.gdshaderinc"
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -1363,6 +1366,8 @@ void fragment() {
 		detail *= 1.0 - swim_slick;
 		wake_slope *= 1.0 - swim_slick * 0.6;
 	}
+	float rain_on = zs_rain_on_water(rest_xz); // weather lane rain
+	slope += zs_rain_pocks(rest_xz, rain_on, footprint, t);
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
@@ -1436,7 +1441,7 @@ void fragment() {
 	column = mix(column, tint_abyss, smoothstep(tint_depths.z, tint_depths.w, water_depth));
 	column = mix(tint_shallow, column, smoothstep(0.0, tint_depths.x, water_depth) * 0.6 + 0.4);
 	column *= zs_palette_water;
-	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI;
+	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 	vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
 	vec3 light = (ambient + key * 0.8) * water_light;
 	// The body: the water's light across the wave, darker in the troughs and
@@ -1597,6 +1602,7 @@ void fragment() {
 			sky = mix(sky, lit_cloud, cloud * cloud_mirror);
 		}
 	}
+	sky *= zs_wx_mirror(); // weather lane rain
 	float mirrored = 0.0;
 	vec3 mirror = vec3(0.0);
 	if (mirror_steps > 0 && fresnel > 0.05) {
@@ -1718,6 +1724,7 @@ void fragment() {
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
 	vec3 warm = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y)));
 	display_color = mix(display_color, warm, clamp(spark, 0.0, 1.0));
+	display_color = zs_rain_beaten(display_color, reflection * 0.5 + vec3(0.45), rest_xz, rain_on, footprint, t); // weather lane rain
 	if (debug_view == 1) display_color = water_depth < 5.0 ? vec3(1.0, 0.0, 0.0) : (water_depth < 20.0 ? vec3(0.0, 1.0, 0.0) : (water_depth < 60.0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0))) * (0.5 + 0.5 * known);
 	if (debug_view == 3) display_color = zs_scene_to_display(lit);
 	if (debug_view == 4) display_color = reflection * mirror_weight;
@@ -1725,5 +1732,7 @@ void fragment() {
 	if (debug_view == 2) display_color = vec3(cover, foamed, waked);
 	if (debug_view == 6) display_color = vec3(lace_density, lace_youth, in_buffer * 0.5 + churned * 0.5);
 	ALBEDO = scene_linear_for_display(clamp(display_color, vec3(0.0), vec3(1.0)));
+	// The rainbow in the rain before the far sea (shaders/weather_bow.gdshaderinc).
+	ALBEDO += zs_bow_far(-eye, distance_to, clamp(display_color, vec3(0.0), vec3(1.0)));
 	ALPHA = depth > 0.0 ? max(smoothstep(0.0, mix(0.05, river_calm_fade, still), bed_depth), swim_hit) : 1.0;
 }
