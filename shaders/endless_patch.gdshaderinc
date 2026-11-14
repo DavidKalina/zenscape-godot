@@ -59,14 +59,49 @@ const vec3 EP_SAGE = vec3(0.92, 0.90, 1.65);
 const vec3 EP_STRAW = vec3(2.05, 1.22, 0.48);
 const vec3 EP_HEATHER = vec3(1.39, 0.74, 1.46);
 
+// The grass areas (look round 6): kilometres across, each a whole meadow of
+// one grass, the borders a few hundred metres wide and wandering (warped by
+// the regions' own noise). Two noises at 2600 and 2100 m split the land in
+// four: lush deep green (s1, s2 low), cool sage (s2 high), amber straw (s1
+// high; the Amberlands' carpet hue) and today's lime (both high: none). Each is a colour at the grass's own light (its
+// luma the area's brightness), mixed in by its weight, so the grass keeps
+// its patches' light and shade. Mirrored in endless_patch.gd `area` and
+// grass_cell.h.
+const vec3 EP_AREA_LUSH = vec3(0.29, 1.02, 0.41);
+const vec3 EP_AREA_SAGE = vec3(0.70, 1.045, 0.76);
+const vec3 EP_AREA_AMBER = vec3(1.21, 1.04, 0.50);
+const vec3 EP_AREA_MIX = vec3(0.60, 0.55, 0.55);   // lush, sage, amber
+// Under the areas the smaller regions as a lighter variation inside them.
+const float EP_REGION_UNDER = 0.6;
+
+// The areas at q (p + off), a and b the regions' noises (the border's warp),
+// `areas` how strongly (0: none), `edge` x where they fade out (x..y; y <= x:
+// nowhere). rgb the area's colours by their weights, a the weights' sum:
+// the grass becomes grass * (1 - a) + luma(grass) * rgb.
+vec4 ep_area(vec2 q, float px, float a, float b, float areas, vec2 edge) {
+	if (edge.y > edge.x) areas *= 1.0 - smoothstep(edge.x, edge.y, px);
+	if (areas <= 0.0) return vec4(0.0);
+	vec2 w = q + vec2(a - 0.5, b - 0.5) * 900.0;
+	float s1 = smoothstep(0.40, 0.60, ep_noise(w / 2600.0 + vec2(-7.3, 4.1)));
+	float s2 = smoothstep(0.40, 0.60, ep_noise(vec2(w.x * 0.6 + w.y * 0.8, w.y * 0.6 - w.x * 0.8) / 2100.0 + vec2(2.6, -5.9)));
+	vec3 k = vec3((1.0 - s1) * (1.0 - s2), (1.0 - s1) * s2, s1 * (1.0 - s2)) * EP_AREA_MIX * areas;
+	return vec4(EP_AREA_LUSH * k.x + EP_AREA_SAGE * k.y + EP_AREA_AMBER * k.z, k.x + k.y + k.z);
+}
+
 // The region's hue at p (a multiplier over the grass; 1: none), `amount`
-// how strongly (0: off), `over` m over the sea (the heather's).
-vec3 ep_region(vec2 p, float over, float amount, vec2 off) {
-	if (amount <= 0.0) return vec3(1.0);
+// how strongly (0: off), `over` m over the sea (the heather's); the areas
+// (ep_area, `areas` 0: none) in `area`.
+vec3 ep_region(vec2 p, float over, float amount, float areas, vec2 edge, vec2 off, out vec4 area) {
+	area = vec4(0.0);
+	areas = min(areas, 1.6);
+	if (amount <= 0.0 && areas <= 0.0) return vec3(1.0);
 	vec2 q = p + off;
 	vec2 r = vec2(q.x * 0.8 - q.y * 0.6, q.x * 0.6 + q.y * 0.8);
 	float a = ep_noise(r / 380.0 + vec2(3.7, 1.3)) * 0.8 + ep_noise(r / 130.0 + vec2(-4.1, 2.2)) * 0.2;
 	float b = ep_noise(q.yx / 300.0 + vec2(-2.1, 8.4)) * 0.8 + ep_noise(q / 110.0 + vec2(6.3, -1.7)) * 0.2;
+	area = ep_area(q, p.x, a, b, areas, edge);
+	amount *= mix(1.0, EP_REGION_UNDER, min(area.a / 0.55, 1.0));
+	if (amount <= 0.0) return vec3(1.0);
 	float c = ep_noise(r.yx / 220.0 + vec2(5.5, -3.3));
 	vec3 m = mix(vec3(1.0), EP_LUSH, (1.0 - smoothstep(0.30, 0.42, a)) * amount);
 	m *= mix(vec3(1.0), EP_LIME, smoothstep(0.58, 0.70, a) * amount);

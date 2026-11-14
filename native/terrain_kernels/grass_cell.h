@@ -40,6 +40,7 @@
 #include <godot_cpp/variant/vector3.hpp>
 #include <godot_cpp/variant/vector4.hpp>
 #include "land_field_bind.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -207,7 +208,8 @@ inline Vector3 rotated(const Vector3 &v, const Vector3 &axis, double angle) {
 // --- scripts/endless/endless_patch.gd ----------------------------------------------
 struct Patch {
 	Vector2 offset;
-	double region_amount = 1.0, bloom_amount = 1.0;
+	double region_amount = 1.0, bloom_amount = 1.0, area_amount = 0.0;
+	Vector2 area_edge;
 	Vector3 plain;
 
 	static constexpr double PATCH_STRENGTH = 1.0, THIN_UP = 0.93, ROCK_UP = 0.80, VERTEX_HUE = 0.2, DRY_NEAR = 0.18;
@@ -246,13 +248,36 @@ struct Patch {
 	}
 	static Vector3 lerp3(const Vector3 &a, const Vector3 &b, double t) { return a + (b - a) * float(t); }
 
-	Vector3 region(double x, double z, double over) const {
-		const double amount = region_amount;
-		if (amount <= 0.0) return Vector3(1, 1, 1);
-		const Vector2 q = Vector2(float(x), float(z)) + offset;
+	// The grass areas (endless_patch.gd `area`, the shader's ep_area): q a
+	// world point plus the offset, px its x, a and b the regions' noises.
+	// xyz the areas' colours by their weights, w the weights' sum.
+	struct Area {
+		Vector3 c;
+		double w = 0.0;
+	};
+	Area area(const Vector2 &q, double px, double a, double b, double areas) const {
+		Area out;
+		if (area_edge.y > area_edge.x) areas *= 1.0 - ss(double(area_edge.x), double(area_edge.y), px);
+		if (areas <= 0.0) return out;
+		const Vector2 w = q + Vector2(float(a - 0.5), float(b - 0.5)) * 900.0f;
+		const double s1 = ss(0.40, 0.60, noise(double(w.x) / 2600.0 - 7.3, double(w.y) / 2600.0 + 4.1));
+		const double s2 = ss(0.40, 0.60, noise((double(w.x) * 0.6 + double(w.y) * 0.8) / 2100.0 + 2.6, (double(w.y) * 0.6 - double(w.x) * 0.8) / 2100.0 - 5.9));
+		const double kl = (1.0 - s1) * (1.0 - s2) * 0.60 * areas, ks = (1.0 - s1) * s2 * 0.55 * areas, ka = s1 * (1.0 - s2) * 0.55 * areas;
+		out.c = Vector3(0.29, 1.02, 0.41) * float(kl) + Vector3(0.70, 1.045, 0.76) * float(ks) + Vector3(1.21, 1.04, 0.50) * float(ka);
+		out.w = kl + ks + ka;
+		return out;
+	}
+	static void ab(const Vector2 &q, double &a, double &b) {
 		const Vector2 r(float(double(q.x) * 0.8 - double(q.y) * 0.6), float(double(q.x) * 0.6 + double(q.y) * 0.8));
-		const double a = noise(double(r.x) / 380.0 + 3.7, double(r.y) / 380.0 + 1.3) * 0.8 + noise(double(r.x) / 130.0 - 4.1, double(r.y) / 130.0 + 2.2) * 0.2;
-		const double b = noise(double(q.y) / 300.0 - 2.1, double(q.x) / 300.0 + 8.4) * 0.8 + noise(double(q.x) / 110.0 + 6.3, double(q.y) / 110.0 - 1.7) * 0.2;
+		a = noise(double(r.x) / 380.0 + 3.7, double(r.y) / 380.0 + 1.3) * 0.8 + noise(double(r.x) / 130.0 - 4.1, double(r.y) / 130.0 + 2.2) * 0.2;
+		b = noise(double(q.y) / 300.0 - 2.1, double(q.x) / 300.0 + 8.4) * 0.8 + noise(double(q.x) / 110.0 + 6.3, double(q.y) / 110.0 - 1.7) * 0.2;
+	}
+
+	// The regions' multiplier (the areas' weight there `area_w`).
+	Vector3 region(const Vector2 &q, double a, double b, double over, double area_w) const {
+		const double amount = region_amount * lerpf(1.0, 0.6, std::min(area_w / 0.55, 1.0));
+		if (amount <= 0.0) return Vector3(1, 1, 1);
+		const Vector2 r(float(double(q.x) * 0.8 - double(q.y) * 0.6), float(double(q.x) * 0.6 + double(q.y) * 0.8));
 		const double c = noise(double(r.y) / 220.0 + 5.5, double(r.x) / 220.0 - 3.3);
 		const Vector3 ONE(1, 1, 1);
 		Vector3 m = lerp3(ONE, Vector3(0.44, 0.78, 0.58), ss(0.42, 0.30, a) * amount);
@@ -276,7 +301,15 @@ struct Patch {
 		g = g.lerp(MEADOW * float(1.0 + mid * 0.5), float(meadow * 0.75));
 		const double warm = clampf(broad * 2.4 + vast * 1.8, -1.0, 1.0) * PATCH_STRENGTH;
 		g *= Vector3(1, 1, 1).lerp(warm > 0.0 ? Vector3(1.32, 1.05, 0.62) : Vector3(0.80, 0.97, 1.16), float(std::fabs(warm) * 0.5));
-		g *= region(x, z, over);
+		const double areas = std::min(area_amount, 1.6);
+		if (region_amount > 0.0 || areas > 0.0) {
+			const Vector2 q = Vector2(float(x), float(z)) + offset;
+			double a, b;
+			ab(q, a, b);
+			const Area ar = area(q, x, a, b, areas);
+			g *= region(q, a, b, over, ar.w);
+			g = g * float(1.0 - ar.w) + ar.c * float(luma(g));
+		}
 		if (hue != Vector3()) g = g.lerp(hue / float(maxf(luma(hue), 0.01)) * float(luma(g)), float(VERTEX_HUE * 0.6));
 		const double dry_far = smoothstep(0.05, 0.32, broad + wide * 0.6 + 0.1);
 		const double dry = clampf(DRY_NEAR * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
@@ -949,7 +982,8 @@ protected:
 
 public:
 	// 2: grow_cell takes a band cell's dither. 3: the alpine tufts (config `alp`).
-	int64_t version() const { return 3; }
+	// 4: the grass areas (config `area_amount`, `area_edge`).
+	int64_t version() const { return 4; }
 
 	// endless_grass.gd `cull_tiles`, the same answers: one cell's tiles (a
 	// box, a ring and a state each: bit 0 shown, the bits over it the far lod)
@@ -1031,6 +1065,8 @@ public:
 		cfg.patch.offset = d.get("patch_offset", Vector2());
 		cfg.patch.region_amount = num(d, "region_amount", 1.0);
 		cfg.patch.bloom_amount = num(d, "bloom_amount", 1.0);
+		cfg.patch.area_amount = num(d, "area_amount", 0.0);
+		cfg.patch.area_edge = d.get("area_edge", Vector2());
 		cfg.patch.plain = d.get("plain", Vector3());
 		cfg.tint_step = num(d, "tint_step", 2.0);
 		cfg.sink = num(d, "sink", 0.04);
