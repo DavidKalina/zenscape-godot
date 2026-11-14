@@ -280,6 +280,17 @@ const RIVER_MOUTH_EASE := 1.2
 ## RIVER_MOUTH_SINK m of its level (by its bed's depth at the sea), so it
 ## meets the sea with no step; `river_drawn` mirrors it for the flight.
 const RIVER_MOUTH_SINK := 1.5
+## A mouth's bed never lies deeper than this under the sea's level (m). Dug
+## deeper (to RIVER_BED+RIVER_MOUTH_DEEP, 4.2 m), where the channel ran out
+## onto a shallow bar or the coast's flats it left a closed pocket the sea
+## filled, a dark blue hole among them. Held under the depth at which the
+## river ends in the sea (2.5 m, `_river`'s `banked`), cut in full out to
+## there, and its extra depth eased out with the river's strength where it
+## runs out onto the flats, the bed only falls toward the sea; at 1.5 m the
+## channel's water reads as the river's, not as a pool. Up the mouth, where
+## the river's water stands over the sea, the channel keeps its depth.
+## --river-floor=0 the dig as before.
+const RIVER_MOUTH_FLOOR := 1.5
 
 const SAND := Color(0.80,0.74,0.56)
 const SEABED := Color(0.42,0.46,0.40)
@@ -607,6 +618,7 @@ static func _knobs(land: Dictionary) -> Dictionary:
 		elif arg.begins_with("--river-fill="): k.river_fill = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--river-mouth="): k.river_mouth = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg.begins_with("--river-flare="): k.river_flare = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-floor="): k.river_floor = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg == "--land-libm": k.libm = true
 		elif arg == "--no-coast": k.coast_half = 0.0
 		elif arg.begins_with("--coast-half="): k.coast_half = maxf(0.0,float(arg.get_slice("=",1)))
@@ -1624,6 +1636,9 @@ class GDField extends RefCounted:
 	## funnel's width (RIVER_FLARE times --river-flare=X, 1).
 	var river_mouth := 1.0
 	var river_flare := 1.0
+	## The mouth's bed held to RIVER_MOUTH_FLOOR (1; 0 the 3.6 m dig before,
+	## --river-floor=0).
+	var river_floor := 1.0
 	## What the last `sample` found of the river (read by land_stream for the
 	## ground shader, the grass, the arches and the flight): the signed
 	## distance from the river's middle line (m, INF where no river reaches),
@@ -1666,6 +1681,7 @@ class GDField extends RefCounted:
 		river_fill = float(k.get("river_fill",1.0))
 		river_mouth = float(k.get("river_mouth",1.0))
 		river_flare = float(k.get("river_flare",1.0))
+		river_floor = float(k.get("river_floor",1.0))
 		r_continent = float(k.get("continent_scale",r_continent))
 		r_continent_swing = float(k.get("continent_swing",r_continent_swing))
 		r_continent_lift = float(k.get("continent_lift",r_continent_lift))
@@ -1840,7 +1856,15 @@ class GDField extends RefCounted:
 		if s < w:
 			# At a mouth the bed is deeper and flatter across (the sea fills it).
 			var u := s/w
-			cut = water-_river_bed*(1.0-pow(u,2.0+2.0*_river_mouth))
+			# (Never under RIVER_MOUTH_FLOOR below the sea; and the mouth's extra
+			# depth eased out with the river's strength, which takes its width
+			# to nothing where it runs out onto the coast's flats, so it shoals
+			# with it: held full, it ended in a sill.)
+			var bed := _river_bed
+			if river_floor > 0.0:
+				bed = minf(bed,water-SEA_Y+RIVER_MOUTH_FLOOR)
+				bed = RIVER_BED+maxf(bed-RIVER_BED,0.0)*clampf(_river_k,0.0,1.0)
+			cut = water-bed*(1.0-pow(u,2.0+2.0*_river_mouth))
 		elif s < core:
 			var u := (s-w)/_river_bank
 			cut = water+drop*u*u*(3.0-2.0*u)
@@ -1851,7 +1875,12 @@ class GDField extends RefCounted:
 		# ground shader still draws the water, per pixel).
 		var keep := 1.0
 		if detail > 1.0: keep = smoothstep(2.5,4.5,(core*2.0)/detail)
-		if cut < h: h -= (h-cut)*keep*banked
+		# (At a mouth the cut holds to the river's end, not faded with `banked`:
+		# faded, the bed rose from the floor before the channel ran out, and
+		# the rise closed a pocket. RIVER_MOUTH_FLOOR.)
+		var hold := banked
+		if river_floor > 0.0: hold = lerpf(banked,1.0,_river_mouth*minf(river_mouth,1.0)*minf(river_floor,1.0))
+		if cut < h: h -= (h-cut)*keep*hold
 		return h
 
 	## How far (m) (x, z) lies past the edge line `e` (centre x, z, half side,

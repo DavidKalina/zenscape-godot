@@ -365,6 +365,13 @@ uniform vec2 river_mouth_sink = vec2(4.2, 1.5);
 uniform float river_mouth_tint = 0.8;
 uniform float river_mouth_rise = 5.0;
 uniform vec2 river_mouth_deep = vec2(0.6, 3.6);
+// The bed held this far under the sea's level at most (LandField
+// RIVER_MOUTH_FLOOR; 0 none, --river-floor=0).
+uniform float river_mouth_floor = 1.5;
+// Round 3 (water-artifacts-handoff.md): over the mouth's last reach the tint
+// reads no deeper than this (m), as the sea over it and its plume do
+// (endless_sea plume_depth); 0 none, round 2's tint.
+uniform float river_plume_depth = 1.5;
 uniform vec4 river_sea_tint_depths = vec4(1.5, 7.0, 22.0, 55.0);
 uniform float river_sea_bed_fade = 5.0;
 uniform float river_sea_body = 0.9;
@@ -415,6 +422,10 @@ uniform vec3 river_foam_size = vec3(1.0, 0.4, 2.0);
 uniform vec3 river_bank_foam = vec3(0.6, 2.8, 1.0);
 // A foam front where the river meets the sea (0 none).
 uniform float river_mouth_foam = 1.0;
+uniform int river_mouth_debug = 0;
+// The mouth tint's depth waver through an integer hash (endless_sea's
+// waver_exact); 0 the sine hash, which broke into squares.
+uniform int river_waver_exact = 1;
 // White water churns: its ripples this much rougher at full white.
 uniform float river_churn = 1.6;
 // Slicks down running water: their width (m), how much they shade the body
@@ -971,6 +982,7 @@ void fragment() {
 
 	// --- The river: its water and banks, per pixel from the distance to its
 	// line (crisp on any chunk), with a slightly ragged edge near the eye.
+	float dbg_a = -1.0, dbg_b = -1.0;
 	float r_s = abs(river.x);
 	float r_w = abs(river.y);
 	float r_here = river_on * step(0.05, r_w);
@@ -1912,17 +1924,29 @@ void fragment() {
 			bed_c = bed_t * (ambient * 0.9 + key * (1.0 + caus * river_bed.z * 2.0));
 		}
 		vec3 water = column * light * (vec3(1.0) - seen) + bed_c * seen;
+		dbg_b = depth;
 		if (r_tint > 0.0) {
 			// Toward the sea: the sea's colour (endless_sea.gdshader) for the
 			// channel's real depth (land_field `_river`'s bed, deeper and
 			// flatter at a mouth), seen as the sea sees the bed up the channel.
 			float u = clamp(r_s / max(r_w, 0.01), 0.0, 1.0);
 			// (Up the river, before the bed deepens, the faked depth.)
-			float real = (river_mouth_deep.x + river_mouth_deep.y * r_mouth) * (1.0 - pow(u, 2.0 + 2.0 * r_mouth));
+			// (Never under the land's floor below the sea, LandField RIVER_MOUTH_FLOOR.)
+			float mid_bed = river_mouth_deep.x + river_mouth_deep.y * r_mouth;
+			if (river_mouth_floor > 0.0) mid_bed = min(mid_bed, max(river.z - sea_y, 0.0) + river_mouth_floor);
+			float real = mid_bed * (1.0 - pow(u, 2.0 + 2.0 * r_mouth));
 			real = mix(depth, real, smoothstep(0.0, 0.6, r_mouth));
+			dbg_a = real;
 			float through_m = real / max(abs(eye.y), 0.15);
-			float waver = mix(0.8, 1.25, zs_noise(p.xz * 0.03) * 0.7 + zs_noise(p.xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
+			// (The sea's waver, through the same exact hash.)
+			float waver = river_waver_exact > 0
+				? mix(0.8, 1.25, zs_noise_exact(p.xz * 0.03) * 0.7 + zs_noise_exact(p.xz * 0.11 + vec2(4.1, 7.3)) * 0.3)
+				: mix(0.8, 1.25, zs_noise(p.xz * 0.03) * 0.7 + zs_noise(p.xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
 			float wd = max(real, through_m * 0.55) * waver;
+			// (The sea over the mouth and its plume colours its water no deeper
+			// than endless_sea's plume_depth; so does the river's last reach, so
+			// the two agree where the sea fades in over it.)
+			if (river_plume_depth > 0.0) wd = mix(wd, min(wd, river_plume_depth * waver), r_mouth);
 			vec4 td = river_sea_tint_depths;
 			vec3 sc = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, td.y, wd));
 			sc = mix(sc, river_tint_deep, smoothstep(td.y * 0.6, td.z, wd));
@@ -2077,6 +2101,22 @@ void fragment() {
 		land_haze.a *= mix(1.0, (1.0 - dark_up * PEAK_BASALT_HAZE.z) / max(1.0 - land_up * haze_height.z, 0.01), pk_dark);
 	}
 	FOG = land_haze;
+	// (Debug: the river's per-vertex inputs in bands; 1 distance, 2 width,
+	// 3 level over the sea, 4 flow, 5 mouth/tint/wet.)
+	if (river_mouth_debug > 0) {
+		vec3 dc = vec3(0.0);
+		if (river_mouth_debug == 1) dc = vec3(fract(river.x / 2.0), step(0.0, river.x) * 0.5, clamp(abs(river.x) / 60.0, 0.0, 1.0));
+		else if (river_mouth_debug == 2) dc = vec3(fract(river.y / 2.0), clamp(abs(river.y) / 40.0, 0.0, 1.0), step(0.0, river.y) * 0.5);
+		else if (river_mouth_debug == 3) dc = vec3(fract((river.z - sea_y) / 0.5), clamp((river.z - sea_y) / 10.0, 0.0, 1.0), step(river.z - sea_y, -5.0));
+		else if (river_mouth_debug == 4) dc = vec3(river_flow * 0.25 + 0.5, fract(length(river_flow) * 4.0));
+		else if (river_mouth_debug == 5) dc = vec3(r_mouth, r_tint, wet);
+		else if (river_mouth_debug == 6) dc = vec3(fract((p.y - sea_y) / 0.25), clamp(-(p.y - sea_y) / 5.0, 0.0, 1.0), clamp((p.y - sea_y) / 5.0, 0.0, 1.0));
+		else if (river_mouth_debug == 7) dc = vec3(fract(dbg_a / 0.5), clamp(dbg_a / 5.0, 0.0, 1.0), fract(dbg_b / 0.5));
+		ALBEDO = vec3(0.0);
+		SPECULAR = 0.0;
+		EMISSION = dc;
+		FOG = vec4(0.0);
+	}
 }
 
 // Godot's own lighting as the default does it (a light() replaces it), with

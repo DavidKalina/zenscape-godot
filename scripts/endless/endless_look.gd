@@ -614,7 +614,17 @@ func _river_water(land_seed: int) -> void:
 	ground.set_shader_parameter("river_mouth_sink",Vector2((Field.RIVER_BED+Field.RIVER_MOUTH_DEEP)*mouth,Field.RIVER_MOUTH_SINK))
 	ground.set_shader_parameter("river_mouth_rise",Field.RIVER_MOUTH_RISE)
 	ground.set_shader_parameter("river_mouth_deep",Vector2(Field.RIVER_BED,Field.RIVER_MOUTH_DEEP*mouth))
+	# The bed's floor under the sea (Field.RIVER_MOUTH_FLOOR; --river-floor=0 none).
+	ground.set_shader_parameter("river_mouth_floor",0.0 if LaunchArgs.user_args().has("--river-floor=0") else Field.RIVER_MOUTH_FLOOR)
+	# The mouth's hand-over (round 3, water-artifacts-handoff.md): the plume
+	# the sea's depth map bakes, its tint and chop, and the river's last reach
+	# tinted to match. --river-plume=0 is round 2's mouths.
+	var plume_off := LaunchArgs.user_args().has("--river-plume=0")
+	if plume_off: ground.set_shader_parameter("river_plume_depth",0.0)
 	if water != null:
+		if plume_off:
+			water.material.set_shader_parameter("plume_tint",0.0)
+			water.material.set_shader_parameter("calm_chop",0.0)
 		ground.set_shader_parameter("river_detail_a",water.material.get_shader_parameter("detail_a"))
 		ground.set_shader_parameter("river_detail_b",water.material.get_shader_parameter("detail_b"))
 		for k: String in ["tint_shallow","tint_mid","tint_deep"]:

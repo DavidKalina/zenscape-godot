@@ -30,6 +30,10 @@ const SeaFFT = preload("res://scripts/endless/sea_fft.gd")
 const DEPTH_TEXELS := 512
 const DEPTH_SIDE := 4096.0
 const DEPTH_MOVE := 900.0
+## The mouth's plume (`_plume`): how far (m of water) the river's calm runs
+## on out of a mouth over the sea, and the calm it starts from there.
+## --river-plume=M sets the reach (0: none, round 2's map).
+const PLUME := Vector2(64.0,1.0)
 const WAKE_POINTS := 40
 ## A point every WAKE_EVERY s of flight (and at least WAKE_STEP m on), so
 ## the trail spans WAKE_POINTS*WAKE_EVERY s; points older than WAKE_LIFE s
@@ -94,6 +98,13 @@ static func foam_wanted() -> bool:
 	return body_wanted() and not "--sea-foam=old" in LaunchArgs.user_args()
 
 var _leaps_on := false
+## The plume's reach the depth map bakes with (PLUME.x; --river-plume=M).
+var plume := _plume_arg()
+
+static func _plume_arg() -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--river-plume="): return maxf(float(a.get_slice("=",1)),0.0)
+	return PLUME.x
 
 func _init(seed_value: int) -> void:
 	land_seed = seed_value
@@ -754,11 +765,12 @@ func _depth(eye: Vector3) -> void:
 	var corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*DEPTH_SIDE*0.5)/texel).floor()*texel
 	_next = Vector4(corner.x,corner.y,DEPTH_SIDE,1.0)
 	var s := land_seed
+	var pl := plume
 	if depth_at.w < 0.5:
-		_image = depth_image(s,corner)
+		_image = depth_image(s,corner,pl)
 		_take()
 	else:
-		_task = WorkerThreadPool.add_task(func() -> void: _image = depth_image(s,corner),false,"Sea depth map")
+		_task = WorkerThreadPool.add_task(func() -> void: _image = depth_image(s,corner,pl),false,"Sea depth map")
 
 func _take() -> void:
 	if _image == null: return
@@ -768,22 +780,97 @@ func _take() -> void:
 	material.set_shader_parameter("depth_at",depth_at)
 
 ## The land's height (world y) per texel over the square at `corner` (red),
-## and how still the sea lies there (green: 1 up a river's mouth, LandField
-## `calm_here`; the shader stills the swell there).
-static func depth_image(seed_value: int, corner: Vector2) -> Image:
+## how still the sea lies there (green: 1 up a river's mouth, LandField
+## `calm_here`; the shader stills the swell there), and the river's drawn
+## water at a mouth: how far it lies under the sea (m) times how much of the
+## texel is on its water (blue), and that share (alpha). The sea reads blue
+## over alpha for the water between it and the river drawn under it: the
+## ground draws that water flat at its level, sunk under the sea's over the
+## last RIVER_MOUTH_SINK m (land_field `river_drawn`), but on its chunks'
+## grid, so read off the screen it came in the grid's facets.
+## With `plume_m` > 0 the calm runs on out of each mouth over the sea (see
+## `_plume`).
+static func depth_image(seed_value: int, corner: Vector2, plume_m := PLUME.x) -> Image:
 	var field := Field.new(seed_value)
 	var n := DEPTH_TEXELS
 	var texel := DEPTH_SIDE/n
 	# A map this coarse takes the land's carve at its own texel (land_field.gd).
 	field.detail = texel
 	var data := PackedFloat32Array()
-	data.resize(n*n*2)
+	data.resize(n*n*4)
 	for j in n:
 		for i in n:
-			var k := (j*n+i)*2
+			var k := (j*n+i)*4
 			data[k] = field.height(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)
-			data[k+1] = field.calm_here()
-	return Image.create_from_data(n,n,false,Image.FORMAT_RGF,data.to_byte_array())
+			var calm: float = field.calm_here()
+			data[k+1] = calm
+			if calm > 0.0:
+				var drawn: float = field.river_drawn()
+				var on := 1.0-smoothstep(-2.0,2.0,float(field.last_river)) if is_finite(drawn) else 0.0
+				data[k+2] = maxf(Field.SEA_Y-drawn,0.0)*on if on > 0.0 else 0.0
+				data[k+3] = on
+	if plume_m > 0.0: _plume(data,n,texel,plume_m)
+	return Image.create_from_data(n,n,false,Image.FORMAT_RGBAF,data.to_byte_array())
+
+## The mouth's plume (water-artifacts-handoff.md, round 3): the calm (green)
+## carried out of each mouth over the sea, fading over `reach` m of water from
+## the reach where the river's drawn water lies under the sea's (blue > 0).
+## Before, the calm stopped where the river's data stopped, so the still,
+## pale channel met the full swell and its shore foam on a line across the
+## mouth. The distance is walked through sea texels only (a chamfer sweep),
+## so it does not jump a spit or a bar standing out of the water. Only the
+## box round the mouths found is swept.
+static func _plume(data: PackedFloat32Array, n: int, texel: float, reach: float) -> void:
+	var lo := Vector2i(n,n)
+	var hi := Vector2i(-1,-1)
+	var dist := PackedFloat32Array()
+	dist.resize(n*n)
+	dist.fill(INF)
+	for j in n:
+		for i in n:
+			var k := (j*n+i)*4
+			if data[k+2] > 0.0 and data[k+3] > 0.5:
+				dist[j*n+i] = 0.0
+				lo = Vector2i(mini(lo.x,i),mini(lo.y,j))
+				hi = Vector2i(maxi(hi.x,i),maxi(hi.y,j))
+	if hi.x < 0: return
+	var pad := int(ceil(reach/texel))+1
+	lo = Vector2i(maxi(lo.x-pad,0),maxi(lo.y-pad,0))
+	hi = Vector2i(mini(hi.x+pad,n-1),mini(hi.y+pad,n-1))
+	var d1 := texel
+	var d2 := texel*1.4142
+	var sea := Field.SEA_Y
+	# Two sweeps each way (the second catches what bends round a headland).
+	for rep in 2:
+		for j in range(lo.y,hi.y+1):
+			for i in range(lo.x,hi.x+1):
+				var c := j*n+i
+				if dist[c] == 0.0 or data[c*4] >= sea: continue
+				var best := dist[c]
+				if i > lo.x: best = minf(best,dist[c-1]+d1)
+				if j > lo.y:
+					best = minf(best,dist[c-n]+d1)
+					if i > lo.x: best = minf(best,dist[c-n-1]+d2)
+					if i < hi.x: best = minf(best,dist[c-n+1]+d2)
+				dist[c] = best
+		for j in range(hi.y,lo.y-1,-1):
+			for i in range(hi.x,lo.x-1,-1):
+				var c := j*n+i
+				if dist[c] == 0.0 or data[c*4] >= sea: continue
+				var best := dist[c]
+				if i < hi.x: best = minf(best,dist[c+1]+d1)
+				if j < hi.y:
+					best = minf(best,dist[c+n]+d1)
+					if i < hi.x: best = minf(best,dist[c+n+1]+d2)
+					if i > lo.x: best = minf(best,dist[c+n-1]+d2)
+				dist[c] = best
+	for j in range(lo.y,hi.y+1):
+		for i in range(lo.x,hi.x+1):
+			var c := j*n+i
+			var d := dist[c]
+			if d >= reach or data[c*4] >= sea: continue
+			var s := 1.0-smoothstep(0.0,reach,d)
+			data[c*4+1] = maxf(data[c*4+1],s*s*PLUME.y)
 
 func _wake(plane: Vector3) -> void:
 	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))
