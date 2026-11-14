@@ -62,6 +62,8 @@ extends Node3D
 ## --flower-drifts=X (how many flower drifts and patches, 1; 0 or
 ## --no-drifts: round 4's drifts, no wash), --grass-regions=X (how strongly
 ## the grass's colour regions show, 1; 0 or --no-regions: one palette),
+## --grass-areas=X (how strongly the kilometre grass areas show, lush,
+## lime, emerald, sage and amber meadows, 1; 0 or --no-grass-areas: none, round 5's),
 ## --grass-lead=X (LEAD, 0.45), --no-grass-lead (no lead: rings round the
 ## eye), --grass-flat-up=M (FLAT_UP, 20), --grass-ring=3d (round 5's
 ## rings: 3D from the eye, no lead), --grass-silver=X (the silvery
@@ -185,6 +187,8 @@ var silver := SILVER
 ## (--grass-regions=).
 var drifts := 1.0
 var regions := 1.0
+## How strong the kilometre grass areas (--grass-areas=; EndlessPatch.area).
+var areas := 1.0
 ## The far ring's colours at the root and the tip (linear; endless_tuft_far
 ## `root_colour`, `tip_colour`), matched to the near ring's tufts.
 const FAR_ROOT := Vector3(0.093,0.27,0.13)
@@ -407,6 +411,23 @@ var _calmed := {}
 var _fars := {}
 var _since_plan := 0
 
+## The kilometre grass areas (EndlessPatch.area), before any worker reads
+## them: the wilderness's alone. None in the Amberlands' own world, and in
+## the doors world they fade out short of the border band half way to the
+## Amberlands' side (x = its offset / 2). A native library older than 5
+## can't tint its tufts by them, so then there are none on the ground either
+## (the near and far rings and the paint must agree).
+func _set_areas() -> void:
+	Patch.area_amount = areas
+	Patch.area_edge = Vector2.ZERO
+	if world != null and world.id == "amberlands": Patch.area_amount = 0.0
+	elif world != null and world.is_doors() and "offset" in world:
+		var half: float = (world.offset as Vector2).x*0.5
+		Patch.area_edge = Vector2(half-6000.0,half-3000.0)
+	if Patch.area_amount > 0.0 and native_wanted() and int((ClassDB.instantiate(NATIVE_CLASS) as Object).version()) < 5:
+		push_warning("EndlessGrass: the native kernels predate the grass areas (ZenScapeGrass version < 5); areas off. Rebuild the kernels (tools/build_native_kernels.py).")
+		Patch.area_amount = 0.0
+
 ## Whether the grass is asked for (the world's layer, and not --no-grass).
 static func wanted() -> bool:
 	return bool(WorldProfile.current().layer("grass",true)) and not "--no-grass" in LaunchArgs.user_args()
@@ -444,6 +465,8 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--flower-head="): flower_head = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-regions="): regions = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-regions": regions = 0.0
+		elif a.begins_with("--grass-areas="): areas = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a == "--no-grass-areas": areas = 0.0
 		elif a.begins_with("--grass-silver="): silver = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-grass-silver": silver = 0.0
 		elif a.begins_with("--grass-lead="): lead = clampf(a.get_slice("=",1).to_float(),0.0,0.85)
@@ -472,6 +495,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	# The regions and drifts, set before any worker reads them.
 	Patch.offset = Patch.seed_offset(seed)
 	Patch.region_amount = regions
+	_set_areas()
 	Patch.bloom_amount = drifts if flowers else 0.0
 	# The isle's carpet settings, read here once (the workers copy them).
 	var s := KitFlora.Site.new()
@@ -545,6 +569,8 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("carpet_tone_low",TONE_LOW)
 		ground.set_shader_parameter("region_offset",Patch.offset)
 		ground.set_shader_parameter("region_amount",Patch.region_amount)
+		ground.set_shader_parameter("area_amount",Patch.area_amount)
+		ground.set_shader_parameter("area_edge",Patch.area_edge)
 		ground.set_shader_parameter("bloom_amount",Patch.bloom_amount)
 		ground.set_shader_parameter("bloom_fade",FLOWER_FADE)
 		_silver(ground,"wind_sheen",SILVER_WIND_SHEEN)
@@ -690,8 +716,9 @@ static func _join(parts: Array) -> Array:
 ## (--grass-native=0 or --gdscript-kernels: GDScript).
 const NATIVE_CLASS := &"ZenScapeGrass"
 ## The newest library this script knows (2: grow_cell takes a band cell's
-## dither; 3: the alpine tufts, ALP_*); any from 1 places the tufts.
-const NATIVE_VERSION := 3
+## dither; 3: the alpine tufts, ALP_*; 4: the grass areas, area_amount;
+## 5: their retune); any from 1 places the tufts.
+const NATIVE_VERSION := 5
 static func native_wanted() -> bool:
 	var args := LaunchArgs.user_args()
 	if "--grass-native=0" in args or "--gdscript-kernels" in args: return false
@@ -800,6 +827,8 @@ static func native_config(site_values: Dictionary, far_share: float, rings: Vect
 	c.far_share = far_share
 	c.patch_offset = Patch.offset
 	c.region_amount = Patch.region_amount
+	c.area_amount = Patch.area_amount
+	c.area_edge = Patch.area_edge
 	c.bloom_amount = Patch.bloom_amount
 	c.plain = Patch.plain()
 	c.tint_step = TINT_STEP

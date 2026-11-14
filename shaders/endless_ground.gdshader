@@ -281,6 +281,10 @@ uniform vec4 night_grade = vec4(0.0);
 // flowers (x, out to `bloom_fade.x` m) and their painted heads' share past
 // them (y, from `bloom_fade.y`), the land seed's offset both read at.
 uniform float region_amount = 0.0;
+// Look round 6: the kilometre grass areas (ep_area), how strongly (0: off),
+// and the world x they fade out over (x..y; y <= x: nowhere).
+uniform float area_amount = 0.0;
+uniform vec2 area_edge = vec2(0.0);
 uniform float bloom_amount = 0.0;
 uniform vec2 bloom_wash = vec2(0.10, 0.9);
 // The painted heads' sizes (m), on two lattices.
@@ -1193,8 +1197,11 @@ void fragment() {
 		grass *= mix(vec3(1.0), warm > 0.0 ? zs_warm(vec3(1.32, 1.05, 0.62), paint_follow) : zs_cool(vec3(0.80, 0.97, 1.16), paint_follow), abs(warm) * 0.5);
 		// The broad regions' hue (endless_patch ep_region): lush, lime, sage,
 		// straw, heather on high ground.
-		vec3 region = ep_region(gxz, over, region_amount, region_offset);
+		// The areas (ep_area): a kilometre of one grass, at the grass's own light.
+		vec4 area;
+		vec3 region = ep_region(gxz, over, region_amount, area_amount, area_edge, region_offset, area);
 		grass *= region;
+		grass = grass * (1.0 - area.a) + luma(grass) * area.rgb;
 		// The land's own tint (the vertex colour's hue at the grass's light).
 		vec3 vc = land_colour.rgb;
 		grass = mix(grass, vc / max(luma(vc), 0.01) * luma(grass), vertex_hue * 0.6);
