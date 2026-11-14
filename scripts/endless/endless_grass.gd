@@ -63,7 +63,7 @@ extends Node3D
 ## --no-drifts: round 4's drifts, no wash), --grass-regions=X (how strongly
 ## the grass's colour regions show, 1; 0 or --no-regions: one palette),
 ## --grass-areas=X (how strongly the kilometre grass areas show, lush,
-## lime, sage and amber meadows, 1; 0 or --no-grass-areas: none, round 5's),
+## lime, emerald, sage and amber meadows, 1; 0 or --no-grass-areas: none, round 5's),
 ## --grass-lead=X (LEAD, 0.45), --no-grass-lead (no lead: rings round the
 ## eye), --grass-flat-up=M (FLAT_UP, 20), --grass-ring=3d (round 5's
 ## rings: 3D from the eye, no lead), --grass-silver=X (the silvery
@@ -414,7 +414,7 @@ var _since_plan := 0
 ## The kilometre grass areas (EndlessPatch.area), before any worker reads
 ## them: the wilderness's alone. None in the Amberlands' own world, and in
 ## the doors world they fade out short of the border band half way to the
-## Amberlands' side (x = its offset / 2). A native library older than 4
+## Amberlands' side (x = its offset / 2). A native library older than 5
 ## can't tint its tufts by them, so then there are none on the ground either
 ## (the near and far rings and the paint must agree).
 func _set_areas() -> void:
@@ -424,8 +424,8 @@ func _set_areas() -> void:
 	elif world != null and world.is_doors() and "offset" in world:
 		var half: float = (world.offset as Vector2).x*0.5
 		Patch.area_edge = Vector2(half-6000.0,half-3000.0)
-	if Patch.area_amount > 0.0 and native_wanted() and int((ClassDB.instantiate(NATIVE_CLASS) as Object).version()) < 4:
-		push_warning("EndlessGrass: the native kernels predate the grass areas (ZenScapeGrass version < 4); areas off. Rebuild the kernels (tools/build_native_kernels.py).")
+	if Patch.area_amount > 0.0 and native_wanted() and int((ClassDB.instantiate(NATIVE_CLASS) as Object).version()) < 5:
+		push_warning("EndlessGrass: the native kernels predate the grass areas (ZenScapeGrass version < 5); areas off. Rebuild the kernels (tools/build_native_kernels.py).")
 		Patch.area_amount = 0.0
 
 ## Whether the grass is asked for (the world's layer, and not --no-grass).
@@ -716,9 +716,9 @@ static func _join(parts: Array) -> Array:
 ## (--grass-native=0 or --gdscript-kernels: GDScript).
 const NATIVE_CLASS := &"ZenScapeGrass"
 ## The newest library this script knows (2: grow_cell takes a band cell's
-## dither; 3: the alpine tufts, ALP_*; 4: the grass areas, area_amount);
-## any from 1 places the tufts.
-const NATIVE_VERSION := 4
+## dither; 3: the alpine tufts, ALP_*; 4: the grass areas, area_amount;
+## 5: their retune); any from 1 places the tufts.
+const NATIVE_VERSION := 5
 static func native_wanted() -> bool:
 	var args := LaunchArgs.user_args()
 	if "--grass-native=0" in args or "--gdscript-kernels" in args: return false

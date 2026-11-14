@@ -61,18 +61,19 @@ const vec3 EP_HEATHER = vec3(1.39, 0.74, 1.46);
 
 // The grass areas (look round 6): kilometres across, each a whole meadow of
 // one grass, the borders a few hundred metres wide and wandering (warped by
-// the regions' own noise). Two noises at 2600 and 2100 m split the land in
-// four: lush deep green (s1, s2 low), cool sage (s2 high), amber straw (s1
-// high; the Amberlands' carpet hue) and today's lime (both high: none). Each is a colour at the grass's own light (its
-// luma the area's brightness), mixed in by its weight, so the grass keeps
+// the regions' own noise). A noise at 2600 m keeps today's bright lime past
+// its cut (none: about 45% of the land); under it a noise at 2100 m in three
+// bands: a vivid emerald lush (low), a cool sage green (middle), amber straw
+// (high; the Amberlands' carpet hue). Each is a colour at the grass's own
+// light (its luma the area's brightness), mixed in by its weight, so the grass keeps
 // its patches' light and shade. Mirrored in endless_patch.gd `area` and
 // grass_cell.h.
-const vec3 EP_AREA_LUSH = vec3(0.29, 1.02, 0.41);
-const vec3 EP_AREA_SAGE = vec3(0.70, 1.045, 0.76);
+const vec3 EP_AREA_LUSH = vec3(0.24, 1.36, 0.39);
+const vec3 EP_AREA_SAGE = vec3(0.50, 1.18, 0.62);
 const vec3 EP_AREA_AMBER = vec3(1.21, 1.04, 0.50);
-const vec3 EP_AREA_MIX = vec3(0.60, 0.55, 0.55);   // lush, sage, amber
+const vec3 EP_AREA_MIX = vec3(0.60, 0.45, 0.55);   // lush, sage, amber
 // Under the areas the smaller regions as a lighter variation inside them.
-const float EP_REGION_UNDER = 0.6;
+const float EP_REGION_UNDER = 0.8;
 
 // The areas at q (p + off), a and b the regions' noises (the border's warp),
 // `areas` how strongly (0: none), `edge` x where they fade out (x..y; y <= x:
@@ -82,9 +83,11 @@ vec4 ep_area(vec2 q, float px, float a, float b, float areas, vec2 edge) {
 	if (edge.y > edge.x) areas *= 1.0 - smoothstep(edge.x, edge.y, px);
 	if (areas <= 0.0) return vec4(0.0);
 	vec2 w = q + vec2(a - 0.5, b - 0.5) * 900.0;
-	float s1 = smoothstep(0.40, 0.60, ep_noise(w / 2600.0 + vec2(-7.3, 4.1)));
-	float s2 = smoothstep(0.40, 0.60, ep_noise(vec2(w.x * 0.6 + w.y * 0.8, w.y * 0.6 - w.x * 0.8) / 2100.0 + vec2(2.6, -5.9)));
-	vec3 k = vec3((1.0 - s1) * (1.0 - s2), (1.0 - s1) * s2, s1 * (1.0 - s2)) * EP_AREA_MIX * areas;
+	float rest = 1.0 - smoothstep(0.47, 0.65, ep_noise(w / 2600.0 + vec2(-7.3, 4.1)));
+	float n2 = ep_noise(vec2(w.x * 0.6 + w.y * 0.8, w.y * 0.6 - w.x * 0.8) / 2100.0 + vec2(2.6, -5.9));
+	float lush = 1.0 - smoothstep(0.36, 0.44, n2);
+	float amber = smoothstep(0.58, 0.66, n2);
+	vec3 k = vec3(lush, 1.0 - lush - amber, amber) * rest * EP_AREA_MIX * areas;
 	return vec4(EP_AREA_LUSH * k.x + EP_AREA_SAGE * k.y + EP_AREA_AMBER * k.z, k.x + k.y + k.z);
 }
 

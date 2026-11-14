@@ -260,10 +260,12 @@ struct Patch {
 		if (area_edge.y > area_edge.x) areas *= 1.0 - ss(double(area_edge.x), double(area_edge.y), px);
 		if (areas <= 0.0) return out;
 		const Vector2 w = q + Vector2(float(a - 0.5), float(b - 0.5)) * 900.0f;
-		const double s1 = ss(0.40, 0.60, noise(double(w.x) / 2600.0 - 7.3, double(w.y) / 2600.0 + 4.1));
-		const double s2 = ss(0.40, 0.60, noise((double(w.x) * 0.6 + double(w.y) * 0.8) / 2100.0 + 2.6, (double(w.y) * 0.6 - double(w.x) * 0.8) / 2100.0 - 5.9));
-		const double kl = (1.0 - s1) * (1.0 - s2) * 0.60 * areas, ks = (1.0 - s1) * s2 * 0.55 * areas, ka = s1 * (1.0 - s2) * 0.55 * areas;
-		out.c = Vector3(0.29, 1.02, 0.41) * float(kl) + Vector3(0.70, 1.045, 0.76) * float(ks) + Vector3(1.21, 1.04, 0.50) * float(ka);
+		// Lime past the first noise's cut; under it the second in three bands.
+		const double rest = 1.0 - ss(0.47, 0.65, noise(double(w.x) / 2600.0 - 7.3, double(w.y) / 2600.0 + 4.1));
+		const double n2 = noise((double(w.x) * 0.6 + double(w.y) * 0.8) / 2100.0 + 2.6, (double(w.y) * 0.6 - double(w.x) * 0.8) / 2100.0 - 5.9);
+		const double lush = 1.0 - ss(0.36, 0.44, n2), amber = ss(0.58, 0.66, n2);
+		const double kl = lush * rest * 0.60 * areas, ks = (1.0 - lush - amber) * rest * 0.45 * areas, ka = amber * rest * 0.55 * areas;
+		out.c = Vector3(0.24, 1.36, 0.39) * float(kl) + Vector3(0.50, 1.18, 0.62) * float(ks) + Vector3(1.21, 1.04, 0.50) * float(ka);
 		out.w = kl + ks + ka;
 		return out;
 	}
@@ -275,7 +277,7 @@ struct Patch {
 
 	// The regions' multiplier (the areas' weight there `area_w`).
 	Vector3 region(const Vector2 &q, double a, double b, double over, double area_w) const {
-		const double amount = region_amount * lerpf(1.0, 0.6, std::min(area_w / 0.55, 1.0));
+		const double amount = region_amount * lerpf(1.0, 0.8, std::min(area_w / 0.55, 1.0));
 		if (amount <= 0.0) return Vector3(1, 1, 1);
 		const Vector2 r(float(double(q.x) * 0.8 - double(q.y) * 0.6), float(double(q.x) * 0.6 + double(q.y) * 0.8));
 		const double c = noise(double(r.y) / 220.0 + 5.5, double(r.x) / 220.0 - 3.3);
@@ -964,6 +966,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("assets"), &ZenScapeGrass::assets);
 		ClassDB::bind_method(D_METHOD("hash_check", "x", "y"), &ZenScapeGrass::hash_check);
 		ClassDB::bind_method(D_METHOD("randf_check", "seed", "count"), &ZenScapeGrass::randf_check);
+		ClassDB::bind_method(D_METHOD("tint_check", "x", "z", "meadow", "over", "up", "hue"), &ZenScapeGrass::tint_check);
 		ClassDB::bind_method(D_METHOD("cull_tiles", "boxes", "reach_of", "state", "show", "lods"), &ZenScapeGrass::cull_tiles);
 	}
 
@@ -982,8 +985,9 @@ protected:
 
 public:
 	// 2: grow_cell takes a band cell's dither. 3: the alpine tufts (config `alp`).
-	// 4: the grass areas (config `area_amount`, `area_edge`).
-	int64_t version() const { return 4; }
+	// 4: the grass areas (config `area_amount`, `area_edge`). 5: their retune (lime
+	// the largest, two vivid greens), tint_check.
+	int64_t version() const { return 5; }
 
 	// endless_grass.gd `cull_tiles`, the same answers: one cell's tiles (a
 	// box, a ring and a state each: bit 0 shown, the bits over it the far lod)
@@ -1026,6 +1030,8 @@ public:
 	PackedStringArray assets() const { return cfg.assets; }
 
 	int64_t hash_check(int64_t x, int64_t y) const { return zsgrass::hash_v2i(x, y); }
+	// A tuft's tint as the configured patch gives it (endless_patch.gd `tint`), for parity checks.
+	Color tint_check(double x, double z, double meadow, double over, double up, const Vector3 &hue) const { return cfg.patch.tint(x, z, meadow, over, up, hue); }
 	PackedFloat32Array randf_check(int64_t seed, int64_t count) const {
 		zsgrass::Pcg r;
 		r.seed(uint64_t(seed));

@@ -210,11 +210,17 @@ static func _ss(a: float, b: float, x: float) -> float:
 ## any worker runs.
 static var area_amount := 1.0
 static var area_edge := Vector2.ZERO
-const AREA_LUSH := Vector3(0.29,1.02,0.41)
-const AREA_SAGE := Vector3(0.70,1.045,0.76)
+const AREA_LUSH := Vector3(0.24,1.36,0.39)
+const AREA_SAGE := Vector3(0.50,1.18,0.62)
 const AREA_AMBER := Vector3(1.21,1.04,0.50)
-const AREA_MIX := Vector3(0.60,0.55,0.55)
-const REGION_UNDER := 0.6
+const AREA_MIX := Vector3(0.60,0.45,0.55)
+const REGION_UNDER := 0.8
+## The first noise's soft cut: lime past it (about 45% of the land).
+const AREA_LIME := Vector2(0.47,0.65)
+## Under it the second noise in three bands: lush below LOW (falling), amber
+## past HIGH, sage between.
+const AREA_LOW := Vector2(0.36,0.44)
+const AREA_HIGH := Vector2(0.58,0.66)
 
 ## The areas at q (a world point plus the offset), px the point's x, a and b
 ## the regions' noises: xyz the areas' colours by their weights, w the
@@ -222,12 +228,18 @@ const REGION_UNDER := 0.6
 static func area(q: Vector2, px: float, a: float, b: float, areas: float) -> Vector4:
 	if area_edge.y > area_edge.x: areas *= 1.0-_ss(area_edge.x,area_edge.y,px)
 	if areas <= 0.0: return Vector4.ZERO
-	var w := q+Vector2(a-0.5,b-0.5)*900.0
-	var s1 := _ss(0.40,0.60,noise(w.x/2600.0-7.3,w.y/2600.0+4.1))
-	var s2 := _ss(0.40,0.60,noise((w.x*0.6+w.y*0.8)/2100.0+2.6,(w.y*0.6-w.x*0.8)/2100.0-5.9))
-	var k := Vector3((1.0-s1)*(1.0-s2),(1.0-s1)*s2,s1*(1.0-s2))*AREA_MIX*areas
+	var k := area_kinds(q,px,a,b)*AREA_MIX*areas
 	var c := AREA_LUSH*k.x+AREA_SAGE*k.y+AREA_AMBER*k.z
 	return Vector4(c.x,c.y,c.z,k.x+k.y+k.z)
+
+## The areas' shares at q (lush, sage, amber; lime the rest), before their mix.
+static func area_kinds(q: Vector2, _px: float, a: float, b: float) -> Vector3:
+	var w := q+Vector2(a-0.5,b-0.5)*900.0
+	var rest := 1.0-_ss(AREA_LIME.x,AREA_LIME.y,noise(w.x/2600.0-7.3,w.y/2600.0+4.1))
+	var n2 := noise((w.x*0.6+w.y*0.8)/2100.0+2.6,(w.y*0.6-w.x*0.8)/2100.0-5.9)
+	var lush := 1.0-_ss(AREA_LOW.x,AREA_LOW.y,n2)
+	var amber := _ss(AREA_HIGH.x,AREA_HIGH.y,n2)
+	return Vector3(lush,1.0-lush-amber,amber)*rest
 
 ## The regions' two broad noises (a, b) at q (a world point plus the offset).
 static func _ab(q: Vector2) -> Vector2:
