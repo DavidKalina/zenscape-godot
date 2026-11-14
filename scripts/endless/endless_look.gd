@@ -213,6 +213,10 @@ var _breeze_here := -1.0
 ## shaders' zs_wind_offset (m), the air's travel along each frame's heading,
 ## so a pattern carried on it slides rigidly as the heading wanders.
 var drift := 0.0
+## The same travel at the plants' wind (WindField.plant_wind: the floor that
+## keeps the grass stirring), for what rides the air the grass leans in: the
+## motes (pollen, wind-borne blades and petals). `drift` with no field.
+var plant_drift := 0.0
 var _wind_offset := Vector2.ZERO
 ## The baked exposure's texture once handed to the shaders (zs_wind_exposure).
 var _wind_texture: ImageTexture
@@ -785,6 +789,9 @@ func _publish(delta: float) -> void:
 	var air := travel
 	if wind != null: air = lerpf(travel,delta*AIR_SPEED*minf(strength,2.0)/WIND,wind.reach(_eye.x,_eye.z))
 	drift += air
+	var plant_air := air
+	if wind != null: plant_air = lerpf(travel,delta*AIR_SPEED*minf(WindField.plant_wind(strength),2.0)/WIND,wind.reach(_eye.x,_eye.z))
+	plant_drift += plant_air
 	_wind_offset += wind_direction*air
 	RenderingServer.global_shader_parameter_set("zs_wind_offset",_wind_offset)
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_time)

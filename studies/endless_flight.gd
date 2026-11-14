@@ -1840,7 +1840,7 @@ func _react(delta: float) -> void:
 	if motes != null:
 		var skims: Array = eddies.ribbons.ribbons if eddies != null else []
 		if snow != null: skims = snow.off_snow(skims)
-		motes.step(delta,camera.global_position,look.wind_direction,look.drift,wash,skims,Callable(self,"_grass_at"))
+		motes.step(delta,camera.global_position,look.wind_direction,look.plant_drift,wash,skims,Callable(self,"_grass_at"))
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
 func _grass_at(x: float, z: float) -> float:
