@@ -768,8 +768,14 @@ func _take() -> void:
 	material.set_shader_parameter("depth_at",depth_at)
 
 ## The land's height (world y) per texel over the square at `corner` (red),
-## and how still the sea lies there (green: 1 up a river's mouth, LandField
-## `calm_here`; the shader stills the swell there).
+## how still the sea lies there (green: 1 up a river's mouth, LandField
+## `calm_here`; the shader stills the swell there), and the river's drawn
+## water at a mouth: how far it lies under the sea (m) times how much of the
+## texel is on its water (blue), and that share (alpha). The sea reads blue
+## over alpha for the water between it and the river drawn under it: the
+## ground draws that water flat at its level, sunk under the sea's over the
+## last RIVER_MOUTH_SINK m (land_field `river_drawn`), but on its chunks'
+## grid, so read off the screen it came in the grid's facets.
 static func depth_image(seed_value: int, corner: Vector2) -> Image:
 	var field := Field.new(seed_value)
 	var n := DEPTH_TEXELS
@@ -777,13 +783,19 @@ static func depth_image(seed_value: int, corner: Vector2) -> Image:
 	# A map this coarse takes the land's carve at its own texel (land_field.gd).
 	field.detail = texel
 	var data := PackedFloat32Array()
-	data.resize(n*n*2)
+	data.resize(n*n*4)
 	for j in n:
 		for i in n:
-			var k := (j*n+i)*2
+			var k := (j*n+i)*4
 			data[k] = field.height(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)
-			data[k+1] = field.calm_here()
-	return Image.create_from_data(n,n,false,Image.FORMAT_RGF,data.to_byte_array())
+			var calm: float = field.calm_here()
+			data[k+1] = calm
+			if calm > 0.0:
+				var drawn: float = field.river_drawn()
+				var on := 1.0-smoothstep(-2.0,2.0,float(field.last_river)) if is_finite(drawn) else 0.0
+				data[k+2] = maxf(Field.SEA_Y-drawn,0.0)*on if on > 0.0 else 0.0
+				data[k+3] = on
+	return Image.create_from_data(n,n,false,Image.FORMAT_RGBAF,data.to_byte_array())
 
 func _wake(plane: Vector3) -> void:
 	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))
