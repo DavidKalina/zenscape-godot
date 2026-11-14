@@ -98,3 +98,54 @@ The full suite was not run.
 - **Other worlds.** Not checked on the amberlands or Peak worlds, or over
   snow (motes run there as before).
 - **The Mac build** of the kernels.
+
+## Follow-up: the "stray petal puff" (2026-11-14)
+
+**Cause: it isn't motes.** The pink-red "puff" beside the plane about 30 m
+before the cosmos drift (`--at=640,470 --heading=0 --alt=5 --wind=1.0`,
+Boost, film from frame 110) is drawn flowers: a small crimson cosmos patch
+(`bloom` kind 5, cosmos variant 0.4, a 15 m-layer drift centred near
+(644, 346)). Seen from the chase camera at a grazing angle and at speed, its
+flat heads on stems hidden by the grass read as petals in the air.
+
+Evidence (scratch drivers, uncommitted):
+
+- The same flight filmed with `--no-petals`, with `--no-motes` (no motes at
+  all) and with the motes on gives the same red cluster. Saturated red pixels
+  in the right half of frames 4-7: 446/954/2537/8096 with motes,
+  449/953/2518/8059 with `--no-motes`. With `--no-motes --no-flowers`:
+  1/2/5/4.
+- A still from 14 m (camera of its own, same frame) shows about 40 crimson
+  cosmos standing at that spot. The grass's flower batches hold 30 cosmos
+  within 4 m of it.
+- Every petal puff checked against the flower instances the grass really
+  placed (its flower MultiMesh buffers, by kind, within 4 m of where the puff
+  is born), in three flights: the lupine and cosmos drifts here, a kind-5
+  cosmos and dandelion run (`--at=908,820 --heading=0`), and poppy, lupine,
+  cosmos, daisy and buttercup (`--at=640,470 --heading=90`). 57 petal puffs,
+  none over fewer than 16 flowers of their own kind (typically 40-130). Puffs
+  over grass with no drift (`bloom` under 0.4) carry no petals. So (a) to (e)
+  in the brief are ruled out for the motes. `bloom` matches the grass's
+  placement, the offset convention agrees, and puffs are born where they're
+  picked.
+- What the motes do add: petals ride the wind. About 10% of petal samples sit
+  over no flower of their kind, a median 8-13 m downwind of the patch they
+  rose from. That's the intended ride, not a stray birth.
+
+**Fix: none to the motes.** No code changed and native wasn't rebuilt, so the
+drift step's cost is as measured above. Whether that small crimson patch
+should look less like a cloud of petals from the chase camera is a flower or
+look question for the user. It might mean fewer stray patches, shorter
+stems, or flowers not drawn edge-on. This round didn't decide it. Petals are
+off-limits to that question and the colour lane is changing the colour areas
+right now.
+
+**Seen in passing (unexplained).** The headless smoke of
+`studies/endless_flight.tscn` fails now and then with three engine errors
+("Initializing already initialized RID", "Parameter mem is null",
+"unimplemented base type encountered in renderer scene cull"). It failed in
+3 of 9 runs with the motes on, 2 of 6 with the drift off
+(`--no-wind-blades --no-petals`) and 0 of 6 with `--no-motes`. So it isn't
+the drift swarm. Whether the older swarms (pollen, kick) cause it, or whether
+it's chance, isn't known. There was no GDScript backtrace and it wasn't
+chased here.
