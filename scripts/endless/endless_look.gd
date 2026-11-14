@@ -772,8 +772,13 @@ func _publish(delta: float) -> void:
 		_publish_field()
 		if wind_map != null: wind_map.step(delta,_eye)
 	var travel := delta*AIR_SPEED*(0.5+0.5*minf(strength,2.0)/WIND)
-	_gust += travel
-	_sheen += travel*_sheen_pace
+	# The plants' air rolls at the plants' wind (WindField.plant_wind) in the
+	# field's land: the meadow's waves and gust bands, the sheen. Only the
+	# shaders and the grass's react read it; the drift below keeps the field's.
+	var gust_travel := travel
+	if wind != null: gust_travel = lerpf(travel,delta*AIR_SPEED*(0.5+0.5*minf(WindField.plant_wind(strength),2.0)/WIND),wind.reach(_eye.x,_eye.z))
+	_gust += gust_travel
+	_sheen += gust_travel*_sheen_pace
 	wind_direction = Vector2(cos(angle),sin(angle))
 	# The air's own travel: in the field's land by the wind there alone (none
 	# in a still hollow), past it (and with no field) the gusts' as before.
@@ -819,7 +824,7 @@ func _publish_field() -> void:
 			RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
 	if _wind_texture == null and wind.n >= 2: RenderingServer.global_shader_parameter_set("zs_wind_rect",wind.rect())
 	var fixed := wind.fixed if wind.mode == "fixed" else -1.0
-	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now*_weather_wind(WX_BREEZE),wind.come_in() if _wind_texture != null else 0.0,fixed,1.0))
+	RenderingServer.global_shader_parameter_set("zs_wind_field",Vector4(WindField.PEAK*wind.now*_weather_wind(WX_BREEZE),wind.come_in() if _wind_texture != null else 0.0,fixed,2.0 if WindField.plant_floor else 1.0))
 	for i in 5:
 		RenderingServer.global_shader_parameter_set("zs_wind_patch_%d" % i,wind.blobs[i] if i < wind.blobs.size() else Vector4(0.0,0.0,1.0,0.0))
 	var near := wind.spots_near(_eye.x,_eye.z)

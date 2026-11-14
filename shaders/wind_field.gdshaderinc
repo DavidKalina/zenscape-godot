@@ -80,16 +80,26 @@ float zs_wind_field_at(vec2 p) {
 	return zs_wind_field.x * (mix(ZS_WIND_SHELTER, 1.0, e) + ZS_WIND_PATCH_ADD * min(spots, 1.0));
 }
 
+// The plants' wind for the field's strength `w` (WindField.plant_wind): a
+// floor and a square root, so a sheltered meadow at dawn still stirs (w 2
+// in zs_wind_field when on; --grass-wind=old, --wind=X: `w` itself).
+const float ZS_WIND_PLANT_FLOOR = 0.65;
+const float ZS_WIND_PLANT_RISE = 1.0;
+float zs_wind_plant(float w) {
+	if (zs_wind_field.w < 1.5) return w;
+	return ZS_WIND_PLANT_FLOOR + ZS_WIND_PLANT_RISE * sqrt(max(w, 0.0));
+}
+
 // The breeze plants lean in (zs_breeze's scale) for wind strength `w`
 // (WindField.breeze_of).
 float zs_wind_breeze_of(float w) {
-	return clamp(0.06 + 0.7 * w, 0.06, 1.8);
+	return clamp(0.06 + 0.7 * zs_wind_plant(w), 0.06, 1.8);
 }
 
 // How far grass blows as one (grass_swell.x's share) for wind strength `w`
 // (WindField.swell_of): calm grass stands, windy grass rolls in swells.
 float zs_wind_swell_of(float w) {
-	return smoothstep(0.25, 0.95, w);
+	return smoothstep(0.25, 0.95, zs_wind_plant(w));
 }
 
 // The field read once at `p`, for a shader that wants several of the reads
@@ -110,6 +120,11 @@ float zs_wind_local_here(vec2 h) {
 }
 float zs_wind_local(vec2 p) {
 	return zs_wind_local_here(zs_wind_here(p));
+}
+// The same as the plants show it (zs_wind_plant): the grass's own crests.
+float zs_wind_plant_local_here(vec2 h) {
+	if (!zs_wind_on()) return zs_wind_strength;
+	return mix(zs_wind_strength, zs_wind_plant(h.x), h.y);
 }
 
 // The breeze at `p` (zs_breeze_air's scale).

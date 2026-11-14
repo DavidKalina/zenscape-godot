@@ -1221,7 +1221,7 @@ void fragment() {
 		float crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
 		crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
 		crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
-		float air = clamp(zs_wind_local_here(wind_h), 0.0, 2.0);
+		float air = clamp(zs_wind_plant_local_here(wind_h), 0.0, 2.0);
 		// (Grass that blows as one keeps their mean: the swell carries the motion.)
 		float crest = mix(crest_near * 0.35 + crest_far * 0.65, 0.35, rp_swell.x) * air * wind_sheen;
 		// Velvet: turf seen low catches the light along its blades.
