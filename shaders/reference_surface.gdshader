@@ -592,6 +592,7 @@ void vertex() {
 		}
 		grass_bow = 0.0;
 		vec2 grass_tilt = vec2(0.0);
+		float react_lay = 0.0;
 		char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
 		char_clump = zs_char_clump(VERTEX);
 		char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
@@ -729,7 +730,18 @@ void vertex() {
 			// prop's wash, the walker and the gusts landing; off on the isles.
 			if (zs_react_live()) {
 				float react_sheen = 0.0;
-				VERTEX += zs_react_offset(root, arm, bend, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen);
+				if (grass_blades && zs_react_arcs()) {
+					// Laid over as a combed mat (zs_react_arc): the mass normal
+					// below loses its dome and tips the way the blades lie.
+					vec2 react_way = vec2(0.0);
+					VERTEX += zs_react_arc(root, arm, max(sway_shape.y - sway_shape.x, 0.05) * instance_scale, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen, react_lay, react_way);
+					grass_tilt += react_way * react_lay * zs_react_lay_tilt;
+					// Laid down, the dark root to sunlit tip ramp narrows, so the
+					// mat isn't striped root-dark against tip-pale.
+					grass_along = mix(grass_along, zs_react_lay_root + (1.0 - zs_react_lay_root) * grass_along, react_lay);
+				} else {
+					VERTEX += zs_react_offset(root, arm, bend, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen);
+				}
 				if (grass_blades) grass_bow = max(grass_bow, react_sheen);
 				foliage_gust = max(foliage_gust, react_sheen * bend);
 			}
@@ -805,7 +817,7 @@ void vertex() {
 			vec2 slope = min(h00, min(h10, h01)) > -100.0 ? vec2(h10 - h00, h01 - h00) * 4.0 : vec2(0.0);
 			vec3 ground_normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 			vec2 out_dir = (mat3(MODEL_MATRIX) * vec3(leaf_local.x, 0.0, leaf_local.z)).xz;
-			world_normal = normalize(mix(world_normal, zs_grass_mass_normal(ground_normal, out_dir, grass_along, grass_round, grass_tilt), 0.9));
+			world_normal = normalize(mix(world_normal, zs_grass_mass_normal(ground_normal, out_dir, grass_along, grass_round * (1.0 - zs_react_lay_dome * react_lay), grass_tilt), 0.9));
 		}
 		contact_height = (terrain_growth || bird_wings) ? 1000.0 : world_position.y - MODEL_MATRIX[3].y;
 	}

@@ -28,12 +28,16 @@ varying vec4 way;
 varying vec4 shape;
 varying vec2 local;
 varying float shape_press;
+varying vec2 from;
 
 void vertex() {
 	way = COLOR;
 	shape = INSTANCE_CUSTOM;
 	shape.x = length(MODEL_MATRIX[0].xy) * 0.5 / px_per_m;
 	shape_press = INSTANCE_CUSTOM.x;
+	// The transform's padding (2D instances leave it unused): the point the
+	// push runs out from, m from the centre (grass_react.gd `part`'s `from`).
+	from = MODEL_MATRIX[2].xy;
 	local = VERTEX * 2.0;
 }
 
@@ -53,7 +57,8 @@ void fragment() {
 	float back = shape.w < 0.0 ? (1.0 + EASE * after) * exp(-EASE * after) : exp(-damp * after) * cos(ring * after);
 	float swing = smoothstep(-rise, 0.0, t) * back;
 	float fall = 1.0 - smoothstep(0.45, 1.0, u);
-	vec2 out_way = o / sqrt(r * r + 0.04 * reach * reach);
+	vec2 so = o - from;
+	vec2 out_way = so / sqrt(dot(so, so) + 0.04 * reach * reach);
 	vec2 turn = vec2(-out_way.y, out_way.x) * way.w;
 	vec2 push = (out_way + turn + way.xy) * (way.z * swing * fall);
 	float core = 1.0 - smoothstep(0.0, 0.5, u);
