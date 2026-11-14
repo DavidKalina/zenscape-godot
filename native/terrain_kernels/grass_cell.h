@@ -412,6 +412,11 @@ struct Config {
 	double patches = 1.0, flower_tall = 1.0, sub = 0.0;
 	float slope_x = 0.83f, slope_y = 0.88f, alpine_x = 0.3f, alpine_y = 0.7f;
 	double flower_tries = 2.2;
+	// Which flowers a grow keeps (KitFlora Site `flower_part`): 0 all; 1 only
+	// those a drift gave its kind (endless_grass's bloom layer); 2 the rest
+	// (the strays and companions, its near layer). One skipped spends the
+	// random numbers it would have, so the rest stand where they would.
+	int flower_part = 0;
 	// The rings (Site lod, lod_grow, lod_soft).
 	godot::Vector4 lod;
 	Vector2 lod_grow;
@@ -910,12 +915,14 @@ public:
 			int kind = kind_at(p, rng.randf());
 			double var = -1.0;
 			double drift_by;
+			bool took = false;
 			if (!blooms.empty()) {
 				const Vector2 b = bloom_at(p);
 				if (!(double(b.x) < cfg.bloom_kind) && !(hash_unit(p.x, p.y, 53.0) < cfg.bloom_companion)) {
 					const int slot = int(b.y);
 					kind = cfg.bloom_kinds[size_t(slot)];
 					var = cfg.bloom_variants[size_t(slot)];
+					took = true;
 				}
 				drift_by = 1.0 + (cfg.bloom_peak - 1.0) * double(b.x);
 			} else {
@@ -939,6 +946,11 @@ public:
 			form(k, fsize, fangle, lift, rsize, has_pose, pose);
 			Color t;
 			const bool tinted = !k.tints.empty() && kind_tint(k, var >= 0.0 ? var : variant(p), t);
+			// Not this grow's part: the random number add would have spent.
+			if (cfg.flower_part > 0 && took == (cfg.flower_part == 2)) {
+				if (!std::isnan(probe(p))) rng.randf();
+				continue;
+			}
 			add(k.asset, p, rsize, tinted, t, has_pose, pose);
 		}
 	}
@@ -986,8 +998,9 @@ protected:
 public:
 	// 2: grow_cell takes a band cell's dither. 3: the alpine tufts (config `alp`).
 	// 4: the grass areas (config `area_amount`, `area_edge`). 5: their retune (lime
-	// the largest, two vivid greens), tint_check.
-	int64_t version() const { return 5; }
+	// the largest, two vivid greens), tint_check. 6: config `flower_part` (the
+	// drifts' flowers grown apart from the rest).
+	int64_t version() const { return 6; }
 
 	// endless_grass.gd `cull_tiles`, the same answers: one cell's tiles (a
 	// box, a ring and a state each: bit 0 shown, the bits over it the far lod)
@@ -1064,6 +1077,7 @@ public:
 		cfg.high_x = hi.x;
 		cfg.high_y = hi.y;
 		cfg.flower_tries = num(d, "flower_tries", 2.2);
+		cfg.flower_part = int(d.get("flower_part", 0));
 		cfg.lod = d.get("lod", Vector4());
 		cfg.lod_grow = d.get("lod_grow", Vector2(1.5, 1.25));
 		cfg.lod_soft = num(d, "lod_soft", 6.0);

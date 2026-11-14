@@ -189,6 +189,15 @@ uniform vec3 flower_petal_ref = vec3(1.0);
 // dropped ones into the ground, and the kept heads grow by keep^-`.w` so the
 // carpet keeps its cover. `.z` 1 turns it off.
 uniform vec4 flower_far = vec4(12.0, 30.0, 1.0, 0.4);
+// Past the thinning (the endless land's drifts, endless_grass.gd
+// FLOWER_END): the kept share goes on down to none from `flower_far.y` to `.x`
+// metres (0: no further band), the heads as grown at `.y`; and how much of
+// the share (`.y`) a plant takes to grow up out of the ground or sink into it.
+uniform vec2 flower_end = vec2(0.0, 0.08);
+// The share of ranks this batch's plants take (their rank mapped into it): a
+// batch of only the kept share (0, keep) or only the rest (keep, 1), so the
+// far band draws the kept batches alone (endless_grass.gd `_rank_split`).
+uniform vec2 flower_rank = vec2(0.0, 1.0);
 // The plant's detail (leaves, bracts and buds: UV2.y's fraction,
 // MeadowFlowerMesh DETAIL) shrinks away from `.x` to `.y` metres, so far
 // flowers are stems and heads. `.x` 0 keeps it at every distance.
@@ -473,11 +482,15 @@ void vertex() {
 		float far_d = endless_ring_d(zs_camera_position, MODEL_MATRIX[3].xyz);
 		float far_t = smoothstep(flower_far.x, flower_far.y, far_d);
 		float keep = mix(1.0, flower_far.z, far_t);
+		float head_keep = keep;
+		if (flower_end.x > flower_far.y) keep *= clamp((flower_end.x - far_d) / (flower_end.x - flower_far.y), 0.0, 1.0);
 		float rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(27.17, 63.41))) * 43758.5453);
-		float fade = smoothstep(keep * 1.08, keep * 1.08 - 0.08, rank);
+		rank = mix(flower_rank.x, flower_rank.y, rank);
+		float soft = flower_end.y;
+		float fade = smoothstep(keep * (1.0 + soft), keep * (1.0 + soft) - soft, rank);
 		if (flower_lod.x > 0.0 && fract(UV2.y) > 0.125) fade *= 1.0 - smoothstep(flower_lod.x, flower_lod.y, far_d);
 		if (UV2.y > 0.5) {
-			vec3 grown = flower_offset * (pow(1.0 / keep, flower_far.w) - 1.0);
+			vec3 grown = flower_offset * (pow(1.0 / max(head_keep, 0.01), flower_far.w) - 1.0);
 			VERTEX += grown;
 			flower_offset += grown;
 		}

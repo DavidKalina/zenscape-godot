@@ -1912,7 +1912,7 @@ func _tally_row() -> void:
 	GroundTally.parts.clear()
 	# The workers in flight this frame, per streamer.
 	var g := 0
-	if grass != null: g = (grass.near_layer.pending as Dictionary).size()+(grass.far_layer.pending as Dictionary).size()
+	if grass != null: g = int(grass._tasks())
 	FrameLog.add(&"w_grass",float(g))
 	FrameLog.add(&"w_land",float((land.get("_pending") as Dictionary).size()) if land != null else 0.0)
 	for pair: Array in [[&"w_trees",trees],[&"w_halls",halls],[&"w_arches",arches],[&"w_rocks",rocks],[&"w_thalls",tunnels.halls if tunnels != null else null]]:
