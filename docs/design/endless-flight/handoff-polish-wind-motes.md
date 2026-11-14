@@ -149,3 +149,131 @@ right now.
 the drift swarm. Whether the older swarms (pollen, kick) cause it, or whether
 it's chance, isn't known. There was no GDScript backtrace and it wasn't
 chased here.
+
+## Round 3: blades and petals that read, and a far layer from height (2026-11-14)
+
+Prototype round (smoke passed, native and `--native-react=0`; no tests added).
+**Native was NOT rebuilt**: no C++ changed. The near drift's flight is untouched
+(spawning only changed), and the new far layer flies on the GPU.
+
+### Diagnosis (default flags, `--at=640,470 --heading=0 --alt=5`, chase camera)
+
+Measured per frame with a scratch driver (`scratch/motes_seen.gd`: bits in the
+frustum, projected size in a 1440x900 view, on-screen time by nearest match)
+and by drawing the bits magenta and counting blobs in the film.
+
+| Boost pass, before | |
+|---|---|
+| pool alive | 237 (cap 360) |
+| behind the camera | **80%** of the pool |
+| on screen | 36 a frame |
+| projected length / width, median | 7.4 px / **2.6 px** |
+| height over ground, median | **2.0 m** (eye 9.3 m): 3 m under the eye, seen against sunlit grass |
+| magenta blobs of 9+ px a frame (1080x675 film) | **8.6**, nearly all lying in the grass near the camera |
+
+So they were there but not seen: thin pale-green slivers riding in and just over
+grass of the same value, mostly behind the eye. Cause by cause: at speed the
+ride was shortened by `DRIFT_PASSED` (0.5-1.4 s at Boost), most of it the
+rise out of the grass, so bits barely got up before falling; the corridor
+started 6 m ahead of the camera, so many were passed at once; the pale straw
+matched the sunlit grass; and a 0.18 m blade at 23 m is 2-3 px wide.
+On-screen time was fine (median 0.48 s). The near fade was not the problem.
+
+### What changed
+
+- **Ride height follows the eye** (`DRIFT_OVER` 0.6-1.7 of the eye's height
+  over the ground, at least `DRIFT_RIDE`, at most 12 m): flying low they cross
+  the view at and above the plane's height, against sky and horizon.
+- **Met already up** when the eye is fast (`DRIFT_FAST` 8-25 m/s), and they
+  **ride until the eye has passed them** (+0.25-0.8 s), then fall short
+  (`DRIFT_UNSEEN`), so the pool holds the ones ahead. Corridor's near end is
+  the eye's travel over 0.35 s (`DRIFT_NEAR_LEAD`, about 20 m at Boost), half
+  width 19 m (`DRIFT_SIDE`); a puff is a stream 2.6x its size along the wind.
+- **Bigger and contrasting**: blades 0.4-0.8 m by 0.15-0.22 m; faces cream,
+  straw, a dry brown and tan (darker than sunlit grass), pale tip
+  (`DRIFT_PALES`); 30% of blades are white seed fluff (round, `--wind-fluff=X`);
+  petals 0.15-0.22 m. More of them: `DRIFT_PUFFS` 2.4, 10-22 bits a puff, 24
+  puffs, 24 births a frame.
+- **Grow with distance** (shaders/grass_bit.gdshader): from 6 m to 40 m a bit
+  grows up to 2.8x across and 1.5x along (a petal 2.8x both ways), so a far bit
+  is a fleck, not a hair. This also applies to the kick's bits, but they sit at
+  about 12 m, where it is about 1.1x.
+- **Far layer** (new, `WindFar`, shaders/wind_fleck.gdshader): streamers of
+  flecks 70-520 m out in a +-57 degree sector about the view, placed by the
+  puffs' logic (`_gusty`, more in stronger air, petals over `bloom` drifts in
+  their wash colour, fluff and cream/brown/tan flecks). 56 slots x 48 flecks
+  (2688 instances, one MultiMesh). A streamer's flecks are written once at
+  birth (`set_instance_*`), and each flies **on the GPU** from where and when it
+  was let go (drift with the air, bob, swirl). The CPU per frame is one uniform
+  (`now`), plus at most one streamer try (2 `bloom` calls, 3 land probes: grass,
+  ground downwind, tint). A fleck is a camera-facing streak along its own way
+  across the screen, 4.2 px across at any distance, with fog. It fades in by
+  size over 45-85 m from the eye, where the near drift's real blades take over
+  (the near drift now runs to 60 m over the ground, thinning from 20 m:
+  `DRIFT_HIGH`), and out over 520-700 m.
+- Flags: `--wind-blades=X`, `--no-wind-blades`, `--petals=X`, `--no-petals`
+  (unchanged), plus `--wind-fluff=X` and `--far-drift=X` / `--no-far-drift`.
+
+### Numbers after (same flights)
+
+| | Boost before | Boost after | Cruise before | Cruise after | Title before | Title after |
+|---|---|---|---|---|---|---|
+| on screen a frame (mean / max) | 36 / 107 | 98 / 201 | 26 / 66 | 67 / 206 | 3.6 / 14 | 4.5 / 11 |
+| behind camera | 80% | 57% | 81% | 61% | | |
+| height over ground, median | 2.0 m | 7.6 m | 2.1 m | 8.7 m | 1.9 m | 2.2 m |
+| above the eye | 24% | 58% | 22% | 70% | 14% | 36% |
+| length / width px, median | 7.4 / 2.6 | 12.5 / 6.8 | 8.5 / 3.2 | 10.8 / 7.9 | | |
+| magenta blobs 9+ px a frame (film) | 8.6 | 35 (before the last palette/rate step) | | | | |
+
+(The before cruise's px median printed by the driver after the shader change
+assumed the new far growth. 8.5/3.2 is from the first, honest run.) At 60 m
+and 120 m over the meadow: before, nothing (the drift stopped at 40 m). After,
+the far layer at heading 90 holds about 590 live flecks, 310 on screen (60 m).
+
+Default wind fills the near pool to its 360 cap at Boost (`--wind=1`, `2`,
+`gusty --hour=14.5` all cap; puffs 22-24). The cap is the ceiling, the oldest
+(behind the eye) go first. `--wind=0.3`: peak 102 bits, 6 puffs.
+
+### Cost
+
+| | before | after |
+|---|---|---|
+| `m_drift`, headless driven Boost, native (mean / p95 / worst ms) | 0.122 / 0.31 / 0.50 | 0.183 / 0.38 / 0.58 |
+| `m_far` | n/a | 0.014 / 0.07 / 0.38 (a birth frame writes 48 instances) |
+| frame time, rendered `look_views` meadow_low (median wall / gpu ms) | 7.81 / 7.76 | 7.84 / 7.79 |
+
+Parity: `scratch/motes_parity.gd` (feeds `_drift_bit`'s bits to both and steps
+600 frames): worst difference 0.0. (The driver hangs after its RESULT line and
+times out. That's harmless.)
+
+### Films (scratch/motes2, chase/play camera)
+
+before_boost / after_boost (Boost, cosmos and lupine drifts), before_cruise /
+after_cruise, before_title / after_title, before_h60 / after_h60 and
+before_h120 / after_h120 (heading 90 over the river meadow), after_descent
+(120 m to 5 m). Driver: `scratch/motes_seen.gd` (`--film`, `--probe-far`,
+`--magenta`, `--hold-to` for the descent).
+
+### Tests broken
+
+None that reference the motes or the two shaders (grep over tests/). The full
+suite was not run.
+
+### Unverified / caveats
+
+- **No hand flight.** All flights are driven straight lines.
+- **Descent hand-over without a pop**: the film shows flecks through the
+  descent, but its frames are 0.6 s apart. A pop of one or two frames could not
+  be seen in it, and no per-frame check of the 45-85 m band was made.
+- **From height it's subtle.** On sunlit pale-green meadow the far flecks read
+  mostly as moving cream and white streaks, clearer over water, forest edges
+  and sky than over open grass. Streamers only spawn over grass (none over
+  forest), so a forested view stays empty. Tune with `--far-drift=X` (rate),
+  `FLECK_PX` and `FAR_FLECKS`.
+- Near the camera, the dry brown blades can look like wood chips (title).
+- A shader gotcha found here: in wind_fleck, `max(size, ...)` with
+  `size = length(MODEL_MATRIX[0].xyz)` drew nothing (the cause wasn't found).
+  The fleck's own size was dropped, since it never shows past the hand-over.
+- The pool still caps at 360 at default wind and Boost. Raising `DRIFT` wasn't
+  tried.
+- Other worlds, snow and the Mac weren't checked.

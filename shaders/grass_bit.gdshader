@@ -32,6 +32,10 @@ const float CUT_SHADE = 0.78;
 // rather than filling the screen: gone at NEAR_GONE m, whole from NEAR_FULL.
 const float NEAR_GONE = 1.5;
 const float NEAR_FULL = 4.5;
+const float FAR_GROW = 1.8;
+const float FAR_GROW_LEN = 0.5;
+const float FAR_FROM = 6.0;
+const float FAR_FULL = 40.0;
 
 varying float along;
 varying float petal;
@@ -65,7 +69,13 @@ void vertex() {
 	dy += -swing * cos(wave) * 4.0 / max(len, 0.05);
 	VERTEX = vec3(x * ct - yc * st, x * st + yc * ct + y, (v - 0.5) * len);
 	float eye_d = length((MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz);
-	VERTEX *= smoothstep(NEAR_GONE, NEAR_FULL, eye_d);
+	// Farther off it grows (up to FAR_GROW more across by FAR_FULL m, a blade
+	// FAR_GROW_LEN more along, a petal both ways), so a bit in the air ahead
+	// still reads as a fleck from the chase view rather than a hair.
+	float near = smoothstep(NEAR_GONE, NEAR_FULL, eye_d);
+	float far = smoothstep(FAR_FROM, FAR_FULL, eye_d);
+	VERTEX.xy *= near * (1.0 + FAR_GROW * far);
+	VERTEX.z *= near * (1.0 + mix(FAR_GROW_LEN, FAR_GROW, petal) * far);
 	// The cross-section's normal (each half of the crease its own), turned by
 	// the twist, tilted by the bow's and the flutter's slope.
 	vec2 nc = normalize(vec2(-sign(u) * (petal > 0.5 ? 1.1 : CREASE), 1.0));
