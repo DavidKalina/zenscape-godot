@@ -36,7 +36,8 @@ extends Node3D
 ## Flags: --no-motes (none), --no-pollen, --no-grass-kick, --pollen=X (the
 ## specks' count, a share of POLLEN), --grass-kick=X (the kick's rate),
 ## --no-wind-blades / --wind-blades=X (the drift's blades, their rate),
-## --no-petals / --petals=X (petals: the drift's and the wash's, their share).
+## --no-petals / --petals=X (petals: the drift's and the wash's, their share),
+## --wind-fluff=X (the drift's seed fluff, its share of DRIFT_FLUFF; 0 none).
 ##
 ## Native: the specks' drift and the bits' flight each frame run in C++
 ## (ZenScapeMotes, native/terrain_kernels/flight_fx.h) when the library is
@@ -136,16 +137,18 @@ const DRIFT := 360
 ## about 6) over grass, standing still; their rise with the air's speed
 ## (k^DRIFT_POW, k = air/DRIFT_AIR up to 2), and the eye's travel adding one
 ## more share every DRIFT_PACE m/s (so a fast plane meets as many).
-const DRIFT_PUFFS := 1.7
+const DRIFT_PUFFS := 2.4
 const DRIFT_AIR := 6.0
 const DRIFT_POW := 1.3
 const DRIFT_PACE := 5.0
 ## Puffs alive at once, the bits one lets go (a range, scaled by its gust),
 ## over how long (s), and how wide its patch (m: across, and along the wind).
-const DRIFT_PUFF_MAX := 18
-const DRIFT_PUFF := Vector2i(6,16)
+const DRIFT_PUFF_MAX := 24
+const DRIFT_PUFF := Vector2i(10,22)
 const DRIFT_PUFF_TIME := Vector2(0.5,1.4)
 const DRIFT_PUFF_SIZE := Vector2(2.2,4.0)
+## A puff's patch stretched along the wind (a share of its size): a stream.
+const DRIFT_STREAM := 2.6
 ## Where a puff is: within DRIFT_REACH m of a point led DRIFT_LEAD s ahead
 ## along the eye's travel (at most DRIFT_LEAD_MAX m), and DRIFT_UPWIND s of
 ## the air's travel upwind, so its stream drifts into view. DRIFT_TRIES spots
@@ -155,22 +158,38 @@ const DRIFT_REACH := 24.0
 const DRIFT_LEAD := 1.6
 ## The corridor's near end (m ahead of the eye).
 const DRIFT_NEAR := 6.0
+## Flying fast, the near end is the eye's travel over this many s (so a bit
+## born there is on screen a while before it passes), and the corridor's
+## half-width (m: the chase view at 20 m sees about 28 m to each side).
+const DRIFT_NEAR_LEAD := 0.35
+const DRIFT_SIDE := 19.0
 const DRIFT_LEAD_MAX := 70.0
 const DRIFT_UPWIND := 0.8
 const DRIFT_TRIES := 3
 const DRIFT_BLOOM_DRAW := 1.0
 ## How high the eye may be over the ground (m) before puffs thin, and none.
-const DRIFT_HIGH := Vector2(12.0,40.0)
+const DRIFT_HIGH := Vector2(20.0,60.0)
 ## Bits born a frame at most, across the puffs.
-const DRIFT_SPAWNS := 18
+const DRIFT_SPAWNS := 24
 ## A riding blade: its size (m, the kick's are 0.33..0.72 long), how high it
 ## rides over the ground (m), how long it rides (s) before it lets go, the
 ## share of the air's speed it is carried at, its rise off the grass (m/s), and
 ## the ride's spring (1/s^2) and damping (1/s), a bob as a share of the height,
 ## the tumble the air keeps up while riding and its flutter.
-const DRIFT_LEN := Vector2(0.45,0.95)
-const DRIFT_WIDTH := Vector2(0.11,0.18)
+const DRIFT_LEN := Vector2(0.4,0.8)
+const DRIFT_WIDTH := Vector2(0.15,0.22)
 const DRIFT_RIDE := Vector2(1.8,3.8)
+## Over that, a share of the eye's own height over the ground (flying low,
+## about the plane's height and up to the eye's: against the sky), at most
+## DRIFT_RIDE_MAX m.
+const DRIFT_OVER := Vector2(0.6,1.7)
+const DRIFT_RIDE_MAX := 12.0
+## The eye's speed (m/s) from which a bit is met already up (fully from the
+## second), and how long it rides on after the eye has passed it (s).
+const DRIFT_FAST := Vector2(8.0,25.0)
+const DRIFT_AFTER := Vector2(0.25,0.8)
+## The share of its fall cut short then (it falls behind the eye, unseen).
+const DRIFT_UNSEEN := 0.75
 const DRIFT_RIDE_TIME := Vector2(1.4,3.8)
 const DRIFT_CARRY := Vector2(0.75,1.25)
 const DRIFT_RISE := Vector2(2.5,4.5)
@@ -184,11 +203,21 @@ const DRIFT_PASSED := 30.0
 ## The share of the riding blades that show a pale face (straw, sunlit, the
 ## silvery underside), so they read over the standing grass.
 const DRIFT_PALE := 0.92
+## Their faces (linear): straw, cream, a dry brown leaf and tan (darker than
+## the sunlit grass, so they read on it), a pale sunlit tip; touched by the
+## ground's tint (DRIFT_TINT of it) so dry land drifts straw.
+const DRIFT_PALES := [Color(0.82,0.74,0.40),Color(0.92,0.89,0.70),Color(0.42,0.30,0.14),Color(0.66,0.50,0.26),Color(0.90,0.90,0.62)]
+const DRIFT_TINT := 0.3
+## The share of a puff's blades that are seed fluff instead: small, round,
+## near white, light (they ride long and fall slowly), its size (m).
+const DRIFT_FLUFF := 0.3
+const FLUFF_SIZE := Vector2(0.14,0.22)
+const FLUFF_COLOUR := Color(0.95,0.94,0.86)
 ## Petals: their size (m), the share of the kick's fall they fall at (light,
 ## flat: they flutter down), the share of a puff over a drift that are petals
 ## (times its weight there), and the wash's share over a drift.
-const PETAL_LEN := Vector2(0.09,0.14)
-const PETAL_WIDTH := Vector2(0.08,0.12)
+const PETAL_LEN := Vector2(0.15,0.22)
+const PETAL_WIDTH := Vector2(0.13,0.19)
 const PETAL_FALL := 0.3
 const PETAL_SHARE := 0.95
 const PETAL_WASH := 0.55
@@ -203,8 +232,11 @@ var drift_on := true
 var drift_scale := 1.0
 var petals_on := true
 var petal_scale := 1.0
+var fluff_share := DRIFT_FLUFF
 ## For the numbers: specks shown, bits flying, the drift's bits and puffs.
-var stats := {"pollen": 0, "kick": 0, "drift": 0, "puffs": 0}
+var stats := {"pollen": 0, "kick": 0, "drift": 0, "puffs": 0, "far": 0}
+var far_on := true
+var far_scale := 1.0
 
 var _rng := RandomNumberGenerator.new()
 var _ground: Callable
@@ -254,9 +286,12 @@ func setup(land_seed: int, ground: Callable) -> void:
 		elif a.begins_with("--pollen="): pollen_count = clampi(roundi(POLLEN*float(a.get_slice("=",1))),0,POLLEN*4)
 		elif a.begins_with("--grass-kick="): kick_scale = maxf(float(a.get_slice("=",1)),0.0)
 		elif a == "--no-wind-blades": drift_on = false
+		elif a == "--no-far-drift": far_on = false
+		elif a.begins_with("--far-drift="): far_scale = maxf(float(a.get_slice("=",1)),0.0)
 		elif a.begins_with("--wind-blades="): drift_scale = maxf(float(a.get_slice("=",1)),0.0)
 		elif a == "--no-petals": petals_on = false
 		elif a.begins_with("--petals="): petal_scale = maxf(float(a.get_slice("=",1)),0.0)
+		elif a.begins_with("--wind-fluff="): fluff_share = clampf(DRIFT_FLUFF*float(a.get_slice("=",1)),0.0,1.0)
 	if pollen_count == 0: pollen_on = false
 	if kick_scale <= 0.0: kick_on = false
 	if drift_scale <= 0.0: drift_on = false
@@ -274,6 +309,8 @@ func setup(land_seed: int, ground: Callable) -> void:
 	_kick_buf.resize(KICK*20)
 	_drift_mm = _batch("WindDrift",_kick_mm.mesh,DRIFT,true,m)
 	_drift_buf.resize(DRIFT*20)
+	if far_scale <= 0.0: far_on = false
+	if far_on: _far_setup()
 	if native_wanted():
 		native = ClassDB.instantiate(NATIVE_CLASS)
 		native.configure({"pollen_count": pollen_count, "pollen_reach": POLLEN_REACH, "pollen_wander": POLLEN_WANDER,
@@ -328,6 +365,8 @@ func step(delta: float, eye: Vector3, wind: Vector2, travel: float, wash: Dictio
 	FrameLog.mark(&"m_kick")
 	if drift_on or petals_on: _drift(delta,eye,under,grass)
 	FrameLog.mark(&"m_drift")
+	if far_on and (drift_on or petals_on): _far(delta,eye,grass)
+	FrameLog.mark(&"m_far")
 
 # --- Pollen ---------------------------------------------------------------------------
 
@@ -704,6 +743,18 @@ func _petal(at: Vector2, g: float, vel: Vector3, kind: int) -> Dictionary:
 		"settle": _rng.randf_range(KICK_SETTLE.x,KICK_SETTLE.y), "rest": _rng.randf_range(0.3,0.9),
 		"colour": colour, "ride": 0.0, "lift": 0.0, "carry": 1.0, "fall": PETAL_FALL, "sx": 0.0, "sz": 0.0, "ox": at.x, "oz": at.y}
 
+## A tuft of seed fluff off the meadow at `at` (ground `g`), off at `vel`: a
+## petal's round shape (PETAL_MARK), near white, falling lighter still.
+func _fluff(at: Vector2, g: float, vel: Vector3) -> Dictionary:
+	var bit := _petal(at,g,vel,0)
+	var bright := _rng.randf_range(0.88,1.05)
+	bit.colour = Color(FLUFF_COLOUR.r*bright,FLUFF_COLOUR.g*bright,FLUFF_COLOUR.b*bright,PETAL_MARK)
+	var s := _rng.randf_range(FLUFF_SIZE.x,FLUFF_SIZE.y)
+	bit.length = s
+	bit.width = s*0.9
+	bit.fall = PETAL_FALL*0.7
+	return bit
+
 ## A bit's start, standing in the grass: its length near upright, leaning
 ## the way it goes off (`vel`), turned any way about it.
 func _stood(vel: Vector3) -> Basis:
@@ -765,6 +816,7 @@ func _drift(delta: float, eye: Vector3, under: float, grass: Callable) -> void:
 		# out to the eye's travel over DRIFT_LEAD s, DRIFT_REACH*0.6 m to
 		# each side), so the eye flies through them; slow, a disc round it.
 		var lead_m := minf(flat_vel.length()*DRIFT_LEAD,DRIFT_LEAD_MAX)
+		var near_m := maxf(DRIFT_NEAR,flat_vel.length()*DRIFT_NEAR_LEAD)
 		var ahead_way := flat_vel.normalized() if flat_vel.length() > 1.0 else way
 		var corridor := lead_m > DRIFT_REACH
 		var centre := Vector2(eye.x,eye.z)+(Vector2.ZERO if corridor else ahead_way*lead_m)-_air*DRIFT_UPWIND
@@ -774,7 +826,7 @@ func _drift(delta: float, eye: Vector3, under: float, grass: Callable) -> void:
 		var best_bloom := Vector2.ZERO
 		for _try in DRIFT_TRIES:
 			var at := centre+Vector2.from_angle(_rng.randf()*TAU)*sqrt(_rng.randf())*DRIFT_REACH
-			if corridor: at = centre+ahead_way*_rng.randf_range(DRIFT_NEAR,lead_m)+across*_rng.randf_range(-1.0,1.0)*DRIFT_REACH*0.6
+			if corridor: at = centre+ahead_way*_rng.randf_range(near_m,maxf(lead_m,near_m+10.0))+across*_rng.randf_range(-1.0,1.0)*DRIFT_SIDE
 			var score := _gusty(at,way)
 			var bloom := Patch.bloom(at.x,at.y) if petals_on else Vector2.ZERO
 			score += bloom.x*DRIFT_BLOOM_DRAW
@@ -797,7 +849,7 @@ func _drift(delta: float, eye: Vector3, under: float, grass: Callable) -> void:
 				_puffs.append({"at": best, "ground": g, "slope": slope, "left": count, "petals": petals,
 					"blades": blades, "kind": int(best_bloom.y), "every": _rng.randf_range(DRIFT_PUFF_TIME.x,DRIFT_PUFF_TIME.y)/maxf(count,1),
 					"owed": 1.0, "tint": _grass_tint(best), "size": _rng.randf_range(DRIFT_PUFF_SIZE.x,DRIFT_PUFF_SIZE.y),
-					"carry": _rng.randf_range(DRIFT_CARRY.x,DRIFT_CARRY.y)})
+					"carry": _rng.randf_range(DRIFT_CARRY.x,DRIFT_CARRY.y), "over": eye.y-under})
 	# The puffs let go their bits.
 	var left := DRIFT_SPAWNS
 	var j := 0
@@ -830,7 +882,7 @@ func _drift_bit(pf: Dictionary, way: Vector2) -> void:
 	var at: Vector2 = pf.at
 	var size := float(pf.size)
 	var side := Vector2(-way.y,way.x)
-	var p := at+way*_rng.randf_range(-1.0,1.0)*size*1.4+side*_rng.randf_range(-1.0,1.0)*size*0.6
+	var p := at+way*_rng.randf_range(-1.0,1.0)*size*DRIFT_STREAM+side*_rng.randf_range(-1.0,1.0)*size*0.6
 	var slope: Vector2 = pf.slope
 	var g := float(pf.ground)+slope.dot(p-at)
 	var carry := float(pf.carry)*_rng.randf_range(0.85,1.15)
@@ -838,24 +890,48 @@ func _drift_bit(pf: Dictionary, way: Vector2) -> void:
 	var petal := _rng.randf() < float(pf.petals) or int(pf.blades) <= 0
 	var bit: Dictionary
 	if petal: bit = _petal(p,g,vel,int(pf.kind))
+	elif _rng.randf() < fluff_share: bit = _fluff(p,g,vel)
 	else:
 		bit = _blade(p,g,vel,pf.tint,1.0)
 		if _rng.randf() < DRIFT_PALE:
-			var pale: Color = KICK_PALES[_rng.randi() % KICK_PALES.size()]
+			var pale: Color = DRIFT_PALES[_rng.randi() % DRIFT_PALES.size()]
 			var tint: Color = pf.tint
-			bit.colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),0.5)*_rng.randf_range(0.9,1.05)
+			bit.colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),DRIFT_TINT)*_rng.randf_range(0.9,1.08)
 			bit.colour.a = 1.0
 		bit.length = _rng.randf_range(DRIFT_LEN.x,DRIFT_LEN.y)
 		bit.width = _rng.randf_range(DRIFT_WIDTH.x,DRIFT_WIDTH.y)
-	# Passed by a fast eye they are behind it soon: shorter rides then, so the
-	# pool holds the ones ahead.
-	var pace := 1.0/(1.0+Vector2(_eye_vel.x,_eye_vel.z).length()/DRIFT_PASSED)
-	var ride := _rng.randf_range(DRIFT_RIDE_TIME.x,DRIFT_RIDE_TIME.y)*(1.3 if petal else 1.0)*pace
+	# How high it rides: about the eye's own height over the ground (a share
+	# DRIFT_OVER of it), so flying low the streams cross the view at the
+	# plane's height and against the sky, not down in the grass; never under
+	# DRIFT_RIDE (the title's eye sits in the grass).
+	var over := float(pf.get("over",0.0))
+	var lift := maxf(_rng.randf_range(DRIFT_RIDE.x,DRIFT_RIDE.y),over*_rng.randf_range(DRIFT_OVER.x,DRIFT_OVER.y))
+	lift = minf(lift,DRIFT_RIDE_MAX)
+	# A fast eye meets them already up (the air carries them, it doesn't see
+	# them rise), and they ride until it has passed them, then fall behind it,
+	# so the pool holds the ones ahead.
+	var flat_vel := Vector2(_eye_vel.x,_eye_vel.z)
+	var fast := clampf((flat_vel.length()-DRIFT_FAST.x)/(DRIFT_FAST.y-DRIFT_FAST.x),0.0,1.0)
+	var up := fast*_rng.randf_range(0.55,1.0)
+	var p3: Vector3 = bit.pos
+	p3.y = lerpf(p3.y,g+lift,up)
+	bit.pos = p3
+	vel.y *= 1.0-up
+	bit.vel = vel
+	var pace := 1.0/(1.0+flat_vel.length()/DRIFT_PASSED)
+	var ride := _rng.randf_range(DRIFT_RIDE_TIME.x,DRIFT_RIDE_TIME.y)*(1.3 if petal else 1.0)
+	if fast > 0.0:
+		var fwd := flat_vel.normalized()
+		var closing := flat_vel.length()-_air.dot(fwd)*carry
+		if closing > 4.0:
+			var ahead := (p-Vector2(_last_eye.x,_last_eye.z)).dot(fwd)
+			var passed := maxf(ahead,0.0)/closing+_rng.randf_range(DRIFT_AFTER.x,DRIFT_AFTER.y)
+			ride = lerpf(ride,minf(ride,maxf(passed,0.5)),fast)
 	bit.ride = ride
-	bit.lift = _rng.randf_range(DRIFT_RIDE.x,DRIFT_RIDE.y)
+	bit.lift = lift
 	bit.carry = carry
 	bit.settle = ride+float(bit.settle)*0.5
-	bit.life = ride+_rng.randf_range(2.5,4.0)*(1.6 if petal else 1.0)*pace
+	bit.life = ride+_rng.randf_range(2.5,4.0)*(1.6 if petal else 1.0)*pace*(1.0-DRIFT_UNSEEN*fast)
 	bit.sx = slope.x
 	bit.sz = slope.y
 	bit.ox = at.x
@@ -866,3 +942,160 @@ func _drift_bit(pf: Dictionary, way: Vector2) -> void:
 		return
 	if _drifts.size() >= DRIFT: _drifts.pop_front()
 	_drifts.append(bit)
+
+# --- The far drift (the wind seen from height and far off) ------------------------
+
+## Streamers of flecks (shaders/wind_fleck.gdshader: one camera-facing fleck
+## each, never under a couple of pixels) carried downwind over the meadows
+## FAR_RING m out, in a sector led along the view, so from height the land
+## below shows the wind; they give way to the near drift's real blades within
+## about 45..85 m of the eye (the shader). A streamer is placed by the puffs'
+## logic (gust patches, more in stronger air, petals over a flower drift in its
+## colour) and its flecks are written once, at birth: each flies on the GPU
+## from where and when it was let go, so a frame here costs one uniform and,
+## now and then, one streamer's writes. FAR_STREAMERS slots of FAR_FLECKS.
+const FLECK = preload("res://shaders/wind_fleck.gdshader")
+const FAR_STREAMERS := 56
+const FAR_FLECKS := 48
+## Streamers a second at DRIFT_AIR m/s of air (times k^DRIFT_POW, before the
+## gust's chance), how far out (m: near, far), the sector's half-angle (rad)
+## about the view, and how long one lives (s; its flecks let go over
+## FAR_STAGGER s).
+const FAR_RATE := 5.0
+const FAR_RING := Vector2(70.0,520.0)
+const FAR_SECTOR := 1.0
+const FAR_LIFE := Vector2(6.0,12.0)
+const FAR_STAGGER := 2.0
+## A streamer's length along the wind and half-width across (m), how high its
+## flecks ride over the ground (m), and a fleck's own size (m: the shader keeps
+## it at least a couple of pixels across).
+const FAR_LEN := Vector2(20.0,48.0)
+const FAR_WIDE := Vector2(3.0,8.0)
+const FAR_UP := Vector2(3.0,16.0)
+const FAR_SIZE := Vector2(0.28,0.42)
+## Far off the pale straw is lost on the sunlit meadow: the far flecks are
+## cream, a dry brown and tan (linear), and more of them seed fluff.
+const FAR_PALES := [Color(0.92,0.9,0.78),Color(0.30,0.21,0.10),Color(0.36,0.25,0.12),Color(0.58,0.42,0.22)]
+const FAR_FLUFF := 0.25
+
+var _far_mm: MultiMesh
+var _far_mat: ShaderMaterial
+var _far_free := PackedFloat64Array()
+var _far_next := 0
+var _far_owed := 0.0
+var _far_alive := 0
+
+func _far_setup() -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	_far_mat = ShaderMaterial.new()
+	_far_mat.shader = FLECK
+	var n := FAR_STREAMERS*FAR_FLECKS
+	_far_mm = _batch("WindFar",quad,n,true,_far_mat)
+	# Every fleck spent until its streamer is born (born long ago, no life).
+	var buf := PackedFloat32Array()
+	buf.resize(n*20)
+	for i in n:
+		var o := i*20
+		buf[o] = 1.0
+		buf[o+5] = 1.0
+		buf[o+10] = 1.0
+		buf[o+16] = -1.0e6
+	_far_mm.buffer = buf
+	_far_mm.visible_instance_count = n
+	_far_free.resize(FAR_STREAMERS)
+	_far_free.fill(-1.0)
+
+func _far(delta: float, eye: Vector3, grass: Callable) -> void:
+	_far_mat.set_shader_parameter(&"now",_time)
+	var speed := _air.length()
+	if speed < 0.2: return
+	var way := _air/speed
+	var k := clampf(speed/DRIFT_AIR,0.0,2.0)
+	var rate := FAR_RATE*pow(k,DRIFT_POW)*far_scale
+	_far_owed = minf(_far_owed+rate*delta,1.5)
+	if _far_owed < 1.0: return
+	_far_owed -= 1.0
+	# A free slot (one whose streamer is done), looked for from the last.
+	var slot := -1
+	_far_alive = 0
+	for s in FAR_STREAMERS:
+		if _far_free[s] > _time: _far_alive += 1
+	stats.far = _far_alive
+	for s in FAR_STREAMERS:
+		var j := (_far_next+s) % FAR_STREAMERS
+		if _far_free[j] <= _time:
+			slot = j
+			break
+	if slot < 0: return
+	var cam := get_viewport().get_camera_3d()
+	var fwd := Vector2(_eye_vel.x,_eye_vel.z)
+	if cam != null:
+		var z := -cam.global_basis.z
+		if Vector2(z.x,z.z).length() > 0.05: fwd = Vector2(z.x,z.z)
+	fwd = fwd.normalized() if fwd.length() > 0.01 else way
+	var best := Vector2.ZERO
+	var best_score := -1.0
+	var best_bloom := Vector2.ZERO
+	for _try in 2:
+		var r := lerpf(FAR_RING.x,FAR_RING.y,sqrt(_rng.randf()))
+		var at := Vector2(eye.x,eye.z)+fwd.rotated(_rng.randf_range(-FAR_SECTOR,FAR_SECTOR))*r
+		var score := _gusty(at,way)
+		var bloom := Patch.bloom(at.x,at.y) if petals_on else Vector2.ZERO
+		score += bloom.x*DRIFT_BLOOM_DRAW
+		if score > best_score:
+			best_score = score
+			best = at
+			best_bloom = bloom
+	if _rng.randf() >= best_score: return
+	var g := float(grass.call(best.x,best.y))
+	if is_nan(g): return
+	var length := _rng.randf_range(FAR_LEN.x,FAR_LEN.y)
+	var ahead := best+way*length*0.5
+	var g2 := float(_ground.call(ahead.x,ahead.y))
+	var slope := 0.0 if is_nan(g2) else clampf((g2-g)/(length*0.5),-0.6,0.6)
+	var tint := _grass_tint(best)
+	var strength := clampf(best_score,0.3,1.0)
+	var count := roundi(lerpf(FAR_FLECKS*0.45,FAR_FLECKS,strength*_rng.randf_range(0.6,1.0)))
+	var petals := clampf(_petal_weight(best_bloom.x)*PETAL_SHARE*petal_scale,0.0,1.0) if petals_on else 0.0
+	if not drift_on:
+		count = roundi(count*petals)
+		petals = 1.0
+	var kind := clampi(int(best_bloom.y),0,Patch.KINDS.size()-1)
+	var wash: Vector3 = Patch.KINDS[kind][2]
+	var wide := _rng.randf_range(FAR_WIDE.x,FAR_WIDE.y)
+	var side := Vector2(-way.y,way.x)
+	var carry := _rng.randf_range(DRIFT_CARRY.x,DRIFT_CARRY.y)
+	var life_max := 0.0
+	for j in FAR_FLECKS:
+		var idx := slot*FAR_FLECKS+j
+		if j >= count:
+			_far_mm.set_instance_custom_data(idx,Color(-1.0e6,0.0,0.0,0.0))
+			continue
+		var along := _rng.randf_range(-0.5,0.5)
+		var across := _rng.randf_range(-1.0,1.0)*wide*sqrt(1.0-absf(along)*1.6)
+		var p := best+way*along*length+side*across
+		var y := g+slope*along*length+lerpf(FAR_UP.x,FAR_UP.y,pow(_rng.randf(),1.4))
+		var colour: Color
+		var size := _rng.randf_range(FAR_SIZE.x,FAR_SIZE.y)
+		if _rng.randf() < petals:
+			var b := _rng.randf_range(0.85,1.15)
+			colour = Color(wash.x*b,wash.y*b,wash.z*b,PETAL_MARK)
+			size *= 0.8
+		elif _rng.randf() < fluff_share*FAR_FLUFF/DRIFT_FLUFF:
+			var b := _rng.randf_range(0.88,1.05)
+			colour = Color(FLUFF_COLOUR.r*b,FLUFF_COLOUR.g*b,FLUFF_COLOUR.b*b,PETAL_MARK)
+			size *= 0.8
+		else:
+			var pale: Color = FAR_PALES[_rng.randi() % FAR_PALES.size()]
+			colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),DRIFT_TINT)*_rng.randf_range(0.9,1.08)
+			colour.a = 1.0
+		var born := _time+_rng.randf_range(0.0,FAR_STAGGER)
+		var life := _rng.randf_range(FAR_LIFE.x,FAR_LIFE.y)
+		life_max = maxf(life_max,born+life)
+		var c := carry*_rng.randf_range(0.85,1.15)
+		_far_mm.set_instance_transform(idx,Transform3D(Basis.from_scale(Vector3.ONE*size),Vector3(p.x,y,p.y)))
+		_far_mm.set_instance_color(idx,colour)
+		_far_mm.set_instance_custom_data(idx,Color(born,life,_air.x*c,_air.y*c))
+	_far_free[slot] = life_max+0.1
+	_far_next = (slot+1) % FAR_STREAMERS
