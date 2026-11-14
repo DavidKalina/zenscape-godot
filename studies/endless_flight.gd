@@ -1824,10 +1824,14 @@ func _react(delta: float) -> void:
 	# its way rather than across the view.
 	if stage != null and stage.holding():
 		var span := WorldScale.TOY_SPAN*ground_scale.size()
-		react.part(Vector2(p.x,p.z),span*PART_SPANS,PART_PUSH)
+		var at := Vector2(p.x,p.z)
+		react.part(at,span*PART_SPANS,PART_PUSH)
 		var e := camera.global_position
-		react.part(Vector2(e.x,e.z),span*EYE_PART_SPANS,PART_PUSH,1)
-		react.part(Vector2(p.x+e.x,p.z+e.z)*0.5,span*SIGHT_PART_SPANS,PART_PUSH,2)
+		# Combed (GrassReact `combed`): all three push out from the plane, so
+		# where they overlap the blades lie one way, not crossed.
+		var from := at if react.combed else Vector2.INF
+		react.part(Vector2(e.x,e.z),span*EYE_PART_SPANS,PART_PUSH,1,from)
+		react.part(Vector2(p.x+e.x,p.z+e.z)*0.5,span*SIGHT_PART_SPANS,PART_PUSH,2,from)
 	# Parked in the menu the idling wash stirs the grass but kicks none up.
 	var wash: Dictionary = {} if stage != null and stage.holding() else react.wash_spot
 	# On the Peak's snow the wash throws powder and cuts a furrow, not grass.

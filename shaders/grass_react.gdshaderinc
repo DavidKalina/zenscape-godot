@@ -73,6 +73,61 @@ vec3 zs_react_offset(vec2 root, float arm, float bend, mat4 model, float scale, 
 	return offset;
 }
 
+// The near blades lying over as one combed mat (zs_react_lay 1; 0 or
+// --grass-part=old: zs_react_offset's shove and drop, which on two-segment
+// blades folded at the joint like a paper strip and dug the tips into the
+// ground). The blade bends as a curve whose angle from upright runs
+// theta * (1 - (1 - t)^k) up it (t the share of its length): a gentle lean is
+// an even arc (k 1), laid down the bend gathers at the root (k
+// ZS_REACT_ARC_ROOT) and the rest lies near flat, its length kept, the tip
+// off the ground.
+global uniform float zs_react_lay;
+// The lean's share of the lay (a full push of 1 lays a blade this far), the
+// press's, the tip's most angle from upright (rad), and how low a laid
+// blade's bend gathers.
+const float ZS_REACT_ARC_LEAN = 0.8;
+const float ZS_REACT_ARC_PRESS = 0.5;
+const float ZS_REACT_ARC_MOST = 1.42;
+const float ZS_REACT_ARC_ROOT = 2.6;
+// A laid blade's soft-mass normal (reference_surface): the share of the
+// tuft's dome it loses, and how far it tips the way the blades lie.
+const float zs_react_lay_dome = 0.7;
+const float zs_react_lay_tilt = 0.0;
+// A laid blade's root-to-tip share starts this far up (the root's dark).
+const float zs_react_lay_root = 0.3;
+
+bool zs_react_arcs() {
+	return zs_react_lay > 0.5;
+}
+
+// zs_react_offset for a near blade: `blade` its length over the pivot (world
+// m). `lay` comes back 0 standing to 1 laid down and `way` the world xz way
+// it lies, for the soft-mass normal.
+vec3 zs_react_arc(vec2 root, float arm, float blade, mat4 model, float scale, vec2 to_eye, inout float sheen, inout float lay, inout vec2 way) {
+	vec3 r = zs_react_at(root);
+	if (dot(r, r) < 1.0e-7) return vec3(0.0);
+	sheen = zs_react_shade(r, to_eye);
+	float m = length(r.xy);
+	if (m < 1.0e-4 && r.z <= 0.0) return vec3(0.0);
+	way = m > 1.0e-4 ? r.xy / m : vec2(0.0);
+	lay = clamp(m * ZS_REACT_ARC_LEAN + max(r.z, 0.0) * ZS_REACT_ARC_PRESS, 0.0, 1.0);
+	float theta = lay * ZS_REACT_ARC_MOST;
+	float k = mix(1.0, ZS_REACT_ARC_ROOT, lay);
+	float len = max(blade, 0.05);
+	float s = arm / len;
+	float h = min(s, 1.0) * 0.25;
+	vec2 p = vec2(0.0);
+	for (int i = 0; i < 4; i++) {
+		float phi = theta * (1.0 - pow(1.0 - (float(i) + 0.5) * h, k));
+		p += vec2(sin(phi), cos(phi)) * h;
+	}
+	p += vec2(sin(theta), cos(theta)) * max(s - 1.0, 0.0);
+	p *= len;
+	vec3 offset = inverse(mat3(model)) * vec3(way.x * p.x, 0.0, way.y * p.x);
+	offset.y += (p.y - arm) / max(scale, 0.001);
+	return offset;
+}
+
 // The painted ground's turf colour, stirred (zs_react_tone; `turf` the
 // share of open turf there).
 vec3 zs_react_paint(vec3 grass, vec2 xz, vec2 to_eye, float turf) {
