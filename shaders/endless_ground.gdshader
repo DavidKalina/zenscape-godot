@@ -368,6 +368,10 @@ uniform vec2 river_mouth_deep = vec2(0.6, 3.6);
 // The bed held this far under the sea's level at most (LandField
 // RIVER_MOUTH_FLOOR; 0 none, --river-floor=0).
 uniform float river_mouth_floor = 1.5;
+// Round 3 (water-artifacts-handoff.md): over the mouth's last reach the tint
+// reads no deeper than this (m), as the sea over it and its plume do
+// (endless_sea plume_depth); 0 none, round 2's tint.
+uniform float river_plume_depth = 1.5;
 uniform vec4 river_sea_tint_depths = vec4(1.5, 7.0, 22.0, 55.0);
 uniform float river_sea_bed_fade = 5.0;
 uniform float river_sea_body = 0.9;
@@ -1939,6 +1943,10 @@ void fragment() {
 				? mix(0.8, 1.25, zs_noise_exact(p.xz * 0.03) * 0.7 + zs_noise_exact(p.xz * 0.11 + vec2(4.1, 7.3)) * 0.3)
 				: mix(0.8, 1.25, zs_noise(p.xz * 0.03) * 0.7 + zs_noise(p.xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
 			float wd = max(real, through_m * 0.55) * waver;
+			// (The sea over the mouth and its plume colours its water no deeper
+			// than endless_sea's plume_depth; so does the river's last reach, so
+			// the two agree where the sea fades in over it.)
+			if (river_plume_depth > 0.0) wd = mix(wd, min(wd, river_plume_depth * waver), r_mouth);
 			vec4 td = river_sea_tint_depths;
 			vec3 sc = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, td.y, wd));
 			sc = mix(sc, river_tint_deep, smoothstep(td.y * 0.6, td.z, wd));

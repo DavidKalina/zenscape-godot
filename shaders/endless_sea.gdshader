@@ -194,6 +194,14 @@ uniform float river_calm = 1.0;
 // ...and over this many m of water it fades in over what lies under it (the
 // river's drawn water sinking under it), not on a line.
 uniform float river_calm_fade = 2.0;
+// Round 3 (water-artifacts-handoff.md), the hand-over at a mouth: in the calm
+// (and the plume the depth map carries out past the mouth, EndlessSea
+// PLUME, --river-plume) the water is coloured no deeper than `plume_depth` m
+// by this share (0: round 2's sea), and keeps this share of the wind sea's
+// chop, so it ripples as the river's water it meets does (0: glassy, round 2).
+uniform float plume_tint = 1.0;
+uniform float plume_depth = 1.5;
+uniform float calm_chop = 0.7;
 uniform float sea_level = -40.0;
 
 // The water's colour by depth (m of water under the surface).
@@ -1390,7 +1398,7 @@ void fragment() {
 		float rough_patch = zs_body_rough(rest_xz, t);
 		vec2 wave;
 		float fold, height;
-		detail = zs_fft_surface(rest_xz, footprint, mix(fft_patch.x, fft_patch.y, rough_patch), air, wave, fft_jac, fold, height, chop_rough) * (1.0 - still);
+		detail = zs_fft_surface(rest_xz, footprint, mix(fft_patch.x, fft_patch.y, rough_patch), air, wave, fft_jac, fold, height, chop_rough) * (1.0 - still * (1.0 - calm_chop));
 		slope += wave * (1.0 - still);
 		shift.y += height * (1.0 - still);
 		jac *= mix(clamp(fft_jac, 0.0, 1.5), 1.0, still);
@@ -1518,6 +1526,11 @@ void fragment() {
 	if (debug_view == 18 || debug_view == 16) waver = 1.0;
 	float fallback = max(bed_depth, through * 0.55);
 	float water_depth = max(mix(fallback, mapped, known), 0.0) * waver;
+	// The river's pale water carried out over the sea in its plume (the calm
+	// the depth map bakes past the mouth): coloured no deeper than the
+	// mouth's channel, so the pale channel fades into the sea's blue over the
+	// plume instead of on the line where the river's water ends.
+	if (plume_tint > 0.0) water_depth = mix(water_depth, min(water_depth, plume_depth * waver), still * plume_tint);
 
 	vec3 seen = exp(-absorb * through) * exp(-max(bed_depth, through * 0.4) / bed_fade);
 	// Over a fish the water is thicker than a clear shallow's: its back a dark

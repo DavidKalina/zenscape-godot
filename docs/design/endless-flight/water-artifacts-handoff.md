@@ -205,3 +205,100 @@ mouth/tint/wet, height over sea, tint depths).
 `--river-floor=0`. No committed tests, full suite not run. No test reads
 RIVER_MOUTH_DEEP or the waver; land hash / ground parity fixtures (if any
 pin seed 1's mouths) would change. `tools/ground_parity.py` not run.
+
+# Round 3 (2026-11-13): the line where a river channel meets the sea
+
+Stills in `scratch/w3/` (git-ignored). Pairs in `scratch/w3/final/`: `ab_*.png`
+whole frames and `crop_*.png` zoomed on the join, **left before
+(`--river-plume=0`), right after (defaults)**, same eye and hour: `tr2`, `tr4`
+(the mouth at 505,1105, from the river and from the sea), `sq2` (the estuary
+at 1728,-720), `ho` (the mouth at 264,1632 from 60 m), `top` (300 m, looking
+down the 230,1760 mouth), `open` (open sea and shore) and `up` (upstream
+river) for no change. `--river-plume=0` is pixel-identical to round 2 at
+`tr4` (checked against `scratch/w3/base/`). The after side's sea sits a few
+seconds later in its swell (the bake is ~0.1 s longer, so the eye waits more
+frames for the map), so clouds and surf differ a little between the halves.
+
+## What made the line (tr4, measured down the channel's middle)
+
+`scratch/mouth_map.gd` (heights, calm, drawn water round 505,1105) and sea
+debug 8/9/10 and ground debug 5/6:
+- The river's drawn water dips under the sea about 25-35 m before the
+  river's data ends; past that the sea lies calm over the sunk channel
+  (round 1-2). Where the river's data ends, the calm (map green) ended
+  within a texel, so on one line: (3) the swell's heave and slope and (2)
+  the FFT chop came on in full, (5) the shore foam lines and bands came on
+  (they are taken off in the calm), and (1) the colour stepped: the channel's
+  1.5 m (RIVER_MOUTH_FLOOR) against the real shelf past the rim, pixels
+  ~(117,153,132) beside ~(132,179,172) (`scratch/w3/base/tr4*.png`). That is
+  the line in round 2's `ab_tr2` / `ab_tr4`.
+- A second, weaker step where the sea starts over the river's paint: the
+  ground's mouth tint read deeper (its `through_m * 0.55` at a low eye)
+  than the sea over it, (93,152,166) against (125,172,169).
+- (4) glitter: the calm sea had no chop, so it mirrored the sun as one disc
+  (the estuary's `sq2`), where the river beside it glittered.
+- (6) geometry is not what shows: the crossing is not on a chunk edge; it
+  lies inside the calm, under the sea's 2 m fade.
+
+## What changed
+
+1. **The plume (bake, `scripts/endless/endless_sea.gd` `_plume`).** After
+   the depth map's texels are worked out, the calm (green) is carried out
+   from every texel where the river's drawn water lies under the sea (blue
+   > 0) over the sea's texels, by a chamfer distance walked through water
+   only (two sweeps each way, only over the box round the mouths), fading
+   `(1 - smoothstep(0, 64 m, d))^2`. The sea's swell, chop, foam and colour
+   all fade back in over that fan instead of on the line. Knob: `PLUME`
+   (64 m, 1.0), `--river-plume=M`, `--river-plume=0` none.
+2. **Sea shader** (`endless_sea.gdshader`): in the calm and the plume the
+   water is coloured no deeper than `plume_depth` (1.5 m, the mouth's floor)
+   by `plume_tint` (1; 0 round 2), and keeps `calm_chop` (0.7; 0 round 2's
+   glassy calm) of the FFT chop, so it ripples and glitters like the river
+   it meets.
+3. **Ground shader** (`endless_ground.gdshader`): over the mouth's last
+   reach (`r_mouth`, the last RIVER_MOUTH_RISE m of level) the mouth tint
+   reads no deeper than `river_plume_depth` (1.5; 0 round 2), as the sea over
+   it does.
+`--river-plume=0` (EndlessLook) sets all four off: round 2's look.
+
+## Result
+
+- tr4: gone along the channel's middle (no step left in the pixel profile,
+  120-148 red rising smoothly), the river's last reach and the sea past it
+  one pale water fading to the sea's blue over the plume. A faint ripple
+  seam stays where the sea's edge lies over the river's paint.
+- tr2: the colour line is gone; a faint texture seam (the river's finer,
+  brighter ripples against the sea's chop) is still there, much softer.
+- sq2 (estuary): the diagonal line and the blue eye at its end are gone; the
+  calm sea up the channel now glitters (it showed a mirror disc).
+- ho, top: softer, the pale channel opens into a pale fan; from 300 m the
+  join is hard to find in either, so not a clear win there.
+- Side effects: the sea is paler and calmer for ~60 m round each mouth, and
+  the shore foam is thinner there; the river's last ~5 m of level is paler.
+  Upstream river and open sea: no change seen (`ab_up`, `ab_open`).
+
+## Costs
+
+- Bake (worker): +113-120 ms on a 3.0-3.1 s bake (`scratch/bake_time.gd`,
+  headless, two squares with mouths). Map unchanged (512x512 RGBAF).
+- Shaders: no new texture taps; a mix/min in the sea and the ground, the
+  chop scale changed. No main-thread work.
+- The CPU sea height (`height_at`, the plane's contact) ignores the calm, as
+  it did up the channels; the plume stills the drawn heave over ~60 m more
+  than the CPU's. Not felt or checked.
+
+## Not verified
+
+Not flown in a window by hand; Mac/Metal and the user's 2560x1440 not
+checked. Other mouths than these four not looked at. Native kernels not
+touched (no land change). Headless driver runs (`mouth_map.gd`,
+`bake_time.gd`) print their results then hang at exit until drive.py's
+timeout; it was so before this round's change too (round 2 code).
+
+The hard-edged pale tan patches in the shallows (round 2's `ab_be.png`):
+the sea's shore foam (the shore line and bands, `foam`): they go with
+`--sea-set=foam:0.0` (`scratch/w3/reg/sheet_be.png`, first two panels),
+flat-toned because the foam pattern is thresholded. Identified only.
+
+`python tools/smoke.py studies/endless_flight.tscn` PASS, and with
+`-- --river-plume=0`. No committed tests; full suite not run.
