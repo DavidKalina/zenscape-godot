@@ -118,11 +118,17 @@ struct Bit {
 	Bs basis;
 	Col colour;
 	double ground = 0, age = 0, life = 0, length = 0, width = 0, phase = 0, settle = 0, rest = 0;
+	// A drift's bit (endless_motes.gd `_fly`): rides `ride` s `lift` m over
+	// its ground (sloped `sx`, `sz` from `ox`, `oz`), carried at `carry` of
+	// the air; falls at `fall` of the fall. A kicked bit: 0, 0, 1, 1, flat.
+	double ride = 0, lift = 0, carry = 1, fall = 1, sx = 0, sz = 0, ox = 0, oz = 0;
 	bool landed = false;
 };
 // A bit record: pos xyz, vel xyz, ground, age, life, length, width, basis
-// (its rows, 9), spin xyz, phase, settle, rest, colour rgba, landed.
+// (its rows, 9), spin xyz, phase, settle, rest, colour rgba; then (optional,
+// BIT_REC_DRIFT) ride, lift, carry, fall, sx, sz, ox, oz.
 constexpr int BIT_REC = 30;
+constexpr int BIT_REC_DRIFT = 38;
 
 // --- scripts/breeze_ribbons.gd ---------------------------------------------------------
 // A ribbon's record for its strip: vel xyz, age, fade, weight, width, seed.
@@ -161,6 +167,11 @@ class ZenScapeMotes : public RefCounted {
 	double k_drag = 0.9, k_fall = 4.8, k_flat = 2.8, k_glide = 0.7, k_spin_drag = 1.3, k_level = 16.0, k_stir = 3.5;
 	std::vector<zsfx::Bit> bits;
 	PackedFloat32Array kbuf;
+	// The drift (the wind's own blades and petals): the same flight.
+	int64_t drift_most = 260;
+	double d_lift = 3.0, d_damp = 1.8, d_bob = 0.3, d_tumble = 1.2, d_flutter = 0.45;
+	std::vector<zsfx::Bit> drifts;
+	PackedFloat32Array dbuf;
 
 protected:
 	static void _bind_methods() {
@@ -176,10 +187,14 @@ protected:
 		ClassDB::bind_method(D_METHOD("kick_add", "record"), &ZenScapeMotes::kick_add);
 		ClassDB::bind_method(D_METHOD("kick_step", "delta", "time", "air"), &ZenScapeMotes::kick_step);
 		ClassDB::bind_method(D_METHOD("kick_records"), &ZenScapeMotes::kick_records);
+		ClassDB::bind_method(D_METHOD("drift_count"), &ZenScapeMotes::drift_count);
+		ClassDB::bind_method(D_METHOD("drift_add", "record"), &ZenScapeMotes::drift_add);
+		ClassDB::bind_method(D_METHOD("drift_step", "delta", "time", "air"), &ZenScapeMotes::drift_step);
+		ClassDB::bind_method(D_METHOD("drift_records"), &ZenScapeMotes::drift_records);
 	}
 
 public:
-	int64_t version() const { return 1; }
+	int64_t version() const { return 2; }
 
 	void configure(const Dictionary &c) {
 		using zsfx::num;
@@ -206,6 +221,13 @@ public:
 		k_spin_drag = num(c, "kick_spin_drag", k_spin_drag);
 		k_level = num(c, "kick_level", k_level);
 		k_stir = num(c, "kick_stir", k_stir);
+		drift_most = int64_t(num(c, "drift", double(drift_most)));
+		dbuf.resize(drift_most * 20);
+		d_lift = num(c, "drift_lift", d_lift);
+		d_damp = num(c, "drift_damp", d_damp);
+		d_bob = num(c, "drift_bob", d_bob);
+		d_tumble = num(c, "drift_tumble", d_tumble);
+		d_flutter = num(c, "drift_flutter", d_flutter);
 	}
 
 	// --- Pollen (endless_motes.gd `_pollen`) -------------------------------------------
@@ -283,9 +305,23 @@ public:
 	// --- The kick (endless_motes.gd `_kick`, `_throw`) ---------------------------------
 	int64_t kick_count() const { return int64_t(bits.size()); }
 	// A bit thrown (the oldest dropped when there are `kick` of them).
-	void kick_add(const PackedFloat64Array &r) {
+	void kick_add(const PackedFloat64Array &r) { add_to(bits, most, r); }
+	// Every bit a frame on (the spent ones dropped): the instance buffer,
+	// `kick_count` of them.
+	PackedFloat32Array kick_step(double delta, double time, const Vector2 &air2) { return fly(bits, kbuf, delta, time, air2); }
+	PackedFloat64Array kick_records() const { return records(bits); }
+
+	// --- The drift (endless_motes.gd `_drift`, `_drift_bit`) ----------------------------
+	int64_t drift_count() const { return int64_t(drifts.size()); }
+	// A drift's bit (the oldest dropped when there are `drift` of them).
+	void drift_add(const PackedFloat64Array &r) { add_to(drifts, drift_most, r); }
+	PackedFloat32Array drift_step(double delta, double time, const Vector2 &air2) { return fly(drifts, dbuf, delta, time, air2); }
+	PackedFloat64Array drift_records() const { return records(drifts); }
+
+private:
+	static void add_to(std::vector<zsfx::Bit> &pool, int64_t most_of, const PackedFloat64Array &r) {
 		if (r.size() < zsfx::BIT_REC) return;
-		if (int64_t(bits.size()) >= most && !bits.empty()) bits.erase(bits.begin());
+		if (int64_t(pool.size()) >= most_of && !pool.empty()) pool.erase(pool.begin());
 		zsfx::Bit b;
 		const double *d = r.ptr();
 		b.pos = zsfx::V3(float(d[0]), float(d[1]), float(d[2]));
@@ -301,19 +337,30 @@ public:
 		b.settle = d[24];
 		b.rest = d[25];
 		b.colour = zsfx::Col(float(d[26]), float(d[27]), float(d[28]), float(d[29]));
-		bits.push_back(b);
+		if (r.size() >= zsfx::BIT_REC_DRIFT) {
+			b.ride = d[30];
+			b.lift = d[31];
+			b.carry = d[32];
+			b.fall = d[33];
+			b.sx = d[34];
+			b.sz = d[35];
+			b.ox = d[36];
+			b.oz = d[37];
+		}
+		pool.push_back(b);
 	}
-	// Every bit a frame on (the spent ones dropped): the instance buffer,
-	// `kick_count` of them.
-	PackedFloat32Array kick_step(double delta, double time, const Vector2 &air2) {
+
+	// endless_motes.gd `_fly`: every bit of `pool` a frame on (the spent ones
+	// dropped), drawn into `buf`.
+	PackedFloat32Array fly(std::vector<zsfx::Bit> &pool, PackedFloat32Array &buf, double delta, double time, const Vector2 &air2) {
 		using namespace zsfx;
 		const V3 air(air2.x, 0.0f, air2.y);
-		if (kbuf.size() < int64_t(bits.size()) * 20) kbuf.resize(int64_t(bits.size()) * 20);
-		float *o = kbuf.ptrw();
+		if (buf.size() < int64_t(pool.size()) * 20) buf.resize(int64_t(pool.size()) * 20);
+		float *o = buf.ptrw();
 		int64_t n = 0;
 		size_t keep = 0;
-		for (size_t i = 0; i < bits.size(); ++i) {
-			Bit b = bits[i];
+		for (size_t i = 0; i < pool.size(); ++i) {
+			Bit b = pool[i];
 			const double age = b.age + delta;
 			if (age > b.life) continue;
 			b.age = age;
@@ -323,24 +370,34 @@ public:
 			V3 v = b.vel;
 			V3 w = b.spin;
 			bool landed = b.landed;
+			const bool riding = age < b.ride;
+			const V3 was = b.pos;
+			const double ground = b.ground + b.sx * (double(was.x) - b.ox) + b.sz * (double(was.z) - b.oz);
 			if (!landed) {
-				v += (air - v) * f32(clampf(k_drag * delta, 0.0, 1.0));
-				v.y = f32(double(v.y) - k_fall * delta);
-				if (v.y < 0.0f) {
-					v.y = f32(double(v.y) * maxf(1.0 - k_flat * flat * delta, 0.0));
-					const V3 low = V3(face.x, 0.0f, face.z) * f32(signd(double(face.y)));
-					v += low * f32(k_glide) * f32(-double(v.y)) * f32(delta) * 4.0f;
+				v += (air * f32(b.carry) - v) * f32(clampf(k_drag * delta, 0.0, 1.0));
+				if (riding) {
+					// Held up by the air, springing toward its height and bobbing.
+					const double want = ground + b.lift * (1.0 + d_bob * std::sin(time * 1.3 + b.phase * TAU));
+					v.y = f32(double(v.y) + ((want - double(was.y)) * d_lift - double(v.y) * d_damp) * delta);
+				} else {
+					v.y = f32(double(v.y) - k_fall * b.fall * delta);
+					if (v.y < 0.0f) {
+						v.y = f32(double(v.y) * maxf(1.0 - k_flat * flat * delta, 0.0));
+						const V3 low = V3(face.x, 0.0f, face.z) * f32(signd(double(face.y)));
+						v += low * f32(k_glide) * f32(-double(v.y)) * f32(delta) * 4.0f;
+					}
 				}
 				w = w * f32(maxf(1.0 - k_spin_drag * delta, 0.0));
 				const double settle = smoothstep(b.settle, b.settle + 0.6, age);
 				const V3 up = V3(0, 1, 0) * f32(face.y >= 0.0f ? 1.0 : -1.0);
 				w += face.cross(up) * f32(k_level) * f32(settle) * f32(delta);
 				const double ph = b.phase * TAU;
-				w += V3(f32(std::sin(time * 2.3 + ph)), f32(0.4 * std::sin(time * 1.7 + ph * 1.9)), f32(std::cos(time * 2.9 + ph * 2.7))) * f32(k_stir) * f32(settle) * f32(delta);
+				const double tumble = riding ? d_tumble : 0.0;
+				w += V3(f32(std::sin(time * 2.3 + ph)), f32(0.4 * std::sin(time * 1.7 + ph * 1.9)), f32(std::cos(time * 2.9 + ph * 2.7))) * f32(k_stir) * f32(settle + tumble) * f32(delta);
 			}
 			V3 p = b.pos + v * f32(delta);
-			const double floor_y = b.ground + b.rest;
-			if (!landed && double(p.y) < floor_y) {
+			const double floor_y = ground + b.rest;
+			if (!landed && !riding && double(p.y) < floor_y) {
 				p.y = f32(floor_y);
 				v = V3();
 				w = V3();
@@ -357,7 +414,7 @@ public:
 			const double u = age / b.life;
 			const double size = (1.0 - smoothstep(0.82, 1.0, u)) * smoothstep(0.0, 0.06, age);
 			const double through = double((v - air).length());
-			const double flutter = landed ? 0.0 : clampf(through / 6.0, 0.0, 1.0) * 0.85 + clampf(double(rate) / 4.0, 0.0, 1.0) * 0.15;
+			const double flutter = landed ? 0.0 : clampf(through / 6.0, 0.0, 1.0) * 0.85 + clampf(double(rate) / 4.0, 0.0, 1.0) * 0.15 + (riding ? d_flutter : 0.0);
 			float *q = o + n * 20;
 			for (int k = 0; k < 3; ++k) {
 				q[k * 4] = turn.rows[k].x;
@@ -365,20 +422,21 @@ public:
 				q[k * 4 + 2] = turn.rows[k].z;
 			}
 			q[3] = p.x; q[7] = p.y; q[11] = p.z;
-			q[12] = b.colour.r; q[13] = b.colour.g; q[14] = b.colour.b; q[15] = 1.0f;
+			q[12] = b.colour.r; q[13] = b.colour.g; q[14] = b.colour.b; q[15] = b.colour.a;
 			q[16] = f32(b.width * size);
 			q[17] = f32(b.length * size);
 			q[18] = f32(b.phase);
 			q[19] = f32(flutter);
 			++n;
-			bits[keep++] = b;
+			pool[keep++] = b;
 		}
-		bits.resize(keep);
-		return kbuf;
+		pool.resize(keep);
+		return buf;
 	}
-	PackedFloat64Array kick_records() const {
+
+	static PackedFloat64Array records(const std::vector<zsfx::Bit> &pool) {
 		PackedFloat64Array out;
-		for (const zsfx::Bit &b : bits) {
+		for (const zsfx::Bit &b : pool) {
 			out.push_back(b.pos.x); out.push_back(b.pos.y); out.push_back(b.pos.z);
 			out.push_back(b.vel.x); out.push_back(b.vel.y); out.push_back(b.vel.z);
 			out.push_back(b.age); out.push_back(b.life);
