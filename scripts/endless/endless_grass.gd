@@ -307,6 +307,14 @@ const FAR_LOD := 100.0
 const FAR_LOD_BACK := 6.0
 const FAR_MORPH := 30.0
 const FAR_LOD_SAFE := 5.0
+## The second far lod: the far ring's tiles wholly past FAR_LOD2 m draw the
+## sparse tuft (GrassTuft build_sparse: 5 triangles for the far lod's 11, out
+## where a tuft is a few pixels and the ring's ground is widest), each tuft
+## easing into it over FAR_MORPH2 m as into the first (endless_tuft_far
+## `far_morph2`). --grass-far-lod2=M (0: off).
+const FAR_LOD2 := 125.0
+const FAR_MORPH2 := 25.0
+var far_lod2 := FAR_LOD2
 var cull := true
 var sub := SUB
 var prefetch := PREFETCH
@@ -320,6 +328,11 @@ var _standing: Array = []
 var far_lod := FAR_LOD
 var _far_meshes := {}
 var _cull_frame := 0
+## The tiles' pass in C++ (ZenScapeGrass `cull_tiles`) where the library has
+## it, looked for once; null: `cull_tiles` here (--grass-cull-native=0, or
+## --grass-native=0, --gdscript-kernels).
+var _cull_native: Object = null
+var _cull_native_looked := false
 
 var seed := 0
 var enabled := true
@@ -448,6 +461,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-cull="): cull = a.get_slice("=",1) != "0"
 		elif a.begins_with("--grass-sub="): sub = clampf(a.get_slice("=",1).to_float(),0.0,64.0)
 		elif a.begins_with("--grass-far-lod="): far_lod = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--grass-far-lod2="): far_lod2 = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-prefetch="): prefetch = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-alpine="): alp_share = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-alpine-far="): alp_far = maxf(a.get_slice("=",1).to_float(),0.0)
@@ -872,6 +886,7 @@ func _warm() -> void:
 			if far_lod > 0.0:
 				_far_mesh(key)
 				_lite_morph(key)
+				if far_lod2 > 0.0: _sparse_mesh(key)
 
 func _exit_tree() -> void:
 	_quit = true
@@ -930,12 +945,16 @@ func step(eye: Vector3, forward := Vector3.ZERO) -> void:
 	if ground != null and not _fars.is_empty():
 		var night: Variant = ground.get_shader_parameter("night_grade")
 		for id: Variant in _fars: (_fars[id] as ShaderMaterial).set_shader_parameter("night_grade",night)
+	FrameLog.mark(&"g_lead")
 	# Replanned as the eye moves, and now and then anyway, so a cell that
 	# finished while it wasn't wanted is asked for again once it is.
 	_since_plan += 1
 	if _planned_at == Vector3.INF or eye.distance_to(_planned_at) > 4.0 or _since_plan > 30 or lead_now.distance_to(_lead_planned) > 0.06: _plan()
+	FrameLog.mark(&"g_plan")
 	_ask()
+	FrameLog.mark(&"g_ask")
 	_stand()
+	FrameLog.mark(&"g_stand")
 	if cull: _cull()
 
 ## The lead toward the view's level direction `forward` (damped; at once
@@ -1169,7 +1188,24 @@ func _stand_some(all: bool, began: int) -> void:
 			g[2] = (g[2] as Rect2).merge(part.box)
 			(g[1] as Node3D).add_child(batch)
 		else: node.add_child(batch)
-	if cull: node.set_meta("groups",groups.values())
+	if cull:
+		var stood: Array = groups.values()
+		# For _cull: the cell's tiles as flat arrays (CullCell).
+		if not stood.is_empty():
+			var cc := CullCell.new()
+			cc.box = stood[0][2]
+			for g: Array in stood:
+				var b: Rect2 = g[2]
+				cc.box = cc.box.merge(b)
+				var ri := cc.reaches.find(g[0])
+				if ri < 0:
+					ri = cc.reaches.size()
+					cc.reaches.append(g[0])
+				cc.reach_of.append(ri)
+				cc.boxes.append_array(PackedFloat32Array([b.position.x,b.position.y,b.end.x,b.end.y]))
+				cc.state.append(1)
+				cc.holders.append(g[1])
+			node.set_meta("cull",cc)
 	node.set_meta("instances",int(_standing[3]))
 	layer.cells[r.key] = node
 	if StreamLog.on: StreamLog.show(&"grass_far" if layer.far else &"grass",r.key,1 if layer.far else 0,_cell_d(r.key))
@@ -1189,6 +1225,11 @@ func _drop_standing() -> void:
 ## its 2 m); the far ring's lod swapped past far_lod.
 func _cull() -> void:
 	_cull_frame += 1
+	if not _cull_native_looked:
+		_cull_native_looked = true
+		if native_wanted() and not "--grass-cull-native=0" in LaunchArgs.user_args():
+			var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
+			if probe.has_method("cull_tiles"): _cull_native = probe
 	var discs := {}
 	var eye := Vector2(_eye.x,_eye.z)
 	for layer: Layer in [near_layer,far_layer]:
@@ -1197,23 +1238,119 @@ func _cull() -> void:
 			var spread := CULL_SPREAD if layer.far else CULL_SPREAD_NEAR
 			if posmod(key.x+key.y*3,spread) != _cull_frame%spread: continue
 			var node: Node3D = layer.cells[key]
-			var groups: Array = node.get_meta("groups",[])
-			for g: Array in groups:
-				var reach: float = g[0]
+			if not node.has_meta("cull"): continue
+			var cc: CullCell = node.get_meta("cull")
+			# A cell wholly inside or wholly past its rings, as it was the
+			# last time its tiles were gone through, has nothing to change.
+			var whole := _cull_whole(cc,layer.far,slack,eye,discs)
+			if whole >= 0 and whole == cc.whole: continue
+			cc.whole = whole
+			# Its rings' discs, and the far lods' (each lod's own and its
+			# switch back's), for the tiles' pass.
+			var show := PackedFloat32Array()
+			for reach: float in cc.reaches:
 				if not discs.has(reach): discs[reach] = _cull_disc(reach+slack,eye)
-				var show := _box_meets(g[2],discs[reach])
-				if show != bool(g[3]):
-					g[3] = show
-					(g[1] as Node3D).visible = show
-				if layer.far and far_lod > 0.0 and show:
-					var lod_r: float = far_lod if bool(g[4]) else far_lod+FAR_LOD_BACK
+				show.append_array(discs[reach])
+			var lods := PackedFloat32Array()
+			if layer.far and far_lod > 0.0:
+				for lod_r: float in ([far_lod,far_lod+FAR_LOD_BACK,far_lod2,far_lod2+FAR_LOD_BACK] if far_lod2 > 0.0 else [far_lod,far_lod+FAR_LOD_BACK]):
 					if not discs.has(-lod_r): discs[-lod_r] = _cull_disc(lod_r,eye)
-					var lite := not _box_meets(g[2],discs[-lod_r])
-					if lite != bool(g[4]):
-						g[4] = lite
-						for b: Node in (g[1] as Node3D).get_children():
-							var k := str(b.get_meta("part",""))
-							_swap_mesh(b as MultiMeshInstance3D,_far_mesh(k) if lite else _lite_morph(k))
+					lods.append_array(discs[-lod_r])
+			var changed: PackedInt32Array = _cull_native.cull_tiles(cc.boxes,cc.reach_of,cc.state,show,lods) if _cull_native != null else cull_tiles(cc.boxes,cc.reach_of,cc.state,show,lods)
+			for j in range(0,changed.size(),2):
+				var i := changed[j]
+				var now := changed[j+1]
+				var was := cc.state[i]
+				cc.state[i] = now
+				var holder: Node3D = cc.holders[i]
+				if (now&1) != (was&1): holder.visible = (now&1) == 1
+				if (now>>1) != (was>>1):
+					for b: Node in holder.get_children():
+						_swap_mesh(b as MultiMeshInstance3D,_tier_mesh(str(b.get_meta("part","")),now>>1))
+
+## A cell's tiles for _cull, a tile and ring each (the batches under one
+## holder): its roots' box (x0, z0, x1, z1), its ring (an index into
+## `reaches`), its state (bit 0 shown, the bits over it its far lod: 0 lite,
+## 1 far, 2 sparse); the box of them all, and how the cell stood as a whole
+## when its tiles were last gone through (_cull_whole).
+class CullCell extends RefCounted:
+	var boxes := PackedFloat32Array()
+	var reach_of := PackedByteArray()
+	var reaches: Array[float] = []
+	var state := PackedByteArray()
+	var holders: Array[Node3D] = []
+	var box := Rect2()
+	var whole := -1
+
+## One cell's tiles against the discs: each tile shown while its box meets its
+## ring's disc (`show`: a disc a ring, [centre x, z, radius squared]); a far
+## tile shown takes its lod from `lods` (empty: none; the first lod's disc and
+## its switch back's, then the second's two: up once wholly past a lod's
+## distance and the way back more, down once not). The tiles whose state
+## changed, [index, new state] each. ZenScapeGrass `cull_tiles` is this in
+## C++ (native/terrain_kernels/grass_cell.h), the same answers.
+static func cull_tiles(boxes: PackedFloat32Array, reach_of: PackedByteArray, state: PackedByteArray, show: PackedFloat32Array, lods: PackedFloat32Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var has_lod := lods.size() >= 6
+	var has_lod2 := lods.size() >= 12
+	for i in state.size():
+		var o := i*4
+		var was := state[i]
+		var tier := was>>1
+		var shown := _tile_meets(boxes,o,show,reach_of[i]*3)
+		if has_lod and shown:
+			var up := tier
+			tier = 0 if _tile_meets(boxes,o,lods,0 if up >= 1 else 3) else 1
+			if tier == 1 and has_lod2 and not _tile_meets(boxes,o,lods,6 if up >= 2 else 9): tier = 2
+		var now := (1 if shown else 0)|(tier<<1)
+		if now != was:
+			out.append(i)
+			out.append(now)
+	return out
+
+## Whether the box at `boxes[o]` meets the disc at `discs[d]`.
+static func _tile_meets(boxes: PackedFloat32Array, o: int, discs: PackedFloat32Array, d: int) -> bool:
+	if discs[d+2] < 0.0: return false
+	var dx := maxf(maxf(boxes[o]-discs[d],discs[d]-boxes[o+2]),0.0)
+	var dz := maxf(maxf(boxes[o+1]-discs[d+1],discs[d+1]-boxes[o+3]),0.0)
+	return dx*dx+dz*dz <= discs[d+2]
+
+## How cell `cc` stands to its rings as a whole: a code that is the same
+## while every tile of it would be culled the same way (each ring's disc holds
+## the cell's whole box or misses it; a far cell shown is wholly at one lod, nearer than
+## the far lod or wholly past its switch back), or -1 where a disc's edge
+## crosses the cell and its tiles differ.
+func _cull_whole(cc: CullCell, far: bool, slack: float, eye: Vector2, discs: Dictionary) -> int:
+	var box := cc.box
+	var code := 0
+	for reach: float in cc.reaches:
+		if not discs.has(reach): discs[reach] = _cull_disc(reach+slack,eye)
+		var disc: PackedFloat32Array = discs[reach]
+		if not _box_meets(box,disc):
+			code = code*3+2
+			continue
+		if not _box_within(box,disc): return -1
+		code = code*3+1
+		if far and far_lod > 0.0:
+			var back := far_lod+FAR_LOD_BACK
+			if not discs.has(-far_lod): discs[-far_lod] = _cull_disc(far_lod,eye)
+			if not discs.has(-back): discs[-back] = _cull_disc(back,eye)
+			var back2 := far_lod2+FAR_LOD_BACK
+			if far_lod2 > 0.0:
+				if not discs.has(-far_lod2): discs[-far_lod2] = _cull_disc(far_lod2,eye)
+				if not discs.has(-back2): discs[-back2] = _cull_disc(back2,eye)
+			if far_lod2 > 0.0 and not _box_meets(box,discs[-back2]): code = code*4+3
+			elif not _box_meets(box,discs[-back]) and (far_lod2 <= 0.0 or _box_within(box,discs[-far_lod2])): code = code*4+2
+			elif _box_within(box,discs[-far_lod]): code = code*4+1
+			else: return -1
+	return code
+
+## Whether `disc` holds the whole of `box`.
+static func _box_within(box: Rect2, disc: PackedFloat32Array) -> bool:
+	if disc[2] < 0.0: return false
+	var dx := maxf(absf(box.position.x-disc[0]),absf(box.end.x-disc[0]))
+	var dz := maxf(absf(box.position.y-disc[1]),absf(box.end.y-disc[1]))
+	return dx*dx+dz*dz <= disc[2]
 
 ## Batch `b` drawing `mesh`: a new multimesh of its kept buffer. Setting a
 ## standing multimesh's mesh makes the renderer work its bounds out again
@@ -1254,6 +1391,19 @@ func _far_mesh(key: String) -> Mesh:
 	var mesh: Mesh = GrassTuft.build_far(lite.get_meta("grass_root"),lite.get_meta("grass_tip"))
 	_far_meshes[key] = mesh
 	return mesh
+
+## The second far lod's tuft for catalog part `key` (GrassTuft build_sparse).
+func _sparse_mesh(key: String) -> Mesh:
+	var id := "sparse:"+key
+	if _far_meshes.has(id): return _far_meshes[id]
+	var lite: Mesh = KitFlora.lite_tuft(key)
+	var mesh: Mesh = GrassTuft.build_sparse(lite.get_meta("grass_root"),lite.get_meta("grass_tip"))
+	_far_meshes[id] = mesh
+	return mesh
+
+## The far ring's tuft for part `key` at lod `tier` (0 lite, 1 far, 2 sparse).
+func _tier_mesh(key: String, tier: int) -> Mesh:
+	return _lite_morph(key) if tier == 0 else (_far_mesh(key) if tier == 1 else _sparse_mesh(key))
 
 ## The lite tuft that eases into the far lod's shape (GrassTuft
 ## build_lite_morph), drawn by the far ring while the far lod is on.
@@ -1312,13 +1462,18 @@ func _fine(key: String) -> Mesh:
 		GrassTuft._clump(surface,rng,root,tip,int(satellite[0]),Vector2.from_angle(turn)*float(satellite[1]),float(satellite[2]),FINE.rows,FINE.taper,float(FINE.width))
 	surface.index()
 	var mesh := surface.commit()
+	# Without the second UV (all zero, as a mesh without one reads). (Godot's
+	# compressed vertex, GrassTuft.compressed, was tried here: no faster, the
+	# near ring's cost being its material's work a vertex, and 3% of a low
+	# meadow's pixels moved.)
+	var arrays := mesh.surface_get_arrays(0)
+	arrays[Mesh.ARRAY_TEX_UV2] = null
 	if not is_equal_approx(tall,1.0):
-		var arrays := mesh.surface_get_arrays(0)
 		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		for i in v.size(): v[i].y *= tall
 		arrays[Mesh.ARRAY_VERTEX] = v
-		mesh = ArrayMesh.new()
-		(mesh as ArrayMesh).add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	mesh = ArrayMesh.new()
+	(mesh as ArrayMesh).add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.set_meta("grass_root",root)
 	mesh.set_meta("grass_tip",tip)
 	_fine_meshes[key] = mesh
@@ -1363,6 +1518,7 @@ func _far(key: String, ring: Dictionary) -> Material:
 	# The far lod: each tuft in its shape by FAR_LOD_SAFE m short of it, so a
 	# tile swapping there (its nearest root past it) changes no pixel.
 	if far_lod > 0.0: m.set_shader_parameter("far_morph",Vector2(far_lod-FAR_MORPH,far_lod-FAR_LOD_SAFE))
+	if far_lod > 0.0 and far_lod2 > 0.0: m.set_shader_parameter("far_morph2",Vector2(maxf(far_lod2-FAR_MORPH2,far_lod-FAR_LOD_SAFE),far_lod2-FAR_LOD_SAFE))
 	_silver(m,"",0.0,true)
 	GrassSheen.apply(m,true)
 	world.apply_far(m)

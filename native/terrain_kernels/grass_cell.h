@@ -931,6 +931,16 @@ protected:
 		ClassDB::bind_method(D_METHOD("assets"), &ZenScapeGrass::assets);
 		ClassDB::bind_method(D_METHOD("hash_check", "x", "y"), &ZenScapeGrass::hash_check);
 		ClassDB::bind_method(D_METHOD("randf_check", "seed", "count"), &ZenScapeGrass::randf_check);
+		ClassDB::bind_method(D_METHOD("cull_tiles", "boxes", "reach_of", "state", "show", "lods"), &ZenScapeGrass::cull_tiles);
+	}
+
+	// Whether the box at b (x0, z0, x1, z1) meets the disc at d (centre x, z,
+	// radius squared; below zero: none).
+	static bool tile_meets(const float *b, const float *d) {
+		if (d[2] < 0.0f) return false;
+		const double dx = MAX(MAX(double(b[0]) - double(d[0]), double(d[0]) - double(b[2])), 0.0);
+		const double dz = MAX(MAX(double(b[1]) - double(d[1]), double(d[1]) - double(b[3])), 0.0);
+		return dx * dx + dz * dz <= double(d[2]);
 	}
 
 	static double num(const Dictionary &d, const char *k, double fallback) {
@@ -940,6 +950,43 @@ protected:
 public:
 	// 2: grow_cell takes a band cell's dither. 3: the alpine tufts (config `alp`).
 	int64_t version() const { return 3; }
+
+	// endless_grass.gd `cull_tiles`, the same answers: one cell's tiles (a
+	// box, a ring and a state each: bit 0 shown, the bits over it the far lod)
+	// against its rings' discs (`show`) and the far lods' (`lods`: none, one
+	// lod's two discs or two lods' four). The tiles whose state changed,
+	// [index, new state] each. Keeps no state: the main thread's, every frame.
+	PackedInt32Array cull_tiles(const PackedFloat32Array &boxes, const PackedByteArray &reach_of, const PackedByteArray &state, const PackedFloat32Array &show, const PackedFloat32Array &lods) const {
+		PackedInt32Array out;
+		const int64_t n = state.size();
+		if (boxes.size() < n * 4 || reach_of.size() < n) return out;
+		const float *b = boxes.ptr();
+		const uint8_t *ro = reach_of.ptr();
+		const uint8_t *st = state.ptr();
+		const float *sh = show.ptr();
+		const float *lo = lods.ptr();
+		const int64_t rings = show.size() / 3;
+		const bool has_lod = lods.size() >= 6;
+		const bool has_lod2 = lods.size() >= 12;
+		for (int64_t i = 0; i < n; i++) {
+			if (ro[i] >= rings) continue;
+			const float *box = b + i * 4;
+			const int was = st[i];
+			const int up = was >> 1;
+			int tier = up;
+			const bool shown = tile_meets(box, sh + ro[i] * 3);
+			if (has_lod && shown) {
+				tier = tile_meets(box, lo + (up >= 1 ? 0 : 3)) ? 0 : 1;
+				if (tier == 1 && has_lod2 && !tile_meets(box, lo + (up >= 2 ? 6 : 9))) tier = 2;
+			}
+			const int now = (shown ? 1 : 0) | (tier << 1);
+			if (now != was) {
+				out.push_back(int32_t(i));
+				out.push_back(now);
+			}
+		}
+		return out;
+	}
 
 	// The flower assets a cell's records index (the config's `assets`).
 	PackedStringArray assets() const { return cfg.assets; }

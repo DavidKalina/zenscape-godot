@@ -120,22 +120,23 @@ static func build_lite(root: Color, tip: Color) -> ArrayMesh:
 const FAR_WIDTH := 1.25
 
 static func build_far(root: Color, tip: Color) -> ArrayMesh:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 11
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var rows := [0.0]
-	var taper := [FAR_WIDTH]
-	_clump(surface, rng, root, tip, LITE_BLADES, Vector2.ZERO, 1.0, rows, taper, LITE_WIDTH)
-	var turn := rng.randf() * TAU
-	for satellite: Array in LITE_SATELLITES:
-		turn += rng.randf_range(2.0, 3.6)
-		_clump(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]), rows, taper, LITE_WIDTH)
-	surface.index()
-	var mesh := surface.commit()
-	mesh.set_meta("grass_root", root)
-	mesh.set_meta("grass_tip", tip)
-	return mesh
+	return _build_tier(root, tip, 1)
+
+## The far tuft from farther still (the endless grass's far ring past its
+## second far lod): only the SPARSE_KEEP blades of the main clump and of each
+## satellite, each SPARSE_WIDTH wider at the root so the tuft covers as much:
+## 5 triangles for build_far's 11. build_far and build_lite_morph carry, in
+## CUSTOM1.xyz, each vertex's way from build_far's shape to this one (a kept
+## blade widening, the others closing onto their roots), so a shader that
+## adds it all (endless_tuft_far `far_morph2`) draws these triangles and the
+## swap changes no pixel. Opt-in: nothing else draws it.
+const SPARSE_KEEP := [0, 2, 5]
+const SPARSE_KEEP_SATELLITE := [0]
+const SPARSE_WIDTH := 2.0
+const SPARSE_WIDTH_SATELLITE := 1.7
+
+static func build_sparse(root: Color, tip: Color) -> ArrayMesh:
+	return _build_tier(root, tip, 2)
 
 ## The lite tuft carrying, in CUSTOM0.xyz, each vertex's way to build_far's
 ## shape (the blade's root corners FAR_WIDTH out, its middle row onto the
@@ -143,24 +144,50 @@ static func build_far(root: Color, tip: Color) -> ArrayMesh:
 ## endless_tuft_far.gdshader `far_morph`) draws build_far's triangles, so
 ## the two swap with no pixel changed. Opt-in: nothing else draws it.
 static func build_lite_morph(root: Color, tip: Color) -> ArrayMesh:
+	return _build_tier(root, tip, 0)
+
+## The far ring's tuft at `tier`: 0 the lite tuft with its ways on, 1
+## build_far's, 2 build_sparse's. The same blades from the same seed.
+static func _build_tier(root: Color, tip: Color, tier: int) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	surface.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
-	_clump_morph(surface, rng, root, tip, LITE_BLADES, Vector2.ZERO, 1.0)
+	# A vertex carries only what its tier reads (a channel a mesh lacks reads
+	# as zero): the far ring is millions of vertices a frame, and its cost
+	# follows the bytes each one fetches.
+	if tier == 0: surface.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
+	if tier <= 1: surface.set_custom_format(1, SurfaceTool.CUSTOM_RGBA_HALF)
+	_clump_morph(surface, rng, root, tip, LITE_BLADES, Vector2.ZERO, 1.0, tier, SPARSE_KEEP, SPARSE_WIDTH)
 	var turn := rng.randf() * TAU
 	for satellite: Array in LITE_SATELLITES:
 		turn += rng.randf_range(2.0, 3.6)
-		_clump_morph(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]))
+		_clump_morph(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]), tier, SPARSE_KEEP_SATELLITE, SPARSE_WIDTH_SATELLITE)
 	surface.index()
-	var mesh := surface.commit()
+	var mesh := compressed(surface.commit())
 	mesh.set_meta("grass_root", root)
 	mesh.set_meta("grass_tip", tip)
 	return mesh
 
-## `_clump` at the lite tuft's rows, each vertex with its way to build_far's.
-static func _clump_morph(surface: SurfaceTool, rng: RandomNumberGenerator, root: Color, tip: Color, blades: int, at: Vector2, size: float) -> void:
+## `mesh` (one surface) in Godot's compressed vertex: 16-bit places in the
+## tuft's box and 16-bit UVs, 12 bytes a vertex fewer, its custom channels
+## kept. (It wants a tangent, which no grass material reads.) For the endless
+## grass's tufts, drawn by the million vertices: their cost on the GPU
+## follows the bytes a vertex fetches.
+static func compressed(mesh: ArrayMesh) -> ArrayMesh:
+	var arrays := mesh.surface_get_arrays(0)
+	var tangents := PackedFloat32Array()
+	for i in (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(): tangents.append_array(PackedFloat32Array([1.0, 0.0, 0.0, 1.0]))
+	arrays[Mesh.ARRAY_TANGENT] = tangents
+	var ways := mesh.surface_get_format(0) & (Mesh.ARRAY_FORMAT_CUSTOM_MASK << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT | Mesh.ARRAY_FORMAT_CUSTOM_MASK << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
+	var out := ArrayMesh.new()
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, ways | Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
+	return out
+
+## `_clump` at the lite tuft's rows, each vertex with its way to build_far's
+## (CUSTOM0) and on to build_sparse's (CUSTOM1); `tier` 1 or 2: that shape
+## itself, a triangle a blade (2: the `keep` blades only, `widen` wider).
+static func _clump_morph(surface: SurfaceTool, rng: RandomNumberGenerator, root: Color, tip: Color, blades: int, at: Vector2, size: float, tier := 0, keep: Array = [], widen := 1.0) -> void:
 	for blade in range(blades):
 		var angle := (float(blade) / blades) * TAU + rng.randf() * 0.9
 		var out := Vector2.from_angle(angle)
@@ -175,24 +202,45 @@ static func _clump_morph(surface: SurfaceTool, rng: RandomNumberGenerator, root:
 		var far_half := side * FAR_WIDTH
 		var far_l := c0 - Vector3(far_half.x, 0.0, far_half.y)
 		var far_r := c0 + Vector3(far_half.x, 0.0, far_half.y)
+		# The sparse tuft's blade: a kept one wider at the root, the others
+		# closed onto their roots.
+		var kept := keep.has(blade)
+		var sparse_l := c0 - Vector3(far_half.x, 0.0, far_half.y) * widen if kept else c0
+		var sparse_r := c0 + Vector3(far_half.x, 0.0, far_half.y) * widen if kept else c0
+		var sparse_top := top if kept else c0
+		if tier == 2:
+			if not kept: continue
+			_vertex(surface, sparse_l, Vector2(0.0, 0.0), root, false)
+			_vertex(surface, sparse_r, Vector2(1.0, 0.0), root, false)
+			_vertex(surface, top, Vector2(0.5, 1.0), blade_tip, false)
+			continue
+		if tier == 1:
+			_vertex_morph(surface, far_l, Vector2(0.0, 0.0), root, far_l, sparse_l, false)
+			_vertex_morph(surface, far_r, Vector2(1.0, 0.0), root, far_r, sparse_r, false)
+			_vertex_morph(surface, top, Vector2(0.5, 1.0), blade_tip, top, sparse_top, false)
+			continue
 		var strip := []
 		for k in range(LITE_ROWS.size()):
 			var t: float = LITE_ROWS[k]
 			var centre := _point(base, out, height, lean, t)
 			var half: Vector2 = side * float(LITE_TAPER[k])
-			strip.append([centre - Vector3(half.x, 0.0, half.y), centre + Vector3(half.x, 0.0, half.y), t, far_l.lerp(top, t), far_r.lerp(top, t)])
+			strip.append([centre - Vector3(half.x, 0.0, half.y), centre + Vector3(half.x, 0.0, half.y), t, far_l.lerp(top, t), far_r.lerp(top, t), sparse_l.lerp(sparse_top, t), sparse_r.lerp(sparse_top, t)])
 		var a: Array = strip[0]
 		var b: Array = strip[1]
-		for corner in [[a[0], 0.0, a[2], a[3]], [a[1], 1.0, a[2], a[4]], [b[0], 0.0, b[2], b[3]], [a[1], 1.0, a[2], a[4]], [b[1], 1.0, b[2], b[4]], [b[0], 0.0, b[2], b[3]]]:
-			_vertex_morph(surface, corner[0], Vector2(corner[1], corner[2]), root.lerp(blade_tip, corner[2]), corner[3])
-		_vertex_morph(surface, b[0], Vector2(0.0, b[2]), root.lerp(blade_tip, b[2]), b[3])
-		_vertex_morph(surface, b[1], Vector2(1.0, b[2]), root.lerp(blade_tip, b[2]), b[4])
-		_vertex_morph(surface, top, Vector2(0.5, 1.0), blade_tip, top)
+		for corner in [[a[0], 0.0, a[2], a[3], a[5]], [a[1], 1.0, a[2], a[4], a[6]], [b[0], 0.0, b[2], b[3], b[5]], [a[1], 1.0, a[2], a[4], a[6]], [b[1], 1.0, b[2], b[4], b[6]], [b[0], 0.0, b[2], b[3], b[5]]]:
+			_vertex_morph(surface, corner[0], Vector2(corner[1], corner[2]), root.lerp(blade_tip, corner[2]), corner[3], corner[4])
+		_vertex_morph(surface, b[0], Vector2(0.0, b[2]), root.lerp(blade_tip, b[2]), b[3], b[5])
+		_vertex_morph(surface, b[1], Vector2(1.0, b[2]), root.lerp(blade_tip, b[2]), b[4], b[6])
+		_vertex_morph(surface, top, Vector2(0.5, 1.0), blade_tip, top, sparse_top)
 
-static func _vertex_morph(surface: SurfaceTool, point: Vector3, uv: Vector2, color: Color, goal: Vector3) -> void:
+## A vertex at `point` with its way to `goal` (build_far's shape) in CUSTOM0
+## and from there on to `sparse` (build_sparse's) in CUSTOM1.
+static func _vertex_morph(surface: SurfaceTool, point: Vector3, uv: Vector2, color: Color, goal: Vector3, sparse: Vector3, first := true) -> void:
 	var way := goal - point
-	surface.set_custom(0, Color(way.x, way.y, way.z, 0.0))
-	_vertex(surface, point, uv, color)
+	var on := sparse - goal
+	if first: surface.set_custom(0, Color(way.x, way.y, way.z, 0.0))
+	surface.set_custom(1, Color(on.x, on.y, on.z, 0.0))
+	_vertex(surface, point, uv, color, false)
 
 static func build(root: Color, tip: Color) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
@@ -242,9 +290,10 @@ static func _point(base: Vector2, out: Vector2, height: float, lean: float, t: f
 	var p := base + out * reach
 	return Vector3(p.x, height * t - reach * reach / (2.0 * height), p.y)
 
-static func _vertex(surface: SurfaceTool, point: Vector3, uv: Vector2, color: Color) -> void:
+## (`uv2` false: no second UV on the vertex, for a material that reads none.)
+static func _vertex(surface: SurfaceTool, point: Vector3, uv: Vector2, color: Color, uv2 := true) -> void:
 	surface.set_color(color)
 	surface.set_uv(uv)
-	surface.set_uv2(Vector2.ZERO)
+	if uv2: surface.set_uv2(Vector2.ZERO)
 	surface.set_normal(Vector3.UP)
 	surface.add_vertex(point)
