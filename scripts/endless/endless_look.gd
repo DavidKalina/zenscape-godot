@@ -614,6 +614,8 @@ func _river_water(land_seed: int) -> void:
 	ground.set_shader_parameter("river_mouth_sink",Vector2((Field.RIVER_BED+Field.RIVER_MOUTH_DEEP)*mouth,Field.RIVER_MOUTH_SINK))
 	ground.set_shader_parameter("river_mouth_rise",Field.RIVER_MOUTH_RISE)
 	ground.set_shader_parameter("river_mouth_deep",Vector2(Field.RIVER_BED,Field.RIVER_MOUTH_DEEP*mouth))
+	# The bed's floor under the sea (Field.RIVER_MOUTH_FLOOR; --river-floor=0 none).
+	ground.set_shader_parameter("river_mouth_floor",0.0 if LaunchArgs.user_args().has("--river-floor=0") else Field.RIVER_MOUTH_FLOOR)
 	if water != null:
 		ground.set_shader_parameter("river_detail_a",water.material.get_shader_parameter("detail_a"))
 		ground.set_shader_parameter("river_detail_b",water.material.get_shader_parameter("detail_b"))

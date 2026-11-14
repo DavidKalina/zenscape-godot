@@ -87,6 +87,7 @@ protected:
 		ZSL_BIND_KNOB(river_fill)
 		ZSL_BIND_KNOB(river_mouth)
 		ZSL_BIND_KNOB(river_flare)
+		ZSL_BIND_KNOB(river_floor)
 		ZSL_BIND_OUT(last_mountain)
 		ZSL_BIND_OUT(last_inland)
 		ZSL_BIND_OUT(last_valley)
@@ -135,6 +136,7 @@ public:
 		f.river_fill = double(knobs.get("river_fill", 1.0));
 		f.river_mouth = double(knobs.get("river_mouth", 1.0));
 		f.river_flare = double(knobs.get("river_flare", 1.0));
+		f.river_floor = double(knobs.get("river_floor", 1.0));
 		f.libm = bool(knobs.get("libm", false));
 		// The land recipe (the world profile's `land`; keys left out keep
 		// wilderness's values, land_field.gd recipe_defaults()).
@@ -733,6 +735,7 @@ public:
 	ZSL_KNOB(river_fill)
 	ZSL_KNOB(river_mouth)
 	ZSL_KNOB(river_flare)
+	ZSL_KNOB(river_floor)
 	ZSL_OUT(last_mountain)
 	ZSL_OUT(last_inland)
 	ZSL_OUT(last_valley)

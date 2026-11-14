@@ -13,6 +13,32 @@ float zs_noise(vec2 p) {
 		mix(zs_noise_hash(i + vec2(0.0, 1.0)), zs_noise_hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 
+// zs_noise with an integer hash. The sine hash loses its precision once the
+// lattice's coordinates reach the tens (sin of thousands, times 43758, on the
+// GPU): the corners one cell reads no longer match its neighbour's, so the
+// noise breaks on the lattice's lines into hard-edged squares (the water's
+// depth waver drew them up the river mouths, over the shallows and as panes
+// in the deep sea). The same value noise, but a corner always hashes the same.
+float zs_noise_exact_hash(ivec2 c) {
+	uvec2 v = uvec2(c) * uvec2(1664525u, 1013904223u) + uvec2(1013904223u, 1664525u);
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v ^= v >> 16u;
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v ^= v >> 16u;
+	return float(v.x >> 8u) / 16777216.0;
+}
+
+float zs_noise_exact(vec2 p) {
+	vec2 fl = floor(p);
+	ivec2 i = ivec2(fl);
+	vec2 f = p - fl;
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(zs_noise_exact_hash(i), zs_noise_exact_hash(i + ivec2(1, 0)), f.x),
+		mix(zs_noise_exact_hash(i + ivec2(0, 1)), zs_noise_exact_hash(i + ivec2(1, 1)), f.x), f.y);
+}
+
 // Each parcel rides its own heading (zs_puff_heading_N, set by the wind tool,
 // scripts/wind_gust.gd), or the global wind when it has none. `push` is the
 // pulse as a direction: each parcel along its heading, the clap ring outward.

@@ -302,6 +302,13 @@ uniform float swim_body = 1.0;
 // green to 3 m, blue the calm), 11: the depth map's texel middles over the
 // colour (where a bilinear read creased).
 uniform int debug_view = 0;
+// 12-19: round 2's probes (12 alpha and depth bands, 13 the mouth read, 14
+// the sheet's height, 15 the view's depth, 16 waver off and a flat bed, 17
+// the bed seen, 18 waver off, 19 the waver).
+// The depth's waver read through an integer hash (zs_noise_exact, 1); 0 the
+// sine hash, whose lattice broke into hard-edged squares and panes once its
+// coordinates reached the tens (the shallows and mouths, the deep sea).
+uniform int waver_exact = 1;
 // The depth map read through a B-spline (1) or bilinear (0, the earlier
 // sea: creased on every 8 m texel, the calm's edge a staircase).
 uniform int depth_smooth = 1;
@@ -1457,7 +1464,9 @@ void fragment() {
 	// it: seen level through a face, the far coast stands behind at the sea's
 	// own height, kilometres off, and showed faint through the clear water as
 	// a grey line at the eye's height (and the far land as grey shapes).
+	float dbg_hid = 0.0;
 	if (depth > 0.0 && (receiver.y > world_position.y + 0.05 || (surge_share > 0.0 && receiver.y > sea_level - 2.0))) {
+		dbg_hid = receiver.y > world_position.y + 0.05 ? 0.5 : 1.0;
 		depth = 0.0;
 		bed_depth = DEEP;
 	}
@@ -1474,6 +1483,7 @@ void fragment() {
 	// water's depth under the sea's level, smooth), never under the map's bed
 	// (a bar beside the channel), seen through as the ground sees its own.
 	float on_mouth = 0.0;
+	vec2 dbg_mouth = debug_view == 13 ? zs_map_mouth(rest_xz) : vec2(0.0);
 	if (still > 0.0 && depth > 0.0 && mouth_smooth > 0.0) {
 		vec2 mouth = zs_map_mouth(rest_xz);
 		on_mouth = clamp(still * mouth.y * mouth_smooth, 0.0, 1.0);
@@ -1500,7 +1510,12 @@ void fragment() {
 	// rule does not change on the line where the calm stops.
 	if (mouth_smooth > 0.0) known *= 1.0 - on_mouth;
 	else known *= 1.0 - still;
-	float waver = mix(0.8, 1.25, zs_noise(rest_xz * 0.03) * 0.7 + zs_noise(rest_xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
+	// (The exact hash: the sine one broke into 9 m squares; waver_exact 0 the
+	// old.)
+	float waver = waver_exact > 0
+		? mix(0.8, 1.25, zs_noise_exact(rest_xz * 0.03) * 0.7 + zs_noise_exact(rest_xz * 0.11 + vec2(4.1, 7.3)) * 0.3)
+		: mix(0.8, 1.25, zs_noise(rest_xz * 0.03) * 0.7 + zs_noise(rest_xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
+	if (debug_view == 18 || debug_view == 16) waver = 1.0;
 	float fallback = max(bed_depth, through * 0.55);
 	float water_depth = max(mix(fallback, mapped, known), 0.0) * waver;
 
@@ -1509,6 +1524,7 @@ void fragment() {
 	// shape, its sides and belly going to the water's colour as they go down.
 	seen = mix(seen, swim_see * exp(-bed_depth / swim_clear) * swim_seen.y, swim_hit);
 	vec3 bed = textureLod(sea_screen, uv, 0.0).rgb;
+	if (debug_view == 16) bed = vec3(0.1, 0.12, 0.1);
 
 	vec3 column = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
 	column = mix(column, tint_deep, smoothstep(tint_depths.y * 0.6, tint_depths.z, water_depth));
@@ -1817,4 +1833,14 @@ void fragment() {
 	// The rainbow in the rain before the far sea (shaders/weather_bow.gdshaderinc).
 	ALBEDO += zs_bow_far(-eye, distance_to, clamp(display_color, vec3(0.0), vec3(1.0)));
 	ALPHA = depth > 0.0 ? max(smoothstep(0.0, mix(0.05, river_calm_fade, still), bed_depth), swim_hit) : 1.0;
+	if (debug_view == 17) { ALBEDO = bed; ALPHA = 1.0; }
+	if (debug_view == 20) { ALBEDO = vec3(dbg_hid, known, clamp(water_depth / 30.0, 0.0, 1.0)); ALPHA = 1.0; }
+	if (debug_view == 19) { float wv = (waver - 0.8) / 0.45; ALBEDO = vec3(wv, fract(wv * 8.0), fract(rest_xz.x / 8.0)); ALPHA = 1.0; }
+	if (debug_view >= 12 && debug_view < 16) {
+		if (debug_view == 12) ALBEDO = vec3(ALPHA, fract(water_depth / 0.5), seen.g);
+		if (debug_view == 13) ALBEDO = vec3(fract(dbg_mouth.x / 0.25), fract(mapped / 0.25), dbg_mouth.y);
+		if (debug_view == 14) ALBEDO = vec3(fract((world_position.y - sea_level) * 10.0), clamp((world_position.y - sea_level) * 2.0 + 0.5, 0.0, 1.0), fract(waver * 10.0));
+		if (debug_view == 15) ALBEDO = vec3(fract(through / 1.0), fract(bed_depth / 0.25), eye.y);
+		ALPHA = 1.0;
+	}
 }
