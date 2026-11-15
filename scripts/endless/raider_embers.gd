@@ -27,7 +27,7 @@ extends RefCounted
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 
-const EVERY := 1.6
+const EVERY := 2.2
 const TAIL_FIRST := 0.6
 const SPEED := 24.0
 ## The plane between RANGE.x and RANGE.y m off, behind it (its tail toward the
@@ -59,6 +59,23 @@ const SEEK_M := 35.0
 const CLOSE := 30.0
 const STRAIGHT_M := 10.0
 const SEEK_CLOSE := 3.0
+## Round 3 (the raider held close, raider_chase.gd): it arcs, on a path set
+## when it leaves the tail, in the plane's frame (the plane's place, not its
+## turns). Over ARC_OUT s it swings out to a point beside the plane's way:
+## ARC_ON of the way back to the plane, ARC_M m out to one side
+## (`--raider-ember-arc=M`; the sides in turn) and ARC_UP of that up. From
+## there it runs straight in over ARC_IN s (`--raider-ember-in=S`; the
+## parry's whole tell, and its straight-line guess holds), the swing's end
+## already on that line. The last ARC_FREE s it flies on as it flew, the
+## plane's moves no longer followed: a late jink slips it. From RANGE_CLOSE
+## m off at least. `--raider-ember-arc=0`: round 2's seek.
+const ARC_M := 14.0
+const ARC_UP := 0.5
+const ARC_ON := 0.55
+const ARC_OUT := 0.9
+const ARC_IN := 1.25
+const ARC_FREE := 0.3
+const RANGE_CLOSE := 10.0
 ## Its least height over the ground while closing, and the most it climbs to
 ## hold it in one frame (m).
 const FLOAT := 2.5
@@ -103,7 +120,8 @@ func _init(r: Node3D) -> void:
 	raider = r
 	_size = float(r.get_script().get_script_constant_map().get("SIZE",1.0))
 	tuning = {"every":maxf(r._flag("--raider-ember-every",EVERY),0.2),"speed":maxf(r._flag("--raider-ember-speed",SPEED),2.0),
-		"seek":r._flag("--raider-ember-seek",SEEK),"close":maxf(r._flag("--raider-ember-close",CLOSE),0.0)}
+		"seek":r._flag("--raider-ember-seek",SEEK),"close":maxf(r._flag("--raider-ember-close",CLOSE),0.0),
+		"arc":r._flag("--raider-ember-arc",ARC_M),"arc_in":maxf(r._flag("--raider-ember-in",ARC_IN),ARC_FREE+0.1)}
 	_root = Node3D.new()
 	_root.name = "Embers"
 	_root.top_level = true
@@ -186,7 +204,7 @@ func _may_fire(p: Vector3) -> bool:
 	var f = raider.flight
 	var to: Vector3 = p-f.position
 	var d := to.length()
-	if d < RANGE.x or d > RANGE.y: return false
+	if d < (RANGE_CLOSE if _closing() else RANGE.x) or d > RANGE.y: return false
 	return (-f.forward()).dot(to/d) >= RANGE_COS
 
 func _tail() -> Vector3:
@@ -209,7 +227,18 @@ func _fire(p: Vector3) -> void:
 	node.position = from
 	_face(node,shot-pv if _closing() else shot)
 	node.visible = true
-	embers.append({"node":node,"at":from,"v":shot,"age":0.0,"least":INF,"near":from,"done":false,"parry":true,"r":EMBER_R})
+	var e := {"node":node,"at":from,"v":shot,"age":0.0,"least":INF,"near":from,"done":false,"parry":true,"r":EMBER_R}
+	if _closing() and float(tuning.arc) > 0.0:
+		# The arc, in the plane's frame: from the tail (p0) out to `wide`, the
+		# swing's end on the run in's line (its bend `mid` past `wide` on it).
+		var p0 := from-p
+		var line := p0.normalized()
+		var out := line.cross(Vector3.UP)
+		out = out.normalized()*_side if out.length() > 0.1 else Vector3.RIGHT*_side
+		var wide: Vector3 = line*p0.length()*ARC_ON+(out+Vector3.UP*ARC_UP)*float(tuning.arc)
+		var w: Vector3 = -wide/float(tuning.arc_in)
+		e.merge({"p0":p0,"wide":wide,"w":w,"mid":wide-w*ARC_OUT*0.5,"free":false})
+	embers.append(e)
 	stats.fired = int(stats.fired)+1
 	var d := from.distance_to(p)
 	game.sound.shot("thump",0.5/(1.0+d/120.0),1.6,from)
@@ -249,7 +278,22 @@ func _fly(delta: float, was: Vector3, p: Vector3, events: Dictionary, flying: bo
 		var a: Vector3 = e.at
 		var v: Vector3 = e.v
 		var closing := _closing()
-		if closing and flying and not bool(e.done) and a.distance_to(p) > STRAIGHT_M:
+		var arcs := closing and e.has("wide")
+		if arcs and plane_ok and not bool(e.done) and not bool(e.free):
+			# Its place on the arc (the plane's frame), then the world's way there.
+			var t := float(e.age)+delta
+			if not flying or t > ARC_OUT+float(tuning.arc_in)-ARC_FREE:
+				e.free = true
+			else:
+				var rel: Vector3
+				if t <= ARC_OUT:
+					var u := t/ARC_OUT
+					rel = (e.p0 as Vector3)*(1.0-u)*(1.0-u)+(e.mid as Vector3)*2.0*u*(1.0-u)+(e.wide as Vector3)*u*u
+				else:
+					rel = (e.wide as Vector3)+(e.w as Vector3)*(t-ARC_OUT)
+				v = (p+rel-a)/maxf(delta,0.0001)
+				e.v = v
+		if closing and not arcs and flying and not bool(e.done) and a.distance_to(p) > STRAIGHT_M:
 			# Turn its closing (in the plane's frame) onto the plane.
 			var pv: Vector3 = game.plane.velocity
 			var w: Vector3 = v-pv

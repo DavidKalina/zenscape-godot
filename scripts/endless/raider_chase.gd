@@ -207,12 +207,13 @@ const KEEP_EASE := 1.05
 ## Inside keep_near: m/s over the plane's speed per m inside, and the least.
 const KEEP_GAIN := 0.6
 const KEEP_OVER := 4.0
+const KEEP_FLOOR := 0.95
 ## The taped line: the least between its points (m); how near the line the
 ## plane must be for it to show up (m) and how far on along it (m); the tape
 ## left past it at least (m).
 const TAPE_STEP := 4.0
 const TAPE_NEAR := 150.0
-const TAPE_LEAD := 50.0
+const TAPE_LEAD := 30.0
 const TAPE_LEFT := 300.0
 
 var raider: Node3D
@@ -541,8 +542,12 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 	var pace := float(plane.boost_speed())*lerpf(float(tuning.pace),EASE_PACE,smoothstep(EASE_M.x,EASE_M.y,gap))
 	if raider.mode == &"chase":
 		var rt: Dictionary = raider.tuning
-		pace = float(plane.boost_speed())*lerpf(float(tuning.pace),KEEP_EASE,smoothstep(float(rt.keep_far),float(rt.getaway),gap))
-		if ahead and gap < float(rt.keep_near): pace = maxf(pace,ps+KEEP_OVER+(float(rt.keep_near)-gap)*KEEP_GAIN)
+		# Held close (round 3): its pace is the plane's own, less KEEP_GAIN a m
+		# past keep_near (more, nearer), so a plane that holds its line and its
+		# Boost sits keep_near m behind it; never under KEEP_FLOOR of Boost, so
+		# a plane off the Boost or off the line still loses it.
+		if ahead: pace = maxf(ps+(float(rt.keep_near)-gap)*KEEP_GAIN,float(plane.boost_speed())*KEEP_FLOOR)
+		else: pace = float(plane.boost_speed())*float(tuning.pace)
 	if not ahead: pace = maxf(pace,ps+AHEAD_OVER)
 	pace *= float(raider.pace_k())  # pulling away after an ember's hit
 	if phase == &"tape":

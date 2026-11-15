@@ -182,11 +182,11 @@ const LET_GO_S := 4.0
 ## m (`--raider-getaway=`) for GETAWAY_S s (`--raider-getaway-s=`) it gets
 ## away for good, locked on or not. A parried ember home on it staggers it:
 ## no panic for STAGGER_S s (`--raider-stagger=`).
-const ON_TAIL_M := 80.0
+const ON_TAIL_M := 45.0
 const ON_TAIL_DEG := 30.0
 const TAIL_HOLD := 0.5
-const KEEP_M := Vector2(40.0,150.0)
-const GETAWAY_M := 200.0
+const KEEP_M := Vector2(22.0,150.0)
+const GETAWAY_M := 140.0
 const GETAWAY_S := 3.0
 const STAGGER_S := 1.2
 
