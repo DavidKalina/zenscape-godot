@@ -72,3 +72,53 @@ on a full gauge with `--armed=1`), a surge roll inside 22 m.
   run in you either parry (and lose the kill roll) or eat the knock-back.
 - Not counted: how often it takes tree gaps or arches while jinking.
 - All greybox: the ember's look, the smoke, the sounds.
+
+## Rounds 3 to 5 (2026-11-14, Windows): a test of flight, parked
+
+Main merged in first. The user flew each build; the direction moved from
+embers to "screw the parrying, I just want to chase him", then to the raider
+as a retuned rival that is beaten only by following its trail accurately.
+The last flight: "He got away." Parked there.
+
+Play (Windows): `python tools/play.py --no-pull -- --raider --raider-tape=res://scratch/flights/<tape>.flight`
+
+- **A taped line** (`--raider-tape=FILE`, a flight taped with `--record`): no
+  buzz. With the plane at cruise speed, within 150 m of the tape's line and
+  flying its way, the raider shows up 30 m on along it and flies it on
+  rails, at the chase's pace (`raider_chase.gd`, phase `tape`). At the
+  tape's end it runs on by its own plans. Without the flag it buzzes and
+  plans as before. The tapes are in `scratch/` (git-ignored), so a tape has
+  to be flown again on another machine.
+- **Its stream**: the ribbon, now 3 s long. The plane within 8 m of its line
+  is in the stream (`raider.gd` `stream`): drawn along up to 16 m/s over its
+  pace, the raider held 22 m ahead, the ribbon gold and wider. Out of it the
+  raider runs at 1.15 x Boost, the plane + 7 m/s at least; past 140 m for
+  3 s it's gone.
+- **Beating it**: the bar at the top (`raider.gd` `follow`, class `Trail`)
+  fills in the stream, full in 12 s on the ribbon's own line and 0.35 of
+  that pace at the stream's edge, and drains over 30 s out of it. Full: a
+  bell, BEATEN, it leaves. Got away: GOT AWAY.
+- **Off in the chase**: embers (`--raider-embers` brings them back, now on a
+  set arc: 0.9 s out to 14 m beside the line, 1.25 s straight in, the last
+  0.3 s not following) and the surge roll's kill (`--raider-kill`).
+
+Flags: `--raider-tape=`, `--raider-tape-lead=`, `--raider-keep-near=` (22),
+`--raider-stream-r=` (8), `--raider-stream-over=` (16), `--raider-follow=`
+(12), `--raider-ember-arc=` (14 m; 0: round 2's seek), `--raider-ember-in=`.
+
+Checked: smoke with the tape, with `--raider` and with neither; a throwaway
+driver through the real play loop (uncommitted). Steering straight at it:
+28-30 s of 40 in the stream, the bar at 0.52 after 40 s at an 18 s fill.
+Steering 14 m to one side: 8 s in the stream, the bar at 0, the gap wider.
+BEATEN fired with the fill forced to 4 s. Nothing was looked at rendered.
+
+Open:
+
+- The user did not beat it by hand; whether that is the 12 s, the 8 m, the
+  bar draining, or the trail being hard to read is not known.
+- The opt-in the user asked for is not built: the rival's own parts (a
+  traffic plane bracketed, R3 held, it bolts, the result, peeling back into
+  the traffic) in place of it popping up on the line.
+- It vanishes when beaten or lost. The bar and the result words are
+  greybox, not the new UI's look.
+- On rails it flies the tape faster than the tape was flown.
