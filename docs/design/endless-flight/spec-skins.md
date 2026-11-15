@@ -181,7 +181,20 @@ show every field in use; copy from them.
   Glowing paint is dimmed so the light keeps its colour. A glow stands out
   on a dark livery; on white under moonlight it barely shows.
 - Not on bared metal or silver-doped cloth (mask 0): there a bake's look
-  is all.
+  is all, unless the finish names `bare`.
+- `bare`: 0..1 (default 0), a bake's bared metal (mask 0, by its orm
+  metal share) as a mirror in its own colour, its panels and ribs catching
+  the horizon through the normal map. Without it bared metal is lit like
+  paint of its colour: aluminium still reads (grey is silver), but a gold
+  or copper reads as yellow or brown paint. 1 polished (gold, copper),
+  ~0.6 duller (brass). Any sheen may sit beside it on the painted parts.
+- `metal`: 0..1 (default 1), with `sheen` `metal`: how much of the mirror
+  the paint takes. Below 1 a dark paint stays dark (at 1 a dark paint's
+  mirror is lifted to mid grey, so a top wing turns pale under the sky);
+  Gunmetal is 0.55.
+- A gloss or metal sheen on a dark livery shows pale where it catches the
+  sky (gloss white edge-on, metal lifted): for black or dark-wood parts
+  that should stay dark, leave the sheen satin.
 
 ### Decals
 
@@ -240,7 +253,13 @@ script. Settings: `wear` 0 fresh .. 1 (the plane's own) .. 2 battered;
 `dirt` 0 clean .. 1 .. 2 filthy; `bare` 0..1, the livery's coat off the
 forward body metal and the cowl (deck, cheat line and marks
 stay painted); `bare_c` the bared metal's hex (aluminium if not given;
-copper `b87333`, gold `d4a64a`); `rust` 0..1; `cloth` `doped` or `silver`.
+copper `d97f48`, brass `a8964a`, gold `ffc23a`); `rust` 0..1, in the
+chips, run back from them and gathered in the body's seams and rivets;
+`rust_c` the corrosion's hex (a verdigris `4f9a7a` for copper); `cloth`
+`doped`, `silver`, or `bare`: the cloth and the body aft skinned in the
+bared metal too, so with `bare` 1 the whole airframe is metal but the
+scheme (deck, cheat line, tips, fin, roundels: the livery). A coloured
+bared metal wants the finish's `bare` to read as metal.
 It writes `<out>_albedo.jpg` and `<out>_orm.jpg` (2048 x 1300, JPEG 90,
 imported lossy WebP) and `<out>_mask.png` (2048 x 1300, lossless: lossy
 zeroes the livery), their `.import`s, and prints the row's `bake` value.
@@ -249,7 +268,8 @@ About 15 s a bake.
 ### Sizes
 
 A decal ~0.12 MB. A bake 0.6 MB (fresh, clean) to 2.5 MB (rusty,
-battered); Silverwing 1.2 MB. Under the 25 MB for the 20 new skins: decals
+battered); Silverwing 1.2 MB. Dirt is what makes a mask big (Rust at dirt
+1.0 was 2.6 MB, at 0.6 2.4 MB). Under the 25 MB for the 20 new skins: decals
 freely; bakes at most 2 a lane, `metal` up to 4, each under 2.5 MB.
 
 ### The sheet

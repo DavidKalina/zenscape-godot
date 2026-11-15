@@ -28,7 +28,10 @@ extends RefCounted
 ## row may carry more than its livery:
 ##   rarity  common, uncommon, rare or legendary (RARITIES), shown in the list
 ##   finish  how the paint shines: {sheen: a SHEENS name, pearl: Color,
-##           pearl_amount, glow: Color, glow_on: [slots], glow_power}
+##           pearl_amount, glow: Color, glow_on: [slots], glow_power,
+##           bare: 0..1, the bake's bared metal as a mirror in its own colour,
+##           metal: 0..1, how much of the metal sheen's mirror the paint takes
+##           (1 by default): below, a dark metal stays dark}
 ##           (`finish_values`; PlaneFigure `refinish`); glow_on may name
 ##           "decal" too: the decal lit in its own colours
 ##   decal   a texture's path (res://assets/models/hero_plane/skins/<batch>/),
@@ -54,6 +57,7 @@ const BATCHES := [
 	"res://scripts/endless/skins/wild.gd",
 	"res://scripts/endless/skins/heritage.gd",
 	"res://scripts/endless/skins/glow.gd",
+	"res://scripts/endless/skins/metal.gd",
 ]
 
 const RARITIES := ["common","uncommon","rare","legendary"]
@@ -158,6 +162,8 @@ static func rarity(i: Dictionary) -> String:
 static func finish_values(i: Dictionary) -> Dictionary:
 	var f: Dictionary = i.get("finish",{})
 	var out: Dictionary = (SHEENS.get(String(f.get("sheen","satin")),{}) as Dictionary).duplicate()
+	if f.has("bare"): out["finish_bare"] = clampf(float(f.bare),0.0,1.0)
+	if f.has("metal") and out.has("finish_metal"): out["finish_metal"] = clampf(float(f.metal),0.0,1.0)
 	if f.has("pearl"):
 		out["pearl"] = f.pearl
 		out["pearl_amount"] = float(f.get("pearl_amount",0.6))
