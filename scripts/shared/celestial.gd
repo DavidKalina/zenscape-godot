@@ -25,6 +25,17 @@ var daylight := 1.0
 var sun_height := 0.5
 var cloud := 0.06
 var storm := 0.0
+## The endless flight's weather (scripts/endless/weather.gd): how far the sky's
+## dome is greyed to an overcast (0..1), and that grey's brightness against the
+## clear sky's (1 as bright).
+var weather_grey := 0.0
+var weather_dim := 1.0
+## The weather's lift on the land's sky fill (an overcast lights the land from
+## the whole bright dome; 1 none).
+var weather_fill := 1.0
+## The weather's bow this much wider and softer than the isles' (zs_bow_shape.y)
+## while it shows: at 1 it read crisp, like a sticker.
+var weather_bow_wide := 1.0
 var shroud := 0.0
 var _cycling := true
 var cycling: bool:
@@ -46,6 +57,10 @@ var moment_bow := 0.0
 var moon_bow := 0.0
 ## 1 on a double rainbow: brings the fainter second bow up (life_moments.gd).
 var moment_bow_double := 0.0
+## The endless flight's sky lights (scripts/endless/weather_sky_lights.gd): the
+## weather's double bow (0..1) and its aurora nights' strength.
+var weather_bow_double := 0.0
+var sky_aurora := 0.0
 var alpen_enabled := true
 var inversion_enabled := true
 var wind := 0.4
@@ -489,7 +504,7 @@ func update_rig() -> void:
 	var dusk_fill := smoothstep(DUSK_FILL_E.x, DUSK_FILL_E.y, e) * smoothstep(DUSK_FILL_E.z, DUSK_FILL_E.w, e) * lerpf(1.0, DUSK_FILL_CLOUD, minf(1.0, cloud * 1.3)) * lerpf(1.0, 0.4, storm)
 	var surface_sky := hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_fill * (1.0 - minf(1.0, cloud * 1.3)) * 0.5)
 	var dip := lerpf(GOLDEN_FILL_DIP * golden, GOLDEN_FILL_DIP_FOLLOW * golden_f, follow)
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - dip) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - dip) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * weather_fill * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(DAY_SKY[0], sky_day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(DAY_SKY[1], sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(DAY_SKY[2], sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
@@ -499,11 +514,25 @@ func update_rig() -> void:
 	up *= look.ratio("sky")
 	glow *= look.ratio("glow")
 	var sky_dim := clampf(up.dot(Vector3(0.2126, 0.7152, 0.0722)) / 0.14, 0.08, 1.0)
-	var cover := minf(1.0, cloud * 1.15)
+	# Under the endless flight's weather (weather_grey > 0) the dome is greyed
+	# below instead of darkened by these targets (drawn for the isles' sky).
+	var cover := minf(1.0, cloud * 1.15) * (1.0 - weather_grey)
+	var dome_storm := storm * (1.0 - weather_grey)
 	# Weather tint targets from weather.js; applied after the hour, as in the source.
-	down = down.lerp(Vector3(0.052, 0.058, 0.066) * sky_dim, cover).lerp(Vector3(0.022, 0.024, 0.028) * sky_dim, storm)
-	up = up.lerp(Vector3(0.085, 0.096, 0.112) * sky_dim, cover).lerp(Vector3(0.034, 0.038, 0.046) * sky_dim, storm)
-	glow = glow.lerp(Vector3(0.085, 0.085, 0.090) * sky_dim, cover).lerp(Vector3(0.040, 0.042, 0.048) * sky_dim, storm)
+	down = down.lerp(Vector3(0.052, 0.058, 0.066) * sky_dim, cover).lerp(Vector3(0.022, 0.024, 0.028) * sky_dim, dome_storm)
+	up = up.lerp(Vector3(0.085, 0.096, 0.112) * sky_dim, cover).lerp(Vector3(0.034, 0.038, 0.046) * sky_dim, dome_storm)
+	glow = glow.lerp(Vector3(0.085, 0.085, 0.090) * sky_dim, cover).lerp(Vector3(0.040, 0.042, 0.048) * sky_dim, dome_storm)
+	# The zenith's turn (the shade's hue below) is the clear sky's: a grey
+	# dome would turn the shade, and the paint leaning on it, red.
+	var hue_up := up
+	if weather_grey > 0.0:
+		# An overcast dome: even top to bottom, a cool grey as bright as the
+		# clear sky's own (by its hour), times weather_dim.
+		var flat := (_luma(up) * 0.5 + _luma(down) * 0.3 + _luma(glow) * 0.4) * weather_dim
+		var grey := Vector3(0.94, 0.97, 1.03) * flat
+		up = up.lerp(grey, weather_grey)
+		down = down.lerp(grey * 0.92, weather_grey)
+		glow = glow.lerp(grey * 0.15, weather_grey)
 	_publish("zs_sky_down", _temper_sky(down))
 	_publish("zs_sky_up", _temper_sky(up))
 	_publish("zs_sky_glow", glow)
@@ -514,7 +543,7 @@ func update_rig() -> void:
 	var sun_up := smoothstep(-0.03, 0.05, e) * (0.0 if moon_energy > sun_energy else 1.0)
 	var sun_hue := _hue(Vector3(key_color.r, key_color.g, key_color.b))
 	var fill_hue := _hue(surface_sky)
-	var zenith_turn := _hue(up) / _hue(_temper_sky(DAY_SKY[1] * look.ratio("sky")))
+	var zenith_turn := _hue(hue_up) / _hue(_temper_sky(DAY_SKY[1] * look.ratio("sky")))
 	var complement := (REF_SUN_HUE / sun_hue).clamp(Vector3.ONE * 0.2, Vector3.ONE * 5.0)
 	var shadow_hue := _hue(fill_hue * _vpow(zenith_turn, SHADOW_SKY * sun_up) * _vpow(complement, SHADOW_COMPLEMENT * sun_up))
 	shadow_hue = fill_hue.lerp(shadow_hue, follow)
@@ -588,13 +617,13 @@ func update_rig() -> void:
 	_publish("zs_dusk_direction", warmth * 0.9)
 	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)) * (1.0 - 0.8 * blue))
 	# The aurora's heading is a bearing, so the room's turn simply adds to it.
-	_publish("zs_aurora", Vector4(maxf(maxf(aurora_strength, forced_aurora), _aurora), 1.0, 0.15, -1.2 + room_yaw))
+	_publish("zs_aurora", Vector4(maxf(maxf(maxf(aurora_strength, forced_aurora), _aurora), sky_aurora), 1.0, 0.15, -1.2 + room_yaw))
 	_publish("zs_room_yaw", room_yaw)
 	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)
-	_publish("zs_bow_shape", Vector2.ONE)
+	_publish("zs_bow_shape", Vector2(1.0, lerpf(1.0, weather_bow_wide, smoothstep(0.0, 0.05, weather_bow))))
 	_publish("zs_moonbow", moon_bow * night * smoothstep(-0.02, 0.08, moon.y))
-	_publish("zs_bow_double", moment_bow_double)
+	_publish("zs_bow_double", maxf(moment_bow_double, weather_bow_double))
 
 ## The moon's direction at a phase: half a day round from the sun on a flatter
 ## ring, less the turn it has fallen behind this far into the month.

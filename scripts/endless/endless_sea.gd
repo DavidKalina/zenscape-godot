@@ -30,6 +30,10 @@ const SeaFFT = preload("res://scripts/endless/sea_fft.gd")
 const DEPTH_TEXELS := 512
 const DEPTH_SIDE := 4096.0
 const DEPTH_MOVE := 900.0
+## The mouth's plume (`_plume`): how far (m of water) the river's calm runs
+## on out of a mouth over the sea, and the calm it starts from there.
+## --river-plume=M sets the reach (0: none, round 2's map).
+const PLUME := Vector2(64.0,1.0)
 const WAKE_POINTS := 40
 ## A point every WAKE_EVERY s of flight (and at least WAKE_STEP m on), so
 ## the trail spans WAKE_POINTS*WAKE_EVERY s; points older than WAKE_LIFE s
@@ -94,6 +98,13 @@ static func foam_wanted() -> bool:
 	return body_wanted() and not "--sea-foam=old" in LaunchArgs.user_args()
 
 var _leaps_on := false
+## The plume's reach the depth map bakes with (PLUME.x; --river-plume=M).
+var plume := _plume_arg()
+
+static func _plume_arg() -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--river-plume="): return maxf(float(a.get_slice("=",1)),0.0)
+	return PLUME.x
 
 func _init(seed_value: int) -> void:
 	land_seed = seed_value
@@ -130,6 +141,10 @@ func _init(seed_value: int) -> void:
 			# finest crinkles turned down.
 			if body_wanted():
 				material.set_shader_parameter("sea_body",1)
+				# The ordinary sea's size: the long swell and wind sea up from the shader's
+				# (0.85, 1.0, 0.9), so the middle reads livelier while the edge's surge
+				# stays the big water (--sea-set=body_swell:Vector3(0.85,1.0,0.9) is the old sea).
+				material.set_shader_parameter("body_swell",Vector3(1.7,1.3,0.9))
 				material.set_shader_parameter("detail_strength",Vector3(0.2,0.12,0.045))
 				material.set_shader_parameter("wavelet_strength",0.1)
 				material.set_shader_parameter("wavelet_size",Vector2(3.2,0.7))
@@ -203,7 +218,7 @@ var _swell: Object = null
 ## The shader's defaults for what the mirror reads (a material keeps only
 ## what was set).
 const FOAM_CAPS := Vector3(1.6,6.0,1.0)
-const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foam":Vector3(0.25,0.55,1.2),"fft_patch":Vector2(0.55,1.25),"fft_strength":Vector3(1.0,0.85,0.45),"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0),"surge_belt":Vector4(-200.0,700.0,2200.0,3200.0),"surge_size":1.0,"surge_peak":0.85}
+const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foam":Vector3(0.25,0.55,1.2),"fft_patch":Vector2(0.55,1.25),"fft_strength":Vector3(1.0,0.85,0.45),"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0),"surge_belt":Vector4(-2400.0,-300.0,2200.0,3200.0),"surge_size":1.0,"surge_peak":0.85}
 
 ## The sea's surface height over its rest level (m) at world `x`,`z` now:
 ## the body's swell (0 without the body). The shader's sheet shoves its
@@ -323,7 +338,7 @@ const SURGE_LENGTH := [180.0,130.0,90.0]
 const SURGE_SIZE := [9.0,5.0,2.2]
 const SURGE_SET := Vector2(0.007,0.059)
 const SURGE_LEAN := 0.35
-const SURGE_REACH := 700.0
+const SURGE_REACH := 450.0
 const SURGE_WANDER := 2300.0
 const SURGE_BEND := Vector2(14.0,-9.0)
 const SURGE_BEND_LENGTH := 1700.0
@@ -338,6 +353,230 @@ func set_edge(edge: Vector4) -> void:
 	if edge.z <= 0.0 or int(_knob("sea_body")) == 0 or "--surge=0" in LaunchArgs.user_args(): return
 	_surge_edge = edge
 	material.set_shader_parameter("surge_edge",edge)
+	_shore_start(edge)
+
+# --- The surge's shore: where it dies off before the land
+#
+# The surge is scaled by a map over the whole edge square (`shore_image`,
+# baked once on a worker when the edge is set): 0 on land and SHORE_NEAR m off
+# it, whole SHORE_FULL m off, the way a swell dies in the shallows; and low
+# where land lies between the water and the open sea the waves come in from
+# (behind a headland, up a bay, an inner sea), whole again SHORE_FETCH.y m of
+# open water past it. The sheet (zs_surge_shore), the spray and the CPU's copy
+# (`shore_at`) read the one map, at the sheet's rest point. Until it is baked
+# the surge is off everywhere; past the map it is whole (open sea).
+# --shore=0 takes the fade off (the surge runs onto the land, as before).
+
+## The map's texel (m) and how far it runs past the edge line (m).
+const SHORE_TEXEL := 32.0
+const SHORE_PAST := 800.0
+## Distance off the nearest land (m): nothing within .x (the sheet's shove and
+## the map's texel), whole from .y.
+const SHORE_NEAR := 40.0
+const SHORE_FULL := 380.0
+## Open water (m) between a spot and land lying toward the open sea: sheltered
+## under .x, open again by .y.
+const SHORE_FETCH := Vector2(150.0,1600.0)
+## The shelter's soft edge (texels, two box passes): waves bend round a
+## headland's end rather than stopping on a line.
+const SHORE_BLUR := 3
+## Room left on the fade in `surge_room` for the sheet's sideways shove (the
+## map read at the plane, the wave's rest point up to ~25 m off).
+const SHORE_ROOM_SLACK := 0.12
+
+var shore := ImageTexture.new()
+## Corner x, z, side (m), baked (1) or not (0).
+var shore_at := Vector4.ZERO
+var _shore_task := -1
+var _shore_image: Image
+var _shore_next := Vector4.ZERO
+var _shore_data := PackedFloat32Array()
+var _shore_n := 0
+
+func _shore_start(edge: Vector4) -> void:
+	material.set_shader_parameter("surge_shore",shore)
+	material.set_shader_parameter("surge_shore_at",shore_at)
+	if "--shore=0" in LaunchArgs.user_args():
+		_shore_next = Vector4(0.0,0.0,1.0,2.0)
+		_shore_take()
+		return
+	var half := edge.z+SHORE_PAST
+	_shore_n = int(ceil(half*2.0/SHORE_TEXEL))
+	_shore_next = Vector4(edge.x-half,edge.y-half,_shore_n*SHORE_TEXEL,1.0)
+	var s := land_seed
+	var corner := Vector2(_shore_next.x,_shore_next.y)
+	var n := _shore_n
+	# --shore=near,full,fetch_from,fetch_full (m) tries other ramps.
+	var ramp := Vector4(SHORE_NEAR,SHORE_FULL,SHORE_FETCH.x,SHORE_FETCH.y)
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--shore=") and a.get_slice("=",1).contains(","):
+			var parts := a.get_slice("=",1).split(",")
+			for i in mini(parts.size(),4): ramp[i] = float(parts[i])
+	var from: float = Vector4(_knob("surge_belt")).x-ramp.y-200.0
+	if "--shore-now" in LaunchArgs.user_args():
+		_shore_image = shore_image(s,edge,corner,n,from,ramp)
+		_shore_take()
+	else:
+		_shore_task = WorkerThreadPool.add_task(func() -> void: _shore_image = shore_image(s,edge,corner,n,from,ramp),false,"Surge shore map")
+
+## Whether the shore map is in (the surge is off until it is).
+func shore_ready() -> bool:
+	return shore_at.w > 0.5 or _surge_edge.z <= 0.0
+
+func _shore_poll() -> void:
+	if _shore_task < 0 or not WorkerThreadPool.is_task_completed(_shore_task): return
+	WorkerThreadPool.wait_for_task_completion(_shore_task)
+	_shore_task = -1
+	_shore_take()
+
+func _shore_take() -> void:
+	# w 2: no fade (--shore=0); the shader reads past the map as whole.
+	if _shore_next.w > 1.5:
+		shore_at = Vector4(0.0,0.0,1.0,2.0)
+	else:
+		if _shore_image == null: return
+		shore.set_image(_shore_image)
+		_shore_data = _shore_image.get_data().to_float32_array()
+		shore_at = _shore_next
+	material.set_shader_parameter("surge_shore_at",shore_at)
+
+## How whole the surge may be at world `x`,`z` (0 .. 1): the map read as the
+## shader reads it (bilinear between texel centres, clamped at its rim, 1 past it).
+func shore_fade(x: float, z: float) -> float:
+	if shore_at.w < 0.5: return 0.0
+	if shore_at.w > 1.5: return 1.0
+	var u := (x-shore_at.x)/shore_at.z
+	var v := (z-shore_at.y)/shore_at.z
+	if u < 0.0 or v < 0.0 or u > 1.0 or v > 1.0: return 1.0
+	var n := _shore_n
+	var fx := u*n-0.5
+	var fz := v*n-0.5
+	var i0 := int(floor(fx))
+	var j0 := int(floor(fz))
+	var tx := fx-i0
+	var tz := fz-j0
+	var i1 := clampi(i0+1,0,n-1)
+	var j1 := clampi(j0+1,0,n-1)
+	i0 = clampi(i0,0,n-1)
+	j0 = clampi(j0,0,n-1)
+	var a := lerpf(_shore_data[j0*n+i0],_shore_data[j0*n+i1],tx)
+	var b := lerpf(_shore_data[j1*n+i0],_shore_data[j1*n+i1],tx)
+	return lerpf(a,b,tz)
+
+## The shore map over `n`x`n` texels from `corner` (red: how whole the surge
+## may be). Land is read only where the belt can reach (edge distance past
+## `from`); deeper in counts as land.
+static func shore_image(seed_value: int, edge: Vector4, corner: Vector2, n: int, from: float, ramp: Vector4) -> Image:
+	var field := Field.new(seed_value)
+	var t := SHORE_TEXEL
+	field.detail = t
+	var big := 1.0e6
+	var dist := PackedFloat32Array()
+	dist.resize(n*n)
+	var land := PackedByteArray()
+	land.resize(n*n)
+	for j in n:
+		var z := corner.y+(j+0.5)*t
+		for i in n:
+			var x := corner.x+(i+0.5)*t
+			var k := j*n+i
+			var dry := true
+			if Field.GDField.edge_off(edge,x,z) > from: dry = field.height(x,z) >= Field.SEA_Y
+			land[k] = 1 if dry else 0
+			dist[k] = 0.0 if dry else big
+	# Distance off the land: two chamfer passes (texel, diagonal).
+	var d1 := t
+	var d2 := t*sqrt(2.0)
+	for j in n:
+		for i in n:
+			var k := j*n+i
+			var d := dist[k]
+			if d == 0.0: continue
+			if i > 0: d = minf(d,dist[k-1]+d1)
+			if j > 0:
+				d = minf(d,dist[k-n]+d1)
+				if i > 0: d = minf(d,dist[k-n-1]+d2)
+				if i < n-1: d = minf(d,dist[k-n+1]+d2)
+			dist[k] = d
+	for j in range(n-1,-1,-1):
+		for i in range(n-1,-1,-1):
+			var k := j*n+i
+			var d := dist[k]
+			if d == 0.0: continue
+			if i < n-1: d = minf(d,dist[k+1]+d1)
+			if j < n-1:
+				d = minf(d,dist[k+n]+d1)
+				if i < n-1: d = minf(d,dist[k+n+1]+d2)
+				if i > 0: d = minf(d,dist[k+n-1]+d2)
+			dist[k] = d
+	# Open water toward the open sea: along x toward the near side's edge, and
+	# along z, weighed by the way out (the surge's fronts face it).
+	var to_hi := PackedFloat32Array()
+	to_hi.resize(n)
+	var shelter := PackedFloat32Array()
+	shelter.resize(n*n)
+	var fetch_x := PackedFloat32Array()
+	fetch_x.resize(n*n)
+	for j in n:
+		var run := big
+		for i in range(n-1,-1,-1):
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			to_hi[i] = run
+		run = big
+		for i in n:
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			var x := corner.x+(i+0.5)*t
+			fetch_x[k] = to_hi[i] if x > edge.x else run
+	for i in n:
+		var run := big
+		var to_hi_z := PackedFloat32Array()
+		to_hi_z.resize(n)
+		for j in range(n-1,-1,-1):
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			to_hi_z[j] = run
+		run = big
+		var x := corner.x+(i+0.5)*t
+		for j in n:
+			var k := j*n+i
+			run = 0.0 if land[k] == 1 else run+t
+			var z := corner.y+(j+0.5)*t
+			var fz := to_hi_z[j] if z > edge.y else run
+			var dx := absf(x-edge.x)-(edge.z-edge.w)
+			var dz := absf(z-edge.y)-(edge.z-edge.w)
+			var ox := maxf(dx,0.0)
+			var oz := maxf(dz,0.0)
+			var wx: float
+			var ol := ox*ox+oz*oz
+			if ol > 1e-6: wx = ox*ox/ol
+			else: wx = 1.0 if dx > dz else 0.0
+			var fetch := fetch_x[k]*wx+fz*(1.0-wx)
+			shelter[k] = smoothstep(ramp.z,ramp.w,fetch)
+	# Soften the shelter's edges (separable box, twice).
+	var tmp := PackedFloat32Array()
+	tmp.resize(n*n)
+	var r := SHORE_BLUR
+	var w := 1.0/float(2*r+1)
+	for pass_i in 2:
+		for j in n:
+			var sum := 0.0
+			for i in range(-r,r+1): sum += shelter[j*n+clampi(i,0,n-1)]
+			for i in n:
+				tmp[j*n+i] = sum*w
+				sum += shelter[j*n+clampi(i+r+1,0,n-1)]-shelter[j*n+clampi(i-r,0,n-1)]
+		for i in n:
+			var sum := 0.0
+			for j in range(-r,r+1): sum += tmp[clampi(j,0,n-1)*n+i]
+			for j in n:
+				shelter[j*n+i] = sum*w
+				sum += tmp[clampi(j+r+1,0,n-1)*n+i]-tmp[clampi(j-r,0,n-1)*n+i]
+	var out := PackedFloat32Array()
+	out.resize(n*n)
+	for k in n*n:
+		out[k] = smoothstep(ramp.x,ramp.y,dist[k])*shelter[k]
+	return Image.create_from_data(n,n,false,Image.FORMAT_RF,out.to_byte_array())
 
 ## How far over the rest level the surge may reach at `x`,`z` (m; 0 outside
 ## its belt), so a look-up can stop short of the waves when it is above them.
@@ -346,7 +585,8 @@ func surge_room(x: float, z: float) -> float:
 	var belt: Vector4 = _knob("surge_belt")
 	var off: float = Field.GDField.edge_off(_surge_edge,x,z)
 	if off <= belt.x: return 0.0
-	return SURGE_TOP*float(_knob("surge_size"))*smoothstep(belt.x,belt.y,off)
+	var fade := minf(1.0,shore_fade(x,z)+SHORE_ROOM_SLACK) if shore_at.w > 0.5 else 0.0
+	return SURGE_TOP*float(_knob("surge_size"))*smoothstep(belt.x,belt.y,off)*fade
 
 ## The sheet's point over world `x`,`z`: Vector3(rest x, rest z, the surge's
 ## rise there, m). The sheet shoves its points far enough here that Newton
@@ -356,7 +596,7 @@ func surge_at(x: float, z: float) -> Vector3:
 	if _surge_edge.z <= 0.0: return Vector3(x,z,0.0)
 	var belt: Vector4 = _knob("surge_belt")
 	var target := Vector2(x,z)
-	if Field.GDField.edge_off(_surge_edge,x,z) <= belt.x: return Vector3(x,z,0.0)
+	if Field.GDField.edge_off(_surge_edge,x,z) <= belt.x or shore_at.w < 0.5: return Vector3(x,z,0.0)
 	var t := _now
 	var size_knob: float = _knob("surge_size")
 	var peak: float = _knob("surge_peak")
@@ -373,7 +613,7 @@ func surge_at(x: float, z: float) -> Vector3:
 		var off := w.x
 		var d := -Vector2(w.y,w.z)
 		var sets := 0.5+0.5*sin(-off*SURGE_SET.x-t*SURGE_SET.y+warp_a*5.0)
-		var size := size_knob*smoothstep(belt.x,belt.y,off-wander)*(0.4+0.6*sets)*(0.6+0.8*lobe)
+		var size := size_knob*smoothstep(belt.x,belt.y,off-wander)*shore_fade(p.x,p.y)*(0.4+0.6*sets)*(0.6+0.8*lobe)
 		var total := 0.0
 		for i in 3:
 			total += float(SURGE_SIZE[i])*size*TAU/float(SURGE_LENGTH[i])
@@ -501,6 +741,7 @@ static func _detail(seed_value: int, frequency: float, octaves: int) -> NoiseTex
 func step(delta: float, eye: Vector3, plane: Vector3, facing := Vector3.FORWARD, time := -1.0, view: Camera3D = null) -> void:
 	_now += delta
 	_depth(eye)
+	_shore_poll()
 	_wake(plane)
 	if fft != null: fft.step(time if time >= 0.0 else _now,view)
 	if foam != null:
@@ -524,11 +765,12 @@ func _depth(eye: Vector3) -> void:
 	var corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*DEPTH_SIDE*0.5)/texel).floor()*texel
 	_next = Vector4(corner.x,corner.y,DEPTH_SIDE,1.0)
 	var s := land_seed
+	var pl := plume
 	if depth_at.w < 0.5:
-		_image = depth_image(s,corner)
+		_image = depth_image(s,corner,pl)
 		_take()
 	else:
-		_task = WorkerThreadPool.add_task(func() -> void: _image = depth_image(s,corner),false,"Sea depth map")
+		_task = WorkerThreadPool.add_task(func() -> void: _image = depth_image(s,corner,pl),false,"Sea depth map")
 
 func _take() -> void:
 	if _image == null: return
@@ -538,22 +780,97 @@ func _take() -> void:
 	material.set_shader_parameter("depth_at",depth_at)
 
 ## The land's height (world y) per texel over the square at `corner` (red),
-## and how still the sea lies there (green: 1 up a river's mouth, LandField
-## `calm_here`; the shader stills the swell there).
-static func depth_image(seed_value: int, corner: Vector2) -> Image:
+## how still the sea lies there (green: 1 up a river's mouth, LandField
+## `calm_here`; the shader stills the swell there), and the river's drawn
+## water at a mouth: how far it lies under the sea (m) times how much of the
+## texel is on its water (blue), and that share (alpha). The sea reads blue
+## over alpha for the water between it and the river drawn under it: the
+## ground draws that water flat at its level, sunk under the sea's over the
+## last RIVER_MOUTH_SINK m (land_field `river_drawn`), but on its chunks'
+## grid, so read off the screen it came in the grid's facets.
+## With `plume_m` > 0 the calm runs on out of each mouth over the sea (see
+## `_plume`).
+static func depth_image(seed_value: int, corner: Vector2, plume_m := PLUME.x) -> Image:
 	var field := Field.new(seed_value)
 	var n := DEPTH_TEXELS
 	var texel := DEPTH_SIDE/n
 	# A map this coarse takes the land's carve at its own texel (land_field.gd).
 	field.detail = texel
 	var data := PackedFloat32Array()
-	data.resize(n*n*2)
+	data.resize(n*n*4)
 	for j in n:
 		for i in n:
-			var k := (j*n+i)*2
+			var k := (j*n+i)*4
 			data[k] = field.height(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)
-			data[k+1] = field.calm_here()
-	return Image.create_from_data(n,n,false,Image.FORMAT_RGF,data.to_byte_array())
+			var calm: float = field.calm_here()
+			data[k+1] = calm
+			if calm > 0.0:
+				var drawn: float = field.river_drawn()
+				var on := 1.0-smoothstep(-2.0,2.0,float(field.last_river)) if is_finite(drawn) else 0.0
+				data[k+2] = maxf(Field.SEA_Y-drawn,0.0)*on if on > 0.0 else 0.0
+				data[k+3] = on
+	if plume_m > 0.0: _plume(data,n,texel,plume_m)
+	return Image.create_from_data(n,n,false,Image.FORMAT_RGBAF,data.to_byte_array())
+
+## The mouth's plume (water-artifacts-handoff.md, round 3): the calm (green)
+## carried out of each mouth over the sea, fading over `reach` m of water from
+## the reach where the river's drawn water lies under the sea's (blue > 0).
+## Before, the calm stopped where the river's data stopped, so the still,
+## pale channel met the full swell and its shore foam on a line across the
+## mouth. The distance is walked through sea texels only (a chamfer sweep),
+## so it does not jump a spit or a bar standing out of the water. Only the
+## box round the mouths found is swept.
+static func _plume(data: PackedFloat32Array, n: int, texel: float, reach: float) -> void:
+	var lo := Vector2i(n,n)
+	var hi := Vector2i(-1,-1)
+	var dist := PackedFloat32Array()
+	dist.resize(n*n)
+	dist.fill(INF)
+	for j in n:
+		for i in n:
+			var k := (j*n+i)*4
+			if data[k+2] > 0.0 and data[k+3] > 0.5:
+				dist[j*n+i] = 0.0
+				lo = Vector2i(mini(lo.x,i),mini(lo.y,j))
+				hi = Vector2i(maxi(hi.x,i),maxi(hi.y,j))
+	if hi.x < 0: return
+	var pad := int(ceil(reach/texel))+1
+	lo = Vector2i(maxi(lo.x-pad,0),maxi(lo.y-pad,0))
+	hi = Vector2i(mini(hi.x+pad,n-1),mini(hi.y+pad,n-1))
+	var d1 := texel
+	var d2 := texel*1.4142
+	var sea := Field.SEA_Y
+	# Two sweeps each way (the second catches what bends round a headland).
+	for rep in 2:
+		for j in range(lo.y,hi.y+1):
+			for i in range(lo.x,hi.x+1):
+				var c := j*n+i
+				if dist[c] == 0.0 or data[c*4] >= sea: continue
+				var best := dist[c]
+				if i > lo.x: best = minf(best,dist[c-1]+d1)
+				if j > lo.y:
+					best = minf(best,dist[c-n]+d1)
+					if i > lo.x: best = minf(best,dist[c-n-1]+d2)
+					if i < hi.x: best = minf(best,dist[c-n+1]+d2)
+				dist[c] = best
+		for j in range(hi.y,lo.y-1,-1):
+			for i in range(hi.x,lo.x-1,-1):
+				var c := j*n+i
+				if dist[c] == 0.0 or data[c*4] >= sea: continue
+				var best := dist[c]
+				if i < hi.x: best = minf(best,dist[c+1]+d1)
+				if j < hi.y:
+					best = minf(best,dist[c+n]+d1)
+					if i < hi.x: best = minf(best,dist[c+n+1]+d2)
+					if i > lo.x: best = minf(best,dist[c+n-1]+d2)
+				dist[c] = best
+	for j in range(lo.y,hi.y+1):
+		for i in range(lo.x,hi.x+1):
+			var c := j*n+i
+			var d := dist[c]
+			if d >= reach or data[c*4] >= sea: continue
+			var s := 1.0-smoothstep(0.0,reach,d)
+			data[c*4+1] = maxf(data[c*4+1],s*s*PLUME.y)
 
 func _wake(plane: Vector3) -> void:
 	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))

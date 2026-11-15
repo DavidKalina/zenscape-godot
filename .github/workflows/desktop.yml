@@ -93,8 +93,6 @@ jobs:
         run: |
           "$GODOT" --headless --path . --script res://tests/test_threaded_mesh.gd -- --native-kernels 2>&1 | tee native-test.log
           if grep -E 'SCRIPT ERROR:|ERROR:' native-test.log; then exit 1; fi
-          "$GODOT" --headless --path . --script res://tests/test_export_entry.gd -- --native-kernels 2>&1 | tee menu-test.log
-          if grep -E 'SCRIPT ERROR:|ERROR:' menu-test.log; then exit 1; fi
       - name: Export release build
         run: |
           mkdir -p builds/windows

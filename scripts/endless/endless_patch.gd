@@ -83,7 +83,14 @@ static func grass(x: float, z: float, meadow: float, over: float, up: float, hue
 	g = g.lerp(MEADOW*(1.0+mid*0.5),meadow*0.75)
 	var warm := clampf(broad*2.4+vast*1.8,-1.0,1.0)*PATCH_STRENGTH
 	g *= Vector3.ONE.lerp(Vector3(1.32,1.05,0.62) if warm > 0.0 else Vector3(0.80,0.97,1.16),absf(warm)*0.5)
-	g *= region(x,z,over)
+	# The regions, and the areas at the grass's own light (ep_area).
+	var areas := minf(area_amount,1.6)
+	if region_amount > 0.0 or areas > 0.0:
+		var q := Vector2(x,z)+offset
+		var ab := _ab(q)
+		var ar := area(q,x,ab.x,ab.y,areas)
+		g *= _region(q,ab,over,ar.w)
+		g = g*(1.0-ar.w)+Vector3(ar.x,ar.y,ar.z)*_luma(g)
 	if hue != Vector3.ZERO: g = g.lerp(hue/maxf(_luma(hue),0.01)*_luma(g),VERTEX_HUE*0.6)
 	var dry_far := smoothstep(0.05,0.32,broad+wide*0.6+0.1)
 	var dry := clampf(DRY_NEAR*0.6+dry_far*0.55,0.0,1.0)*(1.0-meadow*0.6)
@@ -197,14 +204,74 @@ static func _ss(a: float, b: float, x: float) -> float:
 	var t := clampf((x-a)/(b-a),0.0,1.0)
 	return t*t*(3.0-2.0*t)
 
-## The region's hue at a world point (a multiplier over the grass).
-static func region(x: float, z: float, over: float) -> Vector3:
-	var amount := region_amount
-	if amount <= 0.0: return Vector3.ONE
-	var q := Vector2(x,z)+offset
+## The grass areas (the shader's ep_area, look round 6): how strongly (0:
+## none; the ground's `area_amount`, --grass-areas=) and the world x they
+## fade out over (x..y; y <= x: nowhere; its `area_edge`). Set once before
+## any worker runs.
+static var area_amount := 1.0
+static var area_edge := Vector2.ZERO
+const AREA_LUSH := Vector3(0.24,1.36,0.39)
+const AREA_SAGE := Vector3(0.50,1.18,0.62)
+const AREA_AMBER := Vector3(1.21,1.04,0.50)
+const AREA_MIX := Vector3(0.60,0.45,0.55)
+const REGION_UNDER := 0.8
+## The first noise's soft cut: lime past it (about 45% of the land).
+const AREA_LIME := Vector2(0.47,0.65)
+## Under it the second noise in three bands: lush below LOW (falling), amber
+## past HIGH, sage between.
+const AREA_LOW := Vector2(0.36,0.44)
+const AREA_HIGH := Vector2(0.58,0.66)
+
+## The areas at q (a world point plus the offset), px the point's x, a and b
+## the regions' noises: xyz the areas' colours by their weights, w the
+## weights' sum (the grass becomes grass*(1-w)+luma(grass)*xyz).
+static func area(q: Vector2, px: float, a: float, b: float, areas: float) -> Vector4:
+	if area_edge.y > area_edge.x: areas *= 1.0-_ss(area_edge.x,area_edge.y,px)
+	if areas <= 0.0: return Vector4.ZERO
+	var k := area_kinds(q,px,a,b)*AREA_MIX*areas
+	var c := AREA_LUSH*k.x+AREA_SAGE*k.y+AREA_AMBER*k.z
+	return Vector4(c.x,c.y,c.z,k.x+k.y+k.z)
+
+## The areas' shares at q (lush, sage, amber; lime the rest), before their mix.
+static func area_kinds(q: Vector2, _px: float, a: float, b: float) -> Vector3:
+	var w := q+Vector2(a-0.5,b-0.5)*900.0
+	var rest := 1.0-_ss(AREA_LIME.x,AREA_LIME.y,noise(w.x/2600.0-7.3,w.y/2600.0+4.1))
+	var n2 := noise((w.x*0.6+w.y*0.8)/2100.0+2.6,(w.y*0.6-w.x*0.8)/2100.0-5.9)
+	var lush := 1.0-_ss(AREA_LOW.x,AREA_LOW.y,n2)
+	var amber := _ss(AREA_HIGH.x,AREA_HIGH.y,n2)
+	return Vector3(lush,1.0-lush-amber,amber)*rest
+
+## The regions' two broad noises (a, b) at q (a world point plus the offset).
+static func _ab(q: Vector2) -> Vector2:
 	var r := Vector2(q.x*0.8-q.y*0.6,q.x*0.6+q.y*0.8)
 	var a := noise(r.x/380.0+3.7,r.y/380.0+1.3)*0.8+noise(r.x/130.0-4.1,r.y/130.0+2.2)*0.2
 	var b := noise(q.y/300.0-2.1,q.x/300.0+8.4)*0.8+noise(q.x/110.0+6.3,q.y/110.0-1.7)*0.2
+	return Vector2(a,b)
+
+## The areas at a world point (`area`'s result; zero with them off).
+static func area_at(x: float, z: float) -> Vector4:
+	var areas := minf(area_amount,1.6)
+	if areas <= 0.0: return Vector4.ZERO
+	var q := Vector2(x,z)+offset
+	var ab := _ab(q)
+	return area(q,x,ab.x,ab.y,areas)
+
+## The region's hue at a world point (a multiplier over the grass).
+static func region(x: float, z: float, over: float) -> Vector3:
+	var amount := region_amount
+	var areas := minf(area_amount,1.6)
+	if amount <= 0.0 and areas <= 0.0: return Vector3.ONE
+	var q := Vector2(x,z)+offset
+	var ab := _ab(q)
+	return _region(q,ab,over,area(q,x,ab.x,ab.y,areas).w)
+
+## `region` from its noises (q, a and b) and the areas' weight there.
+static func _region(q: Vector2, ab: Vector2, over: float, area_w: float) -> Vector3:
+	var amount := region_amount*lerpf(1.0,REGION_UNDER,minf(area_w/0.55,1.0))
+	if amount <= 0.0: return Vector3.ONE
+	var r := Vector2(q.x*0.8-q.y*0.6,q.x*0.6+q.y*0.8)
+	var a := ab.x
+	var b := ab.y
 	var c := noise(r.y/220.0+5.5,r.x/220.0-3.3)
 	var m := _lerp3(Vector3.ONE,LUSH,_ss(0.42,0.30,a)*amount)
 	m *= _lerp3(Vector3.ONE,LIME,_ss(0.58,0.70,a)*amount)

@@ -525,6 +525,59 @@ static func native_consts() -> Dictionary:
 static func _h(impl: Object, x: float, z: float) -> float:
 	return (impl.sample(x,z) as Vector2).x
 
+# --- Placed sites ------------------------------------------------------------------
+
+## A tunnel a placed site asks for (a placed curtain's `tunnel` param:
+## curtain_land.gd `tunnels`): a sunk cave whose mouth A opens in a face the
+## site cut itself (a cliff's foot: no sinkhole there, `ramp.x` FACE), mouth B
+## in a sinkhole as a sunk cave's. `spec`: {name, at (mouth A, world xz),
+## floor (its floor, world y), yaw (rad, the way in as the frame's, as
+## SUNK_SITES'), seed (the path's), length (m)}. `impl` the field doing the
+## work, read at full detail (the land over the path: the vault's room).
+static func placed_site(impl: Object, spec: Dictionary) -> Site:
+	var at: Vector2 = spec.at
+	var was: float = impl.detail
+	impl.detail = 0.0
+	var t := _build(impl,int(spec.seed),Transform3D(Basis(Vector3.UP,float(spec.yaw)),Vector3(at.x,float(spec.floor),at.y)),false,true,float(spec.length))
+	var out := _ramp_out(impl,t,1)
+	impl.detail = was
+	t.ramp = Vector2(FACE,out if out > 0.0 else BOWL_LONG)
+	_box_ramps(t)
+	t.bowl_keep = _bowl_columns(t,1)
+	t.name = str(spec.name)
+	t.coded = t.frame
+	go_native(t)
+	return t
+
+## The placed sites for `specs` (curtain_land.gd `tunnels`), each built once
+## (on whichever thread asks first) and shared by every field, as `cell_sites`.
+static func placed_sites(impl: Object, specs: Array) -> Array:
+	var out: Array = []
+	for spec: Dictionary in specs:
+		var k := hash([spec,_world_id()])
+		_lock.lock()
+		var got: Variant = _placed.get(k)
+		_lock.unlock()
+		if got == null:
+			got = placed_site(impl,spec)
+			_lock.lock()
+			if _placed.has(k): got = _placed[k]
+			else: _placed[k] = got
+			_lock.unlock()
+		out.append(got)
+	return out
+
+static var _placed := {}
+
+## A face mouth's sinkhole length: under -APRON, so no sinkhole (`_bowl_e`
+## reads past its end), no trench and no dry ground out of it (`dry_at`).
+const FACE := -APRON-2.0
+
+## Whether mouth `m` of `t` opens in a face (a placed site's cliff) rather
+## than a sinkhole's back wall.
+static func in_face(t: Site, m: int) -> bool:
+	return t.sunk and t.ramp[m] < 0.0
+
 # --- Streamed sites ------------------------------------------------------------------
 
 ## The tunnels (none or one Site) of the CELL square `key`, as hall_sites.gd
@@ -816,10 +869,11 @@ static func _bowl_e(t: Site, m: Vector2, o: Vector2, x: float, z: float, reach: 
 	return sqrt(along*along+b*b/(wide*wide))*(1.0+rag)
 
 ## A sunk tunnel's two openings: {at (xz), out (unit, the way its sinkhole opens),
-## reach (the sinkhole's length), name, site, end (0 at the path's start, 1 its end)}.
+## reach (the sinkhole's length; 0 for a mouth in a face), name, site, end (0 at
+## the path's start, 1 its end)}.
 static func mouths(t: Site) -> Array:
-	return [{"at": t.origin, "out": -t.way, "reach": t.ramp.x, "name": t.name+"/a", "site": t, "end": 0},
-		{"at": t.mouth_b, "out": t.out_b, "reach": t.ramp.y, "name": t.name+"/b", "site": t, "end": 1}]
+	return [{"at": t.origin, "out": -t.way, "reach": maxf(t.ramp.x,0.0), "name": t.name+"/a", "site": t, "end": 0},
+		{"at": t.mouth_b, "out": t.out_b, "reach": maxf(t.ramp.y,0.0), "name": t.name+"/b", "site": t, "end": 1}]
 
 ## Whether (x, z) is on one of `t`'s sinkholes, `grow` times out (1 its rim).
 ## The native tree building stands on the native field, which knows nothing
@@ -866,6 +920,14 @@ static func dry_at(t: Site, x: float, z: float) -> bool:
 	if not t.sunk or not t.box.has_point(Vector2(x,z)): return false
 	var q := local(t,x,z)
 	return q.x >= -APRON-t.ramp.x and q.x <= t.length+APRON+t.ramp.y and absf(q.y) <= TRENCH_WIDE
+
+## True where (x, z) is in sunk tunnel `t`'s dry strip between its mouths:
+## rock roofs the bore there, so a stream or lake on the land over it stays
+## (the ramps past the mouths are open to the sky, and dry).
+static func roofed_at(t: Site, x: float, z: float) -> bool:
+	if not dry_at(t,x,z): return false
+	var u := local(t,x,z).x
+	return u >= 0.0 and u <= t.length
 
 ## The ramps of sunk tunnel `t` as the sea's cuts (shaders/endless_sea.gdshader
 ## `dry_cut`): each Vector4(from xz, to xz), DRY_HALF m wide each side.
@@ -968,7 +1030,8 @@ static func _world_id() -> String:
 
 ## A tunnel from frame `frame` (mouth A on the floor, the way in along +X),
 ## its path rolled from `seed`. `test`: 2 or 3 hall stretches, else 3 to 5.
-static func _build(impl: Object, seed: int, frame: Transform3D, test: bool, sunk := false) -> Site:
+## `length`: a sunk path's (m; 0: rolled, as `sunk_length`).
+static func _build(impl: Object, seed: int, frame: Transform3D, test: bool, sunk := false, length := 0.0) -> Site:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var t := Site.new()
@@ -979,7 +1042,8 @@ static func _build(impl: Object, seed: int, frame: Transform3D, test: bool, sunk
 	t.origin = Vector2(frame.origin.x,frame.origin.z)
 	t.way = Vector2(frame.basis.x.x,frame.basis.x.z).normalized()
 	if sunk:
-		_cave_path(t,rng,sunk_length(rng.randf_range(SUNK_LENGTH.x,SUNK_LENGTH.y)))
+		var rolled := rng.randf_range(SUNK_LENGTH.x,SUNK_LENGTH.y)
+		_cave_path(t,rng,length if length > 0.0 else sunk_length(rolled))
 		_sample_path(t)
 		_table(t)
 		_cave_profile(t,impl)

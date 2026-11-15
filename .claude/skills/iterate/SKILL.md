@@ -60,7 +60,10 @@ into the spec so every iteration knows which pieces are built elsewhere.
    works and the next fresh agent carries on from its Notes. Lanes carry
    the line too. The budget is a safety cap for a task that runs away, not
    the pace of the loop: the user gets a checkpoint per task, so small
-   tasks are what keep checkpoints frequent.
+   tasks are what keep checkpoints frequent. A budget the user names for
+   the loop ("set the budget to 150,000") is this per-agent number, not a
+   cap on the loop's total: every iteration gets it, and the loop runs on
+   past the sum until the spec, the cap or the user stops it.
 
 ## Run
 

@@ -23,7 +23,9 @@ extends RefCounted
 ##
 ## Flags: --wind=calm|breezy|gusty (every day's temper), --wind=X (strength
 ## X everywhere, no hour, no place), --wind=off (the old single wind, the
-## mood's), --wind-map (the field's map in the top-right corner).
+## mood's), --wind-map (the field's map in the top-right corner),
+## --grass-wind=old (the plants show the field's strength itself, no floor:
+## see `plant_wind`).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const TreePlan = preload("res://scripts/endless/tree_plan.gd")
@@ -129,6 +131,7 @@ func setup(seed_value: int, field: RefCounted, args: PackedStringArray) -> void:
 		else:
 			for i in TEMPERS.size():
 				if TEMPERS[i][0] == v: forced_temper = i
+	plant_floor = mode == "field" and not args.has("--grass-wind=old")
 	if mode == "field" and field != null:
 		var e: Vector4 = field.edge()
 		var centre := Vector2(e.x,e.y) if e.z > 0.0 else Vector2.ZERO
@@ -385,15 +388,33 @@ func texture() -> ImageTexture:
 	for k in n*n: bytes[k] = clampi(int(round(exposure[k]*255.0)),0,255)
 	return ImageTexture.create_from_image(Image.create_from_data(n,n,false,Image.FORMAT_R8,bytes))
 
+## The plants' wind: the strength the grass, flowers and trees show for the
+## field's strength `w` (shaders/wind_field.gdshaderinc zs_wind_plant). The
+## field itself runs from about 0.01 (a hollow at dawn) to 2.5 (a gusty
+## ridge), most of the land's day under 0.3, where plants stood dead still;
+## they show PLANT_FLOOR plus PLANT_RISE x sqrt(w) instead (0.74 a hollow at
+## dawn, 0.93 a sheltered meadow on a breezy morning, 1.7 an exposed
+## afternoon, 2.06 at wind 2), so the meadow always stirs and still ranks
+## hollow under ridge, dawn under afternoon, calm day under gusty. The plants
+## alone: the field's strength (wind_at, zs_wind_strength: the sea, lakes,
+## sound, eddies, drift) is unchanged. Off with --wind=X (fixed: the plants
+## show X) and --grass-wind=old (the plants show `w`, as before).
+const PLANT_FLOOR := 0.65
+const PLANT_RISE := 1.0
+static var plant_floor := true
+static func plant_wind(w: float) -> float:
+	if not plant_floor: return w
+	return PLANT_FLOOR+PLANT_RISE*sqrt(maxf(w,0.0))
+
 ## The breeze plants lean in (zs_breeze's scale; 0.53 a light day) for wind
 ## strength `w` (shaders/wind_field.gdshaderinc zs_wind_breeze_of).
 static func breeze_of(w: float) -> float:
-	return clampf(0.06+0.7*w,0.06,1.8)
+	return clampf(0.06+0.7*plant_wind(w),0.06,1.8)
 
 ## How far grass blows as one (a share of the world's grass_swell) for wind
 ## strength `w` (zs_wind_swell_of): calm grass stands, windy grass rolls.
 static func swell_of(w: float) -> float:
-	return smoothstep(0.25,0.95,w)
+	return smoothstep(0.25,0.95,plant_wind(w))
 
 ## The patches' windiness at (x, z) now, 0..1.
 func patch_at(x: float, z: float) -> float:

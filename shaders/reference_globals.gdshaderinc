@@ -191,6 +191,10 @@ global uniform float zs_bow_grow;
 global uniform vec2 zs_bow_shape;
 global uniform float zs_bow_double;
 global uniform vec4 zs_aurora;
+// The aurora's shape (scripts/endless/weather_sky_lights.gd): x a floor under
+// its night gate, y its feet raised (dir.y), z its height's scale, w its light's
+// scale. (0, 0, 1, 1) is the isles' aurora as it was.
+global uniform vec4 zs_aurora_shape;
 // A moonbow's strength (scripts/shared/celestial.gd moon_bow), drawn about the antilunar point.
 global uniform float zs_moonbow;
 global uniform float zs_night;
@@ -350,15 +354,16 @@ global uniform float zs_condensation;
 global uniform vec3 zs_cloud_sun;
 global uniform vec3 zs_cloud_sky;
 global uniform vec3 zs_camera_position;
-// A lightning flash's light in the sky (w 0 off; only the sky weather
-// prototype, scripts/plane_lightning.gd, sets it): its world position and
-// strength. The dome brightens toward it, and less all round.
+// A lightning flash's light in the sky (w 0 off; scripts/endless/
+// weather_lightning.gd sets it): its world position and strength. The dome
+// brightens toward it, and only a little all round (the storm's flicker is
+// "there", not a flat grey lift of the whole sky).
 global uniform vec4 zs_storm_flash;
 vec3 zs_storm_flash_sky(vec3 dir) {
   if (zs_storm_flash.w <= 0.0) return vec3(0.0);
   vec3 to = normalize(zs_storm_flash.xyz - zs_camera_position + vec3(0.0, 1e-3, 0.0));
   float near = max(dot(normalize(dir), to), 0.0);
-  float lobe = pow(near, 3.0) * 0.45 + 0.22;
+  float lobe = pow(near, 8.0) * 0.8 + 0.05;
   return vec3(0.62, 0.66, 0.8) * zs_storm_flash.w * lobe;
 }
 // The flash's light on a cloud at `world`: a cloud round it glows from

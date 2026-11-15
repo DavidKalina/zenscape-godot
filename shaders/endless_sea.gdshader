@@ -26,12 +26,15 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+#include "res://shaders/weather_bow.gdshaderinc"
 #include "res://shaders/reference_tonemap.gdshaderinc"
 #include "res://shaders/reference_lake_lighting.gdshaderinc"
 #include "res://shaders/reference_lake_glint.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 // The sun's glint turns with the sun's hue (light_leans).
 #include "res://shaders/light_leans.gdshaderinc"
+// Weather lane rain: rings and a beaten grey where it rains (zs_rain_pocks).
+#include "res://shaders/weather_rain_water.gdshaderinc"
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -191,6 +194,14 @@ uniform float river_calm = 1.0;
 // ...and over this many m of water it fades in over what lies under it (the
 // river's drawn water sinking under it), not on a line.
 uniform float river_calm_fade = 2.0;
+// Round 3 (water-artifacts-handoff.md), the hand-over at a mouth: in the calm
+// (and the plume the depth map carries out past the mouth, EndlessSea
+// PLUME, --river-plume) the water is coloured no deeper than `plume_depth` m
+// by this share (0: round 2's sea), and keeps this share of the wind sea's
+// chop, so it ripples as the river's water it meets does (0: glassy, round 2).
+uniform float plume_tint = 1.0;
+uniform float plume_depth = 1.5;
+uniform float calm_chop = 0.7;
 uniform float sea_level = -40.0;
 
 // The water's colour by depth (m of water under the surface).
@@ -287,10 +298,31 @@ uniform int swim_count = 0;
 // greener than red), and the depth (m) it fades over below that.
 uniform vec3 swim_see = vec3(0.65, 0.9, 0.95);
 uniform float swim_clear = 1.0;
+// 0: the swimmer has a body of its own under the water, drawn as any bed is (the
+// whale, scripts/endless/whale.gd); its hump, slick and shade stay.
+uniform float swim_body = 1.0;
 // 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover,
 // 6 (sea_foam 1): the lace's density, youth, buffer reach and churn, 7: the
-// foam worked out per crest everywhere (no buffer).
+// foam worked out per crest everywhere (no buffer), 8: the water's depth as
+// the colour reads it (red bands 2 m, green to 30 m, blue the map's share),
+// 9: the calm (red), the map not wholly used (green), a mouth's water taking
+// its depth from the map's blue (blue), 10: the bed's depth (red bands 0.25 m,
+// green to 3 m, blue the calm), 11: the depth map's texel middles over the
+// colour (where a bilinear read creased).
 uniform int debug_view = 0;
+// 12-19: round 2's probes (12 alpha and depth bands, 13 the mouth read, 14
+// the sheet's height, 15 the view's depth, 16 waver off and a flat bed, 17
+// the bed seen, 18 waver off, 19 the waver).
+// The depth's waver read through an integer hash (zs_noise_exact, 1); 0 the
+// sine hash, whose lattice broke into hard-edged squares and panes once its
+// coordinates reached the tens (the shallows and mouths, the deep sea).
+uniform int waver_exact = 1;
+// The depth map read through a B-spline (1) or bilinear (0, the earlier
+// sea: creased on every 8 m texel, the calm's edge a staircase).
+uniform int depth_smooth = 1;
+// A mouth's water: its depth from the map's blue (1) or the bed seen on
+// screen (0, the earlier sea: the ground's grid in squares and wedges).
+uniform float mouth_smooth = 1.0;
 
 varying vec3 world_position;
 varying vec2 rest_xz;
@@ -929,6 +961,29 @@ vec3 zs_sea_receiver(vec2 uv, float depth, mat4 inv_projection, mat4 inv_view) {
 	return (inv_view * vec4(view.xyz / view.w, 1.0)).xyz;
 }
 
+// The depth map read through a cubic B-spline (four bilinear taps), its
+// texels `spread` apart: smooth across the texels, where the bilinear read
+// creased at every texel's middle. The map's texels are 8 m and the tint runs
+// shallow to mid within 7 m of depth, so a bilinear read drew the shallows
+// (and the deep water's tint between 22 and 55 m) as a lattice of flat-toned
+// 8 m squares.
+vec4 zs_depth_map_smooth(vec2 uv, float spread) {
+	vec2 size = vec2(textureSize(depth_map, 0)) / spread;
+	vec2 st = uv * size - 0.5;
+	vec2 i = floor(st);
+	vec2 f = st - i;
+	vec2 f2 = f * f, f3 = f2 * f;
+	vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+	vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+	vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+	vec2 w3 = f3 / 6.0;
+	vec2 g0 = w0 + w1, g1 = w2 + w3;
+	vec2 h0 = (i - 0.5 + w1 / g0) / size;
+	vec2 h1 = (i + 1.5 + w3 / g1) / size;
+	return g0.y * (g0.x * textureLod(depth_map, h0, 0.0) + g1.x * textureLod(depth_map, vec2(h1.x, h0.y), 0.0))
+		+ g1.y * (g0.x * textureLod(depth_map, vec2(h0.x, h1.y), 0.0) + g1.x * textureLod(depth_map, h1, 0.0));
+}
+
 // The water's depth under `p` from the map (DEEP off it; `known` 0 there).
 float zs_map_depth(vec2 p, out float known) {
 	known = 0.0;
@@ -937,7 +992,20 @@ float zs_map_depth(vec2 p, out float known) {
 	vec2 rim = min(uv, 1.0 - uv);
 	known = smoothstep(0.0, 0.05, min(rim.x, rim.y));
 	if (known <= 0.0) return DEEP;
+	if (depth_smooth > 0) return sea_level - zs_depth_map_smooth(uv, 1.0).r;
 	return sea_level - texture(depth_map, uv).r;
+}
+
+// The river drawn under the sea at `p` (the map's blue over its alpha, both
+// read smooth): x how far under the sea's level its water lies (m), y how
+// much of `p` is on its water (0..1).
+vec2 zs_map_mouth(vec2 p) {
+	if (depth_at.w <= 0.0) return vec2(0.0);
+	vec2 uv = (p - depth_at.xy) / depth_at.z;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec2(0.0);
+	vec4 m = zs_depth_map_smooth(uv, 1.0);
+	// (A river a texel or two wide reads under 1 through the B-spline.)
+	return vec2(m.a > 0.01 ? max(m.b, 0.0) / m.a : 0.0, smoothstep(0.1, 0.55, m.a));
 }
 
 // How still the sea lies at `p` up a river's mouth (0 open sea, 1 calm).
@@ -945,7 +1013,12 @@ float zs_river_calm(vec2 p) {
 	if (depth_at.w <= 0.0 || river_calm <= 0.0) return 0.0;
 	vec2 uv = (p - depth_at.xy) / depth_at.z;
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
-	return clamp(textureLod(depth_map, uv, 0.0).g, 0.0, 1.0) * river_calm;
+	float calm = textureLod(depth_map, uv, 0.0).g;
+	// (Bilinear, the calm's edge stood on the texels' grid, a staircase of 8 m
+	// steps the sea's swell and colour changed on. The B-spline rounds it; a
+	// river two texels wide keeps its full calm from the bilinear read.)
+	if (depth_smooth > 0) calm = max(calm, zs_depth_map_smooth(uv, 1.0).g);
+	return clamp(calm, 0.0, 1.0) * river_calm;
 }
 
 // What a fish does to the surface at `p`: the slope added. Before it breaks the
@@ -1325,7 +1398,7 @@ void fragment() {
 		float rough_patch = zs_body_rough(rest_xz, t);
 		vec2 wave;
 		float fold, height;
-		detail = zs_fft_surface(rest_xz, footprint, mix(fft_patch.x, fft_patch.y, rough_patch), air, wave, fft_jac, fold, height, chop_rough) * (1.0 - still);
+		detail = zs_fft_surface(rest_xz, footprint, mix(fft_patch.x, fft_patch.y, rough_patch), air, wave, fft_jac, fold, height, chop_rough) * (1.0 - still * (1.0 - calm_chop));
 		slope += wave * (1.0 - still);
 		shift.y += height * (1.0 - still);
 		jac *= mix(clamp(fft_jac, 0.0, 1.5), 1.0, still);
@@ -1360,6 +1433,8 @@ void fragment() {
 		detail *= 1.0 - swim_slick;
 		wake_slope *= 1.0 - swim_slick * 0.6;
 	}
+	float rain_on = zs_rain_on_water(rest_xz); // weather lane rain
+	slope += zs_rain_pocks(rest_xz, rain_on, footprint, t);
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
@@ -1397,12 +1472,35 @@ void fragment() {
 	// it: seen level through a face, the far coast stands behind at the sea's
 	// own height, kilometres off, and showed faint through the clear water as
 	// a grey line at the eye's height (and the far land as grey shapes).
+	float dbg_hid = 0.0;
 	if (depth > 0.0 && (receiver.y > world_position.y + 0.05 || (surge_share > 0.0 && receiver.y > sea_level - 2.0))) {
+		dbg_hid = receiver.y > world_position.y + 0.05 ? 0.5 : 1.0;
 		depth = 0.0;
 		bed_depth = DEEP;
 	}
 	bed_depth = max(bed_depth, 0.0);
 	float through = depth > 0.0 ? length(receiver - world_position) : DEEP;
+	// The water's depth from the map (DEEP off it).
+	float known;
+	float mapped = zs_map_depth(rest_xz, known);
+	// Up a river's mouth the bed behind is the river's water, drawn flat under
+	// the sea's on the ground's grid (endless_ground's vertex lift): read off
+	// the screen it came in the grid's facets, squares and wedges of paler and
+	// darker water, and the sea faded in over it by them. On the river's water
+	// the sea takes that depth from the map's (`zs_map_mouth`: the drawn
+	// water's depth under the sea's level, smooth), never under the map's bed
+	// (a bar beside the channel), seen through as the ground sees its own.
+	float on_mouth = 0.0;
+	vec2 dbg_mouth = debug_view == 13 ? zs_map_mouth(rest_xz) : vec2(0.0);
+	if (still > 0.0 && depth > 0.0 && mouth_smooth > 0.0) {
+		vec2 mouth = zs_map_mouth(rest_xz);
+		on_mouth = clamp(still * mouth.y * mouth_smooth, 0.0, 1.0);
+		if (on_mouth > 0.0) {
+			float sunk = max(min(mouth.x, mapped) + world_position.y - sea_level, 0.0);
+			bed_depth = mix(bed_depth, sunk, on_mouth);
+			through = mix(through, sunk / max(eye.y, 0.15), on_mouth);
+		}
+	}
 	// A swimming fish seen here (its body, not the lake's bed): where, and how much,
 	// thinning to its nose, tail and sides as water blurs an edge.
 	vec2 swim_seen = vec2(0.0);
@@ -1410,29 +1508,43 @@ void fragment() {
 		swim_seen = zs_swim_hit(receiver, world_position.y, swim_at0, swim_body0);
 		if (swim_count > 1) swim_seen = max(swim_seen, zs_swim_hit(receiver, world_position.y, swim_at1, swim_body1));
 	}
+	swim_seen *= swim_body;
 	float swim_hit = swim_seen.x;
 
 	// The water's depth here: the map's where it reaches, else the bed seen.
-	float known;
-	float mapped = zs_map_depth(rest_xz, known);
-	// A mouth's channel is finer than the map: the bed seen gives its depth.
-	known *= 1.0 - still;
-	float waver = mix(0.8, 1.25, zs_noise(rest_xz * 0.03) * 0.7 + zs_noise(rest_xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
+	// On a mouth's water the bed seen (the river drawn under the sea, its depth
+	// smooth from the map's blue above): the channel is finer than the map's
+	// red. Off it, by the channel, the map's as on any shore, so the colour's
+	// rule does not change on the line where the calm stops.
+	if (mouth_smooth > 0.0) known *= 1.0 - on_mouth;
+	else known *= 1.0 - still;
+	// (The exact hash: the sine one broke into 9 m squares; waver_exact 0 the
+	// old.)
+	float waver = waver_exact > 0
+		? mix(0.8, 1.25, zs_noise_exact(rest_xz * 0.03) * 0.7 + zs_noise_exact(rest_xz * 0.11 + vec2(4.1, 7.3)) * 0.3)
+		: mix(0.8, 1.25, zs_noise(rest_xz * 0.03) * 0.7 + zs_noise(rest_xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
+	if (debug_view == 18 || debug_view == 16) waver = 1.0;
 	float fallback = max(bed_depth, through * 0.55);
 	float water_depth = max(mix(fallback, mapped, known), 0.0) * waver;
+	// The river's pale water carried out over the sea in its plume (the calm
+	// the depth map bakes past the mouth): coloured no deeper than the
+	// mouth's channel, so the pale channel fades into the sea's blue over the
+	// plume instead of on the line where the river's water ends.
+	if (plume_tint > 0.0) water_depth = mix(water_depth, min(water_depth, plume_depth * waver), still * plume_tint);
 
 	vec3 seen = exp(-absorb * through) * exp(-max(bed_depth, through * 0.4) / bed_fade);
 	// Over a fish the water is thicker than a clear shallow's: its back a dark
 	// shape, its sides and belly going to the water's colour as they go down.
 	seen = mix(seen, swim_see * exp(-bed_depth / swim_clear) * swim_seen.y, swim_hit);
 	vec3 bed = textureLod(sea_screen, uv, 0.0).rgb;
+	if (debug_view == 16) bed = vec3(0.1, 0.12, 0.1);
 
 	vec3 column = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
 	column = mix(column, tint_deep, smoothstep(tint_depths.y * 0.6, tint_depths.z, water_depth));
 	column = mix(column, tint_abyss, smoothstep(tint_depths.z, tint_depths.w, water_depth));
 	column = mix(tint_shallow, column, smoothstep(0.0, tint_depths.x, water_depth) * 0.6 + 0.4);
 	column *= zs_palette_water;
-	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI;
+	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 	vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
 	vec3 light = (ambient + key * 0.8) * water_light;
 	// The body: the water's light across the wave, darker in the troughs and
@@ -1593,10 +1705,16 @@ void fragment() {
 			sky = mix(sky, lit_cloud, cloud * cloud_mirror);
 		}
 	}
+	sky *= zs_wx_mirror(); // weather lane rain
 	float mirrored = 0.0;
 	vec3 mirror = vec3(0.0);
 	if (mirror_steps > 0 && fresnel > 0.05) {
-		vec3 ray = reflect(-eye, normalize(mix(vec3(0.0, 1.0, 0.0), normal, mirror_calm)));
+			// The march's ray bends off the calmer normal, and straightens with range: the
+			// full chop's slope made rays hit and miss pixel by pixel, which cut the far
+			// shore and the cliffs' mirror into dark dashes and jagged blobs.
+			float ray_detail = 0.2;
+			float ray_share = mirror_calm * (1.0 - 0.8 * smoothstep(80.0, 500.0, distance_to));
+			vec3 ray = reflect(-eye, normalize(mix(vec3(0.0, 1.0, 0.0), normalize(vec3(-(calm_slope.x + detail.x * ray_detail), 1.0, -(calm_slope.y + detail.y * ray_detail))), ray_share)));
 		ray.y = abs(ray.y);
 		mat4 to_clip = PROJECTION_MATRIX * VIEW_MATRIX;
 		float step_length = mirror_march.x * (1.0 + distance_to * 0.01);
@@ -1709,12 +1827,33 @@ void fragment() {
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
 	vec3 warm = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y)));
 	display_color = mix(display_color, warm, clamp(spark, 0.0, 1.0));
+	display_color = zs_rain_beaten(display_color, reflection * 0.5 + vec3(0.45), rest_xz, rain_on, footprint, t); // weather lane rain
 	if (debug_view == 1) display_color = water_depth < 5.0 ? vec3(1.0, 0.0, 0.0) : (water_depth < 20.0 ? vec3(0.0, 1.0, 0.0) : (water_depth < 60.0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0))) * (0.5 + 0.5 * known);
 	if (debug_view == 3) display_color = zs_scene_to_display(lit);
 	if (debug_view == 4) display_color = reflection * mirror_weight;
 	if (debug_view == 5) display_color = vec3(glow, lift * 0.5, (1.0 - jac) * 2.0);
 	if (debug_view == 2) display_color = vec3(cover, foamed, waked);
 	if (debug_view == 6) display_color = vec3(lace_density, lace_youth, in_buffer * 0.5 + churned * 0.5);
+	if (debug_view == 8) display_color = vec3(fract(water_depth / 2.0), clamp(water_depth / 30.0, 0.0, 1.0), known);
+	if (debug_view == 9) display_color = vec3(still, known < 0.999 ? 1.0 : 0.0, on_mouth);
+	if (debug_view == 10) display_color = vec3(fract(bed_depth * 4.0), clamp(bed_depth / 3.0, 0.0, 1.0), still);
+	if (debug_view == 11) {
+		vec2 tex_c = (rest_xz - depth_at.xy) / depth_at.z * vec2(textureSize(depth_map, 0));
+		vec2 gl = abs(fract(tex_c) - 0.5) / fwidth(tex_c);
+		display_color = mix(display_color, vec3(1.0, 0.0, 0.0), 1.0 - clamp(min(gl.x, gl.y), 0.0, 1.0));
+	}
 	ALBEDO = scene_linear_for_display(clamp(display_color, vec3(0.0), vec3(1.0)));
+	// The rainbow in the rain before the far sea (shaders/weather_bow.gdshaderinc).
+	ALBEDO += zs_bow_far(-eye, distance_to, clamp(display_color, vec3(0.0), vec3(1.0)));
 	ALPHA = depth > 0.0 ? max(smoothstep(0.0, mix(0.05, river_calm_fade, still), bed_depth), swim_hit) : 1.0;
+	if (debug_view == 17) { ALBEDO = bed; ALPHA = 1.0; }
+	if (debug_view == 20) { ALBEDO = vec3(dbg_hid, known, clamp(water_depth / 30.0, 0.0, 1.0)); ALPHA = 1.0; }
+	if (debug_view == 19) { float wv = (waver - 0.8) / 0.45; ALBEDO = vec3(wv, fract(wv * 8.0), fract(rest_xz.x / 8.0)); ALPHA = 1.0; }
+	if (debug_view >= 12 && debug_view < 16) {
+		if (debug_view == 12) ALBEDO = vec3(ALPHA, fract(water_depth / 0.5), seen.g);
+		if (debug_view == 13) ALBEDO = vec3(fract(dbg_mouth.x / 0.25), fract(mapped / 0.25), dbg_mouth.y);
+		if (debug_view == 14) ALBEDO = vec3(fract((world_position.y - sea_level) * 10.0), clamp((world_position.y - sea_level) * 2.0 + 0.5, 0.0, 1.0), fract(waver * 10.0));
+		if (debug_view == 15) ALBEDO = vec3(fract(through / 1.0), fract(bed_depth / 0.25), eye.y);
+		ALPHA = 1.0;
+	}
 }

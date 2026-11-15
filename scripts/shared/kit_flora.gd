@@ -155,6 +155,10 @@ class Site extends RefCounted:
 	## in place of the meadow type's `kind` (a drift of one kind), or []
 	## for the meadow's own; none: as before.
 	var flower_kind := Callable()
+	## Opt-in: which flowers grow: 0 all; 1 only those `flower_kind` gave a
+	## kind; 2 the rest. One skipped spends the random numbers it would have,
+	## so the rest stand where they would (ZenScapeGrass `flower_part`).
+	var flower_part := 0
 	## Opt-in: flower candidates a square metre (zero: FLOWER_TRIES).
 	var flower_tries := 0.0
 	## Opt-in: (p) -> how many times taller the flower at p stands (its
@@ -566,11 +570,13 @@ class Grow extends RefCounted:
 			var presence := _meadow.presence(p)
 			var kind := _meadow.kind_at(p,_rng.randf())
 			var variant := -1.0
+			var took := false
 			if _site.flower_kind.is_valid():
 				var got: Array = _site.flower_kind.call(p,kind)
 				if not got.is_empty():
 					kind = str(got[0])
 					variant = float(got[1])
+					took = true
 			var keep := pow(presence,1.2)*MeadowTypes.packing(kind)*FLOWER_SHARE
 			if _site.flower_drift.is_valid(): keep *= float(_site.flower_drift.call(p))
 			if _rng.randf() > maxf(keep,STRAY): continue
@@ -582,6 +588,10 @@ class Grow extends RefCounted:
 			var tint := MeadowTypes.tint(kind,variant if variant >= 0.0 else _meadow.variant(p))
 			if tint != "": extra.tint = tint
 			if not (formed[1] as Dictionary).is_empty(): extra.pose = formed[1]
+			# Not this grow's part: the random number _add would have spent.
+			if _site.flower_part > 0 and took == (_site.flower_part == 2):
+				if not is_nan(float(_probe.call(p,REACH))) and not _site.is_wet(p): _rng.randf()
+				continue
 			_add(MeadowTypes.asset(kind),p,float(formed[0]),extra)
 		if _phase == 2:
 			if not _draw.step(maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1): return false

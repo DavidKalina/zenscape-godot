@@ -67,6 +67,7 @@ extends SceneTree
 ##   Shots
 ##     shot(path, hud = false, size = Vector2i.ZERO) -> void
 ##     fit_window(size = Vector2i.ZERO) -> void
+##     drawing(what, wait_ms = 3000) -> bool
 ##     shot_at(view, target, opts = {}) -> String
 ##     film(target, opts = {}) -> Dictionary
 ##     film_end(f, now = false) -> Dictionary
@@ -580,18 +581,52 @@ func shot(path: String, hud := false, size := Vector2i.ZERO) -> void:
 ## The 3D scale follows (scripts/render_resolution.gd on size_changed).
 ## Notes the window, the viewport and the 3D scale.
 func fit_window(size := Vector2i.ZERO) -> void:
-	if _headless() or str(arg("win","")) == "keep": return
+	if _headless(): return
+	# On macOS a window hidden behind others is not drawn (window_can_draw
+	# false): stills never come and frame times read near 0. On top it keeps
+	# drawing without taking focus; set before sizing, as the flag can
+	# re-place the window. `--win-ontop=0` leaves it.
+	if str(arg("win-ontop","1")) != "0":
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP,true)
+	if str(arg("win","")) == "keep": return
 	if size == Vector2i.ZERO:
 		var wh := str(arg("win",arg("size","1440x900"))).split("x")
 		size = Vector2i(int(wh[0]),int(wh[1]))
-	for i in 3:
-		if root.mode != Window.MODE_WINDOWED:
-			root.mode = Window.MODE_WINDOWED
-			for f in 10: await process_frame
-		if root.size == size: break
-		root.size = size
-		for f in 10: await process_frame
-	note("window %s (asked %s) viewport %s 3d scale %.2f" % [root.size,size,root.get_visible_rect().size,root.scaling_3d_scale])
+	# macOS finishes the project's full screen about half a second after
+	# start, over a window already set windowed: keep putting it back until it
+	# has held for a second (at most 4 s).
+	var t0 := Time.get_ticks_msec()
+	var held := -1
+	while Time.get_ticks_msec() - t0 < 4000:
+		if root.mode != Window.MODE_WINDOWED or root.size != size:
+			if root.mode != Window.MODE_WINDOWED:
+				root.mode = Window.MODE_WINDOWED
+				for f in 10: await process_frame
+			root.size = size
+			held = -1
+		elif held < 0: held = Time.get_ticks_msec()
+		elif Time.get_ticks_msec() - held > 1000: break
+		await process_frame
+	note("window %s (asked %s) viewport %s 3d scale %.2f%s" % [root.size,size,root.get_visible_rect().size,root.scaling_3d_scale,
+		"" if DisplayServer.window_can_draw() else ", NOT DRAWING"])
+
+## Whether the window is drawing (a rendered run; headless: true): waits up
+## to `wait_ms` for a frame to be drawn, else fails `what` with a check line
+## saying why and returns false, instead of hanging on frame_post_draw.
+## shot, shot_at and look_views' frame_time call it; call it before a timing
+## run of your own (`if not await drawing("time close"): return`).
+func drawing(what: String, wait_ms := 3000) -> bool:
+	if _headless(): return true
+	var drawn := [false]
+	var mark := func() -> void: drawn[0] = true
+	RenderingServer.frame_post_draw.connect(mark,CONNECT_ONE_SHOT)
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < wait_ms:
+		await process_frame
+		if drawn[0]: return true
+	if RenderingServer.frame_post_draw.is_connected(mark): RenderingServer.frame_post_draw.disconnect(mark)
+	check(false,what,"the window is not drawing (window_can_draw %s): on macOS a window behind others stops drawing; keep it on top (fit_window does unless --win-ontop=0) and uncovered" % DisplayServer.window_can_draw())
+	return false
 
 ## A still of `target` from `view`, the camera placed by its size (opts
 ## above); the PNG's path ("" headless or failed). With `when`: armed.
@@ -883,7 +918,9 @@ func _shot_now(view: Variant, target: Variant, opts: Dictionary, path: String, w
 			check(false,"shot_at "+what,"nothing to frame (gone, or no visible meshes)")
 			return ""
 		# Two draws: the first fills the temporal AA's history.
-		await RenderingServer.frame_post_draw
+		if not await drawing("shot_at "+what):
+			sv.queue_free()
+			return ""
 		await RenderingServer.frame_post_draw
 		var img := sv.get_texture().get_image()
 		sv.queue_free()
@@ -983,7 +1020,9 @@ func _grab(path: String, hud: bool, size: Vector2i) -> Error:
 			if c.visible:
 				c.visible = false
 				hidden.append(c)
-	await RenderingServer.frame_post_draw
+	if not await drawing("shot "+path):
+		for c in hidden: if is_instance_valid(c): c.visible = true
+		return ERR_UNAVAILABLE
 	var image := root.get_texture().get_image()
 	if size.y == 0 and size.x > 0 and image.get_width() > size.x:
 		image.resize(size.x,int(round(float(image.get_height())*size.x/image.get_width())),Image.INTERPOLATE_LANCZOS)

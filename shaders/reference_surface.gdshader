@@ -27,6 +27,8 @@ shader_type spatial;
 // The kit isles' weathered rock (shaders/kit_weather.gdshaderinc; KitLook sets
 // `stone_weather` on its rock and ground, 0 everywhere else).
 #include "res://shaders/kit_weather.gdshaderinc"
+// The weather's wet (zs_soak_turf) on the grass blades.
+#include "res://shaders/weather.gdshaderinc"
 // The look pass's cloud bounce and sky fill (shaders/look_fill.gdshaderinc).
 #include "res://shaders/look_fill.gdshaderinc"
 // The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc; off at 0).
@@ -187,6 +189,21 @@ uniform vec3 flower_petal_ref = vec3(1.0);
 // dropped ones into the ground, and the kept heads grow by keep^-`.w` so the
 // carpet keeps its cover. `.z` 1 turns it off.
 uniform vec4 flower_far = vec4(12.0, 30.0, 1.0, 0.4);
+// Past the thinning (the endless land's drifts, endless_grass.gd
+// FLOWER_END): the kept share goes on down to none from `flower_far.y` to `.x`
+// metres (0: no further band), the heads as grown at `.y`; and how much of
+// the share (`.y`) a plant takes to grow up out of the ground or sink into it.
+uniform vec2 flower_end = vec2(0.0, 0.08);
+// The share of ranks this batch's plants take (their rank mapped into it): a
+// batch of only the kept share (0, keep) or only the rest (keep, 1), so the
+// far band draws the kept batches alone (endless_grass.gd `_rank_split`).
+uniform vec2 flower_rank = vec2(0.0, 1.0);
+// The hand-over between a plant and its far plant (endless_grass.gd
+// FLOWER_SWAP, MeadowFlowerMesh build_far): each plant swaps at its own
+// distance, `.x` give or take half of `.y` (ring metres); a batch of the
+// plant (`.z` 1) draws those nearer, one of the far plant (`.z` -1) those
+// farther, so each is drawn exactly once. `.z` 0 off.
+uniform vec3 flower_swap = vec3(0.0);
 // The plant's detail (leaves, bracts and buds: UV2.y's fraction,
 // MeadowFlowerMesh DETAIL) shrinks away from `.x` to `.y` metres, so far
 // flowers are stems and heads. `.x` 0 keeps it at every distance.
@@ -467,15 +484,23 @@ void vertex() {
 		VERTEX += kept - flower_offset;
 		flower_offset = kept;
 	}
-	if (flower_heads && (flower_far.z < 1.0 || flower_lod.x > 0.0)) {
+	if (flower_heads && (flower_far.z < 1.0 || flower_lod.x > 0.0 || flower_swap.z != 0.0)) {
 		float far_d = endless_ring_d(zs_camera_position, MODEL_MATRIX[3].xyz);
 		float far_t = smoothstep(flower_far.x, flower_far.y, far_d);
 		float keep = mix(1.0, flower_far.z, far_t);
+		float head_keep = keep;
+		if (flower_end.x > flower_far.y) keep *= clamp((flower_end.x - far_d) / (flower_end.x - flower_far.y), 0.0, 1.0);
 		float rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(27.17, 63.41))) * 43758.5453);
-		float fade = smoothstep(keep * 1.08, keep * 1.08 - 0.08, rank);
+		rank = mix(flower_rank.x, flower_rank.y, rank);
+		float soft = flower_end.y;
+		float fade = smoothstep(keep * (1.0 + soft), keep * (1.0 + soft) - soft, rank);
 		if (flower_lod.x > 0.0 && fract(UV2.y) > 0.125) fade *= 1.0 - smoothstep(flower_lod.x, flower_lod.y, far_d);
+		if (flower_swap.z != 0.0) {
+			float swap_rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(41.93, 17.57))) * 43758.5453);
+			if ((far_d - flower_swap.x - flower_swap.y * (swap_rank - 0.5)) * flower_swap.z > 0.0) fade = 0.0;
+		}
 		if (UV2.y > 0.5) {
-			vec3 grown = flower_offset * (pow(1.0 / keep, flower_far.w) - 1.0);
+			vec3 grown = flower_offset * (pow(1.0 / max(head_keep, 0.01), flower_far.w) - 1.0);
 			VERTEX += grown;
 			flower_offset += grown;
 		}
@@ -590,6 +615,7 @@ void vertex() {
 		}
 		grass_bow = 0.0;
 		vec2 grass_tilt = vec2(0.0);
+		float react_lay = 0.0;
 		char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
 		char_clump = zs_char_clump(VERTEX);
 		char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
@@ -727,7 +753,18 @@ void vertex() {
 			// prop's wash, the walker and the gusts landing; off on the isles.
 			if (zs_react_live()) {
 				float react_sheen = 0.0;
-				VERTEX += zs_react_offset(root, arm, bend, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen);
+				if (grass_blades && zs_react_arcs()) {
+					// Laid over as a combed mat (zs_react_arc): the mass normal
+					// below loses its dome and tips the way the blades lie.
+					vec2 react_way = vec2(0.0);
+					VERTEX += zs_react_arc(root, arm, max(sway_shape.y - sway_shape.x, 0.05) * instance_scale, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen, react_lay, react_way);
+					grass_tilt += react_way * react_lay * zs_react_lay_tilt;
+					// Laid down, the dark root to sunlit tip ramp narrows, so the
+					// mat isn't striped root-dark against tip-pale.
+					grass_along = mix(grass_along, zs_react_lay_root + (1.0 - zs_react_lay_root) * grass_along, react_lay);
+				} else {
+					VERTEX += zs_react_offset(root, arm, bend, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen);
+				}
 				if (grass_blades) grass_bow = max(grass_bow, react_sheen);
 				foliage_gust = max(foliage_gust, react_sheen * bend);
 			}
@@ -803,7 +840,7 @@ void vertex() {
 			vec2 slope = min(h00, min(h10, h01)) > -100.0 ? vec2(h10 - h00, h01 - h00) * 4.0 : vec2(0.0);
 			vec3 ground_normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 			vec2 out_dir = (mat3(MODEL_MATRIX) * vec3(leaf_local.x, 0.0, leaf_local.z)).xz;
-			world_normal = normalize(mix(world_normal, zs_grass_mass_normal(ground_normal, out_dir, grass_along, grass_round, grass_tilt), 0.9));
+			world_normal = normalize(mix(world_normal, zs_grass_mass_normal(ground_normal, out_dir, grass_along, grass_round * (1.0 - zs_react_lay_dome * react_lay), grass_tilt), 0.9));
 		}
 		contact_height = (terrain_growth || bird_wings) ? 1000.0 : world_position.y - MODEL_MATRIX[3].y;
 	}
@@ -1148,6 +1185,8 @@ void fragment() {
 		tint = max(vec3(0.0), vec3(grey) + (tint - vec3(grey)) * mix(1.0, NIGHT_NEAR_RICH, night_near));
 		tint *= mix(1.0, NIGHT_NEAR_DIM * min(1.0, pow(NIGHT_NEAR_LEVEL.x / max(grey, 1e-3), NIGHT_NEAR_LEVEL.y)), night_near);
 	}
+	// Wet by the weather (weather lane rain), as the turf under it.
+	if (grass_blades) tint = zs_soak_turf(tint);
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);

@@ -232,6 +232,9 @@ func _plan() -> void:
 	_queue.sort_custom(func(a: Vector3i, b: Vector3i) -> bool:
 		if first and a.x != b.x: return a.x > b.x
 		return _distance(a) < _distance(b))
+	if StreamLog.on:
+		for key: Vector3i in _queue: StreamLog.want(&"land",key,_distance_flat(key))
+		StreamLog.keep(&"land",_wanted,_pending)
 	_show()
 
 func _split(level: int, ix: int, iz: int) -> void:
@@ -352,6 +355,7 @@ func _ask() -> void:
 		var id := WorkerThreadPool.add_task(_build.bind(key,seed),high)
 		_tasks[id] = key
 		if high: _high[id] = true
+		if StreamLog.on: StreamLog.ask(&"land",key)
 	if not held.is_empty(): _queue = held+_queue
 	# Tasks done: their ids let go.
 	for id: int in _tasks.keys():
@@ -381,14 +385,110 @@ func _build(key: Vector3i, land_seed: int) -> void:
 		# The rock's shape (RockShape, CUSTOM3), where the chunk has rock.
 		var shape := RockShape.grid(f,made,x0,z0,step,CELLS)
 		if not shape.is_empty(): made.shape = shape
+	_wall_normals(made)
 	_portal_holes(f,made,key,x0,z0,step)
+	# A placed curtain's cave mouths: its faces' triangles over them dropped
+	# (LandField.curtain_cut).
+	if f.has_method("curtain_cut"): f.curtain_cut(made,x0,z0,step,CELLS,made.indices if made.has("indices") else _indices,key.x == 0)
 	_crest_cut(f,made,key,x0,z0,s)
 	made.tops =_tops_of(key,made.get("heights",PackedFloat32Array()))
 	made.key = key
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
+	made.ended = Time.get_ticks_usec()
 	_done_lock.lock()
 	_done.append(made)
 	_done_lock.unlock()
+
+## The walls' drawn normals. A sheer drop between two grid samples stands as
+## a near-vertical strip, and a wall running across the grid is a staircase
+## of them: each vertex's normal (central differences) faces +x, +z or the
+## diagonal by which neighbour sits over the drop, so the wall shaded column
+## by column with saw edges. Where the slope's tangent passes WALL_FROM, each
+## vertex keeps its own steepness (its normal's y) and turns its bearing
+## toward the gradient averaged over a 5x5 binomial window (WALL_FROM to
+## WALL_FULL blends it in); an edge vertex averages along its edge only and a
+## corner keeps its own, so neighbouring chunks agree. Drawn normals only:
+## made.normals has already given the colours and RockShape their input, and
+## nothing past here reads it but the mesh. --wall-normals=0 off.
+const WALL_FROM := 1.5
+const WALL_FULL := 4.0
+static var wall_normals := "--wall-normals=0" not in preload("res://scripts/launch_args.gd").user_args()
+static var _wall_warned := false
+
+static func _wall_normals(made: Dictionary) -> void:
+	if not wall_normals: return
+	var pk: Object = ChunkNative.pass_kernel()
+	if pk != null and pk.has_method("wall_normals"):
+		pk.wall_normals(made,CELLS,WALL_FROM,WALL_FULL)
+		return
+	if pk != null and not _wall_warned:
+		_wall_warned = true
+		push_warning("native terrain kernels predate wall_normals: walls' normals in GDScript (rebuild the kernels, tools/build_native_kernels.py)")
+	_wall_normals_gd(made,CELLS,WALL_FROM,WALL_FULL)
+
+## `_wall_normals` in GDScript: the reference (chunk_pass_bind.h wall_normals).
+static func _wall_normals_gd(made: Dictionary, cells: int, from: float, full: float) -> void:
+	var nm: PackedVector3Array = made.normals
+	var n := cells+1
+	var gx := PackedFloat64Array()
+	var gz := PackedFloat64Array()
+	var mag := PackedFloat64Array()
+	gx.resize(n*n)
+	gz.resize(n*n)
+	mag.resize(n*n)
+	var any := false
+	for v in n*n:
+		var q: Vector3 = nm[v]
+		var a := float(q.x)/float(q.y)
+		var b := float(q.z)/float(q.y)
+		gx[v] = a
+		gz[v] = b
+		mag[v] = sqrt(a*a+b*b)
+		if mag[v] > from: any = true
+	if not any: return
+	var wt := [1.0,4.0,6.0,4.0,1.0]
+	var out := nm.duplicate()
+	for j in n:
+		for i in n:
+			var v := j*n+i
+			var s := mag[v]
+			if s <= from: continue
+			var on_i := i == 0 or i == cells
+			var on_j := j == 0 or j == cells
+			if on_i and on_j: continue
+			var sx := 0.0
+			var sz := 0.0
+			for dj in range(-2,3):
+				var jj := j+dj
+				if jj < 0 or jj > cells: continue
+				if on_j and dj != 0: continue
+				for di in range(-2,3):
+					var ii := i+di
+					if ii < 0 or ii > cells: continue
+					if on_i and di != 0: continue
+					var w: float = wt[dj+2]*wt[di+2]
+					sx += w*gx[jj*n+ii]
+					sz += w*gz[jj*n+ii]
+			var gl := sqrt(sx*sx+sz*sz)
+			if gl < 1e-9: continue
+			var t := clampf((s-from)/(full-from),0.0,1.0)
+			t = t*t*(3.0-2.0*t)
+			var ux := gx[v]/s
+			var uz := gz[v]/s
+			var dx := ux+(sx/gl-ux)*t
+			var dz := uz+(sz/gl-uz)*t
+			var dl := sqrt(dx*dx+dz*dz)
+			if dl < 1e-6: continue
+			var ax := dx/dl*s
+			var az := dz/dl*s
+			var l := sqrt(ax*ax+1.0+az*az)
+			out[v] = Vector3(ax/l,1.0/l,az/l)
+	# The skirt: its edge's normals.
+	for e in 4:
+		for t in n:
+			var from_v: int = t if e == 0 else (t*n+cells if e == 1 else (cells*n+t if e == 2 else t*n))
+			out[n*n+e*n+t] = out[from_v]
+	made.normals = out
 
 ## The channel frame for CUSTOM2 (see river_live_wanted), from the chunk's
 ## river distance and width (CUSTOM1) and a two-sample ring round it read
@@ -627,6 +727,7 @@ func _commit() -> bool:
 		var r: Dictionary = ready.pop_front()
 		var key: Vector3i = r.key
 		_pending.erase(key)
+		if StreamLog.on: StreamLog.built(&"land",key,float(r.ms),int(r.ended))
 		var tops: Dictionary = r.get("tops",{})
 		_keep_tops(key,tops)
 		stats.built += 1
@@ -687,7 +788,9 @@ func _show() -> void:
 			for key: Vector3i in got: show[key] = true
 	for key: Vector3i in _shown.keys():
 		if not show.has(key) and _chunks.has(key): (_chunks[key].node as Node3D).visible = false
-	for key: Vector3i in show.keys(): (_chunks[key].node as Node3D).visible = true
+	for key: Vector3i in show.keys():
+		(_chunks[key].node as Node3D).visible = true
+		if StreamLog.on and not _shown.has(key): StreamLog.show(&"land",key,key.x,_distance_flat(key))
 	_shown = show
 	for key: Vector3i in _chunks.keys():
 		if show.has(key) or _wanted.has(key): continue

@@ -589,6 +589,10 @@ zs_react_rect={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_react_lay={
+"type": "float",
+"value": 1.0
+}
 zs_gust_map={
 "type": "sampler2D",
 "value": ""
@@ -684,6 +688,10 @@ zs_bow_shape={
 zs_aurora={
 "type": "vec4",
 "value": Vector4(0.65, 1, 0.15, -1.2)
+}
+zs_aurora_shape={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 1)
 }
 zs_moon_light={
 "type": "vec4",
@@ -968,4 +976,20 @@ zs_local_gust_origin_7={
 zs_local_gust_vector_7={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
+}
+zs_weather={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_weather_sky={
+"type": "vec4",
+"value": Vector4(0, 1, 1, 0)
+}
+zs_rain_field={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_lightning={
+"type": "vec4",
+"value": Vector4(0, 0, 1e+06, 0)
 }

@@ -33,6 +33,9 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_react.gdshaderinc"
 #include "res://shaders/region_paint.gdshaderinc"
 #include "res://shaders/backlight.gdshaderinc"
+#include "res://shaders/grass_shade.gdshaderinc"
+// The weather's wet (zs_soak_turf), as the near blades and the turf.
+#include "res://shaders/weather.gdshaderinc"
 // Backlight's gain on the far ring's tips (Godot's BACKLIGHT, shadowed).
 const float BACKLIGHT_GAIN = 5.0;
 
@@ -46,6 +49,10 @@ uniform vec4 wash_in = vec4(0.0, 1.0, 1.0, 0.0);
 // build_lite_morph), so a tile swapping to that tuft past it changes no
 // pixel. Zero: off.
 uniform vec2 far_morph = vec2(0.0);
+// The second far lod (`far_lod2`): past the first, each tuft eases on into
+// the sparse tuft's shape (CUSTOM1.xyz, GrassTuft build_sparse) over this
+// ring distance, for the same swap. Zero: off.
+uniform vec2 far_morph2 = vec2(0.0);
 uniform vec3 wash_colours[8];
 // How far up the blade the wash takes over (along the blade, 0 root, 1 tip).
 uniform vec2 wash_tip = vec2(0.3, 0.75);
@@ -93,13 +100,6 @@ void vertex() {
 	rp_tip = tip_colour;
 	rp_silver = grass_silver_colour;
 	vec3 swell = grass_swell;
-	if (zs_region_paints()) {
-		vec4 rw = zs_region_at(root.xz);
-		rp_root = zs_region_mix3(rw, root_colour_r);
-		rp_tip = zs_region_mix3(rw, tip_colour_r);
-		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
-		swell = zs_region_mix3(rw, grass_swell_r);
-	}
 	float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, root);
 	float ring_rank = fract(sin(dot(root.xz, vec2(19.31, 71.87))) * 43758.5453);
 	float ring_at = mix(grass_ring.x, grass_ring.y, ring_rank);
@@ -113,6 +113,15 @@ void vertex() {
 	float in_rank = fract(sin(dot(root.xz, vec2(41.37, 17.93))) * 24634.6345);
 	float in_at = mix(band.x, band.y, in_rank);
 	ring_keep *= smoothstep(in_at, in_at + band.z, ring_d);
+	// (The region's colours only for a tuft that shows: one shrunk away is a
+	// point, with nothing to colour.)
+	if (ring_keep > 0.0 && zs_region_paints()) {
+		vec4 rw = zs_region_at(root.xz);
+		rp_root = zs_region_mix3(rw, root_colour_r);
+		rp_tip = zs_region_mix3(rw, tip_colour_r);
+		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
+		swell = zs_region_mix3(rw, grass_swell_r);
+	}
 	// The wind by place (wind_field), read once at the root and only for a
 	// tuft that shows: windy grass rolls, calm grass stands.
 	vec2 wind_h = vec2(0.0);
@@ -121,6 +130,7 @@ void vertex() {
 		swell.x *= zs_wind_swell_here(wind_h);
 	}
 	if (far_morph.y > 0.0) VERTEX += CUSTOM0.xyz * smoothstep(far_morph.x, far_morph.y, ring_d);
+	if (far_morph2.y > 0.0) VERTEX += CUSTOM1.xyz * smoothstep(far_morph2.x, far_morph2.y, ring_d);
 	vec2 size = mix(grow_near, grass_ring_grow.zw, smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d));
 	VERTEX.xz *= ring_keep * size.x;
 	VERTEX.y *= ring_keep * size.y;
@@ -183,6 +193,7 @@ void fragment() {
 	c *= sheen;
 	c = zs_react_tone(c, react * along * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);
+	c = zs_soak_turf(c);
 	ALBEDO = c * (1.0 - shade * cloud_shade);
 	ROUGHNESS = 0.85;
 	SPECULAR = 0.2;
@@ -196,4 +207,17 @@ void fragment() {
 		vec3 sun_v = normalize((VIEW_MATRIX * vec4(zs_key_direction, 0.0)).xyz);
 		BACKLIGHT = zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-sun_v, VIEW), pow(max(along, 1.0e-4), 6.0), BACKLIGHT_GAIN));
 	}
+}
+
+// Godot's own lighting as the default does it (a light() replaces it), with
+// the sun's shade lifted (grass_shade.gdshaderinc).
+void light() {
+	vec3 d;
+	vec3 s;
+	zs_grass_light(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, ROUGHNESS, 0.2, d, s);
+	DIFFUSE_LIGHT += d;
+	SPECULAR_LIGHT += s;
+	if (LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR, zs_hemi_sky, 1.0 - ATTENUATION * smoothstep(0.0, 0.2, dot(NORMAL, LIGHT)), (INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).y);
+	// The tips' backlight (BACKLIGHT, set in fragment), as the default adds it.
+	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * BACKLIGHT * max(-dot(NORMAL, LIGHT), 0.0) / PI;
 }

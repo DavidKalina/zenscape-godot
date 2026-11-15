@@ -20,14 +20,24 @@ uniform float seam_glow = 5.0;
 uniform float cool = 0.9;
 instance uniform float lit_at = -1000.0;
 instance uniform float top = 0.0;
+// The way it comes in (local): up for a plug, from the closed side's rock for a partial wall
+// (bore_gates.gd); `top` is measured along it.
+instance uniform vec3 fall = vec3(0.0, 1.0, 0.0);
+// A partial wall's cut (bore_gates.gd): the way into its closed part (local) and how far along it
+// the cut is; its edge glows `edge_band` m wide so the open part reads at speed. A plug's is off.
+instance uniform vec4 cut = vec4(0.0, 0.0, 0.0, 1.0e6);
+uniform float edge_band = 2.2;
+uniform float edge_glow = 4.0;
 
 varying vec3 wpos;
 varying float v_collar;
 varying float v_heat;
 varying float v_lit;
+varying vec3 v_rest;
 
 void vertex() {
 	v_collar = COLOR.r;
+	v_rest = VERTEX;
 	float t = now - lit_at;
 	v_lit = step(0.0, t);
 	// The collar glows up through the hold, then cools.
@@ -35,7 +45,8 @@ void vertex() {
 	if (v_collar < 0.5) {
 		float k = clamp((t - hold) / drop, 0.0, 1.0);
 		float e = k * k;
-		VERTEX.y = top - (top - VERTEX.y) * e;
+		float on = dot(VERTEX, fall);
+		VERTEX += fall * ((top - (top - on) * e) - on);
 	}
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
@@ -69,5 +80,9 @@ void fragment() {
 		EMISSION = seam * seam_glow * v_heat * vein * some;
 	} else {
 		EMISSION = rock * fill + seam * seam_glow * 0.35 * v_heat * vein * some;
+		float into = dot(v_rest, cut.xyz) - cut.w;
+		float band = edge_band * (0.55 + 0.9 * g_noise(wpos * 0.6 + 2.0));
+		float edge = smoothstep(-0.4, 0.0, into) * (1.0 - smoothstep(0.0, band, into));
+		EMISSION += seam * edge_glow * (0.6 + 0.4 * v_heat) * edge * v_lit;
 	}
 }

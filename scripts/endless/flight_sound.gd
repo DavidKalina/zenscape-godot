@@ -245,6 +245,9 @@ var skid: Bed
 var breeze: Bed
 var thin: Bed
 var shore: Bed
+## The weather's rain (scripts/endless/weather_rain.gd `rain_to`): made on
+## its first call with rain, so a run with no rain builds none.
+var rain: Bed
 ## The living ground's beds and calls (scripts/endless/ambient_sound.gd); null under --ambient-sound=0.
 var ambient: Node
 
@@ -438,6 +441,8 @@ func _ready() -> void:
 		# The bore (tools/generate_bore_audio.py): a spur's three layers, the tell's grind.
 		"bore-thump":_takes(BORE_AUDIO+"bore-thump-%d.wav",4),"bore-crack":_takes(BORE_AUDIO+"bore-crack-%d.wav",4),
 		"bore-debris":_takes(BORE_AUDIO+"bore-debris-%d.wav",4),"bore-grind":_takes(BORE_AUDIO+"bore-grind-%d.wav",3),
+		# A storm's thunder (scripts/endless/weather_lightning.gd).
+		"thunder":_takes("res://assets/audio/thunder-%d.mp3",3),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -817,6 +822,21 @@ func _ambience(on_wheels: bool) -> void:
 	var low := 1.0-smoothstep(SHORE_HEIGHT.x,SHORE_HEIGHT.y,alt)
 	shore.goal = SHORE*low*maxf(coast,SURF*water)
 	shore.pitch_goal = 0.95+0.1*(1.0-low)
+
+## The rain bed (weather lane rain): `amount` the rain at the eye (0 to 1,
+## Weather.rain_here), `air` the speed as a share of cruise. Louder and a
+## touch brighter at speed, the drops drumming on the plane. Made on the
+## first call with rain.
+const RAIN := 0.17
+const RAIN_FAST := 0.45
+func rain_to(amount: float, air: float) -> void:
+	if rain == null:
+		if amount <= 0.0: return
+		rain = _bed(OLD+"rain-bed.wav",AMBIENCE)
+		rain.attack = 1.2
+		rain.release = 0.8
+	rain.goal = RAIN*amount*(1.0+RAIN_FAST*clampf(air,0.0,1.5))
+	rain.pitch_goal = 0.95+0.12*clampf(air,0.0,1.5)
 
 ## Every layer's goal, gain and pitch now: {name: [goal, gain, pitch]} (for a
 ## driver or a debug line).

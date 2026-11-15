@@ -154,6 +154,11 @@ var stats := {"stamps": 0, "wash": 0.0, "gusts": 0}
 ## endless_motes.gd): at (xz), reach (m), k (its strength 0..1), back (the
 ## way it blows, xz); empty while it doesn't reach the grass.
 var wash_spot := {}
+## Parted grass as one combed mat (--grass-part=old: off): the near blades
+## lie over in an arc (grass_react.gdshaderinc zs_react_arc, the global
+## zs_react_lay), and a held stamp can push out from a point of its own
+## (`part`'s `from`), so the menu's three stamps comb one way.
+var combed := true
 
 var _viewport: SubViewport
 var _multimesh: MultiMesh
@@ -190,6 +195,8 @@ func setup(land_seed: int) -> void:
 		elif a.begins_with("--gust-every="): gust_every = maxf(float(a.get_slice("=",1)),0.5)
 		elif a.begins_with("--grass-bend="): bend = float(a.get_slice("=",1))
 		elif a.begins_with("--eddy-press="): eddy_press = float(a.get_slice("=",1))
+		elif a == "--grass-part=old": combed = false
+	RenderingServer.global_shader_parameter_set("zs_react_lay",1.0 if combed else 0.0)
 	if wash_scale <= 0.0: wash_on = false
 	if gust_scale <= 0.0: gusts_on = false
 	_parcels.resize(SLOTS)
@@ -356,14 +363,16 @@ func walker(at: Vector3, velocity: Vector3, sliding := false) -> void:
 ## the grass parted round it out to `reach` m, `strength` times a standing
 ## walker's push, kept so while it is called each frame: one calm stamp held
 ## for as long as that lasts, following `at`, which eases off once it stops.
-## `slot` (0 to 2) keeps such things apart.
-func part(at: Vector2, reach: float, strength := 1.0, slot := 0) -> void:
+## `slot` (0 to 2) keeps such things apart. `from` (world xz, INF: `at`) the
+## point the grass is pushed out from, so stamps round one thing comb one way.
+func part(at: Vector2, reach: float, strength := 1.0, slot := 0, from := Vector2.INF) -> void:
 	if not enabled: return
 	var s: Dictionary = _held[slot]
 	if s.is_empty():
 		s = {"way": Vector2.ZERO, "swirl": 0.0, "front": 0.0, "hold": 0.001, "calm": true, "born": time}
 		_held[slot] = s
 	s.at = at
+	s.from = Vector2.ZERO if from == Vector2.INF else from-at
 	s.reach = reach
 	s.strength = WALK_STRENGTH*strength*2.2
 	s.last = time
@@ -566,6 +575,11 @@ func _draw() -> void:
 		# A 2D instance: its transform's two rows (x, y, 0, origin), colour, custom.
 		var o := n*16
 		_buffer[o] = side
+		# The transform's padding (MODEL_MATRIX[2].xy in the stamp shader):
+		# the point the push runs out from, m from the centre.
+		var from: Vector2 = s.get("from",Vector2.ZERO)
+		_buffer[o+2] = from.x
+		_buffer[o+6] = from.y
 		_buffer[o+3] = px.x
 		_buffer[o+5] = side
 		_buffer[o+7] = px.y
@@ -602,7 +616,8 @@ func push_at(p: Vector2) -> Vector3:
 		var back := (1.0+EASE*after)*exp(-EASE*after) if s.get("calm",false) else exp(-2.4*lerpf(1.0,0.6,wide)*after)*cos(5.2*lerpf(1.0,0.55,wide)*after)
 		var swing := smoothstep(-rise,0.0,t)*back
 		var fall := 1.0-smoothstep(0.45,1.0,u)
-		var out := o/sqrt(r*r+0.04*reach*reach)
+		var so: Vector2 = o-Vector2(s.get("from",Vector2.ZERO))
+		var out := so/sqrt(so.length_squared()+0.04*reach*reach)
 		var turn := Vector2(-out.y,out.x)*float(s.swirl)
 		var push: Vector2 = (out+turn+Vector2(s.way))*(float(s.strength)*swing*fall)
 		var core := 1.0-smoothstep(0.0,0.5,u)

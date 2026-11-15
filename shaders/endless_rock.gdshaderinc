@@ -233,8 +233,15 @@ vec3 er_relief(vec3 p, vec3 n, float fp, vec3 rnd, out float cav) {
 // The rock's albedo at world point `p` on a surface of world normal `n`;
 // `bumped` comes back the normal to light it with. See the file's head.
 // `shape` is the land's form (see rock_shape), vec4(0.0) for none.
-vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, vec4 shape, inout vec3 bumped, out vec3 glow) {
+// `ease`: how far the snapped terms (the painted light's steps, the planes
+// and their tones, the joints' blocks) ease to their smooth values (0 none).
+// The land eases them near the eye (endless_ground.gdshader ROCK_EASE):
+// its steep walls are long thin triangles on the 1-2 m height grid, whose
+// normals swing column to column, and anything snapping that normal cut a
+// wall seen close into triangle-shaped tiles and stair-stepped bars.
+vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, vec4 shape, float ease, inout vec3 bumped, out vec3 glow) {
 	glow = vec3(0.0);
+	float aa = ease;
 	float sz = rock_size;
 	vec3 q = p / sz;
 	float fq = fp / sz;
@@ -260,7 +267,7 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 		// little more by its own random cell, then smaller planes up close.
 		float steep = smoothstep(0.97, 0.55, n.y);
 		facet_k = rock_facets * (0.7 + 0.3 * steep);
-		vec3 np = er_planes(n, p / sz, 9.0, 6.0, 0.05 + fq * 0.004, plane_id);
+		vec3 np = er_planes(n, p / sz, 9.0, 6.0, mix(0.05 + fq * 0.004, 0.5, aa), plane_id);
 		cell_c = er_cells(vec3(q.x, q.y * 1.3, q.z) / 70.0 + vec3(1.0, 8.0, 2.0), rnd_c);
 		np = er_tilt(np, rnd_c, 0.34 * rock_bump * (1.0 - 0.5 * plane_calm));
 		nf = normalize(mix(nf, np, clamp(0.95 * facet_k, 0.0, 1.0)));
@@ -291,7 +298,7 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 	float tier = lit * steps;
 	float t = floor(tier) + smoothstep(0.5 - soft, 0.5 + soft, fract(tier));
 	t = clamp(t / (steps - 1.0) - 0.0, 0.0, 1.0);
-	t = mix(lit, t, 0.7);
+	t = mix(lit, t, 0.7 * (1.0 - aa));
 	vec3 shadow_tone = zs_cool(rock_pass1 ? ER_SHADOW1 : ER_SHADOW, rock_follow);
 	vec3 mid_tone = zs_warm(ER_MID, 0.5 * rock_follow);
 	vec3 lit_tone = zs_warm(ER_LIT, rock_follow);
@@ -300,8 +307,8 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 	if (!rock_pass1 && facet_k > 0.0) {
 		// Each plane its own tone and a hue leaning warm or cool.
 		vec3 hp = er_hash3(ivec3(int(plane_id.x), int(plane_id.y), 19));
-		col *= (1.0 + (hp.x - 0.5) * 0.26 * facet_k * (1.0 - plane_calm))
-			* mix(vec3(0.94, 0.97, 1.08), vec3(1.08, 1.02, 0.90), hp.y);
+		col *= mix(vec3(1.0), (1.0 + (hp.x - 0.5) * 0.26 * facet_k * (1.0 - plane_calm))
+			* mix(vec3(0.94, 0.97, 1.08), vec3(1.08, 1.02, 0.90), hp.y), 1.0 - aa);
 	}
 	// A rock of its own: warm sandy to cool grey over the drift.
 	col *= mix(vec3(0.86, 0.92, 1.08), vec3(1.14, 1.04, 0.84), smoothstep(0.25, 0.75, drift));
@@ -341,7 +348,7 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 	float joint = 0.0;
 	{
 		float bs = 6.4;
-		float jk = er_keep(bs, fq);
+		float jk = er_keep(bs, fq) * (1.0 - aa);
 		float bid = floor(sy / bs);
 		vec3 hb = er_hash3(ivec3(int(bid), 5, 23));
 		float len = 7.0 + hb.x * 9.0;
@@ -505,5 +512,5 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 }
 
 vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout vec3 bumped, out vec3 glow) {
-	return er_rock_shaped(p, n, fp, sun, mossy, carved, vec4(0.0), bumped, glow);
+	return er_rock_shaped(p, n, fp, sun, mossy, carved, vec4(0.0), 0.0, bumped, glow);
 }

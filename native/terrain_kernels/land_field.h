@@ -182,6 +182,8 @@ public:
 	static constexpr double RIVER_STILL = 0.0012;
 	static constexpr double RIVER_INLAND = 0.3, RIVER_CUT_SIDE = 0.5, RIVER_FILL_SIDE = 110.0;
 	static constexpr double RIVER_MOUTH_RISE = 5.0, RIVER_FLARE = 1.4, RIVER_MOUTH_DEEP = 3.6, RIVER_MOUTH_EASE = 1.2, RIVER_MOUTH_SINK = 1.5;
+	// A mouth's bed held to this depth under the sea's level at most (LandField RIVER_MOUTH_FLOOR).
+	static constexpr double RIVER_MOUTH_FLOOR = 1.5;
 	static constexpr int LAT_SLOTS = 128;
 
 	// --- Knobs (LandField's flags; `configure` then `setup`) ------------------------
@@ -190,7 +192,7 @@ public:
 	bool old_land = false;
 	double carve = 1.0, carve_blocks = 1.0, carve_ledges = 1.0, carve_gullies = 1.0, detail = 0.0;
 	double rivers = 1.0, river_width = 1.0, river_drop = 1.0, river_cut = 1.0, river_fill = 1.0;
-	double river_mouth = 1.0, river_flare = 1.0;
+	double river_mouth = 1.0, river_flare = 1.0, river_floor = 1.0;
 	double floor_half = 50.0;
 	// The C runtime's exp/pow/sin/cos (as GDScript), not land_math.h's.
 	bool libm = false;
@@ -644,7 +646,14 @@ private:
 		double cut;
 		if (s < w) {
 			const double u = s / w;
-			cut = water - river_bed * (1.0 - POW(u, 2.0 + 2.0 * river_mouth_s));
+			// (Never under RIVER_MOUTH_FLOOR below the sea; the mouth's extra
+			// depth eased out with the river's strength. LandField `_river`.)
+			double bed = river_bed;
+			if (river_floor > 0.0) {
+				bed = minf(bed, water - SEA_Y + RIVER_MOUTH_FLOOR);
+				bed = RIVER_BED + maxf(bed - RIVER_BED, 0.0) * clampf(river_k, 0.0, 1.0);
+			}
+			cut = water - bed * (1.0 - POW(u, 2.0 + 2.0 * river_mouth_s));
 		} else if (s < core) {
 			const double u = (s - w) / river_bank;
 			cut = water + drop * u * u * (3.0 - 2.0 * u);
@@ -654,7 +663,11 @@ private:
 		}
 		double keep = 1.0;
 		if (detail > 1.0) keep = smoothstep(2.5, 4.5, (core * 2.0) / detail);
-		if (cut < h) h -= (h - cut) * keep * banked;
+		// (At a mouth the cut holds to the river's end, not faded with `banked`;
+		// LandField RIVER_MOUTH_FLOOR.)
+		double hold = banked;
+		if (river_floor > 0.0) hold = lerpf(banked, 1.0, river_mouth_s * minf(river_mouth, 1.0) * minf(river_floor, 1.0));
+		if (cut < h) h -= (h - cut) * keep * hold;
 		return h;
 	}
 

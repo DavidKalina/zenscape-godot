@@ -1,5 +1,6 @@
 #include "res://shaders/light_leans.gdshaderinc"
 #include "res://shaders/backlight.gdshaderinc"
+#include "res://shaders/grass_shade.gdshaderinc"
 // Source Lambert + GGX direct lighting. The climbing valley shadow gates only
 // direct contributions, preserving hemisphere and reflected-sky afterglow.
 void light() {
@@ -16,8 +17,11 @@ void light() {
 	if (ZS_SPRUCE_LIGHT.x > 0.0) {
 		// The crown is porous: its own shadow (the proxy cone's) takes only
 		// part of the sun, so a backlit crown has no hard dark half.
-		vec3 open_sun = LIGHT_COLOR * gate * inversion_transmit;
-		vec3 crown_sun = open_sun * mix(ZS_SPRUCE_TONE2.y, 1.0, ATTENUATION);
+		// That floor is the sun's alone: a local light (a tunnel's torches, a
+		// mouth's spill) falls off with its distance, or it lit every crown in
+		// its range near white, cut off square at its clusters.
+		vec3 open_sun = LIGHT_COLOR * gate * inversion_transmit * (LIGHT_IS_DIRECTIONAL ? 1.0 : ATTENUATION);
+		vec3 crown_sun = open_sun * (LIGHT_IS_DIRECTIONAL ? mix(ZS_SPRUCE_TONE2.y, 1.0, ATTENUATION) : 1.0);
 		float d = dot(NORMAL, LIGHT);
 		float t = zs_spruce_painted_light(d, ZS_SPRUCE_LIGHT.x, ZS_SPRUCE_LIGHT.z, ZS_SPRUCE_LIGHT.w);
 		vec3 lit_hue = mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t);
@@ -73,6 +77,8 @@ void light() {
 	// backscatter above never sees a back face; its tips glow toward the sun
 	// instead. The shader names its tip fraction and strength.
 	if (ZS_GRASS_GLOW > 0.0) DIFFUSE_LIGHT += energy * zs_grass_translucency(LIGHT, VIEW, ALBEDO, ZS_GRASS_ALONG, ZS_GRASS_GLOW);
+	// A cast shadow keeps some of the sun's strength, cool (grass_shade.gdshaderinc).
+	if (ZS_GRASS_GLOW > 0.0 && LIGHT_IS_DIRECTIONAL) DIFFUSE_LIGHT += zs_grass_shade_lift(LIGHT_COLOR * gate * inversion_transmit, zs_hemi_sky, 1.0 - ATTENUATION * gate * smoothstep(0.0, 0.2, nl), (INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).y);
 #ifdef ZS_BACKLIGHT_GRASS
 	// Backlight: the blades' thin tips seen against a low sun catch it.
 	if (ZS_GRASS_GLOW > 0.0 && zs_backlight > 0.0 && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {

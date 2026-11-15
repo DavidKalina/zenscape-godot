@@ -40,6 +40,7 @@
 #include <godot_cpp/variant/vector3.hpp>
 #include <godot_cpp/variant/vector4.hpp>
 #include "land_field_bind.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -207,7 +208,8 @@ inline Vector3 rotated(const Vector3 &v, const Vector3 &axis, double angle) {
 // --- scripts/endless/endless_patch.gd ----------------------------------------------
 struct Patch {
 	Vector2 offset;
-	double region_amount = 1.0, bloom_amount = 1.0;
+	double region_amount = 1.0, bloom_amount = 1.0, area_amount = 0.0;
+	Vector2 area_edge;
 	Vector3 plain;
 
 	static constexpr double PATCH_STRENGTH = 1.0, THIN_UP = 0.93, ROCK_UP = 0.80, VERTEX_HUE = 0.2, DRY_NEAR = 0.18;
@@ -246,13 +248,38 @@ struct Patch {
 	}
 	static Vector3 lerp3(const Vector3 &a, const Vector3 &b, double t) { return a + (b - a) * float(t); }
 
-	Vector3 region(double x, double z, double over) const {
-		const double amount = region_amount;
-		if (amount <= 0.0) return Vector3(1, 1, 1);
-		const Vector2 q = Vector2(float(x), float(z)) + offset;
+	// The grass areas (endless_patch.gd `area`, the shader's ep_area): q a
+	// world point plus the offset, px its x, a and b the regions' noises.
+	// xyz the areas' colours by their weights, w the weights' sum.
+	struct Area {
+		Vector3 c;
+		double w = 0.0;
+	};
+	Area area(const Vector2 &q, double px, double a, double b, double areas) const {
+		Area out;
+		if (area_edge.y > area_edge.x) areas *= 1.0 - ss(double(area_edge.x), double(area_edge.y), px);
+		if (areas <= 0.0) return out;
+		const Vector2 w = q + Vector2(float(a - 0.5), float(b - 0.5)) * 900.0f;
+		// Lime past the first noise's cut; under it the second in three bands.
+		const double rest = 1.0 - ss(0.47, 0.65, noise(double(w.x) / 2600.0 - 7.3, double(w.y) / 2600.0 + 4.1));
+		const double n2 = noise((double(w.x) * 0.6 + double(w.y) * 0.8) / 2100.0 + 2.6, (double(w.y) * 0.6 - double(w.x) * 0.8) / 2100.0 - 5.9);
+		const double lush = 1.0 - ss(0.36, 0.44, n2), amber = ss(0.58, 0.66, n2);
+		const double kl = lush * rest * 0.60 * areas, ks = (1.0 - lush - amber) * rest * 0.45 * areas, ka = amber * rest * 0.55 * areas;
+		out.c = Vector3(0.24, 1.36, 0.39) * float(kl) + Vector3(0.50, 1.18, 0.62) * float(ks) + Vector3(1.21, 1.04, 0.50) * float(ka);
+		out.w = kl + ks + ka;
+		return out;
+	}
+	static void ab(const Vector2 &q, double &a, double &b) {
 		const Vector2 r(float(double(q.x) * 0.8 - double(q.y) * 0.6), float(double(q.x) * 0.6 + double(q.y) * 0.8));
-		const double a = noise(double(r.x) / 380.0 + 3.7, double(r.y) / 380.0 + 1.3) * 0.8 + noise(double(r.x) / 130.0 - 4.1, double(r.y) / 130.0 + 2.2) * 0.2;
-		const double b = noise(double(q.y) / 300.0 - 2.1, double(q.x) / 300.0 + 8.4) * 0.8 + noise(double(q.x) / 110.0 + 6.3, double(q.y) / 110.0 - 1.7) * 0.2;
+		a = noise(double(r.x) / 380.0 + 3.7, double(r.y) / 380.0 + 1.3) * 0.8 + noise(double(r.x) / 130.0 - 4.1, double(r.y) / 130.0 + 2.2) * 0.2;
+		b = noise(double(q.y) / 300.0 - 2.1, double(q.x) / 300.0 + 8.4) * 0.8 + noise(double(q.x) / 110.0 + 6.3, double(q.y) / 110.0 - 1.7) * 0.2;
+	}
+
+	// The regions' multiplier (the areas' weight there `area_w`).
+	Vector3 region(const Vector2 &q, double a, double b, double over, double area_w) const {
+		const double amount = region_amount * lerpf(1.0, 0.8, std::min(area_w / 0.55, 1.0));
+		if (amount <= 0.0) return Vector3(1, 1, 1);
+		const Vector2 r(float(double(q.x) * 0.8 - double(q.y) * 0.6), float(double(q.x) * 0.6 + double(q.y) * 0.8));
 		const double c = noise(double(r.y) / 220.0 + 5.5, double(r.x) / 220.0 - 3.3);
 		const Vector3 ONE(1, 1, 1);
 		Vector3 m = lerp3(ONE, Vector3(0.44, 0.78, 0.58), ss(0.42, 0.30, a) * amount);
@@ -276,7 +303,15 @@ struct Patch {
 		g = g.lerp(MEADOW * float(1.0 + mid * 0.5), float(meadow * 0.75));
 		const double warm = clampf(broad * 2.4 + vast * 1.8, -1.0, 1.0) * PATCH_STRENGTH;
 		g *= Vector3(1, 1, 1).lerp(warm > 0.0 ? Vector3(1.32, 1.05, 0.62) : Vector3(0.80, 0.97, 1.16), float(std::fabs(warm) * 0.5));
-		g *= region(x, z, over);
+		const double areas = std::min(area_amount, 1.6);
+		if (region_amount > 0.0 || areas > 0.0) {
+			const Vector2 q = Vector2(float(x), float(z)) + offset;
+			double a, b;
+			ab(q, a, b);
+			const Area ar = area(q, x, a, b, areas);
+			g *= region(q, a, b, over, ar.w);
+			g = g * float(1.0 - ar.w) + ar.c * float(luma(g));
+		}
 		if (hue != Vector3()) g = g.lerp(hue / float(maxf(luma(hue), 0.01)) * float(luma(g)), float(VERTEX_HUE * 0.6));
 		const double dry_far = smoothstep(0.05, 0.32, broad + wide * 0.6 + 0.1);
 		const double dry = clampf(DRY_NEAR * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
@@ -377,6 +412,11 @@ struct Config {
 	double patches = 1.0, flower_tall = 1.0, sub = 0.0;
 	float slope_x = 0.83f, slope_y = 0.88f, alpine_x = 0.3f, alpine_y = 0.7f;
 	double flower_tries = 2.2;
+	// Which flowers a grow keeps (KitFlora Site `flower_part`): 0 all; 1 only
+	// those a drift gave its kind (endless_grass's bloom layer); 2 the rest
+	// (the strays and companions, its near layer). One skipped spends the
+	// random numbers it would have, so the rest stand where they would.
+	int flower_part = 0;
 	// The rings (Site lod, lod_grow, lod_soft).
 	godot::Vector4 lod;
 	Vector2 lod_grow;
@@ -402,6 +442,28 @@ struct Config {
 	float drift_x = 0.68f, drift_y = 0.82f, drift_z = 6.0f;
 	double drift_scale = 55.0;
 	float flower_lift_x = 0.8f, flower_lift_y = 1.3f;
+	// The alpine tufts (endless_grass ALP): short, sparse tufts on the high
+	// turf where the meadow's thin out (its alpine mask's complement), in a pass
+	// of their own after the carpet's (their own random numbers, their records
+	// after its), so the meadow's tufts and flowers stay where they were.
+	// alp_share: their candidates a square metre, a share of `tufts` (0: none).
+	double alp_share = 0.0, alp_tall = 0.5, alp_wide = 1.1;
+	Color alp_tone = Color(1, 1, 1); // over the tuft's colour (linear)
+	double alp_slope_x = 0.87, alp_slope_y = 0.93;
+	// The top (over the sea, m): gone from top_y, thinning from top_x; inside
+	// the Peak's zone (zone: x, z, radius, on; 600 m soft) its own top.
+	double alp_top_x = 79.0, alp_top_y = 95.0, alp_zone_top_x = 140.0, alp_zone_top_y = 170.0;
+	godot::Vector4 alp_zone;
+	// None on a proud crown (the summits' snow caps, the ground's land_shape.b)
+	// outside the Peak's zone.
+	bool alp_proud = false;
+	// The ground's high stone and scree off the Peak (endless_ground `bare`:
+	// alpine_from over its alpine; y 0: none).
+	double alp_bare_x = 0.25, alp_bare_y = 0.0;
+	// Ground they keep off (the Peak's ice, its rubble, its gorge's scree):
+	// capsules [ax, az, bx, bz, ra, rb], and the box round them all.
+	std::vector<float> alp_off;
+	godot::Vector4 alp_off_box;
 };
 
 // KitFlora constants.
@@ -416,6 +478,7 @@ struct Record {
 	int asset = -1;  // -1: the grass tuft; else Config::assets' index
 	double x = 0, z = 0, angle = 0, scale = 0, h = 0;
 	bool has_pose = false, has_tint = false;
+	bool alpine = false; // an alpine tuft (its colour times Config alp_tone)
 	Basis pose;
 	Color tint;
 };
@@ -513,6 +576,114 @@ public:
 		if (keep <= 0.0) return DNAN;
 		if (keep < 1.0 && hash_unit(p.x, p.y, 7.0) > keep) return DNAN;
 		return h - cfg.sink;
+	}
+	// The alpine tufts' probe: the drawn turf's height at p where an alpine
+	// tuft stands, or NaN. The same ground as `probe` reads, with the alpine
+	// mask turned round (they grow where the carpet's thin out), a stricter
+	// slope (they stop short of the high ground's broken rock), a top under
+	// the snow, and off the ground in `alp_off` and the proud crowns.
+	std::vector<float> proud; // ALP_PROUD_N^2 nodes ALP_PROUD_STEP m apart from (x0, z0); empty: none
+	static constexpr int ALP_PROUD_N = 9;
+	static constexpr double ALP_PROUD_STEP = 8.0;
+	double probe_alpine(const Vector2 &p) {
+		const double u = double(p.x) - x0 + pad;
+		const double v = double(p.y) - z0 + pad;
+		const int64_t i = clampi(floori(u), 1, n - 3);
+		const int64_t j = clampi(floori(v), 1, n - 3);
+		const double fx = clampf(u - double(i), 0.0, 1.0);
+		const double fz = clampf(v - double(j), 0.0, 1.0);
+		const int64_t k = j * n + i;
+		const double h00 = hs[k], h10 = hs[k + 1], h01 = hs[k + n], h11 = hs[k + n + 1];
+		const double h = fx + fz <= 1.0 ? h00 + fx * (h10 - h00) + fz * (h01 - h00) : h11 + (1.0 - fx) * (h01 - h11) + (1.0 - fz) * (h10 - h11);
+		const double over = h - cfg.sea_y;
+		if (over < Patch::ALPINE_FROM) return DNAN;
+		// The top: under the snow line, or on the Peak under its granite.
+		double zone = 0.0;
+		if (cfg.alp_zone.w > 0.5) {
+			const double d = double(Vector2(float(cfg.alp_zone.x), float(cfg.alp_zone.y)).distance_to(p));
+			zone = 1.0 - smoothstep(double(cfg.alp_zone.z) - 600.0, double(cfg.alp_zone.z), d);
+		}
+		const double top_x = lerpd(cfg.alp_top_x, cfg.alp_zone_top_x, zone), top_y = lerpd(cfg.alp_top_y, cfg.alp_zone_top_y, zone);
+		if (over >= top_y) return DNAN;
+		const int64_t c = (j + roundi(fz)) * n + i + roundi(fx);
+		if (double(rs[c]) < 12.0 && double(rs[c]) < Patch::river_bank(p.x, p.y) * 0.85) return DNAN;
+		double up = 2.0 / double(Vector3(dif(hs[c - 1], hs[c + 1]), 2.0f, dif(hs[c - n], hs[c + n])).length());
+		const double bx = clampf((double(p.x) - x0) / 64.0, 0.0, 1.0);
+		const double bz = clampf((double(p.y) - z0) / 64.0, 0.0, 1.0);
+		const double broad = lerpf(lerpf(b00, b10, bx), lerpf(b01, b11, bx), bz);
+		const double alpine = Patch::alpine_of(over, broad);
+		double w = cfg.alpine_y <= 0.0f ? smoothstep(cfg.high_x, cfg.high_y, over) : smoothstep(cfg.alpine_x, cfg.alpine_y, alpine);
+		// Off the Peak's zone the high ground goes to stone and scree (the
+		// ground's `bare`, alpine_from): none there.
+		if (cfg.alp_bare_y > 0.0) w *= 1.0 - smoothstep(cfg.alp_bare_x, cfg.alp_bare_y, alpine) * (1.0 - zone);
+		if (w <= 0.0) return DNAN;
+		if (up < cfg.rock_near) {
+			if (up < cfg.alp_slope_x - Patch::RAGGED_MOST) return DNAN;
+			if (std::isnan(ragged_d[c])) {
+				const Vector3 at(float(x0 + double(c % n) - pad), hs[c], float(z0 + double(c / n) - pad));
+				ragged_d[c] = Patch::rock_ragged(at);
+			}
+			up += ragged_d[c];
+		}
+		double keep = w * smoothstep(cfg.alp_slope_x, cfg.alp_slope_y, up) * (1.0 - smoothstep(top_x, top_y, over));
+		if (keep <= 0.0) return DNAN;
+		// Off the Peak's ice, rubble and scree.
+		const std::vector<float> &off = cfg.alp_off;
+		if (!off.empty() && p.x > cfg.alp_off_box.x && p.y > cfg.alp_off_box.y && p.x < cfg.alp_off_box.z && p.y < cfg.alp_off_box.w) {
+			for (size_t s = 0; s + 5 < off.size(); s += 6) {
+				const Vector2 a(off[s], off[s + 1]);
+				const Vector2 e = Vector2(off[s + 2], off[s + 3]) - a;
+				const double t = clampd(double((p - a).dot(e)) / maxf(double(e.length_squared()), 0.001), 0.0, 1.0);
+				const double r = lerpd(off[s + 4], off[s + 5], t);
+				const double dd = double(p.distance_to(a + e * float(t)));
+				if (dd < r) return DNAN;
+				keep *= smoothstep(r, r * 1.15 + 4.0, dd);
+			}
+		}
+		// Off the proud crowns' snow caps (outside the Peak's zone).
+		if (!proud.empty() && zone < 1.0) {
+			const double gu = clampd((double(p.x) - x0) / ALP_PROUD_STEP, 0.0, ALP_PROUD_N - 1.001);
+			const double gv = clampd((double(p.y) - z0) / ALP_PROUD_STEP, 0.0, ALP_PROUD_N - 1.001);
+			const int gi = int(gu), gj = int(gv);
+			const double gx = gu - gi, gz = gv - gj;
+			const float *q = proud.data() + gj * ALP_PROUD_N + gi;
+			const double b = lerpd(lerpd(q[0], q[1], gx), lerpd(q[ALP_PROUD_N], q[ALP_PROUD_N + 1], gx), gz);
+			const double capped = smoothstep(0.50, 0.58, b) * smoothstep(50.0, 85.0, over);
+			keep *= 1.0 - smoothstep(0.2, 0.6, capped) * (1.0 - zone);
+		}
+		if (keep <= 0.0) return DNAN;
+		if (keep < 1.0 && hash_unit(p.x, p.y, 11.0) > keep) return DNAN;
+		return h - cfg.sink;
+	}
+	// The alpine tufts: their own candidates after the carpet's, each a short,
+	// a little wider tuft.
+	void grow_alpine(int64_t grow_seed) {
+		if (cfg.alp_share <= 0.0) return;
+		if (ragged_d.size() != size_t(n * n)) ragged_d.assign(size_t(n * n), DNAN);
+		Pcg arng;
+		arng.seed(uint64_t(grow_seed) * 2654435761ULL + 0x5A17EULL);
+		const int64_t count = int64_t(64.0 * 64.0 * cfg.tufts * cfg.alp_share);
+		for (int64_t c = 0; c < count; ++c) {
+			const float px = arng.randf_range(float(x0), float(x0 + 64.0));
+			const float pz = arng.randf_range(float(z0), float(z0 + 64.0));
+			const double size = arng.randf_range(0.8f, 1.25f);
+			const double angle = double(arng.randf()) * TAU;
+			const Vector2 p(px, pz);
+			if (dithered_out(p)) continue;
+			const double h = probe_alpine(p);
+			if (std::isnan(h)) continue;
+			Record r;
+			r.asset = -1;
+			r.x = p.x;
+			r.z = p.y;
+			r.angle = angle;
+			r.scale = size;
+			r.h = h;
+			r.has_pose = true;
+			r.alpine = true;
+			r.pose = axis_angle(Vector3(0, 1, 0), angle).scaled(Vector3(float(size * cfg.alp_wide), float(size * cfg.alp_tall), float(size * cfg.alp_wide)));
+			records.push_back(r);
+		}
 	}
 	double foot(const Vector2 &p) {
 		const int64_t kx = floori(double(p.x) / SHAG_CELL), kz = floori(double(p.y) / SHAG_CELL);
@@ -744,12 +915,14 @@ public:
 			int kind = kind_at(p, rng.randf());
 			double var = -1.0;
 			double drift_by;
+			bool took = false;
 			if (!blooms.empty()) {
 				const Vector2 b = bloom_at(p);
 				if (!(double(b.x) < cfg.bloom_kind) && !(hash_unit(p.x, p.y, 53.0) < cfg.bloom_companion)) {
 					const int slot = int(b.y);
 					kind = cfg.bloom_kinds[size_t(slot)];
 					var = cfg.bloom_variants[size_t(slot)];
+					took = true;
 				}
 				drift_by = 1.0 + (cfg.bloom_peak - 1.0) * double(b.x);
 			} else {
@@ -773,6 +946,11 @@ public:
 			form(k, fsize, fangle, lift, rsize, has_pose, pose);
 			Color t;
 			const bool tinted = !k.tints.empty() && kind_tint(k, var >= 0.0 ? var : variant(p), t);
+			// Not this grow's part: the random number add would have spent.
+			if (cfg.flower_part > 0 && took == (cfg.flower_part == 2)) {
+				if (!std::isnan(probe(p))) rng.randf();
+				continue;
+			}
 			add(k.asset, p, rsize, tinted, t, has_pose, pose);
 		}
 	}
@@ -800,6 +978,17 @@ protected:
 		ClassDB::bind_method(D_METHOD("assets"), &ZenScapeGrass::assets);
 		ClassDB::bind_method(D_METHOD("hash_check", "x", "y"), &ZenScapeGrass::hash_check);
 		ClassDB::bind_method(D_METHOD("randf_check", "seed", "count"), &ZenScapeGrass::randf_check);
+		ClassDB::bind_method(D_METHOD("tint_check", "x", "z", "meadow", "over", "up", "hue"), &ZenScapeGrass::tint_check);
+		ClassDB::bind_method(D_METHOD("cull_tiles", "boxes", "reach_of", "state", "show", "lods"), &ZenScapeGrass::cull_tiles);
+	}
+
+	// Whether the box at b (x0, z0, x1, z1) meets the disc at d (centre x, z,
+	// radius squared; below zero: none).
+	static bool tile_meets(const float *b, const float *d) {
+		if (d[2] < 0.0f) return false;
+		const double dx = MAX(MAX(double(b[0]) - double(d[0]), double(d[0]) - double(b[2])), 0.0);
+		const double dz = MAX(MAX(double(b[1]) - double(d[1]), double(d[1]) - double(b[3])), 0.0);
+		return dx * dx + dz * dz <= double(d[2]);
 	}
 
 	static double num(const Dictionary &d, const char *k, double fallback) {
@@ -807,13 +996,55 @@ protected:
 	}
 
 public:
-	// 2: grow_cell takes a band cell's dither.
-	int64_t version() const { return 2; }
+	// 2: grow_cell takes a band cell's dither. 3: the alpine tufts (config `alp`).
+	// 4: the grass areas (config `area_amount`, `area_edge`). 5: their retune (lime
+	// the largest, two vivid greens), tint_check. 6: config `flower_part` (the
+	// drifts' flowers grown apart from the rest).
+	int64_t version() const { return 6; }
+
+	// endless_grass.gd `cull_tiles`, the same answers: one cell's tiles (a
+	// box, a ring and a state each: bit 0 shown, the bits over it the far lod)
+	// against its rings' discs (`show`) and the far lods' (`lods`: none, one
+	// lod's two discs or two lods' four). The tiles whose state changed,
+	// [index, new state] each. Keeps no state: the main thread's, every frame.
+	PackedInt32Array cull_tiles(const PackedFloat32Array &boxes, const PackedByteArray &reach_of, const PackedByteArray &state, const PackedFloat32Array &show, const PackedFloat32Array &lods) const {
+		PackedInt32Array out;
+		const int64_t n = state.size();
+		if (boxes.size() < n * 4 || reach_of.size() < n) return out;
+		const float *b = boxes.ptr();
+		const uint8_t *ro = reach_of.ptr();
+		const uint8_t *st = state.ptr();
+		const float *sh = show.ptr();
+		const float *lo = lods.ptr();
+		const int64_t rings = show.size() / 3;
+		const bool has_lod = lods.size() >= 6;
+		const bool has_lod2 = lods.size() >= 12;
+		for (int64_t i = 0; i < n; i++) {
+			if (ro[i] >= rings) continue;
+			const float *box = b + i * 4;
+			const int was = st[i];
+			const int up = was >> 1;
+			int tier = up;
+			const bool shown = tile_meets(box, sh + ro[i] * 3);
+			if (has_lod && shown) {
+				tier = tile_meets(box, lo + (up >= 1 ? 0 : 3)) ? 0 : 1;
+				if (tier == 1 && has_lod2 && !tile_meets(box, lo + (up >= 2 ? 6 : 9))) tier = 2;
+			}
+			const int now = (shown ? 1 : 0) | (tier << 1);
+			if (now != was) {
+				out.push_back(int32_t(i));
+				out.push_back(now);
+			}
+		}
+		return out;
+	}
 
 	// The flower assets a cell's records index (the config's `assets`).
 	PackedStringArray assets() const { return cfg.assets; }
 
 	int64_t hash_check(int64_t x, int64_t y) const { return zsgrass::hash_v2i(x, y); }
+	// A tuft's tint as the configured patch gives it (endless_patch.gd `tint`), for parity checks.
+	Color tint_check(double x, double z, double meadow, double over, double up, const Vector3 &hue) const { return cfg.patch.tint(x, z, meadow, over, up, hue); }
 	PackedFloat32Array randf_check(int64_t seed, int64_t count) const {
 		zsgrass::Pcg r;
 		r.seed(uint64_t(seed));
@@ -846,6 +1077,7 @@ public:
 		cfg.high_x = hi.x;
 		cfg.high_y = hi.y;
 		cfg.flower_tries = num(d, "flower_tries", 2.2);
+		cfg.flower_part = int(d.get("flower_part", 0));
 		cfg.lod = d.get("lod", Vector4());
 		cfg.lod_grow = d.get("lod_grow", Vector2(1.5, 1.25));
 		cfg.lod_soft = num(d, "lod_soft", 6.0);
@@ -853,6 +1085,8 @@ public:
 		cfg.patch.offset = d.get("patch_offset", Vector2());
 		cfg.patch.region_amount = num(d, "region_amount", 1.0);
 		cfg.patch.bloom_amount = num(d, "bloom_amount", 1.0);
+		cfg.patch.area_amount = num(d, "area_amount", 0.0);
+		cfg.patch.area_edge = d.get("area_edge", Vector2());
 		cfg.patch.plain = d.get("plain", Vector3());
 		cfg.tint_step = num(d, "tint_step", 2.0);
 		cfg.sink = num(d, "sink", 0.04);
@@ -922,6 +1156,28 @@ public:
 		for (int64_t i = 0; i < bk.size(); ++i) cfg.bloom_kinds.push_back(bk[i]);
 		for (int64_t i = 0; i < bv.size(); ++i) cfg.bloom_variants.push_back(bv[i]);
 		cfg.wheat = int(d.get("wheat", -1));
+		const Dictionary alp = d.get("alp", Dictionary());
+		cfg.alp_share = num(alp, "share", 0.0);
+		cfg.alp_tall = num(alp, "tall", 0.5);
+		cfg.alp_wide = num(alp, "wide", 1.1);
+		cfg.alp_tone = alp.get("tone", Color(1, 1, 1));
+		const Vector2 als = alp.get("slope", Vector2(0.87, 0.93));
+		cfg.alp_slope_x = als.x;
+		cfg.alp_slope_y = als.y;
+		const Vector2 alt = alp.get("top", Vector2(79.0, 95.0));
+		cfg.alp_top_x = alt.x;
+		cfg.alp_top_y = alt.y;
+		const Vector2 alz = alp.get("zone_top", Vector2(140.0, 170.0));
+		cfg.alp_zone_top_x = alz.x;
+		cfg.alp_zone_top_y = alz.y;
+		cfg.alp_zone = alp.get("zone", Vector4());
+		cfg.alp_proud = bool(alp.get("proud", false));
+		const Vector2 alb = alp.get("bare", Vector2(0.25, 0.0));
+		cfg.alp_bare_x = alb.x;
+		cfg.alp_bare_y = alb.y;
+		const PackedFloat32Array off = alp.get("off", PackedFloat32Array());
+		cfg.alp_off.assign(off.ptr(), off.ptr() + off.size());
+		cfg.alp_off_box = alp.get("off_box", Vector4());
 		ring_base = Dictionary();
 		ring_base["lod"] = cfg.lod;
 		ring_base["share"] = far_share;
@@ -957,7 +1213,19 @@ public:
 				break;
 			}
 		}
-		if (!any) return out;
+		// The alpine tufts' turf (up to their top, the Peak's the highest).
+		bool alp_any = false;
+		bool alp_high = false;
+		if (cfg.alp_share > 0.0) {
+			const double alp_top = maxf(cfg.alp_top_y, cfg.alp_zone_top_y);
+			for (int64_t i = 0; i < hs_a.size(); ++i) {
+				const double over = double(hs[i]) - cfg.sea_y;
+				if (over > Patch::ALPINE_FROM && over < alp_top) alp_any = true;
+				if (over > 50.0) alp_high = true;
+				if (alp_any && alp_high) break;
+			}
+		}
+		if (!any && !alp_any) return out;
 		Cell cell(cfg, x0, z0, n, pad, hs, rs, ms);
 		const PackedFloat32Array dither_a = d.get("dither", PackedFloat32Array());
 		if (!dither_a.is_empty()) {
@@ -977,11 +1245,41 @@ public:
 			for (int tj = 0; tj < tg; ++tj)
 				for (int ti = 0; ti < tg; ++ti) cell.blooms[size_t(tj * tg + ti)] = cfg.patch.bloom(x0 + ti * cfg.tint_step, z0 + tj * cfg.tint_step);
 		}
-		cell.grow(grow_seed);
-		// The painted ground's patches on each tuft, off a TINT_STEP m grid.
-		std::vector<Color> tints(size_t(tg * tg));
+		// (A cell with no carpet turf grows none of it: the alpine tufts alone.)
+		if (any) cell.grow(grow_seed);
 		Object *field_obj = d.get("field", Variant());
 		ZenScapeLandField *field = Object::cast_to<ZenScapeLandField>(field_obj);
+		if (alp_any) {
+			// The proud crowns (rock_shape.gd `grid`'s 40 m radius: the node
+			// against the ring round it), off the field, or the cell's `ring`
+			// heights (ALP_PROUD_N + 10 a side, ALP_PROUD_STEP m apart, from
+			// x0 - 40, z0 - 40) where it has no native field.
+			const PackedFloat32Array ring = d.get("ring", PackedFloat32Array());
+			const int N = Cell::ALP_PROUD_N, R = 5, D = 4, M = N + 2 * R;
+			const double st = Cell::ALP_PROUD_STEP;
+			if (cfg.alp_proud && alp_high && (field != nullptr || ring.size() == M * M)) {
+				const double zx = double(cfg.alp_zone.x), zz = double(cfg.alp_zone.y), zr = double(cfg.alp_zone.z);
+				const bool all_zone = cfg.alp_zone.w > 0.5 && Vector2(float(x0 + 32.0 - zx), float(z0 + 32.0 - zz)).length() < zr - 600.0 - 50.0;
+				if (!all_zone) {
+					std::vector<float> g(size_t(M * M));
+					for (int jj = 0; jj < M; ++jj)
+						for (int ii = 0; ii < M; ++ii)
+							g[size_t(jj * M + ii)] = field != nullptr ? float(field->height(x0 + (ii - R) * st, z0 + (jj - R) * st)) : ring[jj * M + ii];
+					const double a = 0.7 / (R * st) * 0.0625;
+					cell.proud.resize(size_t(N * N));
+					for (int jj = 0; jj < N; ++jj) {
+						for (int ii = 0; ii < N; ++ii) {
+							const int q = (jj + R) * M + ii + R;
+							const double s = double(g[q]) * 8.0 - g[q - R] - g[q + R] - g[q - R * M] - g[q + R * M] - g[q - D - D * M] - g[q + D - D * M] - g[q - D + D * M] - g[q + D + D * M];
+							cell.proud[size_t(jj * N + ii)] = float(clampd(0.5 + s * a, 0.0, 1.0));
+						}
+					}
+				}
+			}
+			cell.grow_alpine(grow_seed);
+		}
+		// The painted ground's patches on each tuft, off a TINT_STEP m grid.
+		std::vector<Color> tints(size_t(tg * tg));
 		const PackedColorArray cols = d.get("colours", PackedColorArray());
 		for (int tj = 0; tj < tg; ++tj) {
 			for (int ti = 0; ti < tg; ++ti) {
@@ -1034,7 +1332,8 @@ public:
 					if (rec.asset >= 0) continue;
 					const Basis basis = rec.has_pose ? rec.pose : axis_angle(Vector3(0, 1, 0), rec.angle).scaled(Vector3(1, 1, 1) * float(rec.scale));
 					const Transform3D t = (Transform3D(basis, Vector3(float(rec.x), float(rec.h), float(rec.z))) * part.pose) * Transform3D();
-					const Color col = rec.has_tint && colored ? rec.tint : part.tint;
+					Color col = rec.has_tint && colored ? rec.tint : part.tint;
+					if (rec.alpine) col = Color(col.r * cfg.alp_tone.r, col.g * cfg.alp_tone.g, col.b * cfg.alp_tone.b, col.a);
 					const float row[16] = {t.basis.rows[0][0], t.basis.rows[0][1], t.basis.rows[0][2], t.origin.x,
 						t.basis.rows[1][0], t.basis.rows[1][1], t.basis.rows[1][2], t.origin.y,
 						t.basis.rows[2][0], t.basis.rows[2][1], t.basis.rows[2][2], t.origin.z,

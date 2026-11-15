@@ -178,7 +178,8 @@ func setup(game: Node3D) -> void:
 	var m := ShaderMaterial.new()
 	m.shader = preload("res://shaders/water_mark.gdshader")
 	_mark_node.material_override = m
-	_mark_node.custom_aabb = AABB(Vector3(-4000,-200,-4000),Vector3(8000,400,8000))
+	# The whole world (its edge reaches 9.5 km from the middle): a mark is never culled.
+	_mark_node.custom_aabb = AABB(Vector3(-16000,-200,-16000),Vector3(32000,400,32000))
 	add_child(_mark_node)
 	screen = ScreenWet.new()
 	game.add_child(screen)
@@ -551,6 +552,13 @@ func wash(at: Vector3, k: float, size: float) -> void:
 	var foot := Vector3(at.x,_game.water_at(at),at.z)
 	_ring(foot,size,k)
 	_lay_foam(foot,Vector3(sin(_rng.randf()*TAU),0.0,cos(_rng.randf()*TAU)),k,0.0,size*0.5)
+
+## A mark of any size on the water at `at`, for something far bigger than the
+## plane (the whale, scripts/endless/whale.gd): a ring (`ring`) or a foam patch,
+## `k` strong, growing from `from` to `to` m across over `life` s.
+func mark(at: Vector3, ring: bool, k: float, from: float, to: float, life: float) -> void:
+	if not on or k <= 0.02: return
+	_mark(Vector3(at.x,_game.water_at(at),at.z),Vector3.ZERO,life,1 if ring else 0,k,from,to,0.0 if ring else _rng.randf()*TAU,1.0)
 
 func _lay_foam(at: Vector3, ahead: Vector3, k: float, drift: float, size: float, out := Vector3.ZERO) -> void:
 	if k <= 0.02: return

@@ -18,6 +18,8 @@ const SPOTS := {
 	"river": [0,40,18, 0,-60,0],
 	"cruise": [720,520,45, 720,380,10],
 	"high": [720,560,260, 720,400,0],
+	# The high grassy hilltop (over the meadows' turf, the alpine tufts), from 8 m up.
+	"hilltop": [1270,500,8, 1300,530,0],
 	"forest": [330,-150,14, 330,-300,4],
 	# A lone meadow spruce about 25 m off, and a wood 150 to 600 m off from 60 m up.
 	"spruce_near": [-704,-2675,8, -704,-2800,10],
@@ -88,6 +90,7 @@ func aim(n: String) -> void:
 ## it (0 on Metal).
 func frame_time(n: String, count: int) -> Dictionary:
 	var rid := root.get_viewport_rid()
+	if not await drawing("time "+n): return {"view":n,"not_drawing":true}
 	RenderingServer.viewport_set_measure_render_time(rid,true)
 	await _hold(30)
 	var wall: Array[float] = []
@@ -102,6 +105,8 @@ func frame_time(n: String, count: int) -> Dictionary:
 	RenderingServer.viewport_set_measure_render_time(rid,false)
 	wall.sort()
 	gpu.sort()
+	# A window that stopped drawing mid-run steps the loop without frames.
+	check(wall[wall.size()/2] > 0.2 and DisplayServer.window_can_draw(),"time "+n+" drawn","median %.2f ms, can draw %s" % [wall[wall.size()/2],DisplayServer.window_can_draw()])
 	var mean := 0.0
 	for w in wall: mean += w
 	return {"view":n,"wall_ms":snappedf(wall[wall.size()/2],0.01),"wall_mean_ms":snappedf(mean/wall.size(),0.01),
