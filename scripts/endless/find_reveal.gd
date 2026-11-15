@@ -194,6 +194,7 @@ func _begin(i: int) -> void:
 
 ## Framed on row `i`, from wherever the camera is.
 func _turn_to(i: int) -> void:
+	var t0 := Time.get_ticks_usec()
 	var cam: Camera3D = game.camera
 	now = i
 	shown += 1
@@ -204,10 +205,13 @@ func _turn_to(i: int) -> void:
 	_at = ring+Vector3.DOWN*float(e.get("up",0.0))*LOWER
 	var d := clampf(Finds.ring_opening()*1.3*SPANS,DIST.x,DIST.y)
 	var shot := _shot(_at,ring,d,e.get("reveal_side",Vector3.ZERO),Finds.ring_opening()*0.65)
+	if FrameLog.on: FrameLog.add(&"r_shot",(Time.get_ticks_usec()-t0)/1000.0)
+	var t1 := Time.get_ticks_usec()
 	_eye = shot.eye
 	_eye_in = _at+(_eye-_at)*PUSH
 	last = {"id":str(e.id),"eye":_eye,"at":_at,"tried":shot.tried,"clear":shot.clear}
 	game.finds.appear_mark(i,_eye)
+	if FrameLog.on: FrameLog.add(&"r_appear",(Time.get_ticks_usec()-t1)/1000.0)
 	phase = "out"
 	t = 0.0
 	print("reveal: %s at %s, eye %s (%d tried%s)" % [e.id,str(_at.snapped(Vector3.ONE)),str(_eye.snapped(Vector3.ONE)),int(shot.tried),"" if bool(shot.clear) else ", none clear"])

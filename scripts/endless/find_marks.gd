@@ -375,7 +375,9 @@ class Mark extends Node3D:
 		_glint.scale = Vector3.ONE*(1.0+5.0*shine*(0.7+0.3*sin(_rise*9.0)))
 		if not _rang and k >= RISE_BELL:
 			_rang = true
+			var tb := Time.get_ticks_usec()
 			_bell.stream = load(RISE_SOUND)
+			if FrameLog.on: FrameLog.add(&"r_bell",(Time.get_ticks_usec()-tb)/1000.0)
 			_bell.pitch_scale = 0.75
 			_bell.play()
 		if _rise >= RISE_FOR+RISE_GLOW:

@@ -1443,7 +1443,13 @@ func _process(delta: float) -> void:
 	if photo.active:
 		photo.step(minf(delta,1.0/20.0))
 		return
-	if reveal.step(delta): return
+	FrameLog.start()
+	if reveal.step(delta):
+		# The held frames logged too (a reveal's first use lands in them).
+		if FrameLog.on:
+			FrameLog.mark(&"reveal")
+			FrameLog.end(0.0,plane.position,float(plane.speed))
+		return
 	tick(minf(delta,1.0/20.0))
 
 ## One frame: the plane flown, drawn and followed, the land streamed round

@@ -107,6 +107,26 @@ func setup(g: Node3D) -> void:
 	_leaf_mat = ShaderMaterial.new()
 	_leaf_mat.shader = LEAF_SHADER
 	_leaf_mat.set_shader_parameter("leaf_tex",_leaf_texture())
+	_warm()
+
+## The fell's first use done at setup: a burst of gold leaves and of each
+## debris kind, too small to see, drawn once before the eye. Their pipelines
+## are built under the start's first frames, not at the first tree felled,
+## where their 13 pipelines held a frame up to ~0.5 s rendered (`--gold-warm=0`
+## leaves them to the fell). The ring's rise has no first-use cost of its own.
+func _warm() -> void:
+	if "--gold-warm=0" in preload("res://scripts/launch_args.gd").user_args(): return
+	var cam: Camera3D = game.get("camera")
+	if cam == null: return
+	var p := _leaf_burst(Vector3.UP,2,0.2)
+	p.lifetime = 0.5
+	(p.draw_pass_1 as QuadMesh).size = Vector2.ONE*0.001
+	p.position = Vector3(0.0,0.0,-6.0)
+	cam.add_child(p)
+	p.emitting = true
+	p.finished.connect(p.queue_free)
+	var debris: Variant = game.get("debris")
+	if debris != null: debris.warm(cam,Vector3(0.0,0.0,-6.0))
 
 ## The book's name for tree `id` down.
 static func key(id: String) -> String:
@@ -400,6 +420,7 @@ func _depth(site: Dictionary, q: Vector3, pad: float) -> float:
 
 ## Flown into on a surge roll: down it goes.
 func _fell(site: Dictionary, at: Vector3) -> void:
+	var t0 := Time.get_ticks_usec()
 	var plane = game.plane
 	var v: Vector3 = plane.velocity
 	var flat := Vector3(v.x,0.0,v.z)
@@ -407,7 +428,9 @@ func _fell(site: Dictionary, at: Vector3) -> void:
 	falls += 1
 	site.down = true
 	site.way = flat
+	var ts := Time.get_ticks_usec()
 	game.book.open_up(key(str(site.id)))
+	if FrameLog.on: FrameLog.add(&"g_save",(Time.get_ticks_usec()-ts)/1000.0)
 	var smash: Variant = game.get("smash")
 	if smash != null:
 		smash.hub.pause(int(smash.HIT_STOP.x),smash.HIT_STOP.y)
@@ -426,6 +449,7 @@ func _fell(site: Dictionary, at: Vector3) -> void:
 	_leaves(crown,flat,90,float(t.radius)*GROW*WIDE)
 	_lay(site,flat,false)
 	felled.emit(str(site.id))
+	if FrameLog.on: FrameLog.add(&"g_fell",(Time.get_ticks_usec()-t0)/1000.0)
 
 ## Flown into without the roll: any tree's toll on the plane (TreeKnock's
 ## numbers), and it sways and stands.
@@ -505,12 +529,14 @@ func _fall_step(site: Dictionary, delta: float) -> void:
 		var t: Dictionary = site.tree
 		var crown := pivot.position+Vector3(f.way)*float(site.height)*0.65
 		if int(f.bounces) == 0:
+			var t0 := Time.get_ticks_usec()
 			game.sound.shot("thud",0.9,0.75,crown)
 			game.sound.shot("leaves",0.6,0.7,crown)
 			game.debris.burst("needles",crown,Vector3.UP,true)
 			_leaves(crown,Vector3.UP,60,float(t.radius)*GROW*WIDE)
 			game.feel_hit(0.008,2.0)
 			_settled(site,false)
+			if FrameLog.on: FrameLog.add(&"g_thud",(Time.get_ticks_usec()-t0)/1000.0)
 		if int(f.bounces) >= BOUNCES or w < 0.4:
 			site.erase("fall")
 			pivot.basis = Basis(Vector3(f.axis),a)
@@ -541,6 +567,14 @@ func _hand(site: Dictionary) -> void:
 ## tumble and flutter down, carried a little by the air, thinning out by the
 ## end of their fall.
 func _leaves(at: Vector3, way: Vector3, n: int, radius: float) -> void:
+	var p := _leaf_burst(way,n,radius)
+	p.position = at
+	add_child(p)
+	p.emitting = true
+	p.finished.connect(p.queue_free)
+
+## The leaves' particles (not yet in the tree): `n` leaves thrown toward `way`.
+func _leaf_burst(way: Vector3, n: int, radius: float) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
 	p.one_shot = true
 	p.explosiveness = 0.9
@@ -591,7 +625,4 @@ func _leaves(at: Vector3, way: Vector3, n: int, radius: float) -> void:
 	quad.material = _leaf_mat
 	p.draw_pass_1 = quad
 	p.visibility_aabb = AABB(Vector3(-40.0,-60.0,-40.0),Vector3(80.0,80.0,80.0))
-	p.position = at
-	add_child(p)
-	p.emitting = true
-	p.finished.connect(p.queue_free)
+	return p
