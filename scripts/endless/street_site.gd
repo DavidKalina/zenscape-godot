@@ -103,6 +103,50 @@ static func _smoothed() -> Array[Vector2]:
 		pts = out
 	return pts
 
+## The grass kept off the way (endless_grass.gd grow_cell, over its cell's
+## LandField.grid, as agora_site.gd's): the nodes within GRASS_HALF of a paved
+## bay's centre line read as a river's water (`river` -1), so no tuft grows
+## through the slabs or the kerbs. A broken bay keeps grass in ragged patches
+## between its slabs; a bay with no paving keeps it all. Seed 1 only.
+const GRASS_HALF := 11.5
+static func grass_off(got: Dictionary, land_seed: int, x0: float, z0: float, n: int, pad: int) -> void:
+	if land_seed != 1 or not wanted() or not got.has("river"): return
+	var gx0 := x0-pad
+	var gz0 := z0-pad
+	var gx1 := gx0+n-1
+	var gz1 := gz0+n-1
+	var reach := GRASS_HALF+SEG
+	if gx1 < -668.0-reach or gx0 > J.x+reach or gz1 < J.y-reach or gz0 > -4600.0+reach: return
+	var st := stations()
+	var rs: PackedFloat32Array = got.river
+	var hit := false
+	for k in range(st.size()-1):
+		if k in GONE_PAVING: continue
+		var a: Vector2 = st[k][0]
+		var b: Vector2 = st[k+1][0]
+		var i0 := maxi(ceili(minf(a.x,b.x)-GRASS_HALF-gx0),0)
+		var i1 := mini(floori(maxf(a.x,b.x)+GRASS_HALF-gx0),n-1)
+		var j0 := maxi(ceili(minf(a.y,b.y)-GRASS_HALF-gz0),0)
+		var j1 := mini(floori(maxf(a.y,b.y)+GRASS_HALF-gz0),n-1)
+		if i0 > i1 or j0 > j1: continue
+		var ab := b-a
+		var len2 := ab.length_squared()
+		var broken := k in BROKEN_PAVING
+		for jj in range(j0,j1+1):
+			for ii in range(i0,i1+1):
+				var p := Vector2(gx0+ii,gz0+jj)
+				var raw := (p-a).dot(ab)/len2
+				# No bare apron past the street's two ends.
+				if (k == 0 and raw < -0.08) or (k == st.size()-2 and raw > 1.08): continue
+				var t := clampf(raw,0.0,1.0)
+				if p.distance_squared_to(a+ab*t) > GRASS_HALF*GRASS_HALF: continue
+				# A broken bay: grass left in 3 m patches, about four in ten.
+				if broken and (hash(Vector2i(floori(p.x/3.0),floori(p.y/3.0)))&1023) < 410: continue
+				var at := jj*n+ii
+				rs[at] = minf(rs[at],-1.0)
+				hit = true
+	if hit: got.river = rs
+
 ## The stations: [centre XZ, direction XZ], start to end, counted back from
 ## END_SHORT short of the line's end so the last stands at J.
 static func stations() -> Array:
