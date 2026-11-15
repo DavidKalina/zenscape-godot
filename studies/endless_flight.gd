@@ -241,6 +241,9 @@ const RUSH_HZ := Vector3(7.3,11.9,17.1)
 ## wheels. Skimming for the rumble: within SKIM_LOW m of the land (times
 ## the plane's size) at cruise or more.
 const VAPOUR_TURN := Vector2(0.7,1.5)
+## A barrel roll pulls vapour too (at least this much while it turns), so the
+## tips lay a spiral.
+const ROLL_VAPOUR := 0.85
 const SKIM_LOW := 4.0
 ## The near misses' feel: a scored moment widens the view PUNCH degrees by
 ## its closeness, eased in over PUNCH_IN s and dying over PUNCH_FADE s. The
@@ -1487,6 +1490,7 @@ func tick(delta: float) -> void:
 	var ground := Callable(self,"plane_ground")
 	_pull = _pull_of(delta)
 	if smash != null: _pull = maxf(_pull,smash.vapour)
+	if bool(plane.rolling) and not hand_landing.on_ground(): _pull = maxf(_pull,ROLL_VAPOUR)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
 	FrameLog.mark(&"figure")
 	_events = events

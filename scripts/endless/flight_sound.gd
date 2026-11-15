@@ -61,6 +61,13 @@ const FOLEY := "res://assets/audio/foley/"
 const BURROWER := "res://assets/audio/burrower/"
 const BORE_AUDIO := "res://assets/audio/bore/"
 const OLD := "res://assets/audio/"
+## The calm mix (2026-11-14: flying read as too loud and grating): each voice's
+## share of its old gain, the air's brightness above RUSH_CUT.x, the swells'
+## attack, and the gap between whooshes. `--sound-mix=old` plays the old mix.
+const CALM := {"rush":0.5,"whistle":0.35,"wires":0.4,"howl":0.6,"engine":0.7,
+	"whoosh":0.6,"swish":0.6,"thin":0.6,"bright":0.45,"air_attack":2.0,"whoosh_gap":1.8}
+const LOUD := {"rush":1.0,"whistle":1.0,"wires":1.0,"howl":1.0,"engine":1.0,
+	"whoosh":1.0,"swish":1.0,"thin":1.0,"bright":1.0,"air_attack":5.0,"whoosh_gap":1.0}
 
 # --- Tuning ----------------------------------------------------------------------
 
@@ -103,6 +110,21 @@ const WHOOSH_AT := 0.4
 const WHOOSH_GAIN := 0.22
 const WHOOSH_GAP := 0.7
 const WHOOSH_SPEED := 9.0
+## The moves. A barrel roll (the plane's `rolling` coming on): a whoosh and a
+## light swish, and the rush swelling by ROLL_RUSH while it turns. A big fast
+## turn (`pull` rising past TURN_AT, `fast` past TURN_FAST, not in a roll):
+## a deep whoosh, no sooner than TURN_GAP s after the last; the howl leans in
+## by TURN_HOWL of the pull.
+const ROLL_WHOOSH := 0.2
+const ROLL_SWISH := 0.07
+const ROLL_PITCH := 1.12
+const ROLL_RUSH := 0.05
+const TURN_AT := 0.55
+const TURN_FAST := 0.3
+const TURN_GAP := 2.5
+const TURN_GAIN := Vector2(0.14,0.24)
+const TURN_PITCH := Vector2(0.7,0.82)
+const TURN_HOWL := 0.05
 ## The ray ring round the plane: its reach is the larger of PROBE_SPANS
 ## wingspans and PROBE_LEAD seconds of flight (m), PROBE_RAYS rays a frame;
 ## the ray straight down counts PROBE_DOWN of a side's (skimming the land is
@@ -306,6 +328,13 @@ var _air_lpf: AudioEffectLowPassFilter
 var _reverb: AudioEffectReverb
 var _eq: AudioEffectEQ6
 var _off := false
+var _was_rolling := false
+var _was_pull := 0.0
+var _turn_wait := 0.0
+## Whether the plane is in a barrel roll this frame (for probes).
+var rolling := false
+## The mix in play (CALM, or LOUD under `--sound-mix=old`).
+var mix: Dictionary = CALM
 
 # --- Buses and settings --------------------------------------------------------
 
@@ -386,6 +415,7 @@ func _init() -> void:
 func _ready() -> void:
 	_rng.randomize()
 	_probe.resize(PROBE_DIRS.size())
+	if "--sound-mix=old" in preload("res://scripts/launch_args.gd").user_args(): mix = LOUD
 	audible = wanted()
 	if audible:
 		ensure_buses()
@@ -406,6 +436,7 @@ func _ready() -> void:
 	breeze = _bed(OLD+"wind-bed.wav",AMBIENCE)
 	thin = _bed(KIT+"thin-wind-loop.wav",AMBIENCE)
 	shore = _bed(OLD+"shore-bed.wav",AMBIENCE)
+	for bed in [rush,whistle,howl]: bed.attack = float(mix.air_attack)
 	for bed in [breeze,thin,shore]:
 		bed.attack = 0.7
 		bed.release = 0.6
@@ -585,6 +616,7 @@ func step(delta: float, game: Node3D, events: Dictionary, boost: float) -> void:
 	else:
 		_probe_step(delta,game,speed)
 	_bore(delta,game)
+	_moves(delta,plane,on_wheels)
 	_air(boost,not on_wheels)
 	_engine(plane,landing,boost,speed,cruise,on_wheels)
 	_wheels(landing,speed,on_wheels)
@@ -615,14 +647,27 @@ func _flight(delta: float, velocity: Vector3, speed: float, on_wheels: bool) -> 
 	pull = lerpf(pull,want,1.0-exp(-delta/0.15))
 	dive = lerpf(dive,sink,1.0-exp(-delta/0.3))
 
+## The barrel roll's whoosh and the big turn's.
+func _moves(delta: float, plane, on_wheels: bool) -> void:
+	rolling = bool(plane.get("rolling")) and not on_wheels
+	if rolling and not _was_rolling:
+		shot("whoosh",ROLL_WHOOSH*(0.7+0.3*fast),ROLL_PITCH+0.1*fast,Vector3.INF,AIR)
+		shot("swish",ROLL_SWISH,1.0,Vector3.INF,AIR)
+	_was_rolling = rolling
+	_turn_wait -= delta
+	if not rolling and _was_pull < TURN_AT and pull >= TURN_AT and fast >= TURN_FAST and _turn_wait <= 0.0:
+		_turn_wait = TURN_GAP
+		shot("whoosh",lerpf(TURN_GAIN.x,TURN_GAIN.y,fast),lerpf(TURN_PITCH.x,TURN_PITCH.y,fast),Vector3.INF,AIR)
+	_was_pull = pull
+
 ## The rush, whistle and howl, and the air's brightness.
 func _air(boost: float, flying: bool) -> void:
-	rush.goal = lerpf(RUSH.x,RUSH.y,pow(fast,1.6))*(1.0 if fast > 0.0 or flying else 0.0)+RUSH_NEAR*near+RUSH_DIVE*dive+RUSH_PULL*pull+RUSH_BOOST*boost*fast
+	rush.goal = (lerpf(RUSH.x,RUSH.y,pow(fast,1.6))*(1.0 if fast > 0.0 or flying else 0.0)+RUSH_NEAR*near+RUSH_DIVE*dive+RUSH_PULL*pull+RUSH_BOOST*boost*fast)*float(mix.rush)+(ROLL_RUSH if rolling else 0.0)
 	rush.pitch_goal = 0.85+0.3*fast+0.08*near+0.06*dive+OVER_PITCH*over
-	if _air_lpf != null: _air_lpf.cutoff_hz = clampf((RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over)*lerpf(1.0,MUFFLE_CUT,clampf(muffle,0.0,1.0))*lerpf(1.0,BORE_AIR_CUT,_bore_k()),200.0,18000.0)
-	whistle.goal = WHISTLE*smoothstep(0.4,1.0,fast)+WHISTLE_NEAR*near*fast+WHISTLE_PULL*pull*fast+WHISTLE_DIVE*dive*(0.4+0.6*fast)+WHISTLE_OVER*over
+	if _air_lpf != null: _air_lpf.cutoff_hz = clampf((RUSH_CUT.x+((RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over)*float(mix.bright))*lerpf(1.0,MUFFLE_CUT,clampf(muffle,0.0,1.0))*lerpf(1.0,BORE_AIR_CUT,_bore_k()),200.0,18000.0)
+	whistle.goal = (WHISTLE*smoothstep(0.4,1.0,fast)+WHISTLE_NEAR*near*fast+WHISTLE_PULL*pull*fast+WHISTLE_DIVE*dive*(0.4+0.6*fast)+WHISTLE_OVER*over)*float(mix.whistle)
 	whistle.pitch_goal = 0.9+0.25*fast+0.08*dive+OVER_PITCH*over
-	howl.goal = HOWL*enclosed+0.04*near
+	howl.goal = (HOWL*enclosed+0.04*near)*float(mix.howl)+TURN_HOWL*pull*fast
 	howl.pitch_goal = 0.8+0.4*fast
 
 ## In a bore (the study's `plane_figure.bore`: the tube's open middle), or
@@ -657,11 +702,11 @@ func _engine(plane, landing, boost: float, speed: float, cruise: float, on_wheel
 	# learns whether it was already running.
 	if _engine_was >= 0.0 and running > 0.02 and _engine_was <= 0.02 and on_wheels: shot("start",ENGINE_START)
 	_engine_was = running
-	engine.goal = running*(ENGINE+ENGINE_THROTTLE*maxf(throttle,0.0)-ENGINE_BRAKE*maxf(-throttle,0.0)+ENGINE_FAST*fast)
+	engine.goal = running*(ENGINE+ENGINE_THROTTLE*maxf(throttle,0.0)-ENGINE_BRAKE*maxf(-throttle,0.0)+ENGINE_FAST*fast)*float(mix.engine)
 	engine.pitch_goal = clampf(ENGINE_PITCH+ENGINE_PER_CRUISE*speed/cruise+ENGINE_PITCH_THROTTLE*throttle,0.6,1.7)*lerpf(ENGINE_SPUN_DOWN,1.0,running)
 	var strain := 0.0
 	if not on_wheels: strain = maxf(maxf(absf(float(plane.knife)),clampf(float(plane.drift),0.0,1.0)),pull)
-	wires.goal = WIRES*strain*(0.4+0.6*fast)
+	wires.goal = WIRES*strain*(0.4+0.6*fast)*float(mix.wires)
 	wires.pitch_goal = 0.95+0.15*fast+0.05*clampf(float(plane.drift),0.0,1.0)
 
 ## On the wheels: the rumble by the roll's pace, the skid by the grit.
@@ -701,12 +746,12 @@ func _near(events: Dictionary) -> void:
 	var m: Variant = events.get("near")
 	if m is Dictionary:
 		var k := clampf(float((m as Dictionary).get("k",0.0)),0.0,1.0)
-		shot("swish",lerpf(NEAR.x,NEAR.y,k),lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k),Vector3.INF,AIR)
-		shot("whoosh",lerpf(NEAR.x,NEAR.y,k)*0.8,lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k)+0.1,Vector3.INF,AIR)
+		shot("swish",lerpf(NEAR.x,NEAR.y,k)*float(mix.swish),lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k),Vector3.INF,AIR)
+		shot("whoosh",lerpf(NEAR.x,NEAR.y,k)*0.8*float(mix.whoosh),lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k)+0.1,Vector3.INF,AIR)
 		if float((m as Dictionary).get("line_step",0.0)) > 0.0:
 			if bool((m as Dictionary).get("flourish",false)): shot("line-flourish",LINE_FLOURISH,1.0)
 			else: shot("line-switch",LINE_SWITCH,1.3)
-		_whoosh_wait = WHOOSH_GAP
+		_whoosh_wait = WHOOSH_GAP*float(mix.whoosh_gap)
 		if str((m as Dictionary).get("surface","")) == "tree": shot("leaves",SCRAPE*0.5,1.1)
 	var k: Variant = events.get("knock")
 	if k is Dictionary:
@@ -774,8 +819,8 @@ func _probe_step(delta: float, game: Node3D, speed: float) -> void:
 	side = lerpf(side,clampf(lean,-1.0,1.0),1.0-exp(-delta/0.2))
 	_whoosh_wait -= delta
 	if was < WHOOSH_AT and near >= WHOOSH_AT and _whoosh_wait <= 0.0 and speed > WHOOSH_SPEED:
-		_whoosh_wait = WHOOSH_GAP
-		shot("whoosh",WHOOSH_GAIN*(0.6+0.4*fast),0.9+0.2*fast,from+right*side*5.0,AIR,true)
+		_whoosh_wait = WHOOSH_GAP*float(mix.whoosh_gap)
+		shot("whoosh",WHOOSH_GAIN*float(mix.whoosh)*(0.6+0.4*fast),0.9+0.2*fast,from+right*side*5.0,AIR,true)
 
 func _settle_probe(delta: float) -> void:
 	var k := 1.0-exp(-delta/0.5)
@@ -814,7 +859,7 @@ func _ambience(on_wheels: bool) -> void:
 		var swell := smoothstep(SWELL_AT.x,SWELL_AT.y,wind)
 		breeze.goal = lerpf(breeze.goal,breeze.goal*share+WIND_SWELL*swell,wind_reach)
 		breeze.pitch_goal += WIND_PITCH*swell*wind_reach
-	thin.goal = THIN*smoothstep(THIN_HEIGHT.x,THIN_HEIGHT.y,alt)
+	thin.goal = THIN*float(mix.thin)*smoothstep(THIN_HEIGHT.x,THIN_HEIGHT.y,alt)
 	thin.pitch_goal = 0.9+0.15*smoothstep(THIN_HEIGHT.x,THIN_HEIGHT.y,alt)
 	# A coast (water on some sides, land on others) is a shore; open sea a
 	# lesser surf; both fade with height over the water.
