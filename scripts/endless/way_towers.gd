@@ -22,6 +22,7 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const TempleSite = preload("res://scripts/endless/temple_site.gd")
 const AqueductSite = preload("res://scripts/endless/aqueduct_site.gd")
 const StreetSite = preload("res://scripts/endless/street_site.gd")
+const AgoraSite = preload("res://scripts/endless/agora_site.gd")
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -45,6 +46,8 @@ var sites := {}
 var aqueduct: Node3D
 ## The colonnaded street (street_site.gd), or null with `--street=0`.
 var street: Node3D
+## The agora (agora_site.gd), or null with `--agora=0`.
+var agora: Node3D
 
 func setup(g: Node3D) -> void:
 	game = g
@@ -58,6 +61,11 @@ func setup(g: Node3D) -> void:
 		street.name = "Street"
 		add_child(street)
 		street.setup(g)
+	if AgoraSite.wanted():
+		agora = AgoraSite.new()
+		agora.name = "Agora"
+		add_child(agora)
+		agora.setup(g)
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
 		var temple: bool = TempleSite.has(str(site.name)) and TempleSite.wanted()
@@ -86,6 +94,7 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 		out.append([p,1.0,0.0,CLEAR,CLEAR])
 	out.append_array(AqueductSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(StreetSite.tree_keepouts(x0,z0,x1,z1))
+	out.append_array(AgoraSite.tree_keepouts(x0,z0,x1,z1))
 	return out
 
 ## One frame: the towers streamed round the eye.
@@ -98,6 +107,7 @@ func step(eye: Vector3) -> void:
 		if sites[handle].temple and str(sites[handle].state) == "building": kit_busy = true
 	if aqueduct != null and aqueduct.step(eye,kit_busy,here): kit_busy = true
 	if street != null and street.step(eye,kit_busy,here): kit_busy = true
+	if agora != null and agora.step(eye,kit_busy,here): kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]
 		var d: float = (site.xf as Transform3D).origin.distance_to(eye) if here else INF

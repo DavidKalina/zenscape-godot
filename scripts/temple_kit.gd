@@ -43,6 +43,17 @@ const PIECES: Array[StringName] = [
 	&"street_arch",
 	&"street_lintel_cross",
 	&"street_stump",
+	# The agora (art/blender/temple_kit/agora_build.py; scripts/endless/agora_site.gd).
+	&"agora_stoa_wall",
+	&"agora_stoa_roof",
+	&"agora_stoa_roof_broken",
+	&"agora_roof_rubble",
+	&"agora_gate",
+	&"agora_paving",
+	&"agora_paving_broken",
+	&"agora_altar",
+	&"agora_plinth",
+	&"agora_drum",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
