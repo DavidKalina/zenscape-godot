@@ -25,6 +25,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
 const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
+const LEAF_SHADER := preload("res://shaders/golden_leaf.gdshader")
 
 ## The trees, by find id: `at` the plan tree's spot (world XZ, the nearest
 ## tree to it within PICK m is the one), `wood` what kind it stands in.
@@ -76,7 +77,8 @@ var falls := 0
 var shrugs := 0
 var _gold: StandardMaterial3D
 var _bark: StandardMaterial3D
-var _leaf_mat: StandardMaterial3D
+var _leaf_mat: ShaderMaterial
+var _glint_mat: StandardMaterial3D
 
 func _init() -> void:
 	name = "GoldenTrees"
@@ -102,12 +104,9 @@ func setup(g: Node3D) -> void:
 	_bark.emission_enabled = true
 	_bark.emission = BARK
 	_bark.emission_energy_multiplier = GLOW_DAY*0.5
-	_leaf_mat = StandardMaterial3D.new()
-	_leaf_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_leaf_mat.albedo_color = Color(1.0,0.82,0.3)
-	_leaf_mat.vertex_color_use_as_albedo = true
-	_leaf_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	_leaf_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_leaf_mat = ShaderMaterial.new()
+	_leaf_mat.shader = LEAF_SHADER
+	_leaf_mat.set_shader_parameter("leaf_tex",_leaf_texture())
 
 ## The book's name for tree `id` down.
 static func key(id: String) -> String:
@@ -238,34 +237,105 @@ func _mesh(mesh: Mesh, xf: Transform3D, mat: Material) -> MeshInstance3D:
 	mi.set_meta("skip_reflection",true)
 	return mi
 
-## Gold glints drifting up off the crown: the tell by day and by night.
-func _glints(height: float, radius: float) -> CPUParticles3D:
-	var p := CPUParticles3D.new()
+## A soft four-point star on a round glow, alpha only in its edge (white).
+static func _star_texture() -> ImageTexture:
+	var n := 64
+	var img := Image.create(n,n,false,Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var d := Vector2((x+0.5)/n-0.5,(y+0.5)/n-0.5)*2.0
+			var r := d.length()
+			var core := exp(-r*r*14.0)
+			var ray := exp(-absf(d.x)*26.0)*exp(-absf(d.y)*2.6)+exp(-absf(d.y)*26.0)*exp(-absf(d.x)*2.6)
+			var a := clampf(core*0.9+ray*0.8,0.0,1.0)*clampf(1.0-r*r,0.0,1.0)
+			img.set_pixel(x,y,Color(1.0,1.0,1.0,a))
+	return ImageTexture.create_from_image(img)
+
+## A leaf: a pointed oval with a darker midrib and veins, alpha-cut at its edge
+## (the quad is 1 m wide by 1 m tall; the leaf lies along its length).
+static func _leaf_texture() -> ImageTexture:
+	var n := 96
+	var img := Image.create(n,n,true,Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var u := (x+0.5)/n*2.0-1.0
+			var v := (y+0.5)/n*2.0-1.0
+			var along := (v+0.92)/1.84
+			var half := 0.46*pow(sin(clampf(along,0.0,1.0)*PI),0.75)*(1.0-0.25*along)
+			var edge := half-absf(u)
+			var a := clampf(edge*n*0.5,0.0,1.0) if along > 0.0 and along < 1.0 else 0.0
+			var rib := exp(-u*u*400.0)
+			var vein := 0.5+0.5*sin((along*9.0-absf(u)*5.0)*PI)
+			var shade := 1.0-0.28*rib-0.07*vein*clampf(absf(u)*4.0,0.0,1.0)
+			var tone := lerpf(1.0,0.78,clampf(absf(u)/maxf(half,0.01),0.0,1.0)*0.5)
+			var c := shade*tone
+			img.set_pixel(x,y,Color(c,c*0.97,c*0.9,a))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+## Gold glints off the crown: soft sparkles that fade in, flare and go out,
+## sinking and drifting on the wind, big and small. The tell by day and night.
+func _glints(height: float, radius: float) -> GPUParticles3D:
+	var p := GPUParticles3D.new()
 	p.name = "Glints"
-	p.amount = 40
-	p.lifetime = 3.0
-	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-	p.emission_sphere_radius = maxf(radius,1.5)
-	p.direction = Vector3.UP
-	p.spread = 30.0
-	p.initial_velocity_min = 0.3
-	p.initial_velocity_max = 1.0
-	p.gravity = Vector3(0.0,0.25,0.0)
-	p.scale_amount_min = 0.25
-	p.scale_amount_max = 0.5
+	p.amount = 34
+	p.lifetime = 4.0
+	p.randomness = 0.8
+	p.local_coords = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = maxf(radius,1.5)*1.1
+	pm.direction = Vector3.UP
+	pm.spread = 180.0
+	pm.initial_velocity_min = 0.1
+	pm.initial_velocity_max = 0.6
+	pm.gravity = Vector3(0.35,-0.25,0.15)
+	pm.damping_min = 0.3
+	pm.damping_max = 0.8
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.8
+	pm.turbulence_noise_scale = 1.6
+	pm.turbulence_influence_min = 0.05
+	pm.turbulence_influence_max = 0.2
+	pm.angle_min = -25.0
+	pm.angle_max = 25.0
+	pm.scale_min = 0.5
+	pm.scale_max = 2.4
+	var tw := Curve.new()
+	tw.add_point(Vector2(0.0,0.0))
+	tw.add_point(Vector2(0.22,0.55))
+	tw.add_point(Vector2(0.34,1.0))
+	tw.add_point(Vector2(0.46,0.5))
+	tw.add_point(Vector2(0.58,0.85))
+	tw.add_point(Vector2(1.0,0.0))
+	var tt := CurveTexture.new()
+	tt.curve = tw
+	pm.scale_curve = tt
 	var fade := Gradient.new()
 	fade.set_color(0,Color(1.0,0.85,0.4,0.0))
-	fade.set_color(1,Color(1.0,0.85,0.4,0.0))
-	fade.add_point(0.3,Color(1.0,0.9,0.5,1.0))
-	p.color_ramp = fade
+	fade.set_color(1,Color(1.0,0.78,0.3,0.0))
+	fade.add_point(0.25,Color(1.0,0.9,0.5,1.0))
+	fade.add_point(0.6,Color(1.0,0.86,0.45,0.8))
+	var ft := GradientTexture1D.new()
+	ft.gradient = fade
+	pm.color_ramp = ft
+	p.process_material = pm
 	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE*0.35
-	var m := _leaf_mat.duplicate() as StandardMaterial3D
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.albedo_color = Color(1.0,0.9,0.5)
-	quad.material = m
-	p.mesh = quad
-	p.visibility_aabb = AABB(Vector3(-radius-4.0,-height,-radius-4.0),Vector3(radius*2.0+8.0,height*2.0+8.0,radius*2.0+8.0))
+	quad.size = Vector2.ONE*0.9
+	if _glint_mat == null:
+		_glint_mat = StandardMaterial3D.new()
+		_glint_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_glint_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_glint_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_glint_mat.vertex_color_use_as_albedo = true
+		_glint_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		_glint_mat.albedo_texture = _star_texture()
+		_glint_mat.albedo_color = Color(2.4,1.8,0.8)
+		_glint_mat.disable_receive_shadows = true
+	quad.material = _glint_mat
+	p.draw_pass_1 = quad
+	p.visibility_aabb = AABB(Vector3(-radius-6.0,-height,-radius-6.0),Vector3(radius*2.0+12.0,height*2.0+8.0,radius*2.0+12.0))
 	return p
 
 func _free(site: Dictionary) -> void:
@@ -446,7 +516,7 @@ func _fall_step(site: Dictionary, delta: float) -> void:
 
 ## Down: the glints out, the find's anchor handed over the stump.
 func _settled(site: Dictionary, quiet: bool) -> void:
-	if site.get("glints") != null and is_instance_valid(site.glints): (site.glints as CPUParticles3D).emitting = false
+	if site.get("glints") != null and is_instance_valid(site.glints): (site.glints as GPUParticles3D).emitting = false
 	if not quiet: _hand(site)
 
 ## The ring's anchor: over the stump (the table's `up` over it).
@@ -458,34 +528,60 @@ func _hand(site: Dictionary) -> void:
 	if p == Vector3.INF: p = Vector3(at.x,float(game.field.height(at.x,at.y)),at.y)
 	finds.anchor(key(str(site.id)),p)
 
-## A burst of gold leaves at `at`, thrown toward `way`.
+## A burst of gold leaves at `at`, thrown toward `way`: lit leaf pieces that
+## tumble and flutter down, carried a little by the air, thinning out by the
+## end of their fall.
 func _leaves(at: Vector3, way: Vector3, n: int, radius: float) -> void:
-	var p := CPUParticles3D.new()
+	var p := GPUParticles3D.new()
 	p.one_shot = true
-	p.explosiveness = 0.85
-	p.amount = n
-	p.lifetime = 3.2
-	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-	p.emission_sphere_radius = maxf(radius*0.8,1.0)
-	p.direction = (way+Vector3.UP*0.5).normalized()
-	p.spread = 70.0
-	p.initial_velocity_min = 2.0
-	p.initial_velocity_max = 8.0
-	p.gravity = Vector3(0.0,-2.0,0.0)
-	p.damping_min = 1.5
-	p.damping_max = 3.0
-	p.angular_velocity_min = -300.0
-	p.angular_velocity_max = 300.0
-	p.scale_amount_min = 0.6
-	p.scale_amount_max = 1.2
+	p.explosiveness = 0.9
+	p.amount = int(n*1.5)
+	p.lifetime = 9.0
+	p.randomness = 0.5
+	p.local_coords = false
+	p.fixed_fps = 0
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = maxf(radius*0.8,1.0)
+	pm.direction = (way+Vector3.UP*0.5).normalized()
+	pm.spread = 70.0
+	pm.initial_velocity_min = 2.0
+	pm.initial_velocity_max = 9.0
+	var air := Vector3.ZERO
+	var wind: Variant = game.plane.get("wind")
+	if wind != null: air = Vector3((wind as Vector3).x,0.0,(wind as Vector3).z)
+	pm.gravity = Vector3(1.2,-5.5,0.7)+air*0.4
+	pm.damping_min = 1.6
+	pm.damping_max = 2.6
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 2.4
+	pm.turbulence_noise_scale = 1.3
+	pm.turbulence_influence_min = 0.1
+	pm.turbulence_influence_max = 0.35
+	pm.angle_min = 0.0
+	pm.angle_max = 360.0
+	pm.scale_min = 0.6
+	pm.scale_max = 1.3
+	var life := Curve.new()
+	life.add_point(Vector2(0.0,1.0))
+	life.add_point(Vector2(0.7,1.0))
+	life.add_point(Vector2(1.0,0.0))
+	var lt := CurveTexture.new()
+	lt.curve = life
+	pm.scale_curve = lt
 	var tint := Gradient.new()
-	tint.set_color(0,Color(1.0,0.86,0.35))
-	tint.set_color(1,Color(0.85,0.55,0.12))
-	p.color_initial_ramp = tint
+	tint.set_color(0,Color(1.0,0.8,0.22))
+	tint.set_color(1,Color(0.85,0.42,0.06))
+	tint.add_point(0.5,Color(1.0,0.62,0.12))
+	var tt := GradientTexture1D.new()
+	tt.gradient = tint
+	pm.color_initial_ramp = tt
+	p.process_material = pm
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.32,0.2)
+	quad.size = Vector2(0.5,0.72)
 	quad.material = _leaf_mat
-	p.mesh = quad
+	p.draw_pass_1 = quad
+	p.visibility_aabb = AABB(Vector3(-40.0,-60.0,-40.0),Vector3(80.0,80.0,80.0))
 	p.position = at
 	add_child(p)
 	p.emitting = true
