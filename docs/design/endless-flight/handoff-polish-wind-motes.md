@@ -288,3 +288,9 @@ follow-up lane on it was stopped with nothing committed.
 
 After a flight: "too much now". Petals (the drift's and the wash's) are off
 unless `--petals` or `--petals=X` is passed. The wind-borne blades stay on.
+
+## 2026-11-14: wind blades off by default
+
+After a second flight the wind-borne blades went too. They are off unless
+`--wind-blades` or `--wind-blades=X` is passed. With petals and the far layer
+also off, the air is back to pollen and the skim's kick, as before this work.

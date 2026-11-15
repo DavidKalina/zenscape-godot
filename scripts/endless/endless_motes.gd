@@ -228,7 +228,9 @@ var pollen_on := true
 var kick_on := true
 var pollen_count := POLLEN
 var kick_scale := 1.0
-var drift_on := true
+## Off by default (the user, 2026-11-14: the extra clippings "need to go"):
+## --wind-blades or --wind-blades=X shows them.
+var drift_on := false
 var drift_scale := 1.0
 ## Off by default ("too much now", 2026-11-14): --petals or --petals=X shows them.
 var petals_on := false
@@ -293,7 +295,10 @@ func setup(land_seed: int, ground: Callable) -> void:
 		elif a.begins_with("--far-drift="):
 			far_scale = maxf(float(a.get_slice("=",1)),0.0)
 			far_on = true
-		elif a.begins_with("--wind-blades="): drift_scale = maxf(float(a.get_slice("=",1)),0.0)
+		elif a == "--wind-blades": drift_on = true
+		elif a.begins_with("--wind-blades="):
+			drift_scale = maxf(float(a.get_slice("=",1)),0.0)
+			drift_on = true
 		elif a == "--no-petals": petals_on = false
 		elif a == "--petals": petals_on = true
 		elif a.begins_with("--petals="):
