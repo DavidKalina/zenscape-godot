@@ -297,7 +297,8 @@ func setup(land_seed: int) -> void:
 	# The world's mood and hour (its paint), then the flags over them.
 	var world: RefCounted = WorldProfile.current()
 	var world_mood := str(world.paint.get("mood",MOOD))
-	if world_mood in MOODS: mood = world_mood
+	# (Any preset: a season's own mood, fall_day, is not one L steps through.)
+	if world_mood in MOODS or Presets.PRESETS.has(world_mood): mood = world_mood
 	var hour := -1.0
 	# The day cycle: on unless --hour= stills it or --day=0 stops it.
 	var day := -1
@@ -861,7 +862,10 @@ func turn_ring_to(way: Vector2) -> void:
 	for a: String in LaunchArgs.user_args():
 		if a == "--peak-sun=off": return
 		if a.begins_with("--peak-sun="): off = a.get_slice("=",1).to_float()
-	var hour := float(WorldProfile.current().paint.get("hour",HOUR))
+	# (A season's own opening hour keeps the world's compass: paint.ring_hour,
+	# scripts/endless/world/seasons.gd.)
+	var paint: Dictionary = WorldProfile.current().paint
+	var hour := float(paint.get("ring_hour",paint.get("hour",HOUR)))
 	if hour < 0.0: hour = HOUR
 	var at: Vector3 = celestial.floored(celestial.ring_at(hour/24.0))
 	var want := atan2(way.x,-way.y)+deg_to_rad(off)

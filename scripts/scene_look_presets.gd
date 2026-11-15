@@ -45,6 +45,13 @@ const PRESETS := {
 	# sky, muted shade.
 	"amber_hour": {"title":"Amber hour","description":"Soft late gold through a warm haze.","palette":"Amber","phase":0.696,"weather":"clear","clouds":0.08,"mist":0.1,"haze":0.3,"wind":0.45,
 		"strength":1.0,"ambient_energy":1.0,"exposure":1.04,"colors":{"ambient":"b0adb2","bounce":"7a6a52","rim":"f0d098","fog":"e4dccf"}},
+	# Wilderness's fall (scripts/endless/world/seasons.gd): a crisp clear day
+	# under a warm sun; a paler, thinner sky going to a warm grey haze at the
+	# horizon; the shade's fill (ambient) a neutral grey-blue, not the summer
+	# sky's cyan, which turned the russet turf olive-brown in shade. Its fill
+	# a little stronger (EndlessPost MOODS) so the shade stays readable.
+	"fall_day": {"title":"Fall day","description":"Crisp low gold light under a pale sky.","palette":"Mountain","phase":0.65,"weather":"clear","clouds":0.12,"mist":0.15,"haze":0.25,"wind":0.8,
+		"strength":1.0,"sun_energy":1.0,"ambient_energy":1.0,"exposure":1.0,"colors":{"sky":"98a9b8","horizon":"8e9494","glow":"d0c8b6","sun":"ffc890","ambient":"a0a8c0","bounce":"564838","rim":"a8a8bf","fog":"ece4d6"}},
 	"storm_gathering": {"title":"Storm gathering","description":"Slate skies and a rising wind.","palette":"Storm","phase":0.46,"weather":"storm","clouds":0.8,"mist":0.42,"haze":0.58,"wind":2.5,
 		"strength":1.0,"wet":0.5,"humidity":0.8,"colors":{}},
 }
