@@ -29,6 +29,14 @@ var _money: Label
 var _note: Label
 var _note_left := 0.0
 var _words := {}
+var _scroll: ScrollContainer
+var _list: VBoxContainer
+## Set when the chosen row changed: the list scrolls to it once laid out.
+var _follow := true
+## The screen's share the panel may take, top to bottom.
+const TALL := 0.9
+## Rows kept in view past the chosen one, above and below.
+const LEAD := 1.5
 
 func setup(b: RefCounted, f: Node3D, leave: Callable) -> void:
 	book = b
@@ -70,14 +78,25 @@ func _ready() -> void:
 	_money = _label("",NUMS,GOLD,34)
 	_money.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	head.add_child(_money)
+	# The rows scroll: as many as the screen holds, the chosen kept in view.
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_scroll.follow_focus = false
+	_slim_bar(_scroll.get_v_scroll_bar())
+	col.add_child(_scroll)
+	_list = VBoxContainer.new()
+	_list.add_theme_constant_override("separation",2)
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.add_child(_list)
 	for slot: String in ShopStock.SLOTS:
 		var sec := _label(String(ShopStock.SLOT_NAMES.get(slot,slot)).to_upper(),_word(15.0,0.18),DIM)
 		var gap := Control.new()
 		gap.custom_minimum_size = Vector2(0,8)
-		col.add_child(gap)
-		col.add_child(sec)
+		_list.add_child(gap)
+		_list.add_child(sec)
 		for i: Dictionary in ShopStock.items(slot):
-			col.add_child(_row(i))
+			_list.add_child(_row(i))
 	var gap2 := Control.new()
 	gap2.custom_minimum_size = Vector2(0,6)
 	col.add_child(gap2)
@@ -92,6 +111,55 @@ func _ready() -> void:
 	for k in _rows.size():
 		if _rows[k].id == worn: chosen = k
 	_refresh()
+
+## The scroll bar thin and quiet: the keys drive the list, the bar shows
+## where it is.
+func _slim_bar(bar: VScrollBar) -> void:
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(1,1,1,0.06)
+	track.set_corner_radius_all(2)
+	track.content_margin_left = 3.0
+	track.content_margin_right = 3.0
+	var grab := StyleBoxFlat.new()
+	grab.bg_color = Color(GOLD,0.55)
+	grab.set_corner_radius_all(2)
+	grab.content_margin_left = 3.0
+	grab.content_margin_right = 3.0
+	bar.add_theme_stylebox_override("scroll",track)
+	bar.add_theme_stylebox_override("grabber",grab)
+	bar.add_theme_stylebox_override("grabber_highlight",grab)
+	bar.add_theme_stylebox_override("grabber_pressed",grab)
+	bar.custom_minimum_size = Vector2(6,0)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+## The list as tall as the screen leaves it (all of it when it fits), and
+## the chosen row in view with LEAD rows round it.
+func _fit() -> void:
+	if _scroll == null: return
+	var screen := get_viewport_rect().size
+	var panel := _scroll.get_parent().get_parent() as Control
+	var others := panel.get_combined_minimum_size().y-_scroll.custom_minimum_size.y
+	var room := maxf(120.0,screen.y*TALL-others)
+	var want := minf(_list.get_combined_minimum_size().y,room)
+	if not is_equal_approx(_scroll.custom_minimum_size.y,want):
+		_scroll.custom_minimum_size.y = want
+		# Re-centred on the screen as it changes height.
+		panel.offset_top = 0.0
+		panel.offset_bottom = 0.0
+		_follow = true
+	if not _follow or _rows.is_empty(): return
+	var row := _rows[chosen].row as Control
+	if row.size.y <= 0.0: return
+	var lead := row.size.y*LEAD
+	var top := row.position.y-lead
+	var bottom := row.position.y+row.size.y+lead
+	var at := float(_scroll.scroll_vertical)
+	if top < at: at = top
+	elif bottom > at+want: at = bottom-want
+	# The first row brings its heading with it.
+	if chosen == 0: at = 0.0
+	_scroll.scroll_vertical = int(maxf(0.0,at))
+	_follow = false
 
 func _row(i: Dictionary) -> Control:
 	var row := PanelContainer.new()
@@ -172,6 +240,7 @@ func _process(delta: float) -> void:
 	if size != screen:
 		position = Vector2.ZERO
 		size = screen
+	_fit()
 	if _note_left > 0.0:
 		_note_left -= delta
 		if _note_left <= 0.0: _note.text = ""
@@ -200,6 +269,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func choose(by: int) -> void:
 	chosen = wrapi(chosen+by,0,_rows.size())
+	_follow = true
 	_refresh()
 
 ## The chosen item worn, bought first if it is not had (when the money
