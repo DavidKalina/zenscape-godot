@@ -9,6 +9,7 @@ extends "res://scripts/endless/world/world_profile.gd"
 const Field = preload("res://scripts/endless/land_field.gd")
 const WindField = preload("res://scripts/endless/wind_field.gd")
 const GrassSheen = preload("res://scripts/endless/grass_sheen.gd")
+const Seasons = preload("res://scripts/endless/world/seasons.gd")
 
 func _init() -> void:
 	id = "wilderness"
@@ -40,6 +41,8 @@ func _init() -> void:
 		paint["far"] = {"grass_swell":swell}
 		paint["sheen_pace"] = GrassSheen.pace()
 		paint.globals["zs_grass_lean"] = swell.x*swell.y
+	# The season (--season=fall; none: summer, the paint above as it is).
+	Seasons.apply(flora,paint)
 	# Every dressing layer. The rock shapes: sea stacks along the coasts
 	# (--no-rocks turns them off). No hoodoos (taken out 2026-10-27: they
 	# read as clay; --hoodoos=2.5 brings back the pockets they had). No
