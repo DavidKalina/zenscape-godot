@@ -83,6 +83,15 @@ const NOTICE_EVERY := 0.1
 const PLUME_OVER := 22.0
 ## Past this he's `distant`, with some slip either side.
 const FAR_M := 220.0
+## His digging heard: the clip, its gain close by, all of it within DIG_NEAR m of the
+## plane and none past DIG_FAR, quieter under water, its pitch at DIG_PACE's ends (m/s).
+const DIG_CLIP := "res://assets/audio/kit/stone-grind-loop.wav"
+const DIG_GAIN := 1.0
+const DIG_NEAR := 30.0
+const DIG_FAR := 320.0
+const DIG_WET := 0.5
+const DIG_PACE := Vector2(15.0,90.0)
+const DIG_PITCH := Vector2(0.6,0.9)
 const FAR_SLIP := 20.0
 ## The gust's gain on a sighting, from 1 up close to GUST_FAR at GUST_FAR_M m off the
 ## eye, so a wood goes over as far as the eye needs it to.
@@ -94,6 +103,8 @@ var land: GameLand
 var burrower: Burrower
 var bore: BurrowerBore
 var _idle := 0
+## His digging's voice (FlightSound Bed), made when he's first up.
+var _dig: RefCounted
 var _ask := 0.0
 var _rng := RandomNumberGenerator.new()
 ## The flag's rest (s), negative when not set, and the flag's reach (m).
@@ -155,10 +166,30 @@ func step(delta: float, game: Node3D) -> void:
 	# Asleep and all settled: nothing more a frame (a couple of frames on
 	# after, so the last of him is cleared).
 	_idle = _idle+1 if burrower.settled() else 0
-	if _idle > 2: return
+	if _idle > 2:
+		if _dig != null: _dig.goal = 0.0
+		return
 	FrameLog.mark(&"b_rouse")
 	burrower.tick(delta)
+	_hear(game)
 	FrameLog.mark(&"b_tick")
+
+## His digging heard: the earth's grind from his head, by how much of him shows and
+## how near the plane is (the constants').
+func _hear(game: Node3D) -> void:
+	var sound: Variant = game.get("sound")
+	if sound == null: return
+	var k := burrower.strength if burrower.active else 0.0
+	if k <= 0.0 and _dig == null: return
+	if _dig == null:
+		_dig = sound.bed_in_world(DIG_CLIP)
+		_dig.attack = 3.0
+		_dig.release = 1.6
+	var head := burrower.head()
+	if _dig.player != null: _dig.player.global_position = head
+	var near := 1.0-smoothstep(DIG_NEAR,DIG_FAR,head.distance_to(game.plane.position))
+	_dig.goal = DIG_GAIN*k*near*(DIG_WET if burrower.wet else 1.0)
+	_dig.pitch_goal = remap(clampf(burrower.speed,DIG_PACE.x,DIG_PACE.y),DIG_PACE.x,DIG_PACE.y,DIG_PITCH.x,DIG_PITCH.y)
 
 func _rouse(delta: float, game: Node3D) -> void:
 	var flying: bool = game.hand_landing.flying()

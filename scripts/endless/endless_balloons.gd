@@ -256,6 +256,14 @@ const JOLT_DAMP := 0.38
 ## The rock and the basket's swing a bounce sets going (rad/s).
 const BOUNCE_ROCK := 0.35
 const BOUNCE_SWING := 0.9
+## The bounce heard: the cloth's boom (gain and pitch, a light touch to a hard
+## one; a bigger balloon lower), the body's thump under it, the rigging's creak
+## at the basket; not again within BOOM_GAP_MS of the same touch going on.
+const BOOM_GAIN := Vector2(0.4,1.0)
+const BOOM_PITCH := Vector2(0.72,0.5)
+const BOOM_THUMP := 0.7
+const BOOM_CREAK := 0.5
+const BOOM_GAP_MS := 300
 
 # --- The step ---
 ## A balloon is stepped every frame within this of the eye (m); past it,
@@ -331,6 +339,8 @@ class Balloon:
 	var flame: MeshInstance3D
 	var far: MeshInstance3D
 	var roar: AudioStreamPlayer3D
+	## The clock (ms) at its last bounce, for the boom.
+	var boom_at := -100000
 	var live := false
 	var leaving := false
 	## A group's (SOLO) or a field's (FIELD).
@@ -1270,8 +1280,23 @@ func _bounce(b: Balloon, game: Node, plane: RefCounted) -> void:
 	b.swing_v += away*(BOUNCE_SWING*k)
 	b.shudder = 1.0
 	b.still = false
+	_boom(b,game,k)
 	res["balloon"] = balloons.find(b)
 	if odd_groups != null: odd_groups.bounced(self,game,b,res)
+
+## The bounce heard (the constants'), `k` its strength: once a touch, however
+## many frames the plane is pressed on the cloth.
+func _boom(b: Balloon, game: Node, k: float) -> void:
+	var now := Time.get_ticks_msec()
+	var fresh := now-b.boom_at > BOOM_GAP_MS
+	b.boom_at = now
+	var sound: Variant = game.get("sound")
+	if not fresh or sound == null: return
+	var hit := clampf(k/1.4,0.0,1.0)
+	var pitch := lerpf(BOOM_PITCH.x,BOOM_PITCH.y,hit)/sqrt(b.k)
+	sound.shot("balloon-boom",lerpf(BOOM_GAIN.x,BOOM_GAIN.y,hit),pitch)
+	sound.shot("thump",BOOM_THUMP*hit,0.6)
+	sound.shot("balloon-creak",BOOM_CREAK*(0.5+0.5*hit),0.8,b.at+b.jolt+Vector3(0.0,FLOOR_Y*b.scale,0.0),FlightSound.SFX,false,260.0,30.0)
 
 ## The top of what is under `q` (land, trees, stone, the sea), a body's top
 ## too when `q` is in it or over it (under an overhang, the floor under it).

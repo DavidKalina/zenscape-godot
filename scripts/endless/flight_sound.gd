@@ -474,6 +474,9 @@ func _ready() -> void:
 		"bore-debris":_takes(BORE_AUDIO+"bore-debris-%d.wav",4),"bore-grind":_takes(BORE_AUDIO+"bore-grind-%d.wav",3),
 		# A storm's thunder (scripts/endless/weather_lightning.gd).
 		"thunder":_takes("res://assets/audio/thunder-%d.mp3",3),
+		# A bounce off a balloon (scripts/endless/endless_balloons.gd): the cloth's
+		# boom, the rigging's creak after it.
+		"balloon-boom":_takes(KIT+"sail-pop-%d.wav",3),"balloon-creak":_takes(KIT+"rope-creak-%d.wav",4),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
