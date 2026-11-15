@@ -9,5 +9,5 @@ const SKINS := [
 	{"id":"paint/moonstone","slot":"paint","name":"Moonstone","rarity":"rare","price":600,
 		"livery":{"body":Color("e6e4ea"),"dark":Color("3a3f52"),"trim":Color("6f86b8"),"wing":Color("f1eff2")},
 		"finish":{"sheen":"gloss","pearl":Color("9aa8ff"),"pearl_amount":0.55,
-			"glow":Color("4aa8ff"),"glow_on":["trim"],"glow_power":1.2}},
+			"glow":Color("4aa8ff"),"glow_on":["trim"],"glow_power":1.0}},
 ]

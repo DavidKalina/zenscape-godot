@@ -40,13 +40,17 @@ const RARITIES := ["common","uncommon","rare","legendary"]
 const RARITY_COLOURS := {"common":Color("c9c2b3"),"uncommon":Color("8fc7a0"),"rare":Color("8fb4e8"),"legendary":Color("f0a860")}
 
 ## The finish's sheens: the paint's roughness, clearcoat and metal
-## (PlaneFigure HERO_FINISH's names). satin is the atlas's own; gloss a
-## lacquer's white sheen edge-on; matte chalky, no shine; metal the sky in its colour.
+## (PlaneFigure HERO_FINISH's names), each told apart on the sheet
+## (tools/skin_sheet.py sheen:NAME@id). satin is the atlas's own; gloss a
+## deepened colour under a lacquer, white edge-on with a streak of light
+## along the fuselage; matte greyed, chalky and flat, no highlight at all;
+## metal a hard mirror in the paint's hue, bright sky over dark land with a
+## sharp horizon down the round body.
 const SHEENS := {
 	"satin":{},
 	"gloss":{"finish_rough":0.15,"finish_coat":1.0,"finish_sheen":1.0},
 	"matte":{"finish_rough":0.92,"finish_coat":0.0,"finish_chalk":1.0},
-	"metal":{"finish_rough":0.3,"finish_coat":0.2,"finish_metal":1.0},
+	"metal":{"finish_rough":0.2,"finish_coat":0.2,"finish_metal":1.0},
 }
 ## The slots a glow can light, in glow_slots' order.
 const GLOW_SLOTS := ["body","trim","wing","dark"]
@@ -134,7 +138,9 @@ static func finish_values(i: Dictionary) -> Dictionary:
 			else: push_error("ShopStock: %s glows on no slot %s" % [i.id,slot])
 		out["glow"] = f.glow
 		out["glow_slots"] = on
-		out["glow_power"] = float(f.get("glow_power",1.5))
+		# 1 shows the glow's own colour; above whitens it (1.6 washes a green
+		# to mint), so it stops at 1.3.
+		out["glow_power"] = clampf(float(f.get("glow_power",1.0)),0.0,1.3)
 	return out
 
 ## The slot's free first item.

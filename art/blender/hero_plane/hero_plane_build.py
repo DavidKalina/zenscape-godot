@@ -936,6 +936,7 @@ global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 global uniform vec3 zs_key_direction;
 global uniform float zs_daylight;
+global uniform float zs_exposure;
 uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D mask_tex : hint_default_black, filter_linear_mipmap_anisotropic, repeat_disable;
@@ -998,6 +999,22 @@ void vertex() {
 	float span_out = max(abs(VERTEX.x) - 0.16, 0.0);
 	VERTEX.y += flex * span_out * span_out * 0.35;
 }
+// The scene light that shows as `display` (sRGB) through the world's ACES
+// (white 16) at its exposure: shaders/reference_display.gdshaderinc's, so a
+// glow shows in its own colour, not washed to white.
+vec3 shown_as(vec3 display) {
+	vec3 desired = mix(display / 12.92, pow((display + 0.055) / 1.055, vec3(2.4)), greaterThan(display, vec3(0.04045)));
+	mat3 input_matrix = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+	mat3 output_matrix = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+	float w = 16.0 * 1.8;
+	float white_scale = (w * (w + 0.0245786) - 0.000090537) / (w * (0.983729 * w + 0.432951) + 0.238081);
+	vec3 y = inverse(output_matrix) * desired * white_scale;
+	vec3 a = y * 0.983729 - 1.0;
+	vec3 b = y * 0.432951 - 0.0245786;
+	vec3 c = y * 0.238081 + 0.000090537;
+	vec3 x = (-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a);
+	return max(inverse(input_matrix) * x / (1.8 * max(zs_exposure, 0.01)), vec3(0.0));
+}
 void fragment() {
 	vec4 m = texture(mask_tex, UV);
 	vec3 orm = texture(orm_tex, UV).rgb;
@@ -1017,8 +1034,11 @@ void fragment() {
 	// What glows is dimmed under its light, so the light keeps its colour.
 	float glowing = glow_power > 0.0 ? clamp(dot(m, glow_slots), 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.65, zs_daylight)) : 0.0;
 	base *= 1.0 - 0.92 * glowing;
+	// A lacquer deepens the paint under it: richer and a little darker.
+	float lac = finish_sheen * painted;
+	base = max(mix(vec3(dot(base, vec3(0.3, 0.55, 0.15))), base, 1.0 + 0.45 * lac) * (1.0 - 0.15 * lac), vec3(0.0));
 	float chalk = finish_chalk * painted;
-	base = mix(base, mix(base, vec3(dot(base, vec3(0.3, 0.55, 0.15))), 0.3) * 1.12 + 0.015, chalk);
+	base = mix(base, mix(base, vec3(dot(base, vec3(0.3, 0.55, 0.15))), 0.45) * 1.2 + 0.035, chalk);
 	vec3 up = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float dull = 0.0;
 	if (wear > 0.0) {
@@ -1036,6 +1056,8 @@ void fragment() {
 	// The sky isn't in the reflections, so a true metal would go black: a
 	// third of one keeps its colour and its sheen.
 	METALLIC = mix(orm.g * 0.35, 0.6, metal);
+	// A matte has no highlight at all, the sun's included.
+	SPECULAR = mix(0.5, 0.04, chalk);
 	CLEARCOAT = coat * (1.0 - dull * 0.8);
 	CLEARCOAT_ROUGHNESS = coat_roughness;
 	NORMAL_MAP = texture(normal_tex, UV).rgb;
@@ -1044,21 +1066,39 @@ void fragment() {
 	// the world's dark ground term under it reads black, where a round body didn't.
 	vec3 hemi = mix(zs_hemi_ground * bounce, zs_hemi_sky, up.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - facing, 3.0);
-	vec3 diffuse = base * (1.0 - mix(orm.g * 0.3, 0.7, metal));
+	vec3 diffuse = base * (1.0 - mix(orm.g * 0.3, 0.92, metal));
 	float sunward = clamp(dot(up, zs_key_direction), 0.0, 1.0);
 	vec3 lift = mix(zs_hemi_sky, vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722))), shade_neutral) * zs_hemi_energy * shade_lift * mix(shade_night, 1.0, zs_daylight) * mix(1.0, shade_lit, sunward);
 	EMISSION = (diffuse * (hemi * fill * mix(fill_night, 1.0, zs_daylight) + lift) + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim * (1.0 - chalk)) * (1.0 - roof * roof_dim);
 	float sheen = finish_sheen * painted * (1.0 - dull) * (1.0 - glowing);
 	if (metal + sheen > 0.0) {
 		// The paint's own sky: what the mirror sees, the sky above and the land
-		// below parted at the horizon; a metal's in its own colour, a lacquer's
-		// white and only edge-on.
+		// below parted sharply at the horizon, a pale band just over it. A metal
+		// is all mirror, in its own colour: bright over dark down a round body.
+		// A lacquer's is white, faint face-on and strong edge-on, with a
+		// window's streak of light high up that runs along the fuselage.
 		float seen = (INV_VIEW_MATRIX * vec4(reflect(-VIEW, NORMAL), 0.0)).y;
-		vec3 env = mix(zs_hemi_ground * bounce, zs_hemi_sky * 1.8, smoothstep(-0.08, 0.12, seen)) * zs_hemi_energy;
+		float above = smoothstep(-0.03, 0.03, seen);
+		float band = above * (1.0 - smoothstep(0.05, 0.3, seen));
+		vec3 sky_lum = vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722)));
+		vec3 env = (mix(zs_hemi_ground * bounce * 0.5, zs_hemi_sky * 2.0, above) + sky_lum * 2.5 * band) * zs_hemi_energy;
 		float grazing = pow(1.0 - facing, 2.0);
-		EMISSION += env * (base * metal * mix(0.9, 2.0, grazing) + vec3(sheen * mix(0.06, 0.9, grazing))) * (1.0 - roof * roof_dim);
+		float streak = smoothstep(0.32, 0.4, seen) * (1.0 - smoothstep(0.5, 0.58, seen));
+		vec3 lacquer = (env * mix(0.1, 1.0, grazing) + sky_lum * zs_hemi_energy * 3.0 * streak) * sheen;
+		// A metal's mirror is harder: the land in it near black, the sky and
+		// the band over the horizon bright, so a round body reads bright over dark.
+		// Its colour is the paint's hue, lifted: a dark paint's metal still mirrors.
+		float peak = max(max(base.r, base.g), max(base.b, 0.001));
+		vec3 alloy = base * max(peak, 0.4) / peak;
+		vec3 mirror = (mix(zs_hemi_ground * bounce * 0.08, sky_lum * 2.4, above) + sky_lum * 5.0 * band) * zs_hemi_energy;
+		EMISSION += (mirror * alloy * metal * mix(1.3, 2.0, grazing) + lacquer) * (1.0 - roof * roof_dim);
 	}
-	EMISSION += glow * glow_power * glowing;
+	// glow_power 1 shows the glow's own colour (its sRGB, up to 0.95 a
+	// channel); below dims it, above pushes it brighter and into bloom.
+	if (glowing > 0.0) {
+		vec3 hue = mix(glow * 12.92, pow(glow, vec3(1.0 / 2.4)) * 1.055 - 0.055, greaterThan(glow, vec3(0.0031308)));
+		EMISSION += shown_as(clamp(hue * min(glow_power, 1.0), 0.0, 0.95)) * max(glow_power, 1.0) * glowing;
+	}
 }
 """
 

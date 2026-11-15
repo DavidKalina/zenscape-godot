@@ -9,7 +9,8 @@ image to look at (Read the PNG) and judge.
   python tools/skin_sheet.py sheen:metal@paint/ochre --views port,chase
 
 A skin is a ShopStock id (any batch), or sheen:NAME[@id]: that skin's
-livery (Harbour's by default) in the sheen alone, to compare finishes.
+livery (Harbour's by default) in the sheen alone, to compare finishes, or
+glow:HEX[*POWER][@id]: that livery with trim and body glowing (power 1).
 Each skin's sheet is a row of views by day, then the same by night; with
 several skins, --out (captures/skins/sheet.png) stacks their rows in the
 order given. Views (plane's own frame): port, starboard, quarter (ahead,
@@ -36,7 +37,7 @@ RAW = "captures/skins/raw"
 
 
 def safe(skin: str) -> str:
-    return skin.replace("/", "_").replace(":", "_").replace("@", "_")
+    return skin.replace("/", "_").replace(":", "_").replace("@", "_").replace("*", "x")
 
 
 def shoot(skins: list[str], tag: str, hour: float, views: str, timeout: int) -> tuple[int, dict[str, bool]]:

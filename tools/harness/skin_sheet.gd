@@ -5,7 +5,8 @@ extends "res://tools/harness/drive.gd"
 ##
 ##   --skins=paint/moonstone,sheen:gloss   ids (ShopStock.item), or
 ##       sheen:NAME[@id]: a skin's livery (Harbour's by default) in that
-##       sheen alone, to compare finishes
+##       sheen alone, to compare finishes; glow:HEX[*POWER][@id]: that
+##       livery with its trim and body glowing HEX at POWER (1), to tune a glow
 ##   --tag=day   --dir=captures/skins/raw   --views=port,quarter,top,chase
 ##
 ## Prints `SKIN <id> glow=<0|1> rarity=<r>` per skin and `LIGHT daylight=<d>`;
@@ -44,7 +45,7 @@ func drive() -> void:
 	for id: String in String(arg("skins","")).split(",",false):
 		var i := _row(id)
 		if i.is_empty():
-			check(false,"skin "+id,"no such skin (ShopStock.item, or sheen:NAME[@id])")
+			check(false,"skin "+id,"no such skin (ShopStock.item, sheen:NAME[@id] or glow:HEX[*POWER][@id])")
 			continue
 		print("SKIN %s glow=%d rarity=%s" % [id,int(i.get("finish",{}).has("glow")),ShopStock.rarity(i)])
 		ShopStock._paint(fig,i)
@@ -55,7 +56,7 @@ func drive() -> void:
 				check(false,"view "+v,"one of "+", ".join(SKIN_VIEWS.keys()))
 				continue
 			var way: Vector3 = basis*(SKIN_VIEWS[v][0] as Vector3).normalized()
-			var out := "%s/%s_%s_%s.png" % [dir,id.replace("/","_").replace(":","_").replace("@","_"),tag,v]
+			var out := "%s/%s_%s_%s.png" % [dir,id.replace("/","_").replace(":","_").replace("@","_").replace("*","x"),tag,v]
 			var opts := {"out":out,"dist":float(SKIN_VIEWS[v][1]),"size":Vector2i(720,450)}
 			if v == "chase":
 				way = basis*Vector3(0.0,0.26,1.0)
@@ -66,6 +67,13 @@ func drive() -> void:
 ## The row for `id`: a stock skin, or sheen:NAME[@id], that skin's livery
 ## (Harbour's by default) in that sheen alone.
 static func _row(id: String) -> Dictionary:
+	if id.begins_with("glow:"):
+		var g := id.trim_prefix("glow:")
+		var lit := ShopStock.item(g.get_slice("@",1) if "@" in g else "paint/harbour")
+		var hp := g.get_slice("@",0)
+		if lit.is_empty() or not Color.html_is_valid(hp.get_slice("*",0)): return {}
+		return {"id":id,"slot":"paint","name":"glow","livery":lit.livery,"finish":{"glow":Color(hp.get_slice("*",0)),
+			"glow_on":["trim","body"],"glow_power":float(hp.get_slice("*",1)) if "*" in hp else 1.0}}
 	if not id.begins_with("sheen:"): return ShopStock.item(id)
 	var rest := id.trim_prefix("sheen:")
 	var sheen := rest.get_slice("@",0)

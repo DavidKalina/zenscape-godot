@@ -167,7 +167,8 @@ python tools/skin_sheet.py sheen:metal@paint/ochre --views port,starboard,tail,c
 
 A skin is a ShopStock id from any batch (`scripts/endless/skins/`), or
 `sheen:NAME[@id]`: that skin's livery (Harbour's by default) in the sheen
-alone. The plane is frozen in flight over the endless land
+alone, or `glow:HEX[*POWER][@id]` (quote it in the shell): that livery with
+its body and trim glowing HEX at POWER (1), to tune a glow. The plane is frozen in flight over the endless land
 (`tools/harness/skin_sheet.gd`), painted through `ShopStock._paint`, the
 shop's own path. A skin's sheet is a row of views at `--day-hour` (11), and
 a second at `--night-hour` (1) when its finish has a glow (`--night` for
