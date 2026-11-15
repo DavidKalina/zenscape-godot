@@ -38,15 +38,15 @@ const WAIT := 90.0
 const HOLD := 1300.0
 const REST := 75.0
 const BLOW_EVERY := Vector2(5.0,8.0)
-## The tell's column of mist (made for a plane far off): thrown up this fast
-## (m/s, min and max), `COLUMN_LIFE` s to thin out, drifting with the wind,
-## the whole scaled by the plane's distance over COLUMN_FAR, held between
-## COLUMN_K (close, so it is not absurd) and its top.
-const COLUMN := 240
-const COLUMN_LIFE := 11.0
-const COLUMN_UP := Vector2(34.0,78.0)
+## The tell's blow (made for a plane far off): a burst of mist thrown up (m/s,
+## min and max) as a narrow jet that opens into a plume, sheared downwind, thinning
+## from the bottom up over COLUMN_LIFE s; scaled by the plane's distance over
+## COLUMN_FAR, held between COLUMN_K (so it is faint far off, not a wall near).
+const COLUMN := 130
+const COLUMN_LIFE := 7.5
+const COLUMN_UP := Vector2(14.0,66.0)
 const COLUMN_FAR := 450.0
-const COLUMN_K := Vector2(0.3,5.0)
+const COLUMN_K := Vector2(0.3,2.2)
 ## The shape under the water: depth in the sea shader's units (whole 0.6, gone
 ## 2.4), strength, drift (m/s).
 const SHAPE_DEEP := 1.1
@@ -187,10 +187,9 @@ func _column_blow(game: Node3D, at: Vector3, level: float) -> void:
 	var way := Vector3(wind.x,0.0,wind.y).normalized()
 	_column.global_position = at
 	var m := _column.process_material as ShaderMaterial
-	var values := {"rate":1.0,"travel":Vector3.ZERO,"ahead":way,"right":way.cross(Vector3.UP),"plane_speed":9.0,
-		"carry":Vector2(0.5,1.0),"up_speed":COLUMN_UP*pow(k,0.75),"side_speed":Vector2(0.0,5.0)*k,"back_speed":Vector2(-1.0,1.0),
-		"strength":1.0,"box":Vector3(1.5,0.5,1.5)*k,"size_range":Vector2(10.0,20.0)*k,"growth":3.5,"drag":0.35,
-		"gravity":0.5,"buoyancy":0.0,"stretch":0.0,"water_y":level-6.0}
+	var values := {"rate":1.0,"ahead":way,"right":way.cross(Vector3.UP),"up_speed":COLUMN_UP*pow(k,0.75),
+		"side_speed":3.0*k,"size_range":Vector2(4.0,13.0)*k,"growth":3.0,"drag":0.4,"gravity":0.4,
+		"shear":1.6,"shear_over":90.0*k,"water_y":level-6.0}
 	for key: String in values: m.set_shader_parameter(key,values[key])
 	_column.restart()
 	_column.emitting = true
@@ -200,7 +199,7 @@ func _column_make() -> GPUParticles3D:
 	e.amount = COLUMN
 	e.lifetime = COLUMN_LIFE
 	e.one_shot = true
-	e.explosiveness = 0.6
+	e.explosiveness = 0.85
 	e.randomness = 0.3
 	e.local_coords = false
 	e.fixed_fps = 0
@@ -209,17 +208,18 @@ func _column_make() -> GPUParticles3D:
 	e.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	e.visibility_aabb = AABB(Vector3(-500,-30,-500),Vector3(1000,600,1000))
 	var process := ShaderMaterial.new()
-	process.shader = preload("res://shaders/water_spray_process.gdshader")
+	process.shader = preload("res://shaders/whale_blow_process.gdshader")
 	e.process_material = process
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	var draw := ShaderMaterial.new()
 	draw.shader = preload("res://shaders/water_spray.gdshader")
 	draw.set_shader_parameter("kind",1)
-	draw.set_shader_parameter("opacity",0.8)
+	draw.set_shader_parameter("tint",Color(0.86,0.9,0.95))
+	draw.set_shader_parameter("opacity",0.7)
 	draw.set_shader_parameter("near_fade",Vector2(20.0,90.0))
-	draw.set_shader_parameter("glow",0.9)
-	draw.set_shader_parameter("backlight",0.9)
+	draw.set_shader_parameter("glow",0.3)
+	draw.set_shader_parameter("backlight",0.4)
 	quad.material = draw
 	e.draw_pass_1 = quad
 	add_child(e)
