@@ -151,8 +151,6 @@ const WORLDS := {
 			"title":"The ring in the gorge room"},
 		{"id":"bend-ring","area":"foothills","kind":"relic","pay":40,"anchor":"peak/ice-arch/1","up":0.0,
 			"title":"The ring under the ice arch","hint":"Under the ice at the glacier's head"},
-		{"id":"tunnel-deep","area":"foothills","kind":"relic","pay":40,"anchor":"peak/tunnel/deep","under":true,"up":15.0,
-			"title":"The ring deep in the ice","hint":"A dark mouth in the glacier's flank"},
 		{"id":"gorge-run","area":"foothills","kind":"line","place":"foothills","name":"gorge_run",
 			"title":"The gorge run","hint":"Gates up the ice, bend after bend","mark":58.0,"gates":[
 				{"at":Vector3(-1150.5,204,-155.2),"half":Vector2(3.0,2.5)},
