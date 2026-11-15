@@ -25,6 +25,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | A still of a moment in a driven run (the plane touching down, a piece by its AABB) | in a driver: `await shot_at("side", node, {"when": cond})`, then step frames; run with `drive.py --rendered` (drive.gd, Shots) |
 | A plane skin's sheet: the hero plane wearing it from a few angles, by day and (when it glows) by night, in one image | `python tools/skin_sheet.py paint/moonstone` (`captures/skins/<id>.png`; several ids stack into `--out`; `sheen:gloss[@id]` a finish alone; skin_sheet.py, below) |
 | A plane skin's decal (stripes, bands, discs, numbers, a checker, scallops, a free mask) in the plane's own units | a short script on `art/blender/hero_plane/hero_plane_decal.py`'s `Decal`, run with `python tools/blender.py run art/blender/hero_plane/skins/<batch>.py` (hero_plane_decal.py, below) |
+| A plane skin's own atlas (less or more wear and dirt, bare metal or copper, rust, silver-doped cloth) | `python tools/blender.py run art/blender/hero_plane/hero_plane_bake.py -- assets/models/hero_plane/skins/<batch>/<name> --wear 0.2 --bare 1` (hero_plane_bake.py, below) |
 | A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
@@ -203,6 +204,37 @@ side to side by default (`mirror=False` for one side); the wings and tail
 are always mirrored (one atlas for both halves). Blender's Python runs it
 (numpy); a decal takes a couple of seconds. A finish's `glow_on: ["decal"]`
 lights it in its own colours after dark (`glow:ffffff@<id>` on the sheet).
+
+## hero_plane_bake.py: a plane skin's own atlas
+
+```
+python tools/blender.py run art/blender/hero_plane/hero_plane_bake.py -- \
+    assets/models/hero_plane/skins/demo/silverwing --wear 0.15 --dirt 0.3 --bare 1 --cloth silver
+```
+
+A skin's `bake` (ShopStock) swaps the atlas's albedo, mask and orm for its
+own; the normal map is shared. The bake maker paints the whole atlas again
+with `hero_plane_paint.py`'s other settings (`BAKE_DEFAULTS`; all at their
+defaults it paints the plane's own atlas, byte for byte in the mask and
+orm): `wear` (chips; 0 fresh, 2 battered), `dirt` (soot, oil, dust; 0
+clean, 2 filthy), `bare` (the livery's coat off the forward metal and
+the cowl, 0..1; the deck, cheat line and marks stay painted), `bare_c` (the
+bared metal's hex: copper `b87333`, gold `d4a64a`; aluminium else), `rust`
+(rust in the metal's chips and runs back from them, 0..1) and `cloth`
+(`doped`, or `silver`: aluminium dope on the wings, tail and rudder that
+takes no livery colour). From a batch's script: `from
+hero_plane.hero_plane_bake import bake; bake(out, wear=0.2, bare=1.0)`.
+About 15 s a bake. It writes `<out>_albedo.jpg` (2048x1300, JPEG 90),
+`<out>_mask.png` (2048x1300, RGBA) and `<out>_orm.jpg` (2048x1300, JPEG 90)
+with their `.import`s, and prints the row's `bake` value. In the build the
+albedo and orm import as lossy WebP and the mask lossless (lossy WebP drops
+the colour wherever its alpha is 0, and a mask's alpha is the dark slot).
+Sizes of the three sources: a fresh clean bake (wear 0, dirt 0) 0.6 MB,
+Silverwing 1.2 MB (imported 0.94 MB: albedo 0.23, mask 0.65, orm 0.06), a
+battered rusty copper one (wear 2, dirt 1.8, rust 1) 2.5 MB; the mask is
+most of it and grows with the dirt, and imports at about its PNG's size. A row may leave out a map it doesn't
+change. Bared metal and silver cloth take no livery (mask 0), so the
+finish's sheens (which act on the paint) don't reach them either.
 
 ## movie.py: a taped flight, filmed
 

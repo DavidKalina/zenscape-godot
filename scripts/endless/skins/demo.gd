@@ -16,4 +16,12 @@ const SKINS := [
 		"livery":{"body":Color("9e2a22"),"dark":Color("2a2224"),"trim":Color("9e2a22"),"wing":Color("efe6d2")},
 		"finish":{"sheen":"gloss"},
 		"decal":"res://assets/models/hero_plane/skins/demo/chequer_decal.png"},
+	# A bake: polished bare aluminium forward, the cloth in silver dope, fresh
+	# and nearly clean (art/blender/hero_plane/hero_plane_bake.py: wear 0.15,
+	# dirt 0.3, bare 1, cloth silver); a red deck, cheat line and tips.
+	{"id":"paint/silverwing","slot":"paint","name":"Silverwing","rarity":"legendary","price":900,
+		"livery":{"body":Color("b8b8b4"),"dark":Color("26303c"),"trim":Color("b8322a"),"wing":Color("d8d8d4")},
+		"bake":{"albedo":"res://assets/models/hero_plane/skins/demo/silverwing_albedo.jpg",
+			"mask":"res://assets/models/hero_plane/skins/demo/silverwing_mask.png",
+			"orm":"res://assets/models/hero_plane/skins/demo/silverwing_orm.jpg"}},
 ]

@@ -243,6 +243,8 @@ var _wheels: Array[Node3D] = []
 var _wheel_rate := 0.0
 var _wheel_angle := 0.0
 var _hero_paint: Array[ShaderMaterial] = []
+## Each painted material's own atlas maps (HERO_ATLAS), for a bake to give back.
+var _hero_atlas := {}
 ## Every material of the model's (this figure's own copies), and how far a roof
 ## shuts the sky out of them now (0 open air, 1 under stone). The sky's light is
 ## emission here, which no shadow reaches, so the figure dims it itself. Eased
@@ -353,7 +355,11 @@ func _build_hero() -> void:
 			if not own.has(was):
 				own[was] = was.duplicate()
 				_hero_lit.append(own[was])
-				if own[was].get_shader_parameter("mask_tex") != null: _hero_paint.append(own[was])
+				if own[was].get_shader_parameter("mask_tex") != null:
+					_hero_paint.append(own[was])
+					var maps := {}
+					for key: String in HERO_ATLAS: maps[key] = own[was].get_shader_parameter(key)
+					_hero_atlas[own[was]] = maps
 			part.set_surface_override_material(s,own[was])
 	_tip_z = HERO_TIP_Z
 	_prop = model.get_node("Prop")
@@ -766,11 +772,18 @@ const HERO_FINISH := {"finish_rough":-1.0,"finish_coat":-1.0,"finish_metal":0.0,
 	"pearl":Color(1,1,1),"pearl_amount":0.0,"glow":Color(0,0,0),"glow_slots":Vector4.ZERO,"glow_power":0.0,
 	"decal_tex":null,"decal_on":0.0,"glow_decal":0.0}
 
+## The atlas maps a skin's bake may swap (the normal is shared).
+const HERO_ATLAS := ["albedo_tex","mask_tex","orm_tex"]
+
 ## Sets how its paint shines (the shop's skins, ShopStock `finish_values`):
-## `values` by HERO_FINISH's names, the rest back to none.
+## `values` by HERO_FINISH's names, the rest back to none; and a bake's
+## maps by HERO_ATLAS's, the rest back to the plane's own atlas.
 func refinish(values: Dictionary) -> void:
 	for key: String in HERO_FINISH:
 		for m in _hero_paint: m.set_shader_parameter(key,values.get(key,HERO_FINISH[key]))
+	for m in _hero_paint:
+		var own: Dictionary = _hero_atlas.get(m,{})
+		for key: String in HERO_ATLAS: m.set_shader_parameter(key,values.get(key,own.get(key)))
 
 ## The plane's paints by name, `livery` (see `_init`) repainting the body,
 ## dark, trim and wing and setting their wear (new without); the pieces

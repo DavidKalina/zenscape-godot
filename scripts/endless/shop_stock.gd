@@ -26,6 +26,10 @@ extends RefCounted
 ##           marks over the paint in the atlas's UV, made by the decal painter
 ##           (art/blender/hero_plane/hero_plane_decal.py); loaded only while
 ##           worn or tried
+##   bake    the skin's own atlas maps, {albedo, mask, orm: a texture's path},
+##           any left out the plane's own (the normal is shared), made by the
+##           bake maker (art/blender/hero_plane/hero_plane_bake.py); loaded
+##           only while worn or tried
 ## Paints beyond the first seven come in batches, one file each under
 ## scripts/endless/skins/ (its `SKINS`, rows as ITEMS'), gathered from
 ## BATCHES: a new batch is one line there.
@@ -57,6 +61,8 @@ const SHEENS := {
 	"matte":{"finish_rough":0.92,"finish_coat":0.0,"finish_chalk":1.0},
 	"metal":{"finish_rough":0.2,"finish_coat":0.2,"finish_metal":1.0},
 }
+## The maps a bake may swap (PlaneFigure HERO_ATLAS, without "_tex").
+const BAKE_MAPS := ["albedo","mask","orm"]
 ## The slots a glow can light, in glow_slots' order.
 const GLOW_SLOTS := ["body","trim","wing","dark"]
 
@@ -153,6 +159,16 @@ static func finish_values(i: Dictionary) -> Dictionary:
 		else:
 			out["decal_tex"] = tex
 			out["decal_on"] = 1.0
+	if i.has("bake"):
+		var b: Dictionary = i.bake
+		for key: String in b:
+			if not BAKE_MAPS.has(key):
+				push_error("ShopStock: %s bakes no map %s" % [i.id,key])
+				continue
+			var path := String(b[key])
+			var tex: Texture2D = load(path) if ResourceLoader.exists(path) else null
+			if tex == null: push_error("ShopStock: %s has no %s at %s" % [i.id,key,path])
+			else: out[key+"_tex"] = tex
 	return out
 
 ## The slot's free first item.
