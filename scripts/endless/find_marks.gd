@@ -2,11 +2,12 @@ class_name FindMarks
 extends RefCounted
 ## What a find looks like (lane `finds`): `Mark`, the pooled node for a relic
 ## (a ring of dark hewn blocks, some with old gilding, hanging in the air and
-## slowly turning) or a landing (a cairn with a gilt cap and a loose circle of
-## flat stones); and `Beat`, the reward when one is taken: the ring's blocks
+## slowly turning) or a landing (a small shrine in the temple kit's stone, an
+## old gilt bowl on a column stub, and a loose circle of flat stones); and `Beat`, the reward when one is taken: the ring's blocks
 ## burst to chips and flakes, a short warm light, a bell over cracking stone.
 ##
-## The meshes are built here, once, and shared: hewn facets from a seeded rng,
+## The shrine is Blender-built (art/blender/temple_kit/shrine_build.py); the
+## other meshes are built here, once, and shared: hewn facets from a seeded rng,
 ## flat shaded, about 330 triangles a ring. What reads from far off is the glint: a
 ## fixed-size star that flares now and then, as old gold catches the sun, not a
 ## glow. It is depth tested, so land hides it.
@@ -15,6 +16,7 @@ extends RefCounted
 ## recordings in assets/audio/burrower over foley rock breaks, pitched up the scale as the count grows.
 
 const WorldScale = preload("res://scripts/world_scale.gd")
+const TempleKit = preload("res://scripts/temple_kit.gd")
 const NORMAL := "res://assets/textures/ruin_stone_normal.png"
 
 const BLOCKS := 11
@@ -36,7 +38,7 @@ const GLINT_SIZE := 0.05
 const HALL_LAYER := 1 << 14
 
 static var _hoop: ArrayMesh
-static var _cairn: ArrayMesh
+static var _shrine: ArrayMesh
 static var _flat: ArrayMesh
 static var _chip: ArrayMesh
 static var _flare: Texture2D
@@ -139,31 +141,28 @@ static func _stone(st: SurfaceTool, rng: RandomNumberGenerator, at: Vector3, r: 
 			_tri(st,row.call(j,i),row.call(j,i+1),row.call(j+1,i+1))
 			_tri(st,row.call(j,i),row.call(j+1,i+1),row.call(j+1,i))
 
-## The cairn, standing on the origin: surface 0 stone, 1 the gilt cap.
-static func cairn() -> ArrayMesh:
-	if _cairn != null: return _cairn
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 2093
-	var stone := SurfaceTool.new()
-	var gilt := SurfaceTool.new()
-	for st: SurfaceTool in [stone,gilt]:
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		st.set_smooth_group(-1)
-	_stone(stone,rng,Vector3(0.1,0.8,0.0),2.2,0.55)
-	_stone(stone,rng,Vector3(-1.8,0.5,0.9),1.1,0.6)
-	_stone(stone,rng,Vector3(1.5,0.4,-1.2),1.0,0.6)
-	_stone(stone,rng,Vector3(-0.2,2.2,0.1),1.6,0.55)
-	_stone(stone,rng,Vector3(0.15,3.3,-0.1),1.15,0.6)
-	_stone(gilt,rng,Vector3(0.0,4.3,0.0),0.8,0.7)
+## The shrine, standing on the origin: surface 0 the kit's stone, 1 the gilt
+## bowl (shrine.glb and shrine_gilt.glb, near models).
+static func shrine() -> ArrayMesh:
+	if _shrine != null: return _shrine
 	var mesh := ArrayMesh.new()
-	stone.generate_normals()
-	stone.commit(mesh)
-	gilt.generate_normals()
-	gilt.commit(mesh)
-	mesh.surface_set_material(0,stone_material(STONE))
-	mesh.surface_set_material(1,stone_material(GILT,true))
-	_cairn = mesh
+	for id: StringName in [&"shrine",&"shrine_gilt"]:
+		var src := TempleKit.mesh(id)
+		for k in src.get_surface_count():
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,src.surface_get_arrays(k))
+	mesh.surface_set_material(0,TempleKit.material())
+	mesh.surface_set_material(1,old_gilt())
+	_shrine = mesh
 	return mesh
+
+## The bowl's gilding: old gold, duller than the ring's, metal enough to
+## catch the sun.
+static func old_gilt() -> StandardMaterial3D:
+	var m := stone_material(Color(0.8,0.6,0.28),true)
+	m.metallic = 0.55
+	m.roughness = 0.45
+	m.emission_energy_multiplier = 0.35
+	return m
 
 static func flat_stone() -> ArrayMesh:
 	if _flat != null: return _flat
@@ -253,7 +252,7 @@ class Mark extends Node3D:
 		_glint_mat = _glint.material_override
 		add_child(_glint)
 
-	## Set up as a find of `what` at `at` from row `e`; found: a landing's cairn
+	## Set up as a find of `what` at `at` from row `e`; found: a landing's shrine
 	## stays, without its glint.
 	func show_as(what: String, at: Vector3, e: Dictionary, found: bool, field: RefCounted) -> void:
 		kind = what
@@ -276,7 +275,9 @@ class Mark extends Node3D:
 			_yaw_fixed = e.has("yaw")
 			if _yaw_fixed: rotation.y = deg_to_rad(float(e.yaw))
 		else:
-			_body.mesh = FindMarks.cairn()
+			_body.mesh = FindMarks.shrine()
+			# Each turned its own way; the bowl's rim is at about 4.9 m.
+			_spin.rotation.y = _phase
 			_glint.position = Vector3.UP*5.4
 			_yaw_fixed = true
 			if not bool(e.moves): _stones(at,float(e.get("radius",45.0)),field)
@@ -317,7 +318,7 @@ class Mark extends Node3D:
 		_glint_mat.albedo_color = Color(1.0,1.0,1.0,a)
 		_glint.scale = Vector3.ONE*(0.8+1.0*flare_k)
 
-	## Taken: a ring goes at once (the burst stands in for it), a cairn stays.
+	## Taken: a ring goes at once (the burst stands in for it), a shrine stays.
 	func taken() -> void:
 		_found = true
 		_glint.visible = false
