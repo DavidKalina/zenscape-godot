@@ -164,6 +164,12 @@ const WORLDS := {
 			"title":"The ring over the stacks","hint":"On top of the rocks in the bay"},
 		{"id":"giant-stack","area":"coast","kind":"relic","anchor":"endless/rock/stacks/4_5/0","pillar":0,"up":14.0,
 			"title":"The ring over the giant"},
+		# The whale's bay, north of the stacks: the ring is let out where it rises
+		# with the plane near (scripts/endless/whale_home.gd).
+		{"id":"whale-ring","area":"coast","kind":"relic","anchor":"whale/home","up":10.0,
+			"title":"The ring where the whale rose","hint":"Something blows in the deep bay, north-east"},
+		{"id":"whale-tail","area":"coast","kind":"event","event":"whale/tail",
+			"title":"Close past the whale's flukes","hint":"When it dives, pass the tail"},
 		{"id":"stack-run","area":"coast","kind":"line","place":"coast","name":"round_the_stacks",
 			"title":"Round the stacks","hint":"Gates in the bay, out and back through the rocks","mark":20.0,"gates":[
 				{"at":Vector3(1900,-24,-600),"half":Vector2(9.0,5.0)},
