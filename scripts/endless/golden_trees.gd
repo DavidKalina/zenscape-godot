@@ -147,6 +147,13 @@ func before(delta: float) -> void:
 					_sway_step(site,delta)
 					_try_hit(site,delta)
 
+## A frame while the flight is held (find_reveal.gd): a falling tree goes on
+## falling, and nothing else.
+func hold_step(delta: float) -> void:
+	for id: String in sites:
+		var site: Dictionary = sites[id]
+		if str(site.state) == "up" and site.has("fall"): _fall_step(site,delta)
+
 func _daylight() -> float:
 	var look: Variant = game.get("look")
 	if look == null or look.celestial == null: return 1.0
@@ -526,7 +533,9 @@ func _hand(site: Dictionary) -> void:
 	var at: Vector2 = site.at
 	var p := foot_of(str(site.id))
 	if p == Vector3.INF: p = Vector3(at.x,float(game.field.height(at.x,at.y)),at.y)
-	finds.anchor(key(str(site.id)),p)
+	# Watched from beside the fall, the trunk lying across the view.
+	var way: Vector3 = site.get("way",Vector3.ZERO)
+	finds.anchor(key(str(site.id)),p,Vector3.UP.cross(way).normalized() if way != Vector3.ZERO else Vector3.ZERO)
 
 ## A burst of gold leaves at `at`, thrown toward `way`: lit leaf pieces that
 ## tumble and flutter down, carried a little by the air, thinning out by the

@@ -133,6 +133,7 @@ const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const PhotoMode = preload("res://scripts/endless/photo_mode.gd")
+const FindReveal = preload("res://scripts/endless/find_reveal.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
@@ -527,6 +528,9 @@ var book: PilotBook
 var overlay: Object = null
 ## Photo mode (scripts/endless/photo_mode.gd): O; the flight held while up.
 var photo: PhotoMode
+## A find appearing shown (scripts/endless/find_reveal.gd): the flight held
+## while the camera goes to it and back.
+var reveal: FindReveal
 ## A taped flight drawn again (--replay=FILE; scripts/endless/flight_replay.gd,
 ## tools/movie.py): it gives the tick the input, the plane's and the landing's
 ## state and the camera, in the flying's place. `--record=FILE` tapes one
@@ -567,6 +571,7 @@ func _ready() -> void:
 	get_tree().root.window_input.connect(Pad.note)
 	book = PilotBook.open()
 	photo = PhotoMode.new(self)
+	reveal = FindReveal.new(self)
 	add_child(sound)
 	# The graphics preset first: its flags lie under the command line's for
 	# everything below, its height under the render resolution.
@@ -1438,6 +1443,7 @@ func _process(delta: float) -> void:
 	if photo.active:
 		photo.step(minf(delta,1.0/20.0))
 		return
+	if reveal.step(delta): return
 	tick(minf(delta,1.0/20.0))
 
 ## One frame: the plane flown, drawn and followed, the land streamed round
@@ -2079,6 +2085,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if replay != null:
 		if event is InputEventKey and event.pressed and (event as InputEventKey).keycode == KEY_ESCAPE: get_tree().quit()
 		return
+	# A find's reveal takes every key while it holds; a press skips it.
+	if reveal.handle(event): return
 	# Photo mode: O opens it while no overlay is up, and it takes them all.
 	if photo.handle(event): return
 	# An overlay (the shop, the logbook, photo mode) takes the keys while up.
