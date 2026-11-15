@@ -477,6 +477,14 @@ func _go(s: StringName) -> void:
 func _spawn() -> void:
 	var plane = game.plane
 	var p: Vector3 = plane.position
+	# A taped line (--raider-tape=): it shows up on the line, the plane by it.
+	var tape_s := -1.0
+	if mode == &"chase" and chase.has_tape():
+		# Up to speed first, or it's gone before the plane is off the ground.
+		if float(plane.speed) >= float(plane.cruise()): tape_s = chase.tape_near(p,plane.forward())
+		if tape_s < 0.0:
+			_wait = 0.5
+			return
 	var cam: Camera3D = game.camera
 	var look := -cam.global_basis.z
 	var flat := Vector3(look.x,0.0,look.z)
@@ -510,7 +518,8 @@ func _spawn() -> void:
 	_untail()
 	_unslow()
 	if mode == &"chase":
-		chase.buzz()
+		if tape_s >= 0.0: chase.tape_begin(tape_s)
+		else: chase.buzz()
 		figure.reset(flight)
 		_prev = Vector3.INF
 		_go(&"flee")
@@ -523,7 +532,7 @@ func _spawn() -> void:
 func _watch(delta: float, dist: float) -> void:
 	_tail_step(delta,dist)
 	# Behind past GETAWAY_M for GETAWAY_S s: it got away, locked on or not.
-	_away_t = _away_t+delta if (chase.phase == &"run" and dist > float(tuning.getaway)) else 0.0
+	_away_t = _away_t+delta if (chase.running() and dist > float(tuning.getaway)) else 0.0
 	if _away_t > float(tuning.getaway_s):
 		stats.got_away = int(stats.get("got_away",0))+1
 		_leave()
@@ -532,7 +541,7 @@ func _watch(delta: float, dist: float) -> void:
 	var locked: bool = lock != null and lock.target == figure
 	if locked: chased = true
 	elif chased and lock != null and String(lock.why) == "pressed": chased = false
-	if locked or chased or chase.phase != &"run":
+	if locked or chased or not chase.running():
 		_unseen_t = 0.0
 		return
 	_unseen_t = 0.0 if _in_view() else _unseen_t+delta
@@ -542,7 +551,7 @@ func _watch(delta: float, dist: float) -> void:
 func _tail_step(delta: float, dist: float) -> void:
 	stagger_t = maxf(stagger_t-delta,0.0)
 	var now := false
-	if chase.phase == &"run" and dist > 1.0 and bool(game.hand_landing.flying()) and dist <= float(tuning.tail_m):
+	if chase.running() and dist > 1.0 and bool(game.hand_landing.flying()) and dist <= float(tuning.tail_m):
 		var to: Vector3 = (flight.position-game.plane.position)/dist
 		now = flight.forward().dot(to) >= 0.3 and (game.plane.forward() as Vector3).dot(to) >= float(tuning.tail_cos)
 	_off_tail = 0.0 if now else _off_tail+delta

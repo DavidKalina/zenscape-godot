@@ -162,7 +162,7 @@ func step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> void:
 	pull_t = maxf(pull_t-delta,0.0)
 	var game: Node3D = raider.game
 	var flying: bool = game.hand_landing.flying()
-	var on: bool = raider.state == &"flee" and raider.chase.phase == &"run" and flying
+	var on: bool = raider.state == &"flee" and raider.chase.running() and flying
 	if on and raider.mode == &"chase": on = bool(raider.panic())
 	if on:
 		_wait -= delta

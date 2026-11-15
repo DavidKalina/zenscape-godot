@@ -58,6 +58,13 @@ extends RefCounted
 ## line clear SIDE m each way, the plane's WorldScale.opening at least) and
 ## flies JINK_LOW times its low height (diving under what it can).
 ##
+## A taped line (`--raider-tape=FILE`, a flight taped with `--record`,
+## scripts/endless/flight_tape.gd; a test): no buzz. With the plane within
+## TAPE_NEAR m of the tape's line and flying its way, it shows up
+## `--raider-tape-lead=` m (TAPE_LEAD) on along the line and flies the line
+## itself (`tape`, on rails, by distance: its pace is the chase's own), no
+## plans, arches or jinks. At the tape's end it runs on by its own plans.
+##
 ## Tuning flags: --raider-skim=M/S (SKIM_GAIN), --raider-pace=X (PACE),
 ## --raider-low=M (LOW), --raider-dive=RAD (PITCH_DIVE).
 
@@ -66,6 +73,7 @@ const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## Its pace: times the plane's Boost speed; behind the plane, m/s over its speed.
 const PACE := 1.12
@@ -199,6 +207,13 @@ const KEEP_EASE := 1.05
 ## Inside keep_near: m/s over the plane's speed per m inside, and the least.
 const KEEP_GAIN := 0.6
 const KEEP_OVER := 4.0
+## The taped line: the least between its points (m); how near the line the
+## plane must be for it to show up (m) and how far on along it (m); the tape
+## left past it at least (m).
+const TAPE_STEP := 4.0
+const TAPE_NEAR := 150.0
+const TAPE_LEAD := 50.0
+const TAPE_LEFT := 300.0
 
 var raider: Node3D
 ## buzz (arriving), run (fleeing), round (coming back)
@@ -235,13 +250,143 @@ var _panic := false
 var _turn_cap := TURN
 var _jink_side := 1.0
 var _jink_t := 0.0
+## The taped line's points, how far along it each is (m), where it is on it
+## (m along) and the point it last read from.
+var _tape := PackedVector3Array()
+var _tape_at := PackedFloat32Array()
+var _tape_s := 0.0
+var _tape_i := 0
 
 func _init(r: Node3D) -> void:
 	raider = r
 	tuning = {"skim":r._flag("--raider-skim",SKIM_GAIN),"pace":maxf(r._flag("--raider-pace",PACE),0.3),
 		"low":maxf(r._flag("--raider-low",LOW),FLOOR),
 		"dive":clampf(r._flag("--raider-dive",PITCH_DIVE),PITCH_DOWN,1.2),
-		"jink_turn":maxf(r._flag("--raider-jink-turn",JINK_TURN),TURN)}
+		"jink_turn":maxf(r._flag("--raider-jink-turn",JINK_TURN),TURN),
+		"tape_lead":r._flag("--raider-tape-lead",TAPE_LEAD)}
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--raider-tape="): _load_tape(a.get_slice("=",1))
+
+# --- The taped line -----------------------------------------------------------
+
+func _load_tape(file: String) -> void:
+	var takes := FlightTape.read(file)
+	if takes.is_empty():
+		push_warning("--raider-tape: no flight in %s" % file)
+		return
+	var take: Dictionary = takes[0]
+	var head: Dictionary = take.head
+	var at := (head.get("own",[]) as Array).size()
+	var found := false
+	for f: Array in head.get("plane",[]):
+		if String(f[0]) == "position":
+			found = true
+			break
+		at += FlightTape.width_of([f])
+	var width := int(take.width)
+	var data: PackedFloat32Array = take.data
+	if not found or width <= 0:
+		push_warning("--raider-tape: %s has no positions" % file)
+		return
+	var far := 0.0
+	@warning_ignore("integer_division")
+	for row in data.size()/width:
+		var q := Vector3(data[row*width+at],data[row*width+at+1],data[row*width+at+2])
+		if _tape.is_empty():
+			_tape.append(q)
+			_tape_at.append(0.0)
+			continue
+		var d := q.distance_to(_tape[_tape.size()-1])
+		if d < TAPE_STEP: continue
+		far += d
+		_tape.append(q)
+		_tape_at.append(far)
+	if _tape.size() < 4:
+		_tape.clear()
+		_tape_at.clear()
+		far = 0.0
+	print("raider tape: %s, %d points, %.0f m" % [file,_tape.size(),far])
+
+func has_tape() -> bool:
+	return not _tape.is_empty()
+
+## Flying its line (its own plans or the tape's), not buzzing or coming round.
+func running() -> bool:
+	return phase == &"run" or phase == &"tape"
+
+## Where on the tape (m along it) it would show up for the plane at `p`
+## flying `fwd`: the lead past the nearest point of the line that runs the
+## plane's way, within TAPE_NEAR m and with TAPE_LEFT m of tape past it; -1
+## none.
+func tape_near(p: Vector3, fwd: Vector3) -> float:
+	var best := -1
+	var least := TAPE_NEAR*TAPE_NEAR
+	for i in _tape.size()-1:
+		var d := p.distance_squared_to(_tape[i])
+		if d < least and (_tape[i+1]-_tape[i]).dot(fwd) > 0.0:
+			least = d
+			best = i
+	if best < 0: return -1.0
+	var s := _tape_at[best]+float(tuning.tape_lead)
+	return s if s+TAPE_LEFT < _tape_at[_tape_at.size()-1] else -1.0
+
+## Shown on the tape, `s` m along it, flying on along it.
+func tape_begin(s: float) -> void:
+	var plane = raider.game.plane
+	_tape_s = s
+	_tape_i = 0
+	var f: SkyTraffic.Flight = raider.flight
+	f.position = _tape_place(s)
+	var way := (_tape_place(s+2.0)-f.position).normalized()
+	f.heading = atan2(-way.x,-way.z)
+	f.pitch = asin(clampf(way.y,-1.0,1.0))
+	f.bank = 0.0
+	raider.speed = maxf(float(plane.speed),float(plane.boost_speed()))
+	f.speed = raider.speed
+	f.velocity = way*raider.speed
+	_want = f.heading
+	_plan_t = 0.0
+	_lost = 0.0
+	phase = &"tape"
+	_drop_route()
+	_seen = (raider.game.near.moments as Array).size()
+	stats.tapes = int(stats.get("tapes",0))+1
+
+## The tape's line `s` m along it (a curve through its points).
+func _tape_place(s: float) -> Vector3:
+	var n := _tape.size()
+	s = clampf(s,0.0,_tape_at[n-1])
+	while _tape_i < n-2 and _tape_at[_tape_i+1] <= s: _tape_i += 1
+	while _tape_i > 0 and _tape_at[_tape_i] > s: _tape_i -= 1
+	var i := _tape_i
+	var k := (s-_tape_at[i])/maxf(_tape_at[i+1]-_tape_at[i],0.001)
+	return _tape[i].cubic_interpolate(_tape[i+1],_tape[maxi(i-1,0)],_tape[mini(i+2,n-1)],k)
+
+## A frame on the tape: on along it at `pace`; heading, pitch and bank from
+## the move. Off its end it runs on by its own plans.
+func _tape_fly(delta: float, pace: float) -> void:
+	var f: SkyTraffic.Flight = raider.flight
+	raider.speed = lerpf(raider.speed,pace,raider._ease(1.0,delta))
+	_tape_s += raider.speed*delta
+	var was: Vector3 = f.position
+	var at := _tape_place(_tape_s)
+	var v := (at-was)/maxf(delta,0.0001)
+	f.position = at
+	f.velocity = v
+	f.speed = raider.speed
+	var h := atan2(-v.x,-v.z) if Vector2(v.x,v.z).length() > 1.0 else f.heading
+	var rate := angle_difference(f.heading,h)/maxf(delta,0.0001)
+	raider.turn = lerpf(raider.turn,clampf(rate,-3.0,3.0),raider._ease(0.25,delta))
+	f.heading = h
+	f.pitch = lerp_angle(f.pitch,clampf(atan2(v.y,maxf(Vector2(v.x,v.z).length(),1.0)),-1.0,1.0),raider._ease(0.15,delta))
+	f.bank = clampf(-raider.turn*raider.BANK,-raider.BANK_MAX,raider.BANK_MAX)
+	stats.tape_m = float(stats.get("tape_m",0.0))+raider.speed*delta
+	if _tape_s >= _tape_at[_tape_at.size()-1]:
+		phase = &"run"
+		_want = f.heading
+		_want_y = NAN
+		_plan_t = 0.0
+		stats.tape_ends = int(stats.get("tape_ends",0))+1
 
 ## Shown: ahead of the view, low, facing on along the plane's line.
 func spawn() -> void:
@@ -400,6 +545,9 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 		if ahead and gap < float(rt.keep_near): pace = maxf(pace,ps+KEEP_OVER+(float(rt.keep_near)-gap)*KEEP_GAIN)
 	if not ahead: pace = maxf(pace,ps+AHEAD_OVER)
 	pace *= float(raider.pace_k())  # pulling away after an ember's hit
+	if phase == &"tape":
+		_tape_fly(delta,pace)
+		return
 	# On its tail: the jinks.
 	var was_panic := _panic
 	_panic = raider.mode == &"chase" and bool(raider.panic())
