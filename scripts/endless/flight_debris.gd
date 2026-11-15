@@ -222,6 +222,20 @@ func burst(kind: String, at: Vector3, normal: Vector3, crash := false) -> void:
 	p.restart()
 	p.emitting = true
 
+## Each kind burst once under `parent` at `at` (its local), too small to see, and
+## freed: their pipelines built where that costs nothing (golden_trees.gd `_warm`).
+func warm(parent: Node3D, at: Vector3) -> void:
+	for kind: String in KINDS:
+		var p := _emitter(KINDS[kind],true)
+		p.amount = 2
+		p.lifetime = 0.3
+		p.scale_amount_min = 0.001
+		p.scale_amount_max = 0.001
+		p.reparent(parent,false)
+		p.position = at
+		p.emitting = true
+		p.finished.connect(p.queue_free)
+
 ## The burst for a surface (land, water, tree, stone): dust, spray, leaves
 ## (and dust), sparks (and dust).
 func hit(what: String, at: Vector3, normal: Vector3, crash := false) -> void:

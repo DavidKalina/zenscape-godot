@@ -100,6 +100,9 @@ var built := {}
 var view: Control
 var view_cell := Vector2i.ZERO
 var _left_on_stop := false
+## --shop-open opens the first shop built, wherever the plane stands (for a look
+## at the overlay; the plane must be parked, as --no-title leaves it).
+var _force_open := "--shop-open" in preload("res://scripts/launch_args.gd").user_args()
 var _layer: CanvasLayer
 var _sock_t := 0.0
 ## The squares' tries run on a worker, a square at a time, each on its own
@@ -374,7 +377,7 @@ static func on_strip(site: Dictionary, p: Vector3) -> bool:
 
 func _open_or_close() -> void:
 	var landing: RefCounted = game.hand_landing
-	var stopped: bool = landing.can_exit()
+	var stopped: bool = landing.can_exit() or _force_open
 	if view != null:
 		# Taking off (Boost rolls it on) leaves the shop.
 		if not stopped: close()
@@ -392,7 +395,7 @@ func _open_or_close() -> void:
 		return
 	for key: Vector2i in built:
 		var site: Dictionary = cells[key].site
-		if on_strip(site,game.plane.position):
+		if _force_open or on_strip(site,game.plane.position):
 			open(key)
 			return
 

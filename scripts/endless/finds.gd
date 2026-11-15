@@ -41,8 +41,9 @@ const LAND_RADIUS := 45.0
 ## What a find pays the first time it is found, by kind, unless its row says
 ## `pay`: a ring or a landing in plain sight, a place line finished, an event.
 ## A relic in a cracked wall's room pays PAY_ROOM, as a hidden find does.
-const PAY := {"relic":10,"landing":10,"line":30,"event":40}
-const PAY_ROOM := 40
+## The numbers are the economy's (scripts/endless/economy.gd FIND_PAY, FIND_ROOM).
+const PAY: Dictionary = preload("res://scripts/endless/economy.gd").FIND_PAY
+const PAY_ROOM: int = preload("res://scripts/endless/economy.gd").FIND_ROOM
 
 ## The rows, resolved: the table's own keys plus {world, book_id, at
 ## (Vector3.INF none yet), moves (a handle: re-read while near)}.
@@ -54,6 +55,9 @@ var _by_event := {}
 var _pending: Array = []
 var _polled: Array = []
 var _extra_anchors := {}
+## Rows with `reveal` whose anchor was handed mid-flight, waiting for their
+## spot and mark (find_reveal.gd).
+var _appearing: Array = []
 var _cell := Vector2i(1 << 30,0)
 ## Row index -> its node.
 var _live := {}
@@ -132,9 +136,19 @@ func _line(e: Dictionary) -> void:
 # --- Anchors ----------------------------------------------------------------------------
 
 ## A place for `anchor` names in rows (the lanes' way in, besides a handle).
-func anchor(anchor_name: String, at: Vector3) -> void:
+## Handed mid-flight (not as the land loads), it is the find appearing: a row
+## with `reveal` on it is shown (find_reveal.gd) once its mark stands, watched
+## from either end of `side` (flat; ZERO: from the chase's side), the way what
+## it came out of reads best.
+func anchor(anchor_name: String, at: Vector3, side := Vector3.ZERO) -> void:
 	_extra_anchors[anchor_name] = at
 	_retry = 0.0
+	if not bool(_game.get("walk_ready")): return
+	for i in rows.size():
+		var e: Dictionary = rows[i]
+		if not bool(e.get("reveal",false)) or str(e.get("anchor","")) != anchor_name or is_found(e): continue
+		e["reveal_side"] = side
+		if not i in _appearing: _appearing.append(i)
 
 ## Each row still without a spot gets one if it can; those that have one go in
 ## the grid.
@@ -387,11 +401,43 @@ func step(delta: float, game: Node) -> void:
 		node.tick(delta,p,eye)
 		if e.has("hall"): node.visible = not is_found(e) and game.doors != null and game.doors.holds(e.at)
 		if e.kind == "relic" and flying and a != Vector3.INF and not is_found(e) and _segment_near(a,p,e.at,r) and _under(a,p,e): complete(i)
+	if not _appearing.is_empty(): _appear()
 	# Any stop counts, a taxi in as well as a landing: wheels at rest inside the
 	# stones is what the row asks for, and a rollout can run past them.
 	var stopped: bool = game.hand_landing.can_exit()
 	if stopped and not _stopped: _landed(game,p)
 	_stopped = stopped
+	beat.tick(delta)
+
+# --- The reveal (find_reveal.gd) ---------------------------------------------------------
+
+## The rows appeared this frame handed to the reveal; a mark it will show waits
+## unseen till then.
+func _appear() -> void:
+	var still: Array = []
+	for i: int in _appearing:
+		var e: Dictionary = rows[i]
+		if e.at == Vector3.INF:
+			still.append(i)
+			continue
+		if is_found(e): continue
+		var reveal: Variant = _game.get("reveal")
+		if reveal != null and bool(reveal.ask(i)) and _live.has(i): (_live[i] as Marks.Mark).wait()
+	_appearing = still
+
+## Row `i`'s mark rising into view, turned to `face`.
+func appear_mark(i: int, face: Vector3) -> void:
+	if _live.has(i): (_live[i] as Marks.Mark).appear(face,float(rows[i].get("up",Table.HOVER)))
+
+## Row `i`'s mark shown as it is (a reveal dropped).
+func show_mark(i: int) -> void:
+	if _live.has(i): (_live[i] as Marks.Mark).unwait()
+
+## A frame while the reveal holds the flight: the marks and the beat move,
+## nothing is taken.
+func hold_step(delta: float, eye: Vector3) -> void:
+	var p: Vector3 = _game.plane.position
+	for i: int in _live.keys(): (_live[i] as Marks.Mark).tick(delta,p,eye)
 	beat.tick(delta)
 
 func _world_at(p: Vector3, game: Node) -> String:

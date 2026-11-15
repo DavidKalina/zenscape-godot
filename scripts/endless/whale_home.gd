@@ -264,5 +264,6 @@ func _reveal(game: Node3D) -> void:
 	var origin: Vector3 = _whale.spot
 	ring_at = origin-heading*BLOW_ASTERN
 	ring_at.y = Field.SEA_Y
-	game.finds.anchor(ANCHOR,ring_at)
+	# Watched from abeam, its back along the view behind the ring.
+	game.finds.anchor(ANCHOR,ring_at,Vector3.UP.cross(heading).normalized())
 	print("whale home: the ring let out at %s" % str(ring_at.snapped(Vector3.ONE)))

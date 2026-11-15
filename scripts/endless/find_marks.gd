@@ -36,6 +36,17 @@ const GLINT_SIZE := 0.05
 ## bore under the land) is on it as well as the world's, so the bore's own
 ## lights reach it.
 const HALL_LAYER := 1 << 14
+## A find appearing (Mark `appear`, find_reveal.gd): it rises from as far under
+## its spot as its row's `up` (out of the stump, out of the water), growing
+## past its size and settling, turning RISE_TURNS more than its own turn, over
+## RISE_FOR s; its light flares to RISE_LIGHT and dies over RISE_GLOW s more,
+## the glint flares with it, and a bell rings as it settles (RISE_BELL of the way).
+const RISE_FOR := 1.3
+const RISE_GLOW := 1.4
+const RISE_TURNS := 1.25
+const RISE_LIGHT := 9.0
+const RISE_BELL := 0.62
+const RISE_SOUND := "res://assets/audio/burrower/bell-417300.mp3"
 
 static var _hoop: ArrayMesh
 static var _shrine: ArrayMesh
@@ -239,6 +250,13 @@ class Mark extends Node3D:
 	var _yaw_fixed := false
 	var _found := false
 	var _spin: Node3D
+	var _wait := false
+	var _rise := -1.0
+	var _drop := 0.0
+	var _face := Vector3.INF
+	var _rang := false
+	var _lamp: OmniLight3D
+	var _bell: AudioStreamPlayer
 
 	func _init() -> void:
 		_spin = Node3D.new()
@@ -264,7 +282,12 @@ class Mark extends Node3D:
 		_body.visible = true
 		_glint.visible = not found
 		_spin.rotation = Vector3.ZERO
+		_spin.position = Vector3.ZERO
+		_spin.scale = Vector3.ONE
 		rotation = Vector3.ZERO
+		_wait = false
+		_rise = -1.0
+		if _lamp != null: _lamp.visible = false
 		_ring.visible = false
 		var seen: int = HALL_LAYER if e.has("hall") else (1 | HALL_LAYER if e.has("under") else 1)
 		_body.layers = seen
@@ -298,9 +321,86 @@ class Mark extends Node3D:
 		_ring.multimesh = mm
 		_ring.visible = true
 
+	## Unseen until `appear` (a reveal's turn to come).
+	func wait() -> void:
+		_wait = true
+		_spin.scale = Vector3.ONE*0.001
+		_glint.visible = false
+
+	## Seen again as it was, without the rise.
+	func unwait() -> void:
+		if not _wait: return
+		_wait = false
+		_spin.scale = Vector3.ONE
+		_glint.visible = not _found
+
+	## Appearing: it rises `drop` m into its spot, turned to `face` (a relic).
+	func appear(face: Vector3, drop: float) -> void:
+		_wait = false
+		_rise = 0.0
+		_rang = false
+		_drop = drop
+		_face = face
+		_spin.scale = Vector3.ONE*0.001
+		_glint.visible = not _found
+		if _lamp == null:
+			_lamp = OmniLight3D.new()
+			_lamp.light_color = Color(1.0,0.8,0.45)
+			_lamp.omni_range = 34.0
+			_lamp.shadow_enabled = false
+			add_child(_lamp)
+			_bell = AudioStreamPlayer.new()
+			_bell.bus = &"SFX"
+			_bell.volume_db = -4.0
+			add_child(_bell)
+		_lamp.light_energy = 0.0
+		_lamp.visible = true
+
+	## The rise's frame (`_rise` s in).
+	func _rising() -> void:
+		var k := clampf(_rise/RISE_FOR,0.0,1.0)
+		var up := 1.0-pow(1.0-k,3.0)
+		var grow := _overshoot(clampf(_rise/(RISE_FOR*0.75),0.0,1.0))
+		_spin.scale = Vector3.ONE*maxf(grow,0.001)
+		_spin.position = Vector3.DOWN*_drop*(1.0-up)
+		if kind == "relic":
+			_spin.rotation.z = _t*SPIN+TAU*RISE_TURNS*(1.0-up)
+			_glint.position = _spin.position
+			if _face != Vector3.INF:
+				var to := _face-position
+				rotation.y = atan2(to.x,to.z)
+		# The light and the glint: up with the ring, flared as it settles, gone after.
+		var shine := smoothstep(0.0,0.7,k)*(1.0-smoothstep(RISE_FOR,RISE_FOR+RISE_GLOW,_rise))
+		_lamp.light_energy = RISE_LIGHT*shine
+		_glint_mat.albedo_color = Color(1.0,1.0,1.0,minf(shine*1.4,1.0))
+		_glint.scale = Vector3.ONE*(1.0+5.0*shine*(0.7+0.3*sin(_rise*9.0)))
+		if not _rang and k >= RISE_BELL:
+			_rang = true
+			var tb := Time.get_ticks_usec()
+			_bell.stream = load(RISE_SOUND)
+			if FrameLog.on: FrameLog.add(&"r_bell",(Time.get_ticks_usec()-tb)/1000.0)
+			_bell.pitch_scale = 0.75
+			_bell.play()
+		if _rise >= RISE_FOR+RISE_GLOW:
+			_rise = -1.0
+			_spin.position = Vector3.ZERO
+			_spin.scale = Vector3.ONE
+			if kind == "relic": _glint.position = Vector3.ZERO
+			_lamp.visible = false
+
+	## 0 to 1 past 1 and back (an ease out with a little overshoot).
+	static func _overshoot(x: float) -> float:
+		const C := 1.9
+		return 1.0+(C+1.0)*pow(x-1.0,3.0)+C*pow(x-1.0,2.0)
+
 	## A frame: the ring turns and meets the plane; the glint flares.
 	func tick(delta: float, plane_at: Vector3, eye: Vector3) -> void:
+		if _wait: return
 		_t += delta
+		if _rise >= 0.0:
+			_rise += delta
+			_rising()
+			if _rise >= 0.0: return
 		if kind == "relic":
 			_spin.rotation.z = _t*SPIN
 			if not _yaw_fixed:
