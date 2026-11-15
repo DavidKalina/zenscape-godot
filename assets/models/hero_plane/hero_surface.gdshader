@@ -59,6 +59,10 @@ uniform float finish_rough = -1.0;
 uniform float finish_coat = -1.0;
 uniform float finish_metal : hint_range(0.0, 1.0) = 0.0;
 uniform float finish_sheen : hint_range(0.0, 1.0) = 0.0;
+// A bake's bared metal (mask 0, its orm metal share) as a metal finish shows
+// it, 0 none (lit as the paint is without one) to 1 the full mirror, in its
+// own colour: what makes a gold or copper read as metal, not paint.
+uniform float finish_bare : hint_range(0.0, 1.0) = 0.0;
 // A matte's chalkiness: the paint a little greyed and lifted, its rim gone.
 uniform float finish_chalk : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 pearl : source_color = vec3(1.0);
@@ -146,7 +150,8 @@ void fragment() {
 	ALBEDO = base;
 	float rough = finish_rough < 0.0 ? orm.r : mix(orm.r, finish_rough, painted);
 	float coat = finish_coat < 0.0 ? orm.b : mix(orm.b, finish_coat, painted);
-	float metal = finish_metal * painted;
+	float bared = finish_bare * (1.0 - painted) * orm.g;
+	float metal = max(finish_metal * painted, bared);
 	ROUGHNESS = clamp(mix(rough, 1.0, dull * 0.6), 0.0, 1.0);
 	// The sky isn't in the reflections, so a true metal would go black: a
 	// third of one keeps its colour and its sheen.
@@ -172,7 +177,15 @@ void fragment() {
 		// is all mirror, in its own colour: bright over dark down a round body.
 		// A lacquer's is white, faint face-on and strong edge-on, with a
 		// window's streak of light high up that runs along the fuselage.
-		float seen = (INV_VIEW_MATRIX * vec4(reflect(-VIEW, NORMAL), 0.0)).y;
+		// Bared metal's mirror follows the normal map, so its panels, ribs and
+		// slack bays catch the horizon as a sheet of metal does.
+		vec3 mirror_n = NORMAL;
+		if (bared > 0.0) {
+			vec3 nm = texture(normal_tex, UV, 2.0).rgb * 2.0 - 1.0;
+			vec3 bent = normalize((TANGENT * nm.x + BINORMAL * nm.y) * normal_depth * 1.5 + NORMAL * max(nm.z, 0.01));
+			mirror_n = normalize(mix(NORMAL, bent, bared));
+		}
+		float seen = (INV_VIEW_MATRIX * vec4(reflect(-VIEW, mirror_n), 0.0)).y;
 		float above = smoothstep(-0.03, 0.03, seen);
 		float band = above * (1.0 - smoothstep(0.05, 0.3, seen));
 		vec3 sky_lum = vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722)));
@@ -182,9 +195,10 @@ void fragment() {
 		vec3 lacquer = (env * mix(0.1, 1.0, grazing) + sky_lum * zs_hemi_energy * 3.0 * streak) * sheen;
 		// A metal's mirror is harder: the land in it near black, the sky and
 		// the band over the horizon bright, so a round body reads bright over dark.
-		// Its colour is the paint's hue, lifted: a dark paint's metal still mirrors.
+		// Its colour is the paint's hue, lifted: a dark paint's metal still mirrors
+		// (less as finish_metal is below 1, so a dark steel stays dark).
 		float peak = max(max(base.r, base.g), max(base.b, 0.001));
-		vec3 alloy = base * max(peak, 0.4) / peak;
+		vec3 alloy = base * max(peak, 0.4 * finish_metal) / peak;
 		vec3 mirror = (mix(zs_hemi_ground * bounce * 0.08, sky_lum * 2.4, above) + sky_lum * 5.0 * band) * zs_hemi_energy;
 		EMISSION += (mirror * alloy * metal * mix(1.3, 2.0, grazing) + lacquer) * (1.0 - roof * roof_dim);
 	}

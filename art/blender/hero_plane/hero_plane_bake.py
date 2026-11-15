@@ -29,9 +29,14 @@ their defaults):
 	            cowl), 0..1; the deck, cheat line and marks stay painted over it
 	bare_c  -   the bared metal's colour, hex (aluminium when not given):
 	            copper "b87333", gold "d4a64a"
-	rust    0   rust in the chips on metal and runs back from them, 0..1
+	rust    0   rust in the chips on metal and runs back from them, and
+	            gathered in the body's seams and round its rivets, 0..1
+	rust_c  -   the corrosion's colour, hex (rust when not given): a
+	            verdigris "4f9a7a" for copper
 	cloth   doped   or "silver": the wings', tail's and rudder's cloth in
-	            aluminium dope, which takes no livery colour
+	            aluminium dope, which takes no livery colour; or "bare": the
+	            cloth and the body aft skinned in the bared metal (bare_c),
+	            so with bare 1 the whole airframe is metal but the scheme
 
 Each bake takes about a minute (the whole atlas is painted at full size, the
 albedo then halved). It prints `BAKE <out> <albedo KB> <mask KB> <orm KB>` and
@@ -105,16 +110,17 @@ def _png(path, rgba):
 		+ chunk(b"IDAT", zlib.compress(raw.tobytes(), 9)) + chunk(b"IEND", b""))
 
 
-def bake(out, wear=1.0, dirt=1.0, bare=0.0, bare_c=None, rust=0.0, cloth="doped"):
+def bake(out, wear=1.0, dirt=1.0, bare=0.0, bare_c=None, rust=0.0, cloth="doped", rust_c=None):
 	"""Paints the atlas with these settings and writes <out>_albedo.jpg,
 	<out>_mask.png and <out>_orm.jpg (out relative to the repo root, no suffix).
 	Returns the row's `bake` value."""
-	if cloth not in ("doped", "silver"):
-		raise ValueError("bake: cloth is doped or silver, not %r" % cloth)
+	if cloth not in ("doped", "silver", "bare"):
+		raise ValueError("bake: cloth is doped, silver or bare, not %r" % cloth)
 	out = ROOT / out if not Path(out).is_absolute() else Path(out)
 	out.parent.mkdir(parents=True, exist_ok=True)
 	maps = paint.paint_all(_constants(), 2, WEAR=float(wear), DIRT=float(dirt), BARE=float(bare),
-		BARE_C=_hex(bare_c) if bare_c else None, RUST=float(rust), CLOTH=cloth)
+		BARE_C=_hex(bare_c) if bare_c else None, RUST=float(rust), CLOTH=cloth,
+		RUST_C=_hex(rust_c) if rust_c else None)
 	files = {
 		"albedo": out.with_name(out.name + "_albedo.jpg"),
 		"mask": out.with_name(out.name + "_mask.png"),
@@ -140,7 +146,7 @@ def _cli(argv):
 	out, kw, i = argv[0], {}, 1
 	while i < len(argv):
 		key = argv[i].lstrip("-").replace("-", "_")
-		if key not in ("wear", "dirt", "bare", "bare_c", "rust", "cloth") or i + 1 >= len(argv):
+		if key not in ("wear", "dirt", "bare", "bare_c", "rust", "rust_c", "cloth") or i + 1 >= len(argv):
 			print("hero_plane_bake: unknown or empty option %s" % argv[i])
 			raise SystemExit(2)
 		kw[key] = argv[i + 1]

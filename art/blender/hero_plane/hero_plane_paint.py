@@ -24,8 +24,10 @@ BAKE_DEFAULTS = {
 	"BARE": 0.0,      # the livery's coat off the metal (body forward, cowl), 0..1
 	"BARE_C": None,   # the bared metal's colour (None: aluminium)
 	"RUST": 0.0,      # chips on metal rust, and rust runs back from them, 0..1
+	"RUST_C": None,   # the corrosion's colour (None: rust; a verdigris for copper)
 	"CLOTH": "doped", # the wings' and tail's cloth: doped (cream, takes the wing
-	                  # colour) or silver (aluminium dope, takes no livery)
+	                  # colour), silver (aluminium dope, takes no livery) or bare
+	                  # (skinned in the bared metal, BARE_C, like the body aft)
 }
 
 
@@ -46,14 +48,22 @@ def bare_metal(p):
 
 
 RUST_C = np.array((0.36, 0.17, 0.08), dtype=np.float32)
+def rust_c():
+	return np.array(K["RUST_C"] if K["RUST_C"] is not None else RUST_C, dtype=np.float32)
+
+
 SILVER_C = np.array((0.7, 0.7, 0.68), dtype=np.float32)
 
 
 def silver_cloth(p, t=None):
-	"""CLOTH silver: the cloth doped in aluminium, by t (all of it by default)."""
-	if K["CLOTH"] != "silver":
+	"""CLOTH silver: the cloth doped in aluminium, by t (all of it by default);
+	CLOTH bare: skinned in the bared metal instead."""
+	if K["CLOTH"] not in ("silver", "bare"):
 		return
 	t = np.ones(p.col.shape[:2], dtype=np.float32) if t is None else t
+	if K["CLOTH"] == "bare":
+		p.lay(bare_metal(p), t, None, 0.24, 0.35, 1.0)
+		return
 	tone = 1.0 + (p.big - 0.5) * 0.1 + (p.mid - 0.5) * 0.06
 	p.lay(SILVER_C * tone[..., None], t, None, 0.45, 0.25, 0.55)
 
@@ -63,10 +73,11 @@ def rusted(p, t):
 	r = K["RUST"]
 	if r <= 0.0:
 		return
-	p.lay(RUST_C * (0.8 + 0.4 * p.fine[..., None]), np.clip(t * r, 0.0, 1.0), None, 0.9, 0.0, 0.15)
+	c = rust_c()
+	p.lay(c * (0.8 + 0.4 * p.fine[..., None]), np.clip(t * r, 0.0, 1.0), None, 0.9, 0.0, 0.15)
 	# Runs: back along the wind from each chip.
 	run = blur(t, 6.0) * 3.0 * sst(0.45, 0.75, p.along)
-	p.stain(RUST_C * 0.85, np.clip(run * r * 0.6, 0.0, 0.7), 0.85)
+	p.stain(c * 0.85, np.clip(run * r * 0.6, 0.0, 0.7), 0.85)
 
 
 # --- Tools --------------------------------------------------------------------
@@ -399,7 +410,8 @@ def paint_body(cv):
 	p.col = over(p.col, np.array((0.78, 0.45, 0.28), dtype=np.float32), sst(0.5, 0.8, p.big) * 0.2)
 	p.col = over(p.col, np.array((0.56, 0.24, 0.16), dtype=np.float32), sst(0.5, 0.8, 1.0 - p.mid) * 0.14)
 	if K["BARE"] > 0.0:
-		p.lay(bare_metal(p), metal * K["BARE"], None, 0.22, 0.35, 1.0)
+		skin = metal + fabric * (K["CLOTH"] == "bare")
+		p.lay(bare_metal(p), skin * K["BARE"], None, 0.22, 0.35, 1.0)
 
 	# Metal: panel seams, rivets and access plates.
 	seams_z = (-0.44, -0.33, -0.22, -0.11, K["FABRIC_FROM"])
@@ -424,6 +436,11 @@ def paint_body(cv):
 	p.hgt -= seam * 2.4
 	p.shade(1.0 + riv * 0.16)
 	p.hgt += riv * 1.6
+	if K["RUST"] > 0.0:
+		# Corrosion gathered in the seams and round the rivets, a little run aft.
+		gather = np.clip(blur(np.maximum(seam, riv), 4.0) * 3.0, 0.0, 1.0)
+		gather *= 0.55 + 0.45 * sst(0.35, 0.65, p.fine)
+		p.lay(rust_c() * (0.85 + 0.3 * p.fine[..., None]), gather * K["RUST"], None, 0.8, 0.0, 0.1)
 	# Rivet halos: paint rubbed thin round each head.
 	halo = riv * chipped(p.chip + (1.0 - sst(-0.33, 0.1, z)) * 0.08, 0.5, 0.72) * 0.8
 	p.lay(K["ALU_C"], halo, None, 0.4, 0.0, 1.0)

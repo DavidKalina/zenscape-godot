@@ -219,10 +219,13 @@ defaults it paints the plane's own atlas, byte for byte in the mask and
 orm): `wear` (chips; 0 fresh, 2 battered), `dirt` (soot, oil, dust; 0
 clean, 2 filthy), `bare` (the livery's coat off the forward metal and
 the cowl, 0..1; the deck, cheat line and marks stay painted), `bare_c` (the
-bared metal's hex: copper `b87333`, gold `d4a64a`; aluminium else), `rust`
-(rust in the metal's chips and runs back from them, 0..1) and `cloth`
-(`doped`, or `silver`: aluminium dope on the wings, tail and rudder that
-takes no livery colour). From a batch's script: `from
+bared metal's hex: copper `d97f48`, brass `a8964a`, gold `ffc23a`;
+aluminium else), `rust` (rust in the metal's chips, runs back from them and
+gathered in the body's seams and rivets, 0..1), `rust_c` (the corrosion's
+hex: a verdigris `4f9a7a`; rust else) and `cloth` (`doped`; `silver`:
+aluminium dope on the wings, tail and rudder that takes no livery colour;
+or `bare`: those and the body aft skinned in the bared metal, so `bare 1`
+makes the whole airframe metal but the scheme). From a batch's script: `from
 hero_plane.hero_plane_bake import bake; bake(out, wear=0.2, bare=1.0)`.
 About 15 s a bake. It writes `<out>_albedo.jpg` (2048x1300, JPEG 90),
 `<out>_mask.png` (2048x1300, RGBA) and `<out>_orm.jpg` (2048x1300, JPEG 90)
@@ -234,7 +237,12 @@ Silverwing 1.2 MB (imported 0.94 MB: albedo 0.23, mask 0.65, orm 0.06), a
 battered rusty copper one (wear 2, dirt 1.8, rust 1) 2.5 MB; the mask is
 most of it and grows with the dirt, and imports at about its PNG's size. A row may leave out a map it doesn't
 change. Bared metal and silver cloth take no livery (mask 0), so the
-finish's sheens (which act on the paint) don't reach them either.
+finish's sheens (which act on the paint) don't reach them either; a
+coloured bared metal (gold, copper, brass) then reads as paint of its
+colour. The row's finish `bare` (0..1, ShopStock; `finish_bare` in
+hero_surface.gdshader) puts the metal mirror on it, following the normal
+map: 1 polished, ~0.6 dull. Without it only grey (aluminium) reads as metal.
+Metal batch: `art/blender/hero_plane/skins/metal.py` (`-- gold` remakes one).
 
 ## movie.py: a taped flight, filmed
 
