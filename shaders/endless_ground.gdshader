@@ -234,7 +234,7 @@ uniform vec3 carpet_tone_top_r[4];
 uniform vec3 carpet_tone_low_r[4];
 uniform vec3 carpet_under_tone_r[4];
 uniform vec3 carpet_hue_r[4];
-uniform vec2 turf_beach = vec2(2.55, 2.9);
+uniform vec2 turf_beach = vec2(1.3, 2.2);
 uniform vec2 turf_slope = vec2(0.905, 0.95);
 uniform vec2 turf_high = vec2(36.0, 58.0);
 // (Set: thinning out as the paint turns to tundra, its `alpine` from x to y,
@@ -1059,7 +1059,10 @@ void fragment() {
 	rocky = max(rocky, smoothstep(0.88, 0.80, n.y + rock_edge) * alpine * (old_rock ? 1.0 : 0.6));
 	// The beach: a strip at the water, wider in bays (the meadows' flats
 	// stand MEADOW_ABOVE over the sea, and stay turf).
-	float sand_edge = (zs_noise(gxz / 7.0) - 0.5) * 0.7 + wide * 0.8 + fine * 0.3;
+	// (The exact hash: the sine hash breaks on its lattice's lines out here,
+	// and stepped the sand's edge in metre-wide stairs.)
+	float sand_fine = (zs_noise_exact((gxz + vec2(17.0, 3.0)) / 5.5) - 0.5) * (1.0 - smoothstep(1.0, 3.3, fp));
+	float sand_edge = (zs_noise_exact(gxz / 7.0) - 0.5) * 0.7 + wide * 0.8 + sand_fine * 0.3;
 	float sand_soft = 0.08 + min(fp * 0.2, 0.4);
 	float sandy = 1.0 - smoothstep(beach * 0.7 - sand_soft, beach * 0.7 + sand_soft, over + sand_edge);
 	float snow_edge = (zs_noise(gxz / 23.0) - 0.5) * 16.0 + mid * 10.0;
@@ -1372,6 +1375,8 @@ void fragment() {
 		// (flat at each lattice point) read as a checker: there the same grain
 		// from gradient noise, which has no cells. (With the alpine tufts on.)
 		float grain_soft = turf_alp.z > 0.0 ? carpet_high * (1.0 - carpet_turf) : 0.0;
+		// The same on any turf with no tufts over it (the shore's fringe).
+		grain_soft = max(grain_soft, 1.0 - tuft_turf);
 		if (grain_soft > 0.0 && fp < 0.8) {
 			float g_soft = gn_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + gn_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7 * (0.5 + 0.5 * tufted)
 				+ gn_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5 * tufted;

@@ -254,13 +254,15 @@ var flower_cheap_split := false
 const MeadowFlowers = preload("res://scripts/meadow_flower_mesh.gd")
 ## A cell is freed this far (m) past where it is wanted.
 const KEEP := 24.0
-## Open turf: from this far over the sea (m; the beach's sand is gone
-## there), on ground whose normal's up is over SLOPE.x (full past .y), up to
+## Open turf: from this far over the sea (m), thin at first and full
+## BEACH_RAMP higher, so the tufts reach down to the sand's own edge (the
+## ground's, about 1.5 m over the sea, swung by its noise) with a few on
+## the sand: at 2.55 a band of bare painted turf lay between. On ground whose normal's up is over SLOPE.x (full past .y), up to
 ## the rock's edge (the ground's `rock_up`, 0.80), thinning to none as the
 ## paint turns to tundra (its `alpine`, from ALPINE.x to .y), so every slope
 ## and hill the paint draws as turf carries the carpet.
-const BEACH_CLEAR := 2.55
-const BEACH_RAMP := 0.35
+const BEACH_CLEAR := 1.3
+const BEACH_RAMP := 0.9
 const SLOPE := Vector2(0.83,0.88)
 ## Under this up the rock's ragged edge is read (it swings the edge 0.13 at
 ## most, so past this it never reaches SLOPE.x).
