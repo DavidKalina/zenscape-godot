@@ -229,6 +229,38 @@ static func material(kind: String) -> ShaderMaterial:
 		m.set_shader_parameter("flower_petal_ref", Vector3(ref.r, ref.g, ref.b))
 	return m
 
+static var _far_meshes := {}
+## The kind's far plant (`build_far`), built once, with the kind's material.
+static func far_mesh(kind: String) -> ArrayMesh:
+	if not _far_meshes.has(kind):
+		var built: ArrayMesh = build_far(kind)
+		built.surface_set_material(0, material(kind))
+		_far_meshes[kind] = built
+	return _far_meshes[kind]
+
+## The plant as it is drawn from past its detail's distance (the endless
+## land's drifts past FLOWER_SWAP, scripts/endless/endless_grass.gd): the same
+## heads on the same necks, the same colours, normals and vertex layout, so the
+## material lights, sways and thins it as the plant, in a tenth of the
+## triangles: each petal one or two triangles, the disc a low cone without its
+## back, the stems two segments, no leaves, buds or bracts (the plant's detail,
+## already gone by then). A lupine's spike is a tapering four-sided column in
+## its whorls' colours. A kind without its own far plant is built whole.
+static var far_stems := true
+static func build_far(kind: String) -> ArrayMesh:
+	var plant := Plant.new(kind, float(SPEC[kind].height))
+	plant.far_stems = far_stems
+	match kind:
+		"oxeye_daisy": plant.far_oxeye_daisy()
+		"buttercup": plant.far_buttercup()
+		"dandelion": plant.far_dandelion()
+		"dandelion_clock": plant.far_dandelion_clock()
+		"cosmos": plant.far_cosmos()
+		"poppy": plant.far_poppy()
+		"lupine": plant.far_lupine()
+		_: return build(kind)
+	return plant.commit()
+
 static func build(kind: String) -> ArrayMesh:
 	var plant := Plant.new(kind, float(SPEC[kind].height))
 	match kind:
@@ -869,6 +901,152 @@ class Plant:
 			for v: Array in [a, b, end]: v[1] = (h.u * side + face).normalized()
 			tri(a, b, end)
 		detail = was
+
+	# --- the far plants (build_far) ------------------------------------------
+
+	## A ray of `count` petals round `h` as `petals` lays them (the same reach,
+	## cup, reflex and tilt), each one triangle widening from its base to its
+	## outer edge (together a toothed disc), or (`broad` 1) a base edge and a
+	## tip edge (two triangles) for wide petals, or (2) the petal's own rows
+	## less its tip (four), for the few big petals of a cup.
+	func far_petals(h: Dictionary, count: int, r0: float, r1: float, width: float, base: Color, tip: Color, cup := 0.0, reflex := 0.0, tilt := 0.0, start := 0.0, broad := 0) -> void:
+		var bend := cup - reflex
+		for i in range(count):
+			var a := start + TAU * float(i) / count
+			var length := r1 - r0
+			var at := func(t: float, across: float) -> Vector3:
+				return head_point(h, a, r0 + length * t, length * (tilt * t + bend * t * t), across * width)
+			if broad > 0:
+				# (One quad of the petal's area: its middle's width, out to its tip.)
+				var rows := [[0.0, 0.3], [1.0, 0.5]] if broad == 1 else [[0.0, 0.18], [0.5, 0.5], [0.9, 0.4]]
+				var verts: Array = []
+				for row: Array in rows:
+					var c := base.lerp(tip, float(row[0]))
+					verts.append([headed(h, at.call(row[0], -row[1]), c, PETAL), headed(h, at.call(row[0], row[1]), c, PETAL)])
+				for r in range(rows.size() - 1):
+					quad(verts[r][0], verts[r][1], verts[r + 1][1], verts[r + 1][0])
+			else:
+				tri(headed(h, at.call(0.0, 0.0), base, PETAL), headed(h, at.call(0.9, -0.5), tip, PETAL), headed(h, at.call(0.9, 0.5), tip, PETAL))
+
+	## A far plant's stem (`stem`), or none while `far_stems` is off.
+	var far_stems := true
+	func far_stem(base: Vector3, top: Vector3, radius: float, bow := Vector3.ZERO, segments := 4, sides := 3) -> void:
+		if far_stems: stem(base, top, radius, bow, segments, sides)
+
+	## The disc as `disc` raises it, a cone of `sides` facets, no back.
+	func far_disc(h: Dictionary, radius: float, height: float, sides: int, edge: Color, top: Color) -> void:
+		var crown: Array = headed(h, h.centre + h.face * height, top, DISC)
+		var ring: Array = []
+		for k in range(sides):
+			ring.append(headed(h, head_point(h, TAU * k / sides, radius, height * 0.25), edge, DISC))
+		for k in range(sides):
+			tri(ring[k], ring[(k + 1) % sides], crown)
+
+	func far_oxeye_daisy() -> void:
+		var white := MeadowFlowerColor.of("f6f3ea")
+		var cream := MeadowFlowerColor.of("ece6d4")
+		var gold := MeadowFlowerColor.of("f0b31c")
+		var amber := MeadowFlowerColor.of("d9900f")
+		var tops := [[Vector3(0.025, 0.55, 0.01), Vector3(0.25, 1.0, 0.1), 0.056], [Vector3(-0.075, 0.46, 0.04), Vector3(-0.35, 1.0, 0.15), 0.048]]
+		far_stem(Vector3.ZERO, tops[0][0], 0.0045, Vector3(0.02, 0.0, 0.0), 2)
+		far_stem(Vector3(0.006, 0.24, 0.0), tops[1][0], 0.0035, Vector3(-0.02, 0.0, 0.01), 2)
+		for i in range(tops.size()):
+			var top: Array = tops[i]
+			var h := head(top[0], top[1], top[2], 0.004)
+			far_petals(h, 14, top[2] * 0.3, top[2], top[2] * 0.42, cream, white, 0.0, 0.16, 0.06, float(i))
+			far_disc(h, top[2] * 0.32, top[2] * 0.2, 5, gold, amber)
+
+	func far_buttercup() -> void:
+		var gold := MeadowFlowerColor.of("f7c815")
+		var deep := MeadowFlowerColor.of("e9a90b")
+		var tops := [[Vector3(0.0, 0.34, 0.0), Vector3(0.1, 1.0, 0.05)], [Vector3(0.07, 0.29, 0.035), Vector3(0.45, 1.0, 0.2)], [Vector3(-0.055, 0.26, -0.05), Vector3(-0.35, 1.0, -0.3)]]
+		far_stem(Vector3.ZERO, tops[0][0], 0.0035, Vector3(0.01, 0.0, 0.0), 2)
+		far_stem(Vector3(0.002, 0.15, 0.0), tops[1][0], 0.003, Vector3(0.015, 0.0, 0.0), 1)
+		far_stem(Vector3(0.002, 0.12, 0.0), tops[2][0], 0.003, Vector3(-0.01, 0.0, 0.0), 1)
+		for i in range(tops.size()):
+			var r := 0.03 if i == 0 else 0.026
+			var h := head(tops[i][0], tops[i][1], r, 0.003, 1.2)
+			far_petals(h, 5, r * 0.15, r, r * 0.95, deep, gold, 0.55, 0.0, 0.35, float(i), 1)
+			far_disc(h, r * 0.24, r * 0.25, 3, MeadowFlowerColor.of("d39a0c"), MeadowFlowerColor.of("a8b437"))
+
+	func far_dandelion() -> void:
+		var gold := MeadowFlowerColor.of("ffd024")
+		var deep := MeadowFlowerColor.of("f7b916")
+		var neck := Vector3(0.01, 0.23, 0.0)
+		far_stem(Vector3.ZERO, neck, 0.004, Vector3(0.012, 0.0, 0.0), 2, 3)
+		var h := head(neck, Vector3(0.12, 1.0, 0.05), 0.042, 0.006, 0.8)
+		far_petals(h, 9, 0.008, 0.042, 0.022, deep, gold, 0.0, 0.08, 0.08, 0.0, 1)
+		far_petals(h, 5, 0.003, 0.024, 0.016, deep, gold, 0.0, 0.0, 0.8, 0.4, 1)
+		far_disc(h, 0.009, 0.012, 3, deep, deep)
+
+	func far_dandelion_clock() -> void:
+		var neck := Vector3(0.015, 0.34, 0.0)
+		far_stem(Vector3.ZERO, neck, 0.0038, Vector3(0.015, 0.0, 0.0), 2, 3)
+		var h := head(neck, Vector3(0.1, 1.0, 0.0), 0.052, 0.046, 1.0)
+		h.dome = h.centre
+		# The core and its halo of parachutes as one pale ball, the halo's
+		# reach, a shade between the two.
+		puff(h, 0.052 * 0.82, MeadowFlowerColor.of("ece9de"), PUFF, Vector2(0.96, 1.03), false)
+
+	func far_cosmos() -> void:
+		var pink := MeadowFlowerColor.of("e8609f")
+		var blush := MeadowFlowerColor.of("d9518f")
+		var tops := [[Vector3(0.03, 0.9, 0.0), Vector3(0.3, 1.0, 0.1), 0.062], [Vector3(-0.11, 0.78, 0.06), Vector3(-0.4, 1.0, 0.2), 0.055]]
+		far_stem(Vector3.ZERO, tops[0][0], 0.004, Vector3(0.025, 0.0, -0.01), 2)
+		far_stem(Vector3(0.008, 0.45, 0.0), tops[1][0], 0.003, Vector3(-0.03, 0.0, 0.02), 2)
+		for i in range(tops.size()):
+			var top: Array = tops[i]
+			var h := head(top[0], top[1], top[2], 0.004)
+			far_petals(h, 8, top[2] * 0.2, top[2], top[2] * 0.62, blush, pink, 0.12, 0.0, 0.04, float(i) * 0.7, 1)
+			far_disc(h, top[2] * 0.22, top[2] * 0.18, 4, MeadowFlowerColor.of("f2b51e"), MeadowFlowerColor.of("e39a12"))
+
+	func far_poppy() -> void:
+		var red := MeadowFlowerColor.of("d92a1c")
+		var blotch := MeadowFlowerColor.of("2a1410")
+		var neck := Vector3(0.03, 0.58, 0.0)
+		far_stem(Vector3.ZERO, neck, 0.0035, Vector3(0.035, 0.0, 0.01), 2)
+		var h := head(neck, Vector3(0.15, 1.0, 0.05), 0.05, 0.004, 1.1)
+		far_petals(h, 2, 0.004, 0.056, 0.064, blotch.lerp(red, 0.35), red, 0.32, 0.0, 0.22, 0.0, 2)
+		far_petals(h, 2, 0.004, 0.052, 0.06, blotch.lerp(red, 0.35), red, 0.42, 0.0, 0.32, PI / 2.0, 2)
+		far_disc(h, 0.011, 0.016, 3, MeadowFlowerColor.of("4c5a30"), MeadowFlowerColor.of("2b2a1c"))
+
+	func far_lupine() -> void:
+		var violet := MeadowFlowerColor.of("6a5ccc")
+		var pale := MeadowFlowerColor.of("d4bfe6")
+		var base := Vector3(0.0, 0.42, 0.0)
+		far_stem(Vector3.ZERO, base, 0.006, Vector3(0.01, 0.0, 0.0), 2, 3)
+		var h := head(base, Vector3.UP, 0.04, 0.0)
+		h.axis = true
+		h.dome = base
+		h.centre = base + Vector3.UP * 0.2
+		h.radius = 0.2
+		# The whorls' florets (0.025 at the foot to 0.011 at the tip) stand
+		# apart, the grass between them: the column is as wide as what they
+		# cover, under a quarter of their reach, and darker (the florets shade
+		# each other and the grass shows between them).
+		var rows := 3
+		var sides := 4
+		var rings: Array = []
+		for r in range(rows):
+			var t := float(r) / (rows - 1)
+			var y := base.y + 0.02 + t * 0.34
+			var reach := 0.003 + lerpf(0.025, 0.011, t) * 0.22
+			var color := violet.lerp(pale, smoothstep(0.55, 1.0, t)) * lerpf(0.55, 0.7, t)
+			var ring: Array = []
+			for k in range(sides):
+				var a := TAU * (float(k) + 0.5 * float(r % 2)) / sides
+				ring.append(headed(h, Vector3(cos(a) * reach, y, sin(a) * reach), color, PETAL))
+			rings.append(ring)
+		var foot: Array = headed(h, Vector3(0.0, base.y + 0.005, 0.0), violet * 0.85, PETAL)
+		var tip: Array = headed(h, Vector3(0.0, base.y + 0.4, 0.0), pale.lerp(Color(1, 1, 1), 0.25), PETAL)
+		var last: Array = rings[rows - 1]
+		for k in range(sides):
+			var k2 := (k + 1) % sides
+			tri(foot, rings[0][k2], rings[0][k])
+			tri(last[k], last[k2], tip)
+			for r in range(rows - 1):
+				tri(rings[r][k], rings[r][k2], rings[r + 1][k])
+				tri(rings[r][k2], rings[r + 1][k2], rings[r + 1][k])
 
 ## Linear colours from sRGB hex, so the kinds read as their names.
 class MeadowFlowerColor:

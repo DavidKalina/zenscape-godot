@@ -141,3 +141,167 @@ known to break. The full suite was not run.
   first use. No hitch was traced to it.
 - Night and other world profiles (Amberlands has no drifts) were not looked
   at.
+
+# Follow-up: the reach made cheap (far plants)
+
+Prototype round. Smoke check passed (default world and `--world=regions`).
+No tests added. **The native kernels were NOT rebuilt**: `grass_cell.h` and
+its GDScript twin are untouched (ZenScapeGrass is still 6; the kernels this
+worktree copied from game-visual-polish are current).
+
+## What changed
+
+- **Far plants** (`MeadowFlowerMesh.build_far` / `far_mesh`): each drift
+  kind again, with the same heads on the same necks and the same colours,
+  normals and vertex layout, so the same material lights, sways, nods and
+  thins them. They are 23-64 triangles against 184-322:
+  - Petals are one triangle, or one quad for broad ones (cosmos, buttercup,
+    dandelion). The poppy's cups keep their rows.
+  - Discs are low cones without backs. Stems are two segments. There are
+    no leaves, buds or bracts.
+  - Lupine is a tapering four-sided column, thinner and darker than the
+    florets' reach: as wide as what they cover, with grass between.
+  - Sunflower and wheat (not in drifts) fall back to the whole plant.
+- **The swap** (`FLOWER_SWAP` (30, 10), reference_surface `flower_swap`):
+  - Each drift flower is the plant out to 30 ring m, give or take 5 (each
+    at its own distance, a hash of where it stands), and its far plant
+    past it.
+  - The plant's batch hides it past its distance and the far plant's batch
+    hides it nearer, so each is drawn exactly once.
+  - 25-35 m is past the leaves' fade (FLOWER_DETAIL 14-30) and before the
+    thinning (40), where every plant stands whole at keep 1, so nothing
+    else changes at the hand-over.
+  - Looking level, the plants stand to about 36-50 m ahead.
+- **Batches.**
+  - The plants are cut into 16 m squares per cell (`_sub_split`) and culled
+    by the rings like the near carpet's tiles (reach 36 m), so few are
+    drawn past the swap.
+  - The far plants are one batch a kind a cell. They are no longer split
+    into kept and rest. `--flower-cheap-split=1` puts the split back: 23
+    more draws for 1% fewer vertices.
+- **FLOWER_END 120 -> 100.**
+  - The kept 40% now go between 80 and 100 ring m (116-145 m ahead looking
+    level) instead of 80-120.
+  - 40% of a drift, with grown heads, still stands 2 s out at Boost. The
+    last 0.5 s of thin tail is gone.
+- **Flags.**
+  - `--flower-swap=D,band[,sub]`; `--flower-swap=0` is the plant all the
+    way.
+  - `--flower-cheap-split=1`, `--flower-far-stems=0`, `--flower-grow=X`
+    (FLOWER_GROW).
+  - **The merged previous round is `--flower-swap=0 --flower-fade=40,80,120`.**
+
+## What each lever bought
+
+Counts (primitives, draws) are deterministic run to run, so they are the
+primary evidence. GPU times were taken **while the user was playing a game
+on this PC** (shared GPU). They are interleaved old/prev/new, three runs
+each, with the spread in brackets. Re-run them on an idle machine before
+trusting the last 0.1 ms.
+
+Low Boost flight (5 m, `--at=640,470 --heading=0`, 14 s) at 1440x900, 3D
+scale 0.75. Primitives are over old (9.43 M):
+
+| | Primitives | Draws |
+|---|---|---|
+| prev (merged round) | +15.4% | 1531 (+55) |
+| far plants, swap 35, kept/rest split | +1.4% | 1548 |
+| ... no split | +2.4% | 1525 |
+| ... no split, FLOWER_END 100 | +1.3% | 1516 |
+| **final (swap 30, end 100)** | **+0.6%** | **1513 (+37)** |
+| ... swap 25 (not taken) | +0.05% | 1510 |
+
+meadow_low GPU, held view at 1440, 2-3 runs each:
+
+| Variant | GPU ms | Over old |
+|---|---|---|
+| old | 7.79 (7.67-7.85) | |
+| prev | 8.46-8.54 | +9% |
+| far plants (end 120) | 8.14 (8.06-8.24) | +4.5% |
+| every flower a far plant, end 120 | 8.0 (7.97-8.03) | +2.6% |
+| same, no stems | 8.0 | same: triangles don't set it |
+| same, heads not grown (`--flower-grow=0`) | 8.10 | same: pixels don't set it |
+| keep 25% past 80 | 8.16 | none |
+| every flower a far plant, end 80 | 7.83 | 0 |
+| far plants, end 100 | 7.96 | +2.2% |
+| **final** | 7.98 (7.95-8.00) | +2.2% |
+
+- The far plants bought about half of the round's cost (the vertices).
+- What is left follows the reach: how many bloom cells and instances are
+  drawn far out. It does not follow the far plants' triangles, their
+  stems, their size on screen or how many of them show. Cutting
+  FLOWER_END from 120 to 100 bought the next 0.15 ms.
+- The rest of meadow_low's 2% is the plants standing whole to 40 m (old
+  thinned them from 22).
+- Lever 2 (reach pulled in with height) was not built: cruise (45 m up)
+  came to +1% without it.
+- Shadows: no flower batch casts shadows (already off).
+
+## Final numbers
+
+1440x900, 3D scale 0.75 (the driver's default), 3 runs each:
+
+| | old | prev | new |
+|---|---|---|---|
+| meadow_low GPU | 7.81 (7.77-7.85) | 8.52 (8.49-8.54) +9.1% | 7.98 (7.95-8.00) +2.2% |
+| cruise GPU | 8.19 (8.18-8.20) | 8.71 (8.70-8.73) +6.3% | 8.30 (8.27-8.31) +1.3% |
+| Boost flight GPU (frame log) | 10.13 (10.11-10.16) | 10.95 (10.92-11.01) +8.1% | 10.33 (10.32-10.34) +2.0% |
+| Boost primitives | 9.43 M | 10.88 M +15.4% | 9.49 M +0.6% |
+| Boost draws | 1476 | 1531 | 1513 |
+| render_cpu | 1.48 | 1.53 | 1.50 |
+| main tick | 6.56 | 6.60 | 6.59 |
+
+`--win=keep`: the project's own full-screen window, **2560x1438 at 3D scale
+0.75** as this PC's saved preset has it (not the user's 1.0):
+
+| | old | prev | new |
+|---|---|---|---|
+| meadow_low GPU | 10.79 (10.48-10.98) | 11.46 (11.16-11.63) +6.2% | 11.09 (11.00-11.17) +2.8% |
+| cruise GPU | 11.95 (11.57-12.15) | 12.50 (12.14-12.68) +4.6% | 12.16 (12.06-12.22) +1.7% |
+| Boost flight GPU | 13.23 (12.84-13.45) | 14.07 (13.71-14.27) +6.3% | 13.54 (13.47-13.58) +2.3% |
+| Boost primitives | 9.65 M | 11.06 M +14.6% | 9.72 M +0.7% |
+| Boost draws | 1529 | 1585 | 1568 |
+
+- The full-window old's first run was low against its other two (10.48 vs
+  10.9-11.0; 12.84 vs 13.4), likely the shared GPU.
+- Paired with runs 2 and 3 only, new is +0.2-1.6% on meadow_low, about 0%
+  on cruise and +0.5-0.9% on Boost.
+- CPU (render_cpu, tick) is unchanged within noise. Draws are 17 fewer
+  than prev and 37 more than old.
+
+## Proof (scratch, uncommitted)
+
+- **Films**, centre crops a frame every 0.1 s, old | prev | new:
+  - 5 m Boost pass: `scratch/fl/film_boost5_{a,b,c}.png`
+  - 25 m: `scratch/fl/film_boost25_{a,b,c}.png`
+  - Full frames: `scratch/fl/boost5_*`, `boost25_*`.
+  - New shows the cosmos patch standing from the first frame, as prev
+    does. No frame shows a pop or a plant changing between frames. At 25 m
+    up the far patch is a little less pink than prev.
+- **Stills**, old | prev | new: `scratch/fl/{cosmos,lupine,poppy,cosmos_up25}/sheet3.png`.
+  The one visible loss is the farthest drifts at 120 m (ring 83): prev
+  still shows a thin red poppy strip there, new hardly (FLOWER_END 100).
+- **The far plant at its nearest** (27 ring m), full over far, 2x:
+  `scratch/fl/card/zoom.png`. Heads read as heads, not cards. The first
+  far lupine was a bright solid spike, which is why it is now thin and
+  dark.
+- **Drivers:** `scratch/cost_ab.py`, `scratch/proof.py`, `scratch/vp.py`
+  (`view_prims.gd`: primitives at held views), `scratch/boost_cost.gd`.
+  Logs are `scratch/bg/{t1..t7,k1}.log`, frame logs `scratch/fl/t*_*.csv`.
+
+## Tests
+
+None reference the changed code. `test_ground_look.gd` fails on
+reference_surface's varyings (16 against its 14), but it fails the same at
+the parent commit, so it is not this round's. The full suite was not run.
+
+## Unverified
+
+- GPU timings were taken under the user's game load (see above), and not
+  at the user's 3D scale 1.0. Not flown by hand.
+- `--world=regions` was only smoked. Night and other profiles were not
+  looked at.
+- One driven Boost run in the first batch flew elsewhere (its counts were
+  unlike every other run of its flags). It was discarded and re-run.
+- The cause of the far tail's cost (per cell or per instance, not per
+  triangle or pixel) is inferred from the variants above, not profiled.

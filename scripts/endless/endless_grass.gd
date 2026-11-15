@@ -205,17 +205,19 @@ const FAR_TIP := Vector3(0.28,0.55,0.22)
 ## growing up out of the grass (or sinking into it) over FLOWER_SOFT of the
 ## share (reference_surface `flower_far`, `flower_end`). Looking level, the
 ## lead 0.45 puts a ring R m out 1.45 R ahead: a drift ahead stands from about
-## 175 m out, FLOWER_KEEP of it from 116 m, all of it by 58 (Boost, 57 m/s:
-## two seconds out and more). The cost is the GPU's (the flowers' vertices,
-## about 0.75 ms on a low meadow on the PC at 120; 0.95 at 140): it follows
-## FLOWER_END's square.
+## 145 m out, FLOWER_KEEP of it from 116 m, all of it by 58 (Boost, 57 m/s:
+## two seconds out). Past FLOWER_SWAP each is its far plant (below).
+## The cost is the GPU's, and it follows the reach, not the plants' triangles
+## or the heads' size: on the PC's low meadow FLOWER_END 120 cost 0.2 ms more
+## than 80 with the far plants, 100 about 0.1 (handoff-polish-flower-reach.md).
 ## --flower-fade=a,b[,end[,keep]] (two: every flower gone over a..b, the old
 ## shape); --flower-fade=old: the round before this (every flower in the near
-## carpet, gone over STRAY_FADE).
+## carpet, gone over STRAY_FADE). --flower-grow=X: FLOWER_GROW.
 const FLOWER_FADE := Vector2(40.0,80.0)
 const FLOWER_KEEP := 0.4
 const FLOWER_GROW := 0.5
-const FLOWER_END := 120.0
+var flower_grow := FLOWER_GROW
+const FLOWER_END := 100.0
 const FLOWER_SOFT := 0.2
 var flower_fade := FLOWER_FADE
 var flower_keep := FLOWER_KEEP
@@ -230,6 +232,26 @@ const STRAY_FADE := Vector2(22.0,55.0)
 ## The flowers' leaves and buds (reference_surface `flower_lod`) shrink
 ## away between these ring distances (m).
 const FLOWER_DETAIL := Vector2(14.0,30.0)
+## The drifts' far plants (MeadowFlowerMesh build_far: the same heads and
+## colours in a tenth of the triangles): each drift flower is the plant out
+## to FLOWER_SWAP.x ring m, give or take half of .y (each at its own
+## distance), and its far plant past it (reference_surface `flower_swap`).
+## The plant's batches are FLOWER_SWAP_SUB m squares, so few are drawn past
+## the swap; the far plant's are the cell's, drawn out to flower_end. The swap
+## ends before FLOWER_FADE.x, where every plant still stands whole, and starts
+## where its leaves and buds are all but gone (FLOWER_DETAIL), so the two meet
+## with nothing to fade. Looking level the plants stand to about 45 m ahead.
+## --flower-swap=D,band[,sub]; --flower-swap=0: the plant all the way (the
+## round before this); --flower-far-stems=0: far plants without stems.
+const FLOWER_SWAP := Vector2(30.0,10.0)
+const FLOWER_SWAP_SUB := 16.0
+var flower_swap := FLOWER_SWAP
+var flower_swap_sub := FLOWER_SWAP_SUB
+## Whether the far plants are parted into the kept share and the rest
+## (`_rank_split`), as the plants are without the swap (--flower-cheap-split=1):
+## off, one batch a kind a cell (fewer draws for a few more vertices).
+var flower_cheap_split := false
+const MeadowFlowers = preload("res://scripts/meadow_flower_mesh.gd")
 ## A cell is freed this far (m) past where it is wanted.
 const KEEP := 24.0
 ## Open turf: from this far over the sea (m; the beach's sand is gone
@@ -512,6 +534,13 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 				flower_fade = Vector2(ff[0],maxf(ff[1],ff[0]+1.0))
 				flower_end = maxf(ff[2],flower_fade.y) if ff.size() >= 3 else flower_fade.y
 				flower_keep = clampf(ff[3],0.05,1.0) if ff.size() >= 4 else (FLOWER_KEEP if ff.size() >= 3 else 0.0)
+		elif a.begins_with("--flower-swap="):
+			var fs := a.get_slice("=",1).split_floats(",")
+			flower_swap = Vector2(fs[0],fs[1] if fs.size() >= 2 else FLOWER_SWAP.y)
+			if fs.size() >= 3: flower_swap_sub = clampf(fs[2],4.0,CELL)
+		elif a.begins_with("--flower-cheap-split="): flower_cheap_split = a.get_slice("=",1) != "0"
+		elif a == "--flower-far-stems=0": MeadowFlowers.far_stems = false
+		elif a.begins_with("--flower-grow="): flower_grow = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-regions="): regions = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-regions": regions = 0.0
 		elif a.begins_with("--grass-areas="): areas = maxf(a.get_slice("=",1).to_float(),0.0)
@@ -562,6 +591,10 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		flower_fade = STRAY_FADE
 		flower_end = STRAY_FADE.y
 	if flower_end <= flower_fade.y: flower_keep = 0.0
+	# The swap ends where every plant still stands whole (see FLOWER_SWAP).
+	if flower_swap.x > 0.0:
+		flower_swap.x = minf(flower_swap.x,flower_fade.x-flower_swap.y*0.5)
+		if not bloom_on or flower_swap.x <= 0.0: flower_swap = Vector2.ZERO
 	near_layer.site = site
 	near_layer.reach = maxf(lod.y,STRAY_FADE.y)
 	near_layer.share = 0.0
@@ -806,6 +839,33 @@ static func _rank_split(parts: Array, keep: float) -> Array:
 			p.count = b.size()/16
 			p.box = _roots_box(b)
 			p.rest = r == 1
+			out.append(p)
+	return out
+
+## The drifts' plants of cell `key` parted into `sub` m squares by where each
+## stands ("near" true, "sub" the square), each its own batch, for the plants
+## drawn out to the swap (FLOWER_SWAP).
+static func _sub_split(parts: Array, key: Vector2i, sub: float) -> Array:
+	var out := []
+	var n := maxi(ceili(CELL/sub),1)
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	for part: Dictionary in parts:
+		var src: PackedFloat32Array = part.buffer
+		var at := {}
+		for k in range(0,src.size(),16):
+			var id := clampi(floori((src[k+11]-z0)/sub),0,n-1)*n+clampi(floori((src[k+3]-x0)/sub),0,n-1)
+			if not at.has(id): at[id] = []
+			(at[id] as Array).append(k)
+		for id: int in at:
+			var b := PackedFloat32Array()
+			for k: int in at[id]: b.append_array(src.slice(k,k+16))
+			var p := part.duplicate()
+			p.buffer = b
+			p.count = b.size()/16
+			p.box = _roots_box(b)
+			p.sub = Vector3i(key.x,key.y,id)
+			p.near = true
 			out.append(p)
 	return out
 
@@ -1318,6 +1378,8 @@ func _stand_some(all: bool, began: int) -> void:
 		var ring: Dictionary = part.get("ring",{})
 		var own: Mesh = _fine(str(part.key)) if fine and not layer.far and str(part.key).begins_with("grass") else null
 		if layer.far and far_lod > 0.0: own = _lite_morph(str(part.key))
+		var cheap := bool(part.get("cheap",false))
+		if cheap: own = _far_flower(str(part.key))
 		var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring,own)
 		_standing[3] = int(_standing[3])+int(part.count)
 		# A tile is drawn out to its ring's reach led ahead, and over
@@ -1335,7 +1397,7 @@ func _stand_some(all: bool, began: int) -> void:
 			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 			batch.visibility_range_end_margin = 0.0
 			batch.visibility_range_end = _flower_reach(layer,part)*(1.0+lead)+past
-			if layer.bloom: batch.material_override = _bloom_material(batch.material_override,int(part.get("rest",-1)))
+			if layer.bloom: batch.material_override = _bloom_material(batch.material_override,int(part.get("rest",-1)),(-1 if cheap else 1) if flower_swap.x > 0.0 else 0)
 		else: batch.visibility_range_end = lod.y*(1.0+lead)+past
 		_calm(batch,layer.bloom)
 		# Culled: the batches under a holder a tile and ring (its roots' box,
@@ -1581,6 +1643,12 @@ func _lite_morph(key: String) -> Mesh:
 	_far_meshes[id] = mesh
 	return mesh
 
+## The far plant (MeadowFlowerMesh build_far) of catalog flower `key`, or the
+## part's own mesh for a kind without one.
+func _far_flower(key: String) -> Mesh:
+	var kind := MeadowFlowers.kind_of_part(key)
+	return MeadowFlowers.far_mesh(kind) if kind != "" else SkyIslets.catalog().meshes[key]
+
 ## How far (ring m) a part's flowers are drawn: the drifts' kept share to
 ## flower_end, their rest (_rank_split) till the last of them has sunk (its
 ## shader rank is over flower_keep: gone once the share kept falls to
@@ -1588,18 +1656,21 @@ func _lite_morph(key: String) -> Mesh:
 ## carpet's to STRAY_FADE.y.
 func _flower_reach(layer: Layer, part: Dictionary) -> float:
 	if not layer.bloom: return STRAY_FADE.y
+	if bool(part.get("near",false)): return flower_swap.x+flower_swap.y*0.5+1.0
 	if not bool(part.get("rest",false)): return flower_end
 	return flower_end-(flower_end-flower_fade.y)/(1.0+FLOWER_SOFT)+2.0
 
 ## The drifts' flowers' own copy of a plant material (their fade is theirs,
 ## FLOWER_FADE; the near carpet's flowers of the kind keep STRAY_FADE), made
-## once a `rest` (-1 all of them, 0 the kept share, 1 the rest: meta "rank").
+## once a `rest` (-1 all of them, 0 the kept share, 1 the rest: meta "rank")
+## and `swap` (1 the plants, -1 the far plants, 0 no swap: meta "swap").
 var _bloom_mats := {}
-func _bloom_material(m: Material, rest := -1) -> Material:
+func _bloom_material(m: Material, rest := -1, swap := 0) -> Material:
 	if m == null: return m
-	var id := [m.get_instance_id(),rest]
+	var id := [m.get_instance_id(),rest,swap]
 	if not _bloom_mats.has(id):
 		var d := m.duplicate()
+		d.set_meta("swap",swap)
 		d.set_meta("rank",Vector2(0.0,1.0) if rest < 0 else (Vector2(0.0,flower_keep) if rest == 0 else Vector2(flower_keep,1.0)))
 		_bloom_mats[id] = d
 	return _bloom_mats[id]
@@ -1628,9 +1699,10 @@ func _calm(batch: MultiMeshInstance3D, bloom := false) -> void:
 	elif bloom:
 		# All there to flower_fade.x, flower_keep of them (their heads grown)
 		# by .y, the last gone by flower_end, each growing in over FLOWER_SOFT.
-		m.set_shader_parameter("flower_far",Vector4(flower_fade.x,flower_fade.y,flower_keep,FLOWER_GROW if flower_keep > 0.0 else 0.0))
+		m.set_shader_parameter("flower_far",Vector4(flower_fade.x,flower_fade.y,flower_keep,flower_grow if flower_keep > 0.0 else 0.0))
 		m.set_shader_parameter("flower_end",Vector2(flower_end if flower_keep > 0.0 else 0.0,FLOWER_SOFT))
 		m.set_shader_parameter("flower_rank",m.get_meta("rank",Vector2(0.0,1.0)))
+		m.set_shader_parameter("flower_swap",Vector3(flower_swap.x,flower_swap.y,float(m.get_meta("swap",0))))
 	else:
 		m.set_shader_parameter("flower_far",Vector4(STRAY_FADE.x,STRAY_FADE.y,0.0,0.0))
 	if not str(batch.get_meta("part","")).begins_with("grass"):
@@ -1802,7 +1874,14 @@ func _grow(layer: Layer, key: Vector2i, land_seed: int, mix: Dictionary, rings: 
 	if layer.bloom:
 		for part: Dictionary in parts: part.tile = key
 		parts = _join(parts)
-		if flower_keep > 0.0 and flower_end > flower_fade.y: parts = _rank_split(parts,flower_keep)
+		# The plants in FLOWER_SWAP_SUB squares out to the swap, the far
+		# plants (all of them, thinned as before) the cell's.
+		var near: Array = _sub_split(parts,key,flower_swap_sub) if flower_swap.x > 0.0 else []
+		if flower_keep > 0.0 and flower_end > flower_fade.y and (flower_swap.x <= 0.0 or flower_cheap_split): parts = _rank_split(parts,flower_keep)
+		if flower_swap.x > 0.0:
+			for part: Dictionary in parts: part.cheap = true
+			near.append_array(parts)
+			parts = near
 	var took := (Time.get_ticks_usec()-began)/1000.0
 	_lock.lock()
 	_done.append({"layer":layer,"key":key,"parts":parts,"ms":took,"ended":Time.get_ticks_usec()})
