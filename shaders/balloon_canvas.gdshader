@@ -11,6 +11,7 @@ shader_type spatial;
 // stains, soot round the mouth, a ripstop weave up close.
 // Moving: `shudder` ripples the slack lower cloth, `wash` (a direction in
 // the envelope's frame, w its depth) dents the side a plane's wash hits,
+// `poke` the hollow where the plane bounced off it,
 // `burn` lights the inside from the burner and glows through the cloth.
 // In the dark (`zs_daylight` low) the cloth is a lantern: `glow` (the burn,
 // eased by the manager) and a low ember between burns come through it, most
@@ -32,6 +33,9 @@ instance uniform float seed = 0.0;
 instance uniform float burn = 0.0;
 instance uniform float shudder = 0.0;
 instance uniform vec4 wash = vec4(0.0);
+// The plane's bounce (balloon_bounce.gd): a direction from the envelope's
+// middle (its frame) and the dent's depth there (model m; under 0 it bulges).
+instance uniform vec4 poke = vec4(0.0);
 instance uniform float fade = 1.0;
 // How sun-worn the cloth is: 1 the old muted cloth, less for festival dyes.
 instance uniform float wear = 1.0;
@@ -102,6 +106,12 @@ void vertex() {
 	if (wash.w > 0.0) {
 		float facing = max(dot(normalize(VERTEX * vec3(1.0, 0.6, 1.0)), wash.xyz), 0.0);
 		push -= wash.w * facing * facing * (0.35 + 0.65 * smoothstep(0.1, 0.8, UV.y)) * sin(clamp(UV.y, 0.0, 1.0) * PI);
+	}
+	// The bounce's dent: a broad soft hollow round where the plane hit.
+	if (poke.w != 0.0) {
+		float at = max(dot(normalize(VERTEX), poke.xyz), 0.0);
+		float k = smoothstep(0.35, 1.0, at);
+		push -= poke.w * k * sqrt(k);
 	}
 	VERTEX += NORMAL * push;
 	ripple = r * shudder;
