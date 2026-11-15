@@ -20,7 +20,12 @@ extends RefCounted
 ##   rarity  common, uncommon, rare or legendary (RARITIES), shown in the list
 ##   finish  how the paint shines: {sheen: a SHEENS name, pearl: Color,
 ##           pearl_amount, glow: Color, glow_on: [slots], glow_power}
-##           (`finish_values`; PlaneFigure `refinish`)
+##           (`finish_values`; PlaneFigure `refinish`); glow_on may name
+##           "decal" too: the decal lit in its own colours
+##   decal   a texture's path (res://assets/models/hero_plane/skins/<batch>/),
+##           marks over the paint in the atlas's UV, made by the decal painter
+##           (art/blender/hero_plane/hero_plane_decal.py); loaded only while
+##           worn or tried
 ## Paints beyond the first seven come in batches, one file each under
 ## scripts/endless/skins/ (its `SKINS`, rows as ITEMS'), gathered from
 ## BATCHES: a new batch is one line there.
@@ -131,16 +136,23 @@ static func finish_values(i: Dictionary) -> Dictionary:
 	if f.has("pearl"):
 		out["pearl"] = f.pearl
 		out["pearl_amount"] = float(f.get("pearl_amount",0.6))
-	if f.has("glow"):
+	if f.has("glow") or f.has("glow_on"):
 		var on := Vector4.ZERO
 		for slot: String in f.get("glow_on",["trim"]):
 			if GLOW_SLOTS.has(slot): on[GLOW_SLOTS.find(slot)] = 1.0
+			elif slot == "decal": out["glow_decal"] = 1.0
 			else: push_error("ShopStock: %s glows on no slot %s" % [i.id,slot])
-		out["glow"] = f.glow
+		out["glow"] = f.get("glow",Color(0,0,0))
 		out["glow_slots"] = on
 		# 1 shows the glow's own colour; above whitens it (1.6 washes a green
 		# to mint), so it stops at 1.3.
 		out["glow_power"] = clampf(float(f.get("glow_power",1.0)),0.0,1.3)
+	if i.has("decal"):
+		var tex: Texture2D = load(String(i.decal)) if ResourceLoader.exists(String(i.decal)) else null
+		if tex == null: push_error("ShopStock: %s has no decal at %s" % [i.id,i.decal])
+		else:
+			out["decal_tex"] = tex
+			out["decal_on"] = 1.0
 	return out
 
 ## The slot's free first item.

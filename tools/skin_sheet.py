@@ -10,7 +10,8 @@ image to look at (Read the PNG) and judge.
 
 A skin is a ShopStock id (any batch), or sheen:NAME[@id]: that skin's
 livery (Harbour's by default) in the sheen alone, to compare finishes, or
-glow:HEX[*POWER][@id]: that livery with trim and body glowing (power 1).
+glow:HEX[*POWER][@id]: that livery with trim and body glowing (power 1);
+when the skin has a decal, the decal lit in its own colours instead.
 Each skin's sheet is a row of views by day, then the same by night; with
 several skins, --out (captures/skins/sheet.png) stacks their rows in the
 order given. Views (plane's own frame): port, starboard, quarter (ahead,

@@ -66,6 +66,13 @@ uniform float pearl_amount : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 glow : source_color = vec3(0.0);
 uniform vec4 glow_slots = vec4(0.0);
 uniform float glow_power = 0.0;
+// A skin's decal (ShopStock `decal`): marks laid in the atlas's own UV,
+// premultiplied RGBA at half the atlas's size, on the painted parts only and
+// under the atlas's own wear and dirt, so a chip bares the metal through it and a
+// stain lies over it. glow_decal lights it in its own colours after dark.
+uniform sampler2D decal_tex : source_color, hint_default_transparent, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform float decal_on = 0.0;
+uniform float glow_decal = 0.0;
 // Per instance (the airframe's and wires': the hinged parts' x is their own):
 // the wing tips' bend, by distance out along the span, scripts/plane_figure.gd.
 instance uniform float flex = 0.0;
@@ -93,6 +100,7 @@ void fragment() {
 	vec4 m = texture(mask_tex, UV);
 	vec3 orm = texture(orm_tex, UV).rgb;
 	vec3 base = texture(albedo_tex, UV).rgb;
+	vec3 atlas = base;
 	vec3 tint = vec3(1.0);
 	tint = mix(tint, paint_body / BASE_BODY, m.r);
 	tint = mix(tint, paint_trim / BASE_TRIM, m.g);
@@ -100,13 +108,26 @@ void fragment() {
 	tint = mix(tint, paint_dark / BASE_DARK, m.a);
 	base *= tint;
 	float painted = clamp(m.r + m.g + m.b + m.a, 0.0, 1.0);
+	vec4 dec = vec4(0.0);
+	if (decal_on > 0.0) {
+		dec = texture(decal_tex, UV);
+		// The atlas's own light and dark in the paint (its tone, a stain's
+		// edge) carried into the decal, so it sits in the coat.
+		vec3 clean = (BASE_BODY * m.r + BASE_TRIM * m.g + BASE_WING * m.b + BASE_DARK * m.a) / max(m.r + m.g + m.b + m.a, 0.001);
+		float tone = clamp(dot(atlas, vec3(0.3, 0.55, 0.15)) / max(dot(clean, vec3(0.3, 0.55, 0.15)), 0.002), 0.3, 1.4);
+		dec *= painted;
+		base = base * (1.0 - dec.a) + dec.rgb * tone;
+	}
 	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
 	if (pearl_amount > 0.0) {
 		float shift = pow(1.0 - facing, 1.5) * pearl_amount * painted;
 		base = mix(base, pearl * max(dot(base, vec3(0.3, 0.55, 0.15)), 0.25) * 1.6, shift);
 	}
 	// What glows is dimmed under its light, so the light keeps its colour.
-	float glowing = glow_power > 0.0 ? clamp(dot(m, glow_slots), 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.65, zs_daylight)) : 0.0;
+	float night = 1.0 - smoothstep(0.1, 0.65, zs_daylight);
+	float glow_slot = glow_power > 0.0 ? clamp(dot(m, glow_slots), 0.0, 1.0) * (1.0 - dec.a) * night : 0.0;
+	float glow_mark = glow_power > 0.0 ? dec.a * glow_decal * night : 0.0;
+	float glowing = clamp(glow_slot + glow_mark, 0.0, 1.0);
 	base *= 1.0 - 0.92 * glowing;
 	// A lacquer deepens the paint under it: richer and a little darker.
 	float lac = finish_sheen * painted;
@@ -169,8 +190,14 @@ void fragment() {
 	}
 	// glow_power 1 shows the glow's own colour (its sRGB, up to 0.95 a
 	// channel); below dims it, above pushes it brighter and into bloom.
-	if (glowing > 0.0) {
+	if (glow_slot > 0.0) {
 		vec3 hue = mix(glow * 12.92, pow(glow, vec3(1.0 / 2.4)) * 1.055 - 0.055, greaterThan(glow, vec3(0.0031308)));
-		EMISSION += shown_as(clamp(hue * min(glow_power, 1.0), 0.0, 0.95)) * max(glow_power, 1.0) * glowing;
+		EMISSION += shown_as(clamp(hue * min(glow_power, 1.0), 0.0, 0.95)) * max(glow_power, 1.0) * glow_slot;
+	}
+	// A lit decal in its own colours (unpremultiplied).
+	if (glow_mark > 0.0) {
+		vec3 own = dec.rgb / max(dec.a, 0.001);
+		vec3 hue = mix(own * 12.92, pow(own, vec3(1.0 / 2.4)) * 1.055 - 0.055, greaterThan(own, vec3(0.0031308)));
+		EMISSION += shown_as(clamp(hue * min(glow_power, 1.0), 0.0, 0.95)) * max(glow_power, 1.0) * glow_mark;
 	}
 }

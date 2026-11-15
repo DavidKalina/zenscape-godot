@@ -72,8 +72,13 @@ static func _row(id: String) -> Dictionary:
 		var lit := ShopStock.item(g.get_slice("@",1) if "@" in g else "paint/harbour")
 		var hp := g.get_slice("@",0)
 		if lit.is_empty() or not Color.html_is_valid(hp.get_slice("*",0)): return {}
-		return {"id":id,"slot":"paint","name":"glow","livery":lit.livery,"finish":{"glow":Color(hp.get_slice("*",0)),
+		var row := {"id":id,"slot":"paint","name":"glow","livery":lit.livery,"finish":{"glow":Color(hp.get_slice("*",0)),
 			"glow_on":["trim","body"],"glow_power":float(hp.get_slice("*",1)) if "*" in hp else 1.0}}
+		# A skin with a decal: its decal lit in its own colours instead.
+		if lit.has("decal"):
+			row["decal"] = lit.decal
+			row.finish.glow_on = ["decal"]
+		return row
 	if not id.begins_with("sheen:"): return ShopStock.item(id)
 	var rest := id.trim_prefix("sheen:")
 	var sheen := rest.get_slice("@",0)

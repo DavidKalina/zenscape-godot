@@ -24,6 +24,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | A still of a moment in a driven run (the plane touching down, a piece by its AABB) | in a driver: `await shot_at("side", node, {"when": cond})`, then step frames; run with `drive.py --rendered` (drive.gd, Shots) |
 | A plane skin's sheet: the hero plane wearing it from a few angles, by day and (when it glows) by night, in one image | `python tools/skin_sheet.py paint/moonstone` (`captures/skins/<id>.png`; several ids stack into `--out`; `sheen:gloss[@id]` a finish alone; skin_sheet.py, below) |
+| A plane skin's decal (stripes, bands, discs, numbers, a checker, scallops, a free mask) in the plane's own units | a short script on `art/blender/hero_plane/hero_plane_decal.py`'s `Decal`, run with `python tools/blender.py run art/blender/hero_plane/skins/<batch>.py` (hero_plane_decal.py, below) |
 | A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
@@ -180,6 +181,28 @@ port,quarter,top,chase. Several skins stack, rows in the order given, into
 `--out` (default `captures/skins/sheet.png`). The stills are kept in
 `captures/skins/raw/`. Exit non-zero when a skin is unknown or a still is
 missing. About 20 s a window.
+
+## hero_plane_decal.py: a plane skin's decal
+
+```
+python tools/blender.py run art/blender/hero_plane/skins/demo.py   # writes assets/models/hero_plane/skins/demo/chequer_decal.png
+```
+
+A skin's `decal` (ShopStock) is one premultiplied RGBA PNG at half the
+atlas's size (2048x1300, lossless, about 100-150 KB), laid over the livery
+on the painted parts, under the atlas's own wear and dirt. A batch's script
+(`art/blender/hero_plane/skins/<batch>.py`) draws it with `Decal` in the
+plane's own units, region by region, and saves it under
+`assets/models/hero_plane/skins/<batch>/` (the `.import` is written with it):
+`stripe`, `band`, `rect`, `disc` (a ring with `ring=`), `text` (FONT's
+letters and numbers), `checker`, `scallop` and `mask(on, colour, fn(a, b,
+side))`. The regions (`body`, the wings `up_top`/`up_under`/`lo_top`/
+`lo_under` or `wings_top`/`wings_under`/`wings`, `tail`, `fin`, `cowl`) and
+their frames are in the module's docstring. The body and cowl are mirrored
+side to side by default (`mirror=False` for one side); the wings and tail
+are always mirrored (one atlas for both halves). Blender's Python runs it
+(numpy); a decal takes a couple of seconds. A finish's `glow_on: ["decal"]`
+lights it in its own colours after dark (`glow:ffffff@<id>` on the sheet).
 
 ## movie.py: a taped flight, filmed
 
