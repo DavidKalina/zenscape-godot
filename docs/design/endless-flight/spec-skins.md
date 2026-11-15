@@ -82,6 +82,13 @@ on, written into this spec under "The contract" and committed.
    minutes and a legendary takes many flights. Write the bands into the
    contract.
 
+8. **Finishes told apart.** In iteration 1's sheet
+   (`captures/skins/iter1_finish_day.png`) the gloss, matte and metal rows
+   on the same colours read nearly alike at flying distance. Once the skin
+   sheet tool exists, strengthen the sheens until each is named correctly
+   from the sheet without its label, and keep a glow saturated (not washed
+   to white) at the strength the lanes will use.
+
 Checks: `tools/smoke.py` on `studies/endless_flight.tscn`; a throwaway
 drive through the real shop (open, try, buy, wear, close, and the plane
 wears it in flight; quit and reload keeps it); the three sheets, looked at.
