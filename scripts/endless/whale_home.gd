@@ -38,8 +38,15 @@ const WAIT := 90.0
 const HOLD := 1300.0
 const REST := 75.0
 const BLOW_EVERY := Vector2(5.0,8.0)
-## The tell's blow, against the clip's first (1).
-const TELL_BLOW := 3.0
+## The tell's blow (made for a plane far off): a burst of mist thrown up (m/s,
+## min and max) as a narrow jet that opens into a plume, sheared downwind, thinning
+## from the bottom up over COLUMN_LIFE s; scaled by the plane's distance over
+## COLUMN_FAR, held between COLUMN_K (so it is faint far off, not a wall near).
+const COLUMN := 130
+const COLUMN_LIFE := 7.5
+const COLUMN_UP := Vector2(14.0,66.0)
+const COLUMN_FAR := 450.0
+const COLUMN_K := Vector2(0.3,2.2)
 ## The shape under the water: depth in the sea shader's units (whole 0.6, gone
 ## 2.4), strength, drift (m/s).
 const SHAPE_DEEP := 1.1
@@ -75,6 +82,7 @@ var _wait := WAIT
 var _rest := REST
 var _shape_on := false
 var _last := -1
+var _column: GPUParticles3D
 
 static func wanted() -> bool:
 	return not ("--whale-home=0" in LaunchArgs.user_args())
@@ -163,10 +171,59 @@ func _tell_blow(game: Node3D) -> void:
 	blows += 1
 	var head := shape-heading*WhaleBody.LONG*0.32
 	var level := Field.SEA_Y+float(game.sea_height(head))
-	_whale._puff(Vector3(head.x,level+0.3,head.z),TELL_BLOW,level)
+	_column_blow(game,Vector3(head.x,level+0.3,head.z),level)
 	if game.water != null:
 		game.water.mark(Vector3(head.x,level,head.z),false,0.5,6.0,16.0,6.0)
 		game.water.mark(Vector3(head.x,level,head.z),true,0.35,5.0,26.0,5.0)
+
+## The tell's spout: a column of soft mist flung up fast, leaning and thinning
+## with the wind. Its size and height go with the plane's distance (nearer is
+## smaller), so it shows from far off and is not a wall close to.
+func _column_blow(game: Node3D, at: Vector3, level: float) -> void:
+	if _column == null: _column = _column_make()
+	var p: Vector3 = game.plane.position
+	var k := clampf(Vector2(p.x-at.x,p.z-at.z).length()/COLUMN_FAR,COLUMN_K.x,COLUMN_K.y)
+	var wind: Vector2 = game.look.wind_direction if game.look != null else Vector2.RIGHT
+	var way := Vector3(wind.x,0.0,wind.y).normalized()
+	_column.global_position = at
+	var m := _column.process_material as ShaderMaterial
+	var values := {"rate":1.0,"ahead":way,"right":way.cross(Vector3.UP),"up_speed":COLUMN_UP*pow(k,0.75),
+		"side_speed":3.0*k,"size_range":Vector2(4.0,13.0)*k,"growth":3.0,"drag":0.4,"gravity":0.4,
+		"shear":1.6,"shear_over":90.0*k,"water_y":level-6.0}
+	for key: String in values: m.set_shader_parameter(key,values[key])
+	_column.restart()
+	_column.emitting = true
+
+func _column_make() -> GPUParticles3D:
+	var e := GPUParticles3D.new()
+	e.amount = COLUMN
+	e.lifetime = COLUMN_LIFE
+	e.one_shot = true
+	e.explosiveness = 0.85
+	e.randomness = 0.3
+	e.local_coords = false
+	e.fixed_fps = 0
+	e.interpolate = false
+	e.emitting = false
+	e.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	e.visibility_aabb = AABB(Vector3(-500,-30,-500),Vector3(1000,600,1000))
+	var process := ShaderMaterial.new()
+	process.shader = preload("res://shaders/whale_blow_process.gdshader")
+	e.process_material = process
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	var draw := ShaderMaterial.new()
+	draw.shader = preload("res://shaders/water_spray.gdshader")
+	draw.set_shader_parameter("kind",1)
+	draw.set_shader_parameter("tint",Color(0.86,0.9,0.95))
+	draw.set_shader_parameter("opacity",0.7)
+	draw.set_shader_parameter("near_fade",Vector2(20.0,90.0))
+	draw.set_shader_parameter("glow",0.3)
+	draw.set_shader_parameter("backlight",0.4)
+	quad.material = draw
+	e.draw_pass_1 = quad
+	add_child(e)
+	return e
 
 ## Up: swimming away from a plane that brought it, else its own way; its root
 ## starts where the shape lay.
