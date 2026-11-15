@@ -1909,6 +1909,10 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	# heights, meadows and how far outside a river's water each node is
 	# (land_field `last_river`): no tuft or flower on its bank.
 	if not got.has("heights"): got.merge(f.grid(x0,z0,1.0,n,n,PAD))
+	# The agora's paving (agora_site.gd): no grass through its slabs.
+	if not got.has("agora"):
+		got.agora = true
+		preload("res://scripts/endless/agora_site.gd").grass_off(got,land_seed,x0,z0,n,PAD)
 	var hs: PackedFloat32Array = got.heights
 	var ms: PackedFloat32Array = got.meadows
 	var rs: PackedFloat32Array = got.river
