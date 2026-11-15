@@ -128,6 +128,162 @@ user says so.
 
 ## The contract
 
-(Stage 1 writes this: the row's fields with one worked example, the finish
-names and ranges, the decal painter's calls, the bake maker's command, the
-sheet command, the price bands, the texture sizes.)
+Written by Stage 1 (trail `ITER(skins)`). The demos in
+`scripts/endless/skins/demo.gd` and `art/blender/hero_plane/skins/demo.py`
+show every field in use; copy from them.
+
+### A lane's files
+
+- `scripts/endless/skins/<batch>.gd`: `extends RefCounted` and
+  `const SKINS := [rows]`. Ids `paint/<name>`, unique across all batches.
+- `assets/models/hero_plane/skins/<batch>/`: the batch's decals and bakes.
+- `art/blender/hero_plane/skins/<batch>.py`: the script that paints the
+  batch's decals and calls its bakes, committed so they can be remade.
+- One line in `ShopStock.BATCHES` (`scripts/endless/shop_stock.gd`):
+  `"res://scripts/endless/skins/<batch>.gd",`. Nothing else in shared files.
+
+### The row
+
+```gdscript
+{"id":"paint/racer","slot":"paint","name":"Racer","rarity":"rare","price":650,
+	"livery":{"body":Color("9e2a22"),"dark":Color("2a2224"),"trim":Color("e8d9a8"),"wing":Color("efe6d2")},
+	"finish":{"sheen":"gloss","pearl":Color("9aa8ff"),"pearl_amount":0.4,
+		"glow":Color("ff6a20"),"glow_on":["trim","decal"],"glow_power":1.0},
+	"decal":"res://assets/models/hero_plane/skins/heritage/racer_decal.png",
+	"bake":{"albedo":"res://assets/models/hero_plane/skins/heritage/racer_albedo.jpg",
+		"mask":"res://assets/models/hero_plane/skins/heritage/racer_mask.png",
+		"orm":"res://assets/models/hero_plane/skins/heritage/racer_orm.jpg"}},
+```
+
+- `id`, `slot` (`"paint"`), `name`, `price`, `rarity`, `livery`: required.
+  `livery` is the four colours the atlas's mask tints: `body`, `dark`
+  (deck, struts, the dark panels), `trim` (cheat line, cowl ring, tail
+  cone), `wing`.
+- `rarity`: `common`, `uncommon`, `rare`, `legendary`. The shop shows it as
+  the name's colour.
+- `finish`, `decal`, `bake`: each optional; any mix. Only the worn skin's
+  and the tried skin's textures are loaded.
+
+### Finishes
+
+- `sheen`: `satin` (the atlas's own; the default), `gloss` (deepened colour
+  under a lacquer, white edge-on, a streak of light along the fuselage),
+  `matte` (greyed, chalky, no highlight), `metal` (a hard mirror in the
+  paint's own hue: bright sky over dark land, a sharp horizon down the
+  body). Each reads at flying distance; gloss vs satin is the weakest at
+  chase range.
+- `pearl`: a Color seen edge-on; `pearl_amount` 0..1 (default 0.6; 0.4-0.6
+  reads without swamping the livery).
+- `glow`: a Color lit after dark (full once daylight < 0.1, gone by 0.65).
+  `glow_on`: any of `body`, `trim`, `wing`, `dark` and `decal` (the decal
+  lit in its own colours; default `["trim"]`). `glow_power` 0..1.3 (clamped;
+  1, the default, shows the glow as its own colour; above whitens it).
+  Glowing paint is dimmed so the light keeps its colour. A glow stands out
+  on a dark livery; on white under moonlight it barely shows.
+- Not on bared metal or silver-doped cloth (mask 0): there a bake's look
+  is all.
+
+### Decals
+
+One premultiplied RGBA PNG at half the atlas, 2048 x 1300, its own
+colours (not slot-tinted), lossless import with mipmaps; ~120 KB. It is
+laid over the livery on painted parts only, toned by the atlas's shading,
+under the finish, the chips and the stains. Painted by a short script:
+
+```python
+from hero_plane.hero_plane_decal import COWL_L, FRONT, Decal
+d = Decal()
+d.stripe("body", "f2e8d2", z=(-0.48, 0.68), s=(0.075, 0.092))
+d.save("assets/models/hero_plane/skins/<batch>/<name>_decal.png")
+```
+
+run with `python tools/blender.py run art/blender/hero_plane/skins/<batch>.py`
+(a few seconds). Calls (`on` a region, `c` a hex colour; `mirror=True`
+paints both sides alike, `soft` the edge's blur):
+
+- `rect(on, c, a, b)`: all within a=(a0, a1), b=(b0, b1).
+- `stripe(on, c, z=, s=)` along the body (or `x=, s=` on a wing/tail);
+  a range left out is full length.
+- `band(on, c, a)`: across (a span band on a wing, a ring round the body).
+- `disc(on, c, at, r, ring=0)`: ring > 0 leaves the middle open.
+- `checker(on, c, a, b, cell)`: the first square at (a0, b0) painted.
+- `scallop(on, c, a, b, n, depth)`: a band from a[0] to n round bites
+  past a[1] (negative depth bites back).
+- `text(on, s, c, at, height, flip=False)`: 0-9, A-Z but J Q Z, `-`, `.`,
+  space. Reads nose-ward on starboard and aft on port (body, fin).
+- `mask(on, c, fn)`: `fn(a, b, side) -> 0..1`, a free pattern.
+- Any shape with `c=None` cuts itself out of what is laid (a roundel's
+  hole, a gap in a stripe). `save(path)` writes the PNG and its `.import`.
+
+Regions and their (a, b) frames in the plane's units (about 1.2 long,
+nose -z): `body` (z -0.5 firewall .. 0.72 tail, s round from the top, sides
+near +-0.2, keel +-0.42; `girth(z)`); wings `up_top up_under lo_top
+lo_under`, `wings_top`, `wings_under`, `wings` (x out 0..0.7 upper, 0.08..0.63
+lower; c back 0..0.3; both halves share the atlas, so wing text reads
+mirror-written on the port half); `tail` (x 0..0.26, c 0..0.135); `fin`
+(z 0.47..0.76, y 0.05..0.3, rudder z > 0.685; each side its own atlas);
+`cowl` (s round, half round ~0.49; l along the profile, `FRONT` the lip
+.. `COWL_L` the skirt). The module's docstring has the rest.
+
+### Bakes
+
+The skin's own albedo, mask and orm (the normal is shared); any map left
+out of `bake` stays the plane's own. Made by the bake maker:
+
+```
+python tools/blender.py run art/blender/hero_plane/hero_plane_bake.py -- \
+	assets/models/hero_plane/skins/<batch>/<name> --wear 0.2 --dirt 0.3 --bare 1
+```
+
+or `bake(out, wear=, dirt=, bare=, bare_c=, rust=, cloth=)` from the batch
+script. Settings: `wear` 0 fresh .. 1 (the plane's own) .. 2 battered;
+`dirt` 0 clean .. 1 .. 2 filthy; `bare` 0..1, the livery's coat off the
+forward body metal and the cowl (deck, cheat line and marks
+stay painted); `bare_c` the bared metal's hex (aluminium if not given;
+copper `b87333`, gold `d4a64a`); `rust` 0..1; `cloth` `doped` or `silver`.
+It writes `<out>_albedo.jpg` and `<out>_orm.jpg` (2048 x 1300, JPEG 90,
+imported lossy WebP) and `<out>_mask.png` (2048 x 1300, lossless: lossy
+zeroes the livery), their `.import`s, and prints the row's `bake` value.
+About 15 s a bake.
+
+### Sizes
+
+A decal ~0.12 MB. A bake 0.6 MB (fresh, clean) to 2.5 MB (rusty,
+battered); Silverwing 1.2 MB. Under the 25 MB for the 20 new skins: decals
+freely; bakes at most 2 a lane, `metal` up to 4, each under 2.5 MB.
+
+### The sheet
+
+```
+python tools/skin_sheet.py paint/<name>     # captures/skins/paint_<name>.png
+python tools/skin_sheet.py paint/a paint/b --views port,quarter,top,chase --out captures/skins/<batch>.png
+```
+
+Day (hour 11) and, when the finish glows, night (hour 1), one window
+after the other; views `port starboard quarter top tail chase` (`chase` is
+the flying view). `sheen:NAME[@id]` shows a sheen alone,
+`glow:HEX[*POWER][@id]` a trial glow (the decal lights when the skin has
+one). Judge a skin at `chase`, not only close up.
+
+### Prices
+
+By rarity (`ShopStock.PRICE_BANDS`; a batch row outside its band warns):
+
+| rarity | price | earned in |
+| --- | --- | --- |
+| common | 60-150 | ten to twenty minutes |
+| uncommon | 120-350 | half an hour to an hour |
+| rare | 500-1000 | a few flights, one to two hours |
+| legendary | 1500-3000 | many flights, three hours or more |
+
+From the pay: decent flying 5-7 a minute, a wild line 30 or more
+(`PilotBook.line_pay`), and the finds (branch `finds-more`) 10, 20 or 40
+each once, 1760 for all 80, so about 10 a minute early on. All the finds
+together buy about one legendary. Demos: Moonstone 700, Chequer 600,
+Silverwing 2000.
+
+### The shop
+
+The list scrolls (about 19 rows at 1440x900) and keeps the chosen row in
+view; trying a row shows its finish, decal and bake on the plane; Esc
+puts the worn skin back. Rows sort by price, base stock first at a tie.

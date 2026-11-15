@@ -7,6 +7,15 @@ extends RefCounted
 ## first paint (60) comes in about ten minutes, a ribbon (40-70) in five to
 ## ten, and the dearest paint (180) in about half an hour.
 ##
+## A paint's price follows its rarity (PRICE_BANDS), counting the flying pay
+## above and the finds' (finds.gd: each pays 10, 20 or 40 once, about 1760
+## for all 80), so ~10 a minute while there are finds about, 5-7 after:
+##   common     60-150     ten to twenty minutes
+##   uncommon   120-350    half an hour to an hour
+##   rare       500-1000   a few flights (one to two hours)
+##   legendary  1500-3000  many flights (three hours or more; all the
+##                         finds together buy about one)
+##
 ## Slots, each with its free first item (had by everyone, worn when the
 ## book names none):
 ##   paint   the plane's livery: body, dark, trim and wing colours
@@ -46,6 +55,8 @@ const BATCHES := [
 
 const RARITIES := ["common","uncommon","rare","legendary"]
 ## Each rarity's colour in the shop's list.
+## Each rarity's price band [least, most] (the header's reasoning).
+const PRICE_BANDS := {"common":[60,150],"uncommon":[120,350],"rare":[500,1000],"legendary":[1500,3000]}
 const RARITY_COLOURS := {"common":Color("c9c2b3"),"uncommon":Color("8fc7a0"),"rare":Color("8fb4e8"),"legendary":Color("f0a860")}
 
 ## The finish's sheens: the paint's roughness, clearcoat and metal
@@ -111,7 +122,12 @@ static func stock() -> Array:
 			if batch == null:
 				push_error("ShopStock: no skin batch at %s" % path)
 				continue
-			for i: Dictionary in batch.SKINS: paints.append(i)
+			for i: Dictionary in batch.SKINS:
+				var band: Array = PRICE_BANDS.get(String(i.get("rarity","")),[])
+				if band.is_empty(): push_error("ShopStock: %s has no rarity of %s" % [i.id,RARITIES])
+				elif int(i.price) < int(band[0]) or int(i.price) > int(band[1]):
+					push_warning("ShopStock: %s costs %d, outside %s's %s" % [i.id,int(i.price),i.rarity,band])
+				paints.append(i)
 		# Stable: by price, then as listed.
 		var at := {}
 		for k in paints.size(): at[paints[k].id] = k

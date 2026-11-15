@@ -197,7 +197,7 @@ plane's own units, region by region, and saves it under
 `assets/models/hero_plane/skins/<batch>/` (the `.import` is written with it):
 `stripe`, `band`, `rect`, `disc` (a ring with `ring=`), `text` (FONT's
 letters and numbers), `checker`, `scallop` and `mask(on, colour, fn(a, b,
-side))`. The regions (`body`, the wings `up_top`/`up_under`/`lo_top`/
+side))`; a shape with colour `None` erases (cuts a hole in what is laid). The regions (`body`, the wings `up_top`/`up_under`/`lo_top`/
 `lo_under` or `wings_top`/`wings_under`/`wings`, `tail`, `fin`, `cowl`) and
 their frames are in the module's docstring. The body and cowl are mirrored
 side to side by default (`mirror=False` for one side); the wings and tail

@@ -187,7 +187,11 @@ class Decal:
 		return out
 
 	def lay(self, f, t, c):
-		"""Colour c over the decal by coverage t (0..1) in frame f."""
+		"""Colour c over the decal by coverage t (0..1) in frame f; c None
+		erases (any shape called with c=None cuts its shape out)."""
+		if c is None:
+			self.erase(f, t)
+			return
 		t = np.clip(t, 0.0, 1.0) * f.inside
 		c = colour(c)
 		r, a = self.rgb[f.s], self.al[f.s]
