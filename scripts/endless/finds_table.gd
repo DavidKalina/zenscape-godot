@@ -33,6 +33,8 @@ extends RefCounted
 ##             (--ice-tunnel=0: none)
 ##             the room behind a cracked wall: "chamber/<place>" for the wall
 ##             `cracked/<place>` (cracked_walls.gd SITES)
+##             a golden tree's stump once it is felled: "golden/<id>"
+##             (golden_trees.gd SITES; handed by it, so absent till then)
 ##             a way tower's foot: "way/bay", "way/south", "way/isle" (way_towers.gd)
 ##             "doors/amber-hall/deep": deep in the door's hall; give the row
 ##             `hall` true as well, and it's seen only from inside
@@ -91,6 +93,8 @@ const WORLDS := {
 			"title":"The ring in the green cup's room"},
 		{"id":"the-cup","area":"meadow","kind":"landing","at":Vector2(500.0,-830.0),"radius":60.0,
 			"title":"Set down in the green cup","hint":"A green cup in the hills, north"},
+		{"id":"gold-spruce","area":"meadow","kind":"relic","anchor":"golden/gold-spruce","up":9.0,
+			"title":"The ring of the golden spruce","hint":"One tree in the near wood isn't green"},
 		{"id":"burrower-catch","area":"meadow","kind":"event","event":"caught",
 			"title":"Caught the burrower","hint":"Skim low, and something runs"},
 		# The way south, in the first frame's left edge, down the bay to the tower
@@ -106,6 +110,8 @@ const WORLDS := {
 			"title":"The ring in the shrine's doorway"},
 		{"id":"gap-ring","area":"south","kind":"relic","at":Vector2(-1300.0,2900.0),"up":16.0,
 			"title":"The ring in the gap"},
+		{"id":"gold-grove","area":"south","kind":"relic","anchor":"golden/gold-grove","up":9.0,
+			"title":"The ring where the gold tree stood","hint":"Gold among the clumps by the gap"},
 		{"id":"strait-ring","area":"south","kind":"relic","at":Vector2(-880.0,3540.0),"up":8.0,
 			"title":"The ring in the strait"},
 		# The foothills: the glacier and its gorge (spec-icefield.md: the long
@@ -189,6 +195,8 @@ const WORLDS := {
 				{"at":Vector3(2554,5,426),"dir":Vector3(-0.09,0.0,-1.0),"half":Vector2(3.0,2.0)},
 				{"at":Vector3(2515,42,362),"dir":Vector3(-0.5,0.0,-0.85),"half":Vector2(9.0,5.0)},
 				{"at":Vector3(2425,80,300),"dir":Vector3(-0.9,0.0,-0.4),"half":Vector2(10.0,6.0)}]},
+		{"id":"gold-shore","area":"coast","kind":"relic","anchor":"golden/gold-shore","up":9.0,
+			"title":"The ring in the felled gold wood","hint":"A gold crown in the east hills' wood"},
 		{"id":"sound-ring","area":"coast","kind":"relic","at":Vector2(560.0,2120.0),"up":6.0,
 			"title":"The ring on the sound"},
 		{"id":"isle-tower","area":"coast","kind":"relic","anchor":"way/isle","up":17.0,"offset":Vector3(9.25,0.0,-0.5),
