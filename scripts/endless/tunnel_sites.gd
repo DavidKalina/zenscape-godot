@@ -436,6 +436,10 @@ static func wanted(default := 0.0) -> float:
 		elif a.begins_with("--tunnels="): out = maxf(0.0,float(a.get_slice("=",1)))
 	return out
 
+## Whether the rolled massif bores stand: `--tunnel-halls=1`.
+static func halls_wanted() -> bool:
+	return "--tunnel-halls=1" in LaunchArgs.user_args()
+
 ## Whether `--tunnel-test` asks for the one tunnel ahead of the start.
 static func test_wanted() -> bool:
 	return "--tunnel-test" in LaunchArgs.user_args()
@@ -623,6 +627,10 @@ static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> 
 			at.name = name
 			at.coded = at.frame
 		return at
+	# The rolled tunnels, massif bores with hall stretches, are out (taken out
+	# 2026-11-14; `--tunnel-halls=1` brings them back). The fixed sunk caves
+	# above stand, the burrower's mouths.
+	if not halls_wanted(): return null
 	if seed == 1 and density == 1.0 and _world_id() == "doors" and not ROLLED_SITES.has(Vector2i(ci,cj)): return null
 	if float(hash([seed,ci,cj,"tunnel_roll"]) & 0xffffff)/16777216.0 >= minf(CHANCE*density,CHANCE_MAX): return null
 	var rng := RandomNumberGenerator.new()

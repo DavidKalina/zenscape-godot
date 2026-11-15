@@ -20,7 +20,7 @@ extends Node3D
 ## eye (`step`), and a brighter one under the window. The open stretches'
 ## tube is in the day (layer 1). A backface trimesh collider in pieces.
 ##
-## `--ice-tunnel=0` off (PeakTunnel `wanted`).
+## Off by default; `--ice-tunnel=1` on (PeakTunnel `wanted`).
 
 const PeakTunnel = preload("res://scripts/endless/peak_tunnel.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
