@@ -80,7 +80,10 @@ on, written into this spec under "The contract" and committed.
 7. **Prices.** Read the pay rates in `shop_stock.gd`'s header and
    `pilot_book.gd`, and set a price band per rarity so a common comes in
    minutes and a legendary takes many flights. Write the bands into the
-   contract.
+   contract. Finds are being made to pay on another branch
+   (`finds-more`): about 80 finds paying roughly 10, 20 or 40 each by how
+   hidden they are, once each, near 2000 in all. Count that income with
+   the flying pay when setting the bands.
 
 8. **Finishes told apart.** In iteration 1's sheet
    (`captures/skins/iter1_finish_day.png`) the gloss, matte and metal rows
