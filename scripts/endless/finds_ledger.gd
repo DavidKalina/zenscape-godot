@@ -5,11 +5,13 @@ extends RefCounted
 
 const Card = preload("res://scripts/endless/landing_summary.gd")
 
-const WIDTH := 1060.0
+## The page's width at a 900 px tall window (four columns of about 330 px:
+## 80 rows in eight areas fit at full size), at most the window less MARGIN.
+const WIDTH := 1340.0
 const MARGIN := 48.0
 const ROW := 27.0
 const HEAD := 40.0
-const COLUMNS := 3
+const COLUMNS := 4
 const BLANK := "- - - - -"
 
 ## The blocks split over columns, at most COLUMNS, keeping an area whole:
