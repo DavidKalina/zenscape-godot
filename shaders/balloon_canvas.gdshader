@@ -29,6 +29,8 @@ instance uniform float burn = 0.0;
 instance uniform float shudder = 0.0;
 instance uniform vec4 wash = vec4(0.0);
 instance uniform float fade = 1.0;
+// How sun-worn the cloth is: 1 the old muted cloth, less for festival dyes.
+instance uniform float wear = 1.0;
 
 uniform float gores = 16.0;
 uniform float panels = 14.0;
@@ -145,12 +147,12 @@ void fragment() {
 
 	// Each panel dyed and faded a little apart from its neighbours.
 	float cell = hash1(vec2(g, row));
-	base *= 0.86 + 0.28 * cell;
+	base *= 0.86 + 0.28 * cell * mix(0.6, 1.0, wear);
 	// Sun-faded: drained toward its grey and lifted to a chalky pale, most on
 	// the crown and shoulders where the sun sits.
 	float sun_side = 1.0 - smoothstep(0.1, 0.62, v);
 	float mottle = vnoise(vec2(u * 1.3, v * 11.0)) * 0.6 + vnoise(vec2(u * 4.1, v * 37.0)) * 0.4;
-	float fade_k = clamp(0.2 + 0.4 * sun_side + (mottle - 0.5) * 0.5, 0.0, 1.0);
+	float fade_k = clamp(0.2 + 0.4 * sun_side + (mottle - 0.5) * 0.5, 0.0, 1.0) * wear;
 	base = mix(base, vec3(dot(base, vec3(0.3, 0.55, 0.15))), 0.3 * fade_k);
 	base = mix(base, faded, 0.42 * fade_k);
 
