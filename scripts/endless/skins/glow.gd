@@ -12,7 +12,7 @@ const SKINS := [
 		"decal":D + "filament_decal.png"},
 	# Charcoal, cracked, the cracks glowing orange-red.
 	{"id":"paint/cinder","slot":"paint","name":"Cinder","rarity":"rare","price":880,
-		"livery":{"body":Color("2a2624"),"dark":Color("151211"),"trim":Color("3a2a22"),"wing":Color("33302e")},
+		"livery":{"body":Color("1f1f21"),"dark":Color("0d0d0f"),"trim":Color("2a2a2d"),"wing":Color("262629")},
 		"finish":{"sheen":"matte","glow":Color("ff5a14"),"glow_on":["decal"],"glow_power":1.0},
 		"decal":D + "cinder_decal.png"},
 	# Deep blue scattered with gold stars.
@@ -23,8 +23,8 @@ const SKINS := [
 		"decal":D + "vesper_decal.png"},
 	# A dark pearl that shifts green to violet, ribbons of aurora in the paint.
 	{"id":"paint/borealis","slot":"paint","name":"Borealis","rarity":"legendary","price":2300,
-		"livery":{"body":Color("0b2a26"),"dark":Color("06120f"),"trim":Color("14403a"),"wing":Color("0e3430")},
-		"finish":{"sheen":"satin","pearl":Color("9a6bff"),"pearl_amount":0.6,
+		"livery":{"body":Color("07140f"),"dark":Color("030806"),"trim":Color("0c221c"),"wing":Color("091b16")},
+		"finish":{"sheen":"satin","pearl":Color("9a6bff"),"pearl_amount":0.4,
 			"glow":Color("28e6a4"),"glow_on":["decal"],"glow_power":1.0},
 		"decal":D + "borealis_decal.png"},
 	# Deep-sea blue-black with rows of cold lights along the body and wings.

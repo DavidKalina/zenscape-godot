@@ -105,19 +105,26 @@ def filament():
 def vesper():
 	d = Decal()
 	G, W = "ffe7a6", "fff6e0"
-	for r, cell in (("body", 0.075), ("wings", 0.07), ("tail", 0.05), ("cowl", 0.06)):
-		d.mask(r, G, stars(cell, 0.0115, 3, 0.6))
+	for r, cell, sz in (("body", 0.07, 0.012), ("wings_top", 0.055, 0.013), ("wings_under", 0.07, 0.011), ("tail", 0.04, 0.014), ("cowl", 0.06, 0.011)):
+		d.mask(r, G, stars(cell, sz, 3, 0.55))
 	d.mask("body", W, sparkles(0.17, 0.05, 11, 0.9))
-	d.mask("wings", W, sparkles(0.2, 0.045, 5, 0.8))
-	d.mask("fin", G, stars(0.05, 0.01, 2, 0.6))
-	d.mask("fin", W, sparkles(0.2, 0.035, 8, 0.5))
-	# A faint arc of the milky way over the shoulder: dense small dots in a band.
+	d.mask("wings_top", W, sparkles(0.13, 0.06, 5, 0.9))
+	d.mask("tail", W, sparkles(0.09, 0.05, 6, 0.9))
+	d.mask("fin", G, stars(0.05, 0.012, 2, 0.7))
+	d.mask("fin", W, sparkles(0.15, 0.04, 8, 0.7))
+	# The milky way: a dense band of small stars over the shoulder and across the top wings and tail.
 	def milky(a, b, side):
 		z, s = a, np.abs(b)
 		centre = 0.09 + 0.05 * np.sin(z * 5.0)
-		on = (np.abs(s - centre) < 0.04).astype(np.float32)
-		return on * stars(0.026, 0.006, 21, 0.6)(a, b, side)
+		on = (np.abs(s - centre) < 0.05).astype(np.float32)
+		return on * stars(0.026, 0.007, 21, 0.7)(a, b, side)
 	d.mask("body", "9fb4ff", milky)
+	def band(a, b, side):
+		c = 0.15 + 0.04 * np.sin(a * 9.0)
+		on = (np.abs(b - c) < 0.05).astype(np.float32)
+		return on * stars(0.03, 0.007, 33, 0.6)(a, b, side)
+	d.mask("wings_top", "9fb4ff", band)
+	d.mask("tail", "9fb4ff", lambda a, b, side: ((np.abs(b - 0.07) < 0.03).astype(np.float32)) * stars(0.022, 0.007, 34, 0.75)(a, b, side))
 	d.save(OUT + "vesper_decal.png")
 
 
@@ -130,44 +137,41 @@ def cinder():
 			return np.clip(1 - e / width, 0, 1) ** 1.5
 		return fn
 	for r, cell, w in (("body", 0.17, 0.03), ("wings", 0.16, 0.028), ("cowl", 0.12, 0.022), ("tail", 0.1, 0.02)):
-		d.mask(r, "ff5a14", cracks(cell, 4, w), mirror=True)
-		d.mask(r, "ffb040", cracks(cell, 4, w * 0.35), mirror=True)
-	d.mask("fin", "ff5a14", cracks(0.1, 6, 0.02))
-	d.mask("fin", "ffb040", cracks(0.1, 6, 0.007))
+		d.mask(r, "c8420f", cracks(cell, 4, w), mirror=True)
+		d.mask(r, "ff8a2a", cracks(cell, 4, w * 0.35), mirror=True)
+	d.mask("fin", "c8420f", cracks(0.1, 6, 0.02))
+	d.mask("fin", "ff8a2a", cracks(0.1, 6, 0.007))
 	d.save(OUT + "cinder_decal.png")
 
 
 def borealis():
 	d = Decal()
-	def ribbon(centre, amp, k, ph, width, seed_vary=0.0):
+	GR, VI, TE = "28e6a4", "9a6bff", "5cf0d0"
+	def ribbon(centre, amp, k, ph, width):
 		def fn(a, b, side):
-			s = np.abs(b)
 			c = centre + amp * np.sin(a * k + ph)
-			t = np.clip(1 - np.abs(s - c) / width, 0, 1)
-			return t * t * (0.6 + 0.4 * np.sin(a * 17.0 + ph))
+			t = np.clip(1 - np.abs(np.abs(b) - c) / width, 0, 1)
+			return t ** 1.2 * (0.7 + 0.3 * np.sin(a * 17.0 + ph))
 		return fn
-	d.mask("body", "28e6a4", ribbon(0.10, 0.04, 5.0, 0.0, 0.075))
-	d.mask("body", "9a6bff", ribbon(0.20, 0.05, 4.0, 1.5, 0.07))
-	d.mask("body", "7affc8", ribbon(0.31, 0.04, 6.0, 3.0, 0.055))
-	def wing(c0, col, ph):
-		def fn(a, b, side):
-			cc = c0 + 0.03 * np.sin(a * 11.0 + ph)
-			return np.clip(1 - np.abs(b - cc) / 0.04, 0, 1) ** 1.2
-		return fn
-	d.mask("wings", "28e6a4", wing(0.10, 0, 0.0))
-	d.mask("wings", "9a6bff", wing(0.21, 0, 2.0))
-	d.mask("tail", "28e6a4", wing(0.05, 0, 0.5))
-	d.band("cowl", "28e6a4", (FRONT + 0.01, FRONT + 0.04))
-	def fin(a, b, side):
-		return np.clip(1 - np.abs(b - (0.17 + 0.03 * np.sin(a * 22))) / 0.04, 0, 1) ** 1.2
-	d.mask("fin", "28e6a4", fin)
+	d.mask("body", GR, ribbon(0.04, 0.03, 5.0, 0.0, 0.07))     # the back, seen from the chase camera
+	d.mask("body", VI, ribbon(0.17, 0.05, 4.0, 1.5, 0.07))
+	d.mask("body", TE, ribbon(0.30, 0.04, 6.0, 3.0, 0.055))
+	# Top wings: broad ribbons running span-wise (b = chord position, a = span).
+	d.mask("wings_top", GR, ribbon(0.07, 0.03, 9.0, 0.0, 0.065))
+	d.mask("wings_top", VI, ribbon(0.18, 0.035, 7.0, 2.0, 0.06))
+	d.mask("wings_top", TE, ribbon(0.27, 0.02, 11.0, 4.0, 0.035))
+	d.mask("wings_under", GR, ribbon(0.10, 0.03, 9.0, 0.0, 0.05))
+	d.mask("tail", GR, ribbon(0.04, 0.015, 14.0, 0.5, 0.045))
+	d.mask("tail", VI, ribbon(0.10, 0.015, 12.0, 2.5, 0.04))
+	d.band("cowl", GR, (FRONT + 0.01, FRONT + 0.04))
+	d.mask("fin", GR, lambda a, b, side: np.clip(1 - np.abs(b - (0.12 + 0.03 * np.sin(a * 22))) / 0.05, 0, 1) ** 1.2)
+	d.mask("fin", VI, lambda a, b, side: np.clip(1 - np.abs(b - (0.22 + 0.03 * np.sin(a * 18 + 2))) / 0.04, 0, 1) ** 1.2)
 	d.save(OUT + "borealis_decal.png")
 
 
 def abyss():
 	d = Decal()
 	C, W = "28c8ff", "b8f4ff"
-	# Rows of photophores: a lateral row, a belly row, a few above.
 	for z in np.arange(-0.40, 0.66, 0.062):
 		d.disc("body", C, (z, 0.17), 0.02)
 		d.disc("body", W, (z, 0.17), 0.009)
@@ -175,18 +179,28 @@ def abyss():
 		d.disc("body", C, (z, 0.31), 0.014)
 	for z in np.arange(-0.34, 0.5, 0.14):
 		d.disc("body", C, (z, 0.07), 0.014)
-	d.stripe("body", C, z=(-0.46, 0.7), s=(0.116, 0.128))   # a faint lateral line
+	d.stripe("body", C, z=(-0.46, 0.7), s=(0.116, 0.128))
+	d.stripe("body", C, z=(-0.46, 0.7), s=(0.0, 0.026))     # a lit spine along the back
+	# The top wings: rows of large lights along the span, three chord lines, a tip light.
+	for c in (0.05, 0.13, 0.21, 0.28):
+		for x in np.arange(0.05, 0.66, 0.065):
+			d.disc("wings_top", C, (x, c), 0.024)
+			d.disc("wings_top", W, (x, c), 0.01)
 	for x in np.arange(0.06, 0.66, 0.07):
-		for c in (0.06, 0.2):
-			d.disc("wings_top", C, (x, c), 0.018)
 		d.disc("wings_under", C, (x, 0.13), 0.016)
-	d.disc("wings", W, (0.66, 0.1), 0.024)
-	for x in np.arange(0.04, 0.25, 0.05):
-		d.disc("tail", C, (x, 0.07), 0.015)
-	for z in np.arange(0.5, 0.74, 0.045):
-		d.disc("fin", C, (z, 0.16), 0.015)
-	for s in np.arange(0.06, 0.5, 0.11):
-		d.disc("cowl", C, (s, FRONT + 0.03), 0.015)
+	d.disc("wings", W, (0.66, 0.1), 0.026)
+	d.rect("wings_top", C, (0.0, 0.7), (0.0, 0.016))
+	for x in np.arange(0.03, 0.25, 0.045):
+		for c in (0.035, 0.1):
+			d.disc("tail", C, (x, c), 0.019)
+			d.disc("tail", W, (x, c), 0.008)
+	d.rect("tail", C, (0.0, 0.26), (0.0, 0.014))
+	for z in np.arange(0.5, 0.74, 0.04):
+		d.disc("fin", C, (z, 0.12), 0.017)
+		d.disc("fin", C, (z, 0.22), 0.017)
+	d.stripe("fin", C, z=(0.47, 0.76), s=(0.05, 0.065))
+	for s_ in np.arange(0.06, 0.5, 0.11):
+		d.disc("cowl", C, (s_, FRONT + 0.03), 0.015)
 	d.save(OUT + "abyss_decal.png")
 
 
