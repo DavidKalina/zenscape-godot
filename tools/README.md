@@ -23,6 +23,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | A flight taped and filmed again from any camera (trailer shots: no HUD, no dropped frames, any size) | fly with `python tools/play.py -- --record`, then `python tools/movie.py last --from 12 --to 20 --cam flyby` (`--list`, `--preview`; movie.py, below) |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | A still of a moment in a driven run (the plane touching down, a piece by its AABB) | in a driver: `await shot_at("side", node, {"when": cond})`, then step frames; run with `drive.py --rendered` (drive.gd, Shots) |
+| A plane skin's sheet: the hero plane wearing it from a few angles, by day and (when it glows) by night, in one image | `python tools/skin_sheet.py paint/moonstone` (`captures/skins/<id>.png`; several ids stack into `--out`; `sheen:gloss[@id]` a finish alone; skin_sheet.py, below) |
 | A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
@@ -154,6 +155,30 @@ The views are three, front, back, left, right, top and close. The HUD is
 hidden unless you pass `--hud`. Files go to `captures/shots/<scene>_<view>.png`
 unless `--out` says otherwise. Read the PNGs and judge them yourself.
 Headless runs can't take stills.
+
+## skin_sheet.py: a plane skin's sheet
+
+```
+python tools/skin_sheet.py paint/moonstone                     # captures/skins/paint_moonstone.png
+python tools/skin_sheet.py paint/harbour paint/night --night   # a night row though they don't glow
+python tools/skin_sheet.py sheen:satin sheen:gloss sheen:matte sheen:metal --no-night --out captures/skins/sheens.png
+python tools/skin_sheet.py sheen:metal@paint/ochre --views port,starboard,tail,chase
+```
+
+A skin is a ShopStock id from any batch (`scripts/endless/skins/`), or
+`sheen:NAME[@id]`: that skin's livery (Harbour's by default) in the sheen
+alone. The plane is frozen in flight over the endless land
+(`tools/harness/skin_sheet.gd`), painted through `ShopStock._paint`, the
+shop's own path. A skin's sheet is a row of views at `--day-hour` (11), and
+a second at `--night-hour` (1) when its finish has a glow (`--night` for
+all, `--no-night` for none): two windows, one after the other, under
+shot.py's window lock. Views, in the plane's own frame: port, starboard,
+quarter (ahead, above), top, tail, and chase, where the play camera sits at
+a cruise (GlideCamera's BACK, UP and FOV): flying distance. Default
+port,quarter,top,chase. Several skins stack, rows in the order given, into
+`--out` (default `captures/skins/sheet.png`). The stills are kept in
+`captures/skins/raw/`. Exit non-zero when a skin is unknown or a still is
+missing. About 20 s a window.
 
 ## movie.py: a taped flight, filmed
 
