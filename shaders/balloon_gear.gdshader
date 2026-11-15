@@ -10,6 +10,7 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
+global uniform float zs_daylight;
 
 instance uniform float burn = 0.0;
 instance uniform float fade = 1.0;
@@ -19,6 +20,12 @@ uniform float fill = 1.5;
 uniform float rim = 0.3;
 uniform vec3 flame_colour : source_color = vec3(1.0, 0.52, 0.17);
 uniform float glow = 1.6;
+// In the dark (as the canvas): the flame's light on the gear lifted by
+// `lantern`, and `ember` of it kept between burns. `night` 0: none.
+uniform float night = 1.0;
+uniform float lantern = 1.5;
+uniform float ember = 0.07;
+uniform vec2 dark_from = vec2(0.62, 0.04);
 // The weave: stakes a metre round, rows a metre up.
 uniform vec2 weave = vec2(11.0, 42.0);
 
@@ -91,9 +98,11 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, wn.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	EMISSION = base * hemi * fill + base * zs_hemi_sky * zs_hemi_energy * edge * rim;
-	if (burn > 0.0) {
+	float dark = night * smoothstep(dark_from.x, dark_from.y, zs_daylight);
+	if (burn > 0.0 || dark > 0.001) {
 		float flick = 0.82 + 0.18 * sin(TIME * 31.0 + seed * 5.0) * sin(TIME * 17.3 + 1.0);
+		float level = burn * flick * (1.0 + dark * lantern) + dark * ember * (1.0 - burn);
 		// Faces that look up catch more of it.
-		EMISSION += base * flame_colour * burn * flick * glow * COLOR.a * (0.45 + 0.55 * clamp(wn.y, 0.0, 1.0));
+		EMISSION += base * flame_colour * level * glow * COLOR.a * (0.45 + 0.55 * clamp(wn.y, 0.0, 1.0));
 	}
 }

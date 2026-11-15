@@ -24,6 +24,14 @@ extends Node3D
 ## `shot_pass`, as the pirate ship's balls). Nothing here is solid and nothing
 ## pushes the plane: flying through the cloth only shakes it, and scores nothing.
 ##
+## In the dark (the celestial's `daylight` low: dusk, the blue hour, night)
+## each balloon is a lantern: the canvas shader passes the burner's light
+## through the cloth (its `glow`, the burn eased here: up fast, back over
+## GLOW_BACK s) and a low ember between burns, on the far model too; the
+## gondola catches more of the flame. The LAMPS nearest the eye within
+## LAMP_NEAR also carry a real light (no shadow) at the mouth, onto the land,
+## the trees and the plane; a field never has more than LAMPS lights.
+##
 ## Cost: the frame's work stays flat with the pool. Every live balloon only
 ## glides along its drift and rise each frame (a position set); the rest of
 ## its step (ground samples, height, burner, going, fade, turn) runs every
@@ -39,7 +47,9 @@ extends Node3D
 ## --balloon-fields=0 no fields; --balloon-field-gap=S the mean wait between
 ## fields (300 s); --balloons-now a low group of three ahead of the start, at
 ## once; --balloon-field-now a field ahead of the start, at once;
-## --balloon-scale=X their size over SIZE; --balloon-pool=N the pool (26).
+## --balloon-scale=X their size over SIZE; --balloon-pool=N the pool (26);
+## --balloon-glow=X the lantern's strength (1; 0 none, the day's look at
+## night); --balloon-lamps=N the real lights (2; 0 none).
 ##
 ## The model: art/blender/balloon/balloon_build.py (keep R, MOUTH_Y and
 ## FLOOR_Y on its numbers).
@@ -239,6 +249,26 @@ const HEAR := 340.0
 const ROAR_UNIT := 30.0
 const ROAR_DB := -3.0
 
+# --- The lantern ---
+## The celestial's daylight the lantern comes in over: none at .x, all at .y
+## (the canvas and gear shaders' `dark_from`).
+const DARK_FROM := Vector2(0.62,0.04)
+## The cloth's glow follows the burn: up at GLOW_UP a second, back over
+## GLOW_BACK s.
+const GLOW_UP := 5.0
+const GLOW_BACK := 1.3
+## Real lights: how many, within what range of the eye (m), each one's reach
+## (m, times the balloon's scale), its energy at a full burn, how it falls
+## with distance (OmniLight3D's attenuation), its share between burns, and
+## its colour.
+const LAMPS := 2
+const LAMP_NEAR := 420.0
+const LAMP_REACH := 40.0
+const LAMP_ENERGY := 3.2
+const LAMP_FALL := 0.55
+const LAMP_EMBER := 0.12
+const LAMP_COLOUR := Color(1.0,0.5,0.2)
+
 # --- Drawing ---
 ## The full model within this (m, times the balloon's scale), the far one past it.
 const NEAR_END := 380.0
@@ -327,6 +357,8 @@ class Balloon:
 	var burn := 0.0
 	var burn_left := 0.0
 	var burn_in := 5.0
+	## The burn as the cloth holds it (the canvas shader's `glow`).
+	var glow := 0.0
 	# The pass under way: the least clearance so far, where, and through the cloth;
 	# `armed` again once the plane has drawn right off.
 	var armed := true
@@ -380,6 +412,13 @@ var _festival := 0
 ## festival, ground} or {site, way, n, fade} (a meadow to look for).
 var _queue: Array[Dictionary] = []
 var _tree_plan: RefCounted
+## The lantern: its strength (--balloon-glow), how dark it is now (0 by day,
+## 1 at night), the materials it is set on, the real lights and whose they are.
+var glow_k := 1.0
+var dark := 0.0
+var _mats: Array[ShaderMaterial] = []
+var _lamps: Array[OmniLight3D] = []
+var _lamp_most := LAMPS
 
 ## Whether to make any: --balloons=0 or --no-balloons none.
 static func wanted() -> bool:
@@ -398,6 +437,8 @@ func setup(land_seed: int) -> void:
 		elif a.begins_with("--balloon-scale="): _size = SIZE*clampf(float(a.get_slice("=",1)),0.3,4.0)
 		elif a == "--balloons-now" or a == "--balloons-now=1": _now = true
 		elif a == "--balloon-field-now" or a == "--balloon-field-now=1": _field_now = true
+		elif a.begins_with("--balloon-glow="): glow_k = clampf(float(a.get_slice("=",1)),0.0,4.0)
+		elif a.begins_with("--balloon-lamps="): _lamp_most = clampi(int(a.get_slice("=",1)),0,8)
 		elif a.begins_with("--balloon-pool="): _pool = clampi(int(a.get_slice("=",1)),GROUP,64)
 	_span = WorldScale.span
 	_wait = _rng.randf_range(FIRST_GAP.x,FIRST_GAP.y)
@@ -412,6 +453,18 @@ func setup(land_seed: int) -> void:
 	gear.shader = load("res://shaders/balloon_gear.gdshader")
 	var fire := ShaderMaterial.new()
 	fire.shader = load("res://shaders/balloon_flame.gdshader")
+	_mats = [canvas,gear]
+	set_glow(glow_k)
+	for i in _lamp_most:
+		var lamp := OmniLight3D.new()
+		lamp.name = "BalloonLamp%d" % i
+		lamp.light_color = LAMP_COLOUR
+		lamp.shadow_enabled = false
+		lamp.light_specular = 0.0
+		lamp.omni_attenuation = LAMP_FALL
+		lamp.visible = false
+		add_child(lamp)
+		_lamps.append(lamp)
 	var envelope: Mesh = (scene.get_node("Envelope") as MeshInstance3D).mesh
 	var gondola: Mesh = (scene.get_node("Gondola") as MeshInstance3D).mesh
 	var flame: Mesh = (scene.get_node("Flame") as MeshInstance3D).mesh
@@ -453,6 +506,13 @@ func _part(under: Node3D, part: String, mesh: Mesh, mats: Array) -> MeshInstance
 	for i in mats.size(): m.set_surface_override_material(i,mats[i])
 	under.add_child(m)
 	return m
+
+## The lantern's strength: 0 leaves the day's look at night.
+func set_glow(k: float) -> void:
+	glow_k = k
+	for m in _mats:
+		m.set_shader_parameter(&"night",k)
+		m.set_shader_parameter(&"dark_from",DARK_FROM)
 
 ## The near and far models' hand-over for `b`'s scale.
 func _ranges(b: Balloon) -> void:
@@ -523,6 +583,9 @@ func step(delta: float, game: Node) -> void:
 		var drift := Vector3(_wind.x,0.0,_wind.y)*Clouds.WIND_SPEED
 		var view: Vector3 = -game.camera.global_basis.z
 		var to_plane: Vector3 = plane.position
+		dark = 0.0
+		if glow_k > 0.0 and game.look != null and game.look.get("celestial") != null:
+			dark = smoothstep(DARK_FROM.x,DARK_FROM.y,float(game.look.celestial.daylight))
 		# Every one glides; the hot ones are stepped now, the rest by turns.
 		for b in balloons:
 			if not b.live: continue
@@ -530,6 +593,7 @@ func step(delta: float, game: Node) -> void:
 				b.at += drift*(b.drift_k*delta)
 				b.at.y += b.rise*delta
 				b.root.position = b.at
+			if b.glow != b.burn: _glow(b,delta)
 			var a := AWAKE*b.k
 			b.hot = (b.at-eye).length_squared() < HOT*HOT or (to_plane-b.at).length_squared() < a*a or not b.still
 			if b.hot: _think(b,game,plane,eye,view)
@@ -541,6 +605,7 @@ func step(delta: float, game: Node) -> void:
 			if b.live and not b.hot:
 				_think(b,game,plane,eye,view)
 				turns -= 1
+	if not _lamps.is_empty(): _light(eye)
 	ms = float(Time.get_ticks_usec()-t0)/1000.0
 	ms_avg = lerpf(ms_avg,ms,0.02)
 	ms_most = maxf(ms_most,ms)
@@ -838,6 +903,7 @@ func _put(b: Balloon, game: Node, q: Dictionary) -> void:
 	b.dent = 0.0
 	b.still = true
 	b.burn = 0.0
+	b.glow = 0.0
 	b.burn_left = 0.0
 	b.least = INF
 	b.through = false
@@ -863,6 +929,7 @@ func _put(b: Balloon, game: Node, q: Dictionary) -> void:
 	b.envelope.set_instance_shader_parameter(&"wash",Vector4.ZERO)
 	_ranges(b)
 	_set_burn(b,0.0)
+	for g: GeometryInstance3D in [b.envelope,b.far]: g.set_instance_shader_parameter(&"glow",0.0)
 	_set_fade(b,b.fade)
 	b.root.position = b.at
 	b.root.basis = Basis(Vector3.UP,b.turn).scaled(Vector3.ONE*b.scale)
@@ -891,6 +958,53 @@ func _set_burn(b: Balloon, v: float) -> void:
 	for g: GeometryInstance3D in [b.envelope,b.gondola,b.flame,b.far]:
 		g.set_instance_shader_parameter(&"burn",v)
 	b.flame.visible = v > 0.001
+
+## The cloth's glow after the burn: up fast, back slowly. By day it only
+## follows (the shader doesn't read it then).
+func _glow(b: Balloon, delta: float) -> void:
+	if dark <= 0.0: b.glow = b.burn
+	elif b.burn > b.glow: b.glow = minf(b.glow+delta*GLOW_UP,b.burn)
+	else: b.glow = maxf(b.glow-delta/GLOW_BACK,b.burn)
+	for g: GeometryInstance3D in [b.envelope,b.far]: g.set_instance_shader_parameter(&"glow",b.glow)
+
+## The real lights, in the dark: on the LAMPS balloons nearest the eye, each
+## faded out toward LAMP_NEAR and as the next nearest draws level with it, so
+## a light changing balloons is dark as it goes.
+func _light(eye: Vector3) -> void:
+	var n := _lamps.size()
+	if dark <= 0.01 or _alive == 0:
+		for lamp in _lamps: lamp.visible = false
+		return
+	# The n+1 nearest, in order.
+	var near: Array[Balloon] = []
+	var d2s: Array[float] = []
+	for b in balloons:
+		if not b.live: continue
+		var d2 := (b.at-eye).length_squared()
+		if d2 > LAMP_NEAR*LAMP_NEAR: continue
+		var i := d2s.size()
+		while i > 0 and d2s[i-1] > d2: i -= 1
+		if i > n: continue
+		d2s.insert(i,d2)
+		near.insert(i,b)
+		if d2s.size() > n+1:
+			d2s.pop_back()
+			near.pop_back()
+	var next := sqrt(d2s[n]) if d2s.size() > n else LAMP_NEAR
+	for i in n:
+		var lamp := _lamps[i]
+		if i >= mini(near.size(),n):
+			lamp.visible = false
+			continue
+		var b := near[i]
+		var d := sqrt(d2s[i])
+		var k := smoothstep(0.0,0.18,1.0-d/next)*b.fade
+		var level := maxf(b.glow*(0.86+0.14*sin(_clock*31.0+float(i)*2.0)*sin(_clock*17.3)),LAMP_EMBER)
+		lamp.light_energy = LAMP_ENERGY*level*k*dark*glow_k
+		lamp.visible = lamp.light_energy > 0.004
+		if lamp.visible:
+			lamp.omni_range = LAMP_REACH*b.scale
+			lamp.position = b.root.position+b.root.basis.y*(MOUTH_Y+0.6)
 
 # --- A balloon's step -------------------------------------------------------------
 

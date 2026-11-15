@@ -12,6 +12,9 @@ shader_type spatial;
 // Moving: `shudder` ripples the slack lower cloth, `wash` (a direction in
 // the envelope's frame, w its depth) dents the side a plane's wash hits,
 // `burn` lights the inside from the burner and glows through the cloth.
+// In the dark (`zs_daylight` low) the cloth is a lantern: `glow` (the burn,
+// eased by the manager) and a low ember between burns come through it, most
+// near the mouth, in the dye's colour, tapes, seams and patches dark in it.
 // Lit as the world is: no ambient, the sky's hemisphere as emission
 // (shaders/folk_surface.gdshaderinc).
 render_mode diffuse_lambert, specular_disabled, cull_disabled;
@@ -19,6 +22,7 @@ render_mode diffuse_lambert, specular_disabled, cull_disabled;
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
+global uniform float zs_daylight;
 
 instance uniform vec3 tone_a : source_color = vec3(0.45, 0.16, 0.11);
 instance uniform vec3 tone_b : source_color = vec3(0.62, 0.55, 0.42);
@@ -31,6 +35,8 @@ instance uniform vec4 wash = vec4(0.0);
 instance uniform float fade = 1.0;
 // How sun-worn the cloth is: 1 the old muted cloth, less for festival dyes.
 instance uniform float wear = 1.0;
+// The burner's light held in the cloth: up with the burn, easing back slower.
+instance uniform float glow = 0.0;
 
 uniform float gores = 16.0;
 uniform float panels = 14.0;
@@ -41,6 +47,24 @@ uniform float through = 0.45;
 uniform vec3 flame_colour : source_color = vec3(1.0, 0.52, 0.17);
 uniform float glow_inside = 2.6;
 uniform float glow_through = 0.3;
+// The lantern, in the dark. `night` scales all of it (0: none, the bench's
+// A/B); `lantern` the light through the cloth at a full burn; `ember` the
+// share of it between burns; `lantern_crown` what reaches the crown and
+// `lantern_fall` how fast it thins on the way up; `lantern_far` its lift
+// where a balloon is a few pixels (`ember_far` the ember's, over that); `lantern_inside` the inside's lift over
+// the day's; `lantern_hot` over the flame, `lantern_deep` far from it; `dark_from` the
+// daylight (celestial zs_daylight) it starts and ends coming in over.
+uniform float night = 1.0;
+uniform float lantern = 1.9;
+uniform float ember = 0.3;
+uniform float lantern_crown = 0.12;
+uniform float lantern_fall = 2.3;
+uniform float lantern_far = 3.0;
+uniform float ember_far = 2.4;
+uniform float lantern_inside = 0.4;
+uniform vec2 dark_from = vec2(0.62, 0.04);
+uniform vec3 lantern_hot : source_color = vec3(1.0, 0.8, 0.46);
+uniform vec3 lantern_deep : source_color = vec3(0.9, 0.2, 0.05);
 uniform vec3 faded : source_color = vec3(0.66, 0.61, 0.52);
 uniform vec3 soot : source_color = vec3(0.07, 0.06, 0.055);
 
@@ -144,6 +168,9 @@ void fragment() {
 	base = mix(base, tone_c * 0.8, step(v, 0.045));
 	float skirt = smoothstep(0.925, 0.93, v);
 	base = mix(base, vec3(0.2, 0.17, 0.13), skirt);
+	// The dye as light comes through it: the pattern before sun and dirt.
+	vec3 dye = base;
+	float thick = 0.0;
 
 	// Each panel dyed and faded a little apart from its neighbours.
 	float cell = hash1(vec2(g, row));
@@ -171,6 +198,8 @@ void fragment() {
 		float dash = step(0.5, fract((abs(q.x) > abs(q.y) ? q.y : q.x) * 5.0));
 		base = mix(base, vec3(0.6, 0.56, 0.47), border * dash * fine * 0.8);
 		bump += inside * 0.4;
+		dye = mix(dye, patch_tone, inside);
+		thick += inside * 0.5 + border * 0.3;
 	}
 
 	// The load tapes down each gore's edge and the seams across the panels.
@@ -218,6 +247,8 @@ void fragment() {
 	// A sliver's derivatives can come out empty or not a number.
 	NORMAL = (dot(bent, bent) > 1e-12 && !any(isnan(bent))) ? normalize(bent) : n;
 
+	// (The tapes widen with distance to stay drawn: there they only dim it a little.)
+	thick += mix(0.12, tape * 0.9, fine) + seam * 0.45 * fine + stain * 0.2 + lick * 0.25 + skirt * 0.5;
 	bool inner = !FRONT_FACING;
 	// The inside is the cloth's back: paler, the pattern showing through dimly.
 	if (inner) base = mix(base, vec3(dot(base, vec3(0.333))), 0.35) * 0.8;
@@ -232,19 +263,60 @@ void fragment() {
 
 	// The burner: the inside lit from the mouth up, and the glow coming
 	// through the cloth, warmer and stronger low down, the seams dark in it.
+	float flick_n = 0.0;
 	if (burn > 0.0) {
 		float flick = 0.82 + 0.18 * sin(TIME * 31.0 + seed * 5.0) * sin(TIME * 17.3 + 1.0);
 		float up = 0.25 + 0.75 * smoothstep(0.0, 1.0, v) * smoothstep(0.0, 1.0, v);
 		vec3 lit = flame_colour * burn * flick * up;
 		if (inner) EMISSION += mix(base, vec3(0.5), 0.25) * lit * glow_inside;
 		else EMISSION += mix(base, vec3(dot(base, vec3(0.333))), 0.2) * lit * glow_through * (1.0 - 0.7 * tape) * (1.0 - 0.6 * lick);
+		flick_n = flick;
+	}
+
+	// The lantern: in the dark the burner's light fills the envelope and comes
+	// through the cloth. Most low down by the flame, thinning to the crown;
+	// each panel its own weight of cloth; the limb a little dimmer, so it
+	// stays round.
+	float dark = night * smoothstep(dark_from.x, dark_from.y, zs_daylight);
+	if (dark > 0.001) {
+		// The ember breathes; the burn flickers.
+		float breath = 0.85 + 0.15 * sin(TIME * 1.3 + seed * 3.1) * sin(TIME * 0.83 + seed);
+		float fired = glow * mix(1.0, flick_n, step(0.001, burn));
+		float h = smoothstep(0.0, 0.92, v);
+		// The burn fills the envelope; the ember only warms the cloth low down.
+		// Far off, where a balloon is a few pixels, it is lifted and evened to read.
+		float off = smoothstep(0.06, 0.4, px);
+		float fall = mix(lantern_fall, 1.1, off);
+		float reach = fired * mix(lantern_crown, 1.0, pow(h, fall)) + ember * mix(1.0, ember_far, off) * breath * (1.0 - fired) * mix(lantern_crown * 0.6, 1.0, pow(h, fall * 1.3));
+		reach *= mix(1.0, lantern_far, off);
+		// Deep red far from the flame, its own orange nearer, a hot heart
+		// over it while it fires.
+		float heart = smoothstep(0.5, 0.95, v) * fired;
+		vec3 fire = mix(lantern_deep, flame_colour, smoothstep(0.1, 0.75, h));
+		fire = mix(fire, lantern_hot, 0.55 * heart);
+		if (inner) {
+			EMISSION += mix(base, vec3(0.5), 0.25) * fire * reach * dark * glow_inside * lantern_inside;
+		} else {
+			// Each panel its own weight of cloth; tapes, seams, patches, soot
+			// and the scoop pass little.
+			float weight = (0.78 + 0.34 * cell) * clamp(1.0 - thick, 0.05, 1.0);
+			// Pale cloth passes the flame's own colour, dyed cloth its dye,
+			// dark cloth little.
+			float top = max(max(dye.r, dye.g), max(dye.b, 0.001));
+			vec3 tint = mix(vec3(1.0), dye / top, 0.8) * pow(top, 0.6) * 1.15;
+			float facing = 0.6 + 0.4 * clamp(dot(n, VIEW), 0.0, 1.0);
+			EMISSION += tint * fire * reach * weight * facing * dark * lantern;
+		}
 	}
 }
 
 void light() {
 	// Wrapped a little, and the sun through the cloth on the far side.
+	// A lamp (the burner's own, endless_balloons.gd) is left off the cloth:
+	// the lantern term is its light there.
+	float sun = LIGHT_IS_DIRECTIONAL ? 1.0 : 0.0;
 	float nl = dot(NORMAL, LIGHT);
 	float wrap = clamp((nl + 0.25) / 1.25, 0.0, 1.0);
 	float back = clamp(-nl, 0.0, 1.0) * through;
-	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * (wrap + back) / PI;
+	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * (wrap + back) * sun / PI;
 }
