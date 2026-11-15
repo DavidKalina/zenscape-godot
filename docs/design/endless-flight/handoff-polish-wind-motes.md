@@ -277,3 +277,9 @@ suite was not run.
 - The pool still caps at 360 at default wind and Boost. Raising `DRIFT` wasn't
   tried.
 - Other worlds, snow and the Mac weren't checked.
+
+## 2026-11-14: far layer off by default
+
+The user saw the far layer in flight: "way too blobby". It is now off unless
+`--far-drift` or `--far-drift=X` is passed; `--no-far-drift` still works. The
+follow-up lane on it was stopped with nothing committed.

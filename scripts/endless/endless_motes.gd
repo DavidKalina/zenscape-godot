@@ -235,7 +235,8 @@ var petal_scale := 1.0
 var fluff_share := DRIFT_FLUFF
 ## For the numbers: specks shown, bits flying, the drift's bits and puffs.
 var stats := {"pollen": 0, "kick": 0, "drift": 0, "puffs": 0, "far": 0}
-var far_on := true
+## Off by default ("way too blobby", 2026-11-14): --far-drift or --far-drift=X shows it.
+var far_on := false
 var far_scale := 1.0
 
 var _rng := RandomNumberGenerator.new()
@@ -287,7 +288,10 @@ func setup(land_seed: int, ground: Callable) -> void:
 		elif a.begins_with("--grass-kick="): kick_scale = maxf(float(a.get_slice("=",1)),0.0)
 		elif a == "--no-wind-blades": drift_on = false
 		elif a == "--no-far-drift": far_on = false
-		elif a.begins_with("--far-drift="): far_scale = maxf(float(a.get_slice("=",1)),0.0)
+		elif a == "--far-drift": far_on = true
+		elif a.begins_with("--far-drift="):
+			far_scale = maxf(float(a.get_slice("=",1)),0.0)
+			far_on = true
 		elif a.begins_with("--wind-blades="): drift_scale = maxf(float(a.get_slice("=",1)),0.0)
 		elif a == "--no-petals": petals_on = false
 		elif a.begins_with("--petals="): petal_scale = maxf(float(a.get_slice("=",1)),0.0)
