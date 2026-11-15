@@ -760,6 +760,17 @@ func repaint(livery: Dictionary) -> void:
 		var old: String = TOY_SLOTS[key]
 		if _paints.has(old): (_paints[old] as ShaderMaterial).set_shader_parameter("albedo",livery.get(key,slot[1]))
 
+## The hero surface's finish uniforms and their values with none (the atlas's
+## own shine; hero_surface.gdshader).
+const HERO_FINISH := {"finish_rough":-1.0,"finish_coat":-1.0,"finish_metal":0.0,"finish_sheen":0.0,"finish_chalk":0.0,
+	"pearl":Color(1,1,1),"pearl_amount":0.0,"glow":Color(0,0,0),"glow_slots":Vector4.ZERO,"glow_power":0.0}
+
+## Sets how its paint shines (the shop's skins, ShopStock `finish_values`):
+## `values` by HERO_FINISH's names, the rest back to none.
+func refinish(values: Dictionary) -> void:
+	for key: String in HERO_FINISH:
+		for m in _hero_paint: m.set_shader_parameter(key,values.get(key,HERO_FINISH[key]))
+
 ## The plane's paints by name, `livery` (see `_init`) repainting the body,
 ## dark, trim and wing and setting their wear (new without); the pieces
 ## (`piece`) name theirs from these.

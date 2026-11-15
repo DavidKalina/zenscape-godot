@@ -107,7 +107,9 @@ func _row(i: Dictionary) -> Control:
 	line.add_theme_constant_override("separation",12)
 	row.add_child(line)
 	line.add_child(_swatch(i))
-	var nm := _label(String(i.name),_word(22.0,0.0),CREAM)
+	# Rarity by the name's colour; a common one is plain cream.
+	var rare := ShopStock.rarity(i)
+	var nm := _label(String(i.name),_word(22.0,0.0),CREAM if rare == "common" else ShopStock.RARITY_COLOURS.get(rare,CREAM))
 	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line.add_child(nm)
 	var mark := _label("",_word(16.0,0.12),GOLD)

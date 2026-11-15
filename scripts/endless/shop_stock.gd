@@ -14,27 +14,59 @@ extends RefCounted
 ##   ribbon  a streamer off the rudder's top, two colours: nothing on the
 ##           flight, only to look at
 ## The book (PilotBook) keeps owned ids and the worn id per slot.
+##
+## Skins (docs/design/endless-flight/spec-skins.md, "The contract"): a paint
+## row may carry more than its livery:
+##   rarity  common, uncommon, rare or legendary (RARITIES), shown in the list
+##   finish  how the paint shines: {sheen: a SHEENS name, pearl: Color,
+##           pearl_amount, glow: Color, glow_on: [slots], glow_power}
+##           (`finish_values`; PlaneFigure `refinish`)
+## Paints beyond the first seven come in batches, one file each under
+## scripts/endless/skins/ (its `SKINS`, rows as ITEMS'), gathered from
+## BATCHES: a new batch is one line there.
 
 
 const SLOTS := ["paint","ribbon"]
 ## Each slot's heading in the shop.
 const SLOT_NAMES := {"paint":"Paints","ribbon":"Ribbons"}
 
+## The skin batches, each a script with `const SKINS := [rows]`.
+const BATCHES := [
+	"res://scripts/endless/skins/demo.gd",
+]
+
+const RARITIES := ["common","uncommon","rare","legendary"]
+## Each rarity's colour in the shop's list.
+const RARITY_COLOURS := {"common":Color("c9c2b3"),"uncommon":Color("8fc7a0"),"rare":Color("8fb4e8"),"legendary":Color("f0a860")}
+
+## The finish's sheens: the paint's roughness, clearcoat and metal
+## (PlaneFigure HERO_FINISH's names). satin is the atlas's own; gloss a
+## lacquer's white sheen edge-on; matte chalky, no shine; metal the sky in its colour.
+const SHEENS := {
+	"satin":{},
+	"gloss":{"finish_rough":0.15,"finish_coat":1.0,"finish_sheen":1.0},
+	"matte":{"finish_rough":0.92,"finish_coat":0.0,"finish_chalk":1.0},
+	"metal":{"finish_rough":0.3,"finish_coat":0.2,"finish_metal":1.0},
+}
+## The slots a glow can light, in glow_slots' order.
+const GLOW_SLOTS := ["body","trim","wing","dark"]
+
+## The base stock; the batches' skins follow (`items`).
 const ITEMS := [
 	# The wanderer's own: terracotta, teal and cream (PlaneFigure's defaults).
-	{"id":"paint/home","slot":"paint","name":"Homestead","price":0,
+	{"id":"paint/home","slot":"paint","rarity":"common","name":"Homestead","price":0,
 		"livery":{"body":Color("b9583b"),"dark":Color("2f4a4f"),"trim":Color("2f6670"),"wing":Color("ece2c8")}},
-	{"id":"paint/harbour","slot":"paint","name":"Harbour","price":60,
+	{"id":"paint/harbour","slot":"paint","rarity":"common","name":"Harbour","price":60,
 		"livery":{"body":Color("3f6e8c"),"dark":Color("26394a"),"trim":Color("e8d9a8"),"wing":Color("eef0ea")}},
-	{"id":"paint/moss","slot":"paint","name":"Moss","price":80,
+	{"id":"paint/moss","slot":"paint","rarity":"common","name":"Moss","price":80,
 		"livery":{"body":Color("5f7a45"),"dark":Color("33402a"),"trim":Color("d98e4a"),"wing":Color("f0ead8")}},
-	{"id":"paint/ochre","slot":"paint","name":"Ochre","price":100,
+	{"id":"paint/ochre","slot":"paint","rarity":"common","name":"Ochre","price":100,
 		"livery":{"body":Color("d3a23c"),"dark":Color("5e4526"),"trim":Color("8a3f2e"),"wing":Color("f3ecd9")}},
-	{"id":"paint/heather","slot":"paint","name":"Heather","price":120,
+	{"id":"paint/heather","slot":"paint","rarity":"uncommon","name":"Heather","price":120,
 		"livery":{"body":Color("85587a"),"dark":Color("44303f"),"trim":Color("e6c48f"),"wing":Color("efe8e0")}},
-	{"id":"paint/chalk","slot":"paint","name":"Chalk","price":150,
+	{"id":"paint/chalk","slot":"paint","rarity":"uncommon","name":"Chalk","price":150,
 		"livery":{"body":Color("e9e4d6"),"dark":Color("3a3a36"),"trim":Color("b8342a"),"wing":Color("f4f1e8")}},
-	{"id":"paint/night","slot":"paint","name":"Night Mail","price":180,
+	{"id":"paint/night","slot":"paint","rarity":"uncommon","name":"Night Mail","price":180,
 		"livery":{"body":Color("262c3a"),"dark":Color("161a22"),"trim":Color("d6a84a"),"wing":Color("d9d3c2")}},
 	{"id":"ribbon/none","slot":"ribbon","name":"None","price":0,"colours":[]},
 	{"id":"ribbon/scarlet","slot":"ribbon","name":"Scarlet","price":40,"colours":[Color("c8352b"),Color("f2e8d2")]},
@@ -50,18 +82,64 @@ const RIBBON_LONG := 0.62
 const RIBBON_DEEP := 0.045
 const RIBBON_SEGMENTS := 12
 
+static var _stock: Array = []
+static var _by_id := {}
+
+## Every item, the base's then the batches', paints in order of price.
+static func stock() -> Array:
+	if _stock.is_empty():
+		var paints: Array = []
+		var rest: Array = []
+		for i: Dictionary in ITEMS: (paints if i.slot == "paint" else rest).append(i)
+		for path: String in BATCHES:
+			var batch: Variant = load(path)
+			if batch == null:
+				push_error("ShopStock: no skin batch at %s" % path)
+				continue
+			for i: Dictionary in batch.SKINS: paints.append(i)
+		# Stable: by price, then as listed.
+		var at := {}
+		for k in paints.size(): at[paints[k].id] = k
+		paints.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return int(a.price) < int(b.price) or (int(a.price) == int(b.price) and at[a.id] < at[b.id]))
+		_stock = paints+rest
+		for i: Dictionary in _stock:
+			if _by_id.has(i.id): push_error("ShopStock: two items are %s" % i.id)
+			_by_id[i.id] = i
+	return _stock
+
 static func items(slot := "") -> Array:
-	if slot == "": return ITEMS
-	return ITEMS.filter(func(i: Dictionary) -> bool: return i.slot == slot)
+	if slot == "": return stock()
+	return stock().filter(func(i: Dictionary) -> bool: return i.slot == slot)
 
 static func item(id: String) -> Dictionary:
-	for i: Dictionary in ITEMS:
-		if i.id == id: return i
-	return {}
+	stock()
+	return _by_id.get(id,{})
+
+## The item's rarity (common when it names none).
+static func rarity(i: Dictionary) -> String:
+	return String(i.get("rarity","common"))
+
+## A paint's finish as the hero shader's values (PlaneFigure `refinish`).
+static func finish_values(i: Dictionary) -> Dictionary:
+	var f: Dictionary = i.get("finish",{})
+	var out: Dictionary = (SHEENS.get(String(f.get("sheen","satin")),{}) as Dictionary).duplicate()
+	if f.has("pearl"):
+		out["pearl"] = f.pearl
+		out["pearl_amount"] = float(f.get("pearl_amount",0.6))
+	if f.has("glow"):
+		var on := Vector4.ZERO
+		for slot: String in f.get("glow_on",["trim"]):
+			if GLOW_SLOTS.has(slot): on[GLOW_SLOTS.find(slot)] = 1.0
+			else: push_error("ShopStock: %s glows on no slot %s" % [i.id,slot])
+		out["glow"] = f.glow
+		out["glow_slots"] = on
+		out["glow_power"] = float(f.get("glow_power",1.5))
+	return out
 
 ## The slot's free first item.
 static func first(slot: String) -> String:
-	for i: Dictionary in ITEMS:
+	for i: Dictionary in stock():
 		if i.slot == slot and int(i.price) == 0: return i.id
 	return ""
 
@@ -93,13 +171,14 @@ static func dress(figure: Node3D, book: RefCounted, try := {}) -> void:
 		if String(figure.get_meta("shop_"+slot,"")) == id: continue
 		figure.set_meta("shop_"+slot,id)
 		match slot:
-			"paint": _paint(figure,item(id).get("livery",{}))
+			"paint": _paint(figure,item(id))
 			"ribbon": _ribbon(figure,item(id).get("colours",[]))
 
-## Repaints the figure in place (PlaneFigure `repaint`) to `livery`'s colours
-## (its defaults else).
-static func _paint(figure: Node3D, livery: Dictionary) -> void:
-	figure.repaint(livery)
+## Repaints the figure in place (PlaneFigure `repaint`) to the paint's
+## livery (its defaults else) and finish.
+static func _paint(figure: Node3D, i: Dictionary) -> void:
+	figure.repaint(i.get("livery",{}))
+	if figure.has_method("refinish"): figure.refinish(finish_values(i))
 
 const RIBBON_SHADER := """
 shader_type spatial;

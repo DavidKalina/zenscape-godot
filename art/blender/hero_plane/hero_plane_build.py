@@ -973,6 +973,24 @@ uniform float coat_roughness = 0.08;
 // set_wear: 0 new; faded, dusty and dull at 1, as the old paint did.
 uniform float wear : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 wear_dust : source_color = vec3(0.71, 0.65, 0.55);
+// A skin's finish (scripts/endless/shop_stock.gd FINISH), on the painted parts
+// only (the mask), so brass, cloth and bared metal keep their own: the paint's
+// roughness and clearcoat (below 0 the atlas's own), how far it reads as metal
+// and how much of a lacquer's white sheen it shows (a sky of its own in the
+// shine for both, since the world's isn't in the reflections),
+// a pearl's shift toward `pearl` seen edge-on, and a glow by slot (body, trim,
+// wing, dark) that comes up as the day goes.
+uniform float finish_rough = -1.0;
+uniform float finish_coat = -1.0;
+uniform float finish_metal : hint_range(0.0, 1.0) = 0.0;
+uniform float finish_sheen : hint_range(0.0, 1.0) = 0.0;
+// A matte's chalkiness: the paint a little greyed and lifted, its rim gone.
+uniform float finish_chalk : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 pearl : source_color = vec3(1.0);
+uniform float pearl_amount : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 glow : source_color = vec3(0.0);
+uniform vec4 glow_slots = vec4(0.0);
+uniform float glow_power = 0.0;
 // Per instance (the airframe's and wires': the hinged parts' x is their own):
 // the wing tips' bend, by distance out along the span, scripts/plane_figure.gd.
 instance uniform float flex = 0.0;
@@ -990,10 +1008,20 @@ void fragment() {
 	tint = mix(tint, paint_wing / BASE_WING, m.b);
 	tint = mix(tint, paint_dark / BASE_DARK, m.a);
 	base *= tint;
+	float painted = clamp(m.r + m.g + m.b + m.a, 0.0, 1.0);
+	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
+	if (pearl_amount > 0.0) {
+		float shift = pow(1.0 - facing, 1.5) * pearl_amount * painted;
+		base = mix(base, pearl * max(dot(base, vec3(0.3, 0.55, 0.15)), 0.25) * 1.6, shift);
+	}
+	// What glows is dimmed under its light, so the light keeps its colour.
+	float glowing = glow_power > 0.0 ? clamp(dot(m, glow_slots), 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.65, zs_daylight)) : 0.0;
+	base *= 1.0 - 0.92 * glowing;
+	float chalk = finish_chalk * painted;
+	base = mix(base, mix(base, vec3(dot(base, vec3(0.3, 0.55, 0.15))), 0.3) * 1.12 + 0.015, chalk);
 	vec3 up = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float dull = 0.0;
 	if (wear > 0.0) {
-		float painted = clamp(m.r + m.g + m.b + m.a, 0.0, 1.0);
 		base = mix(base, vec3(dot(base, vec3(0.3, 0.55, 0.15))), 0.28 * wear * painted);
 		float dust = smoothstep(0.15, 0.85, up.y) * wear;
 		base = mix(base, wear_dust, dust * 0.34);
@@ -1001,22 +1029,36 @@ void fragment() {
 	}
 	base *= COLOR.r;
 	ALBEDO = base;
-	ROUGHNESS = clamp(mix(orm.r, 1.0, dull * 0.6), 0.0, 1.0);
+	float rough = finish_rough < 0.0 ? orm.r : mix(orm.r, finish_rough, painted);
+	float coat = finish_coat < 0.0 ? orm.b : mix(orm.b, finish_coat, painted);
+	float metal = finish_metal * painted;
+	ROUGHNESS = clamp(mix(rough, 1.0, dull * 0.6), 0.0, 1.0);
 	// The sky isn't in the reflections, so a true metal would go black: a
 	// third of one keeps its colour and its sheen.
-	METALLIC = orm.g * 0.35;
-	CLEARCOAT = orm.b * (1.0 - dull * 0.8);
+	METALLIC = mix(orm.g * 0.35, 0.6, metal);
+	CLEARCOAT = coat * (1.0 - dull * 0.8);
 	CLEARCOAT_ROUGHNESS = coat_roughness;
 	NORMAL_MAP = texture(normal_tex, UV).rgb;
 	NORMAL_MAP_DEPTH = normal_depth;
 	// What looks down takes the sunlit land's bounce: a thin wing with nothing but
 	// the world's dark ground term under it reads black, where a round body didn't.
 	vec3 hemi = mix(zs_hemi_ground * bounce, zs_hemi_sky, up.y * 0.5 + 0.5) * zs_hemi_energy / PI;
-	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
-	vec3 diffuse = base * (1.0 - orm.g * 0.3);
+	float edge = pow(1.0 - facing, 3.0);
+	vec3 diffuse = base * (1.0 - mix(orm.g * 0.3, 0.7, metal));
 	float sunward = clamp(dot(up, zs_key_direction), 0.0, 1.0);
 	vec3 lift = mix(zs_hemi_sky, vec3(dot(zs_hemi_sky, vec3(0.2126, 0.7152, 0.0722))), shade_neutral) * zs_hemi_energy * shade_lift * mix(shade_night, 1.0, zs_daylight) * mix(1.0, shade_lit, sunward);
-	EMISSION = (diffuse * (hemi * fill * mix(fill_night, 1.0, zs_daylight) + lift) + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim) * (1.0 - roof * roof_dim);
+	EMISSION = (diffuse * (hemi * fill * mix(fill_night, 1.0, zs_daylight) + lift) + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim * (1.0 - chalk)) * (1.0 - roof * roof_dim);
+	float sheen = finish_sheen * painted * (1.0 - dull) * (1.0 - glowing);
+	if (metal + sheen > 0.0) {
+		// The paint's own sky: what the mirror sees, the sky above and the land
+		// below parted at the horizon; a metal's in its own colour, a lacquer's
+		// white and only edge-on.
+		float seen = (INV_VIEW_MATRIX * vec4(reflect(-VIEW, NORMAL), 0.0)).y;
+		vec3 env = mix(zs_hemi_ground * bounce, zs_hemi_sky * 1.8, smoothstep(-0.08, 0.12, seen)) * zs_hemi_energy;
+		float grazing = pow(1.0 - facing, 2.0);
+		EMISSION += env * (base * metal * mix(0.9, 2.0, grazing) + vec3(sheen * mix(0.06, 0.9, grazing))) * (1.0 - roof * roof_dim);
+	}
+	EMISSION += glow * glow_power * glowing;
 }
 """
 
