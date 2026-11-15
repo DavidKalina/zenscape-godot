@@ -223,6 +223,14 @@ const WORLDS := {
 			"title":"The ring on the gun deck","hint":"Something sails off the Horn. It has a way in"},
 		{"id":"horn-mouth","area":"coast","kind":"relic","at":Vector2(2930.0,3900.0),"up":12.0,
 			"title":"The ring in the Horn's mouth"},
+		# The gold balloons (balloon_odd.gd SITES): a ring let out when the plane
+		# bounces off the gold one in a group of four.
+		{"id":"gold-balloon","area":"meadow","kind":"relic","anchor":"balloon/meadow","up":0.0,
+			"title":"The ring the gold balloon let go","hint":"One balloon east of the meadow is gold. Give it a nudge"},
+		{"id":"south-balloon","area":"south","kind":"relic","anchor":"balloon/south","up":0.0,
+			"title":"The ring from the southern gold balloon","hint":"A gold balloon among blue ones, south over the sound"},
+		{"id":"coast-balloon","area":"coast","kind":"relic","anchor":"balloon/coast","up":0.0,
+			"title":"The ring from the gold balloon on the coast","hint":"Bump the gold one, south-east along the shore"},
 	],
 	"amberlands":[],
 }
