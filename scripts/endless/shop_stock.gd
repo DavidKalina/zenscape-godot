@@ -2,19 +2,9 @@ extends RefCounted
 ## What the shop sells (docs/design/endless-flight/spec-wild-loop.md, lane
 ## `shop`), and putting what is worn on the plane. A first stock, kept easy
 ## to change: an item is one row of ITEMS, its slot one of SLOTS. Prices are
-## set against the pay (PilotBook `line_pay`, BeatRoutes' money; trunk 1):
-## decent flying earns about 5-7 a minute, a wild line 30 or more, so the
-## first paint (60) comes in about ten minutes, a ribbon (40-70) in five to
-## ten, and the dearest paint (180) in about half an hour.
-##
-## A paint's price follows its rarity (PRICE_BANDS), counting the flying pay
-## above and the finds' (finds.gd: each pays 10, 20 or 40 once, about 1760
-## for all 80), so ~10 a minute while there are finds about, 5-7 after:
-##   common     60-150     ten to twenty minutes
-##   uncommon   120-350    half an hour to an hour
-##   rare       500-1000   a few flights (one to two hours)
-##   legendary  1500-3000  many flights (three hours or more; all the
-##                         finds together buy about one)
+## set by time to earn against the pay; the pay, the rates measured and the
+## price bands with their target times are scripts/endless/economy.gd's. A
+## paint's price follows its rarity (PRICE_BANDS); a ribbon has none.
 ##
 ## Slots, each with its free first item (had by everyone, worn when the
 ## book names none):
@@ -62,8 +52,9 @@ const BATCHES := [
 
 const RARITIES := ["common","uncommon","rare","legendary"]
 ## Each rarity's colour in the shop's list.
-## Each rarity's price band [least, most] (the header's reasoning).
-const PRICE_BANDS := {"common":[60,150],"uncommon":[120,350],"rare":[500,1000],"legendary":[1500,3000]}
+## Each rarity's price band [least, most]: the economy's (economy.gd, which
+## has the reasoning).
+const PRICE_BANDS: Dictionary = preload("res://scripts/endless/economy.gd").PRICE_BANDS
 const RARITY_COLOURS := {"common":Color("c9c2b3"),"uncommon":Color("8fc7a0"),"rare":Color("8fb4e8"),"legendary":Color("f0a860")}
 
 ## The finish's sheens: the paint's roughness, clearcoat and metal
@@ -89,23 +80,23 @@ const ITEMS := [
 	# The wanderer's own: terracotta, teal and cream (PlaneFigure's defaults).
 	{"id":"paint/home","slot":"paint","rarity":"common","name":"Homestead","price":0,
 		"livery":{"body":Color("b9583b"),"dark":Color("2f4a4f"),"trim":Color("2f6670"),"wing":Color("ece2c8")}},
-	{"id":"paint/harbour","slot":"paint","rarity":"common","name":"Harbour","price":60,
+	{"id":"paint/harbour","slot":"paint","rarity":"common","name":"Harbour","price":2000,
 		"livery":{"body":Color("3f6e8c"),"dark":Color("26394a"),"trim":Color("e8d9a8"),"wing":Color("eef0ea")}},
-	{"id":"paint/moss","slot":"paint","rarity":"common","name":"Moss","price":80,
+	{"id":"paint/moss","slot":"paint","rarity":"common","name":"Moss","price":3000,
 		"livery":{"body":Color("5f7a45"),"dark":Color("33402a"),"trim":Color("d98e4a"),"wing":Color("f0ead8")}},
-	{"id":"paint/ochre","slot":"paint","rarity":"common","name":"Ochre","price":100,
+	{"id":"paint/ochre","slot":"paint","rarity":"common","name":"Ochre","price":4500,
 		"livery":{"body":Color("d3a23c"),"dark":Color("5e4526"),"trim":Color("8a3f2e"),"wing":Color("f3ecd9")}},
-	{"id":"paint/heather","slot":"paint","rarity":"uncommon","name":"Heather","price":120,
+	{"id":"paint/heather","slot":"paint","rarity":"uncommon","name":"Heather","price":6000,
 		"livery":{"body":Color("85587a"),"dark":Color("44303f"),"trim":Color("e6c48f"),"wing":Color("efe8e0")}},
-	{"id":"paint/chalk","slot":"paint","rarity":"uncommon","name":"Chalk","price":150,
+	{"id":"paint/chalk","slot":"paint","rarity":"uncommon","name":"Chalk","price":7500,
 		"livery":{"body":Color("e9e4d6"),"dark":Color("3a3a36"),"trim":Color("b8342a"),"wing":Color("f4f1e8")}},
-	{"id":"paint/night","slot":"paint","rarity":"uncommon","name":"Night Mail","price":180,
+	{"id":"paint/night","slot":"paint","rarity":"uncommon","name":"Night Mail","price":8500,
 		"livery":{"body":Color("262c3a"),"dark":Color("161a22"),"trim":Color("d6a84a"),"wing":Color("d9d3c2")}},
 	{"id":"ribbon/none","slot":"ribbon","name":"None","price":0,"colours":[]},
-	{"id":"ribbon/scarlet","slot":"ribbon","name":"Scarlet","price":40,"colours":[Color("c8352b"),Color("f2e8d2")]},
-	{"id":"ribbon/gilt","slot":"ribbon","name":"Gilt","price":50,"colours":[Color("ffd36b"),Color("8a5a1c")]},
-	{"id":"ribbon/sky","slot":"ribbon","name":"Sky","price":50,"colours":[Color("7fb6dc"),Color("f4f4ee")]},
-	{"id":"ribbon/ember","slot":"ribbon","name":"Ember","price":70,"colours":[Color("e0702a"),Color("2a2622")]},
+	{"id":"ribbon/scarlet","slot":"ribbon","name":"Scarlet","price":1000,"colours":[Color("c8352b"),Color("f2e8d2")]},
+	{"id":"ribbon/gilt","slot":"ribbon","name":"Gilt","price":1300,"colours":[Color("ffd36b"),Color("8a5a1c")]},
+	{"id":"ribbon/sky","slot":"ribbon","name":"Sky","price":1300,"colours":[Color("7fb6dc"),Color("f4f4ee")]},
+	{"id":"ribbon/ember","slot":"ribbon","name":"Ember","price":2000,"colours":[Color("e0702a"),Color("2a2622")]},
 ]
 
 ## Where the ribbon hangs on the figure (its own frame: -Z the nose), the

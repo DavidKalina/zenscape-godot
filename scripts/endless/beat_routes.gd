@@ -96,15 +96,15 @@ const SLACK := 4.0
 const LAND_PACE := 0.75
 const LAND_EXTRA := 18.0
 ## Points: a beat, the finish, a spare second. Money: a beat, the finish,
-## and 1 for every SPARE_MONEY_EVERY s to spare (trunk 1's balance, with
-## PilotBook's line pay: a whole route of 6 with ~90 s to spare pays ~24,
-## about two good lines; a first paint is 60).
+## and SPARE_MONEY_A_SECOND for every second to spare; the numbers are the
+## economy's (scripts/endless/economy.gd).
+const Economy = preload("res://scripts/endless/economy.gd")
 const BEAT_POINTS := 100
 const DONE_POINTS := 300
 const SPARE_POINTS := 10
-const BEAT_MONEY := 2
-const DONE_MONEY := 6
-const SPARE_MONEY_EVERY := 15.0
+const BEAT_MONEY := Economy.BEAT_MONEY
+const DONE_MONEY := Economy.DONE_MONEY
+const SPARE_MONEY_A_SECOND := Economy.SPARE_MONEY_A_SECOND
 ## A taken beat's fade, a missed beat's, the result's hold (s).
 const TAKEN_FADE := 0.35
 const MISS_FADE := 1.4
@@ -676,7 +676,7 @@ func _run(delta: float, game: Node) -> void:
 func _finish_route(game: Node, done: bool) -> void:
 	var n := (route.beats as Array).size()+1
 	var points := got*BEAT_POINTS+spare_points+(DONE_POINTS if done else 0)
-	var money := got*BEAT_MONEY+(DONE_MONEY if done else 0)+int(float(spare_points)/SPARE_POINTS/SPARE_MONEY_EVERY)
+	var money := got*BEAT_MONEY+(DONE_MONEY if done else 0)+int(float(spare_points)/SPARE_POINTS*SPARE_MONEY_A_SECOND)
 	result = {"id":route.id,"kind":"beats","got":got,"of":n,"time":clock,"points":points,"money":money,"done":done,"margins":margins.duplicate()}
 	game.book.challenge_done(result.duplicate())
 	_rest[route.id] = _t+REST
