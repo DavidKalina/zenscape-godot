@@ -230,7 +230,8 @@ var pollen_count := POLLEN
 var kick_scale := 1.0
 var drift_on := true
 var drift_scale := 1.0
-var petals_on := true
+## Off by default ("too much now", 2026-11-14): --petals or --petals=X shows them.
+var petals_on := false
 var petal_scale := 1.0
 var fluff_share := DRIFT_FLUFF
 ## For the numbers: specks shown, bits flying, the drift's bits and puffs.
@@ -294,7 +295,10 @@ func setup(land_seed: int, ground: Callable) -> void:
 			far_on = true
 		elif a.begins_with("--wind-blades="): drift_scale = maxf(float(a.get_slice("=",1)),0.0)
 		elif a == "--no-petals": petals_on = false
-		elif a.begins_with("--petals="): petal_scale = maxf(float(a.get_slice("=",1)),0.0)
+		elif a == "--petals": petals_on = true
+		elif a.begins_with("--petals="):
+			petal_scale = maxf(float(a.get_slice("=",1)),0.0)
+			petals_on = true
 		elif a.begins_with("--wind-fluff="): fluff_share = clampf(DRIFT_FLUFF*float(a.get_slice("=",1)),0.0,1.0)
 	if pollen_count == 0: pollen_on = false
 	if kick_scale <= 0.0: kick_on = false
