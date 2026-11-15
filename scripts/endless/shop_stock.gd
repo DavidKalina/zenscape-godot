@@ -51,6 +51,7 @@ const SLOT_NAMES := {"paint":"Paints","ribbon":"Ribbons"}
 ## The skin batches, each a script with `const SKINS := [rows]`.
 const BATCHES := [
 	"res://scripts/endless/skins/demo.gd",
+	"res://scripts/endless/skins/metal.gd",
 ]
 
 const RARITIES := ["common","uncommon","rare","legendary"]
