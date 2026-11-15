@@ -108,8 +108,9 @@ var _grid := {}
 static var _made: Dictionary = {}
 static var _lock := Mutex.new()
 
+## Off by default (taken out 2026-11-14); `--ice-tunnel=1` brings it back.
 static func wanted() -> bool:
-	return not ("--ice-tunnel=0" in LaunchArgs.user_args())
+	return "--ice-tunnel=1" in LaunchArgs.user_args()
 
 ## The tunnel in `massif`'s frame (PeakMassif: `world(a, v)`), built once per
 ## frame; null without a massif or with `--ice-tunnel=0`.
