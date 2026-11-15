@@ -22,14 +22,9 @@ const PATH := "user://pilot.json"
 ## Where a --fresh run keeps its book, apart from PATH.
 const FRESH_PATH := "user://pilot_fresh.json"
 const SAVE_EVERY := 5.0
-## Money for a banked line: its points (already times its multiplier) at
-## MONEY_PER_POINT, times the multiplier again to MULT_POW, so a line's pay
-## leans on how hard it was more than on how long: a safe repeated line of
-## 10k points at x2.4 pays 10, a mixed 22k at x5 pays 31 (trunk 1's balance:
-## a first paint, 60, in about ten minutes of decent flying). A line with a
-## move in it pays at least 1.
-const MONEY_PER_POINT := 1.0/1600.0
-const MULT_POW := 0.5
+## The coin economy's numbers (a line's pay, the save's version and its
+## scaling) are scripts/endless/economy.gd's.
+const Economy = preload("res://scripts/endless/economy.gd")
 ## Records where the least is the best, and the starts of names that are
 ## so (the place lines' times, place_lines.gd: `line/<place>/<name>`).
 const LOWER_WINS := ["tightest_gap"]
@@ -81,6 +76,12 @@ func load_book() -> void:
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not data is Dictionary: return
 	money = int(data.get("money",0))
+	# A book from before the economy's SAVE_VERSION holds the old, smaller
+	# coins: scaled once to the new, then saved with the version so it never
+	# scales again (owned items stay owned as they are).
+	if int(data.get("economy",1)) < Economy.SAVE_VERSION:
+		money = int(round(money*Economy.SAVE_SCALE))
+		_dirty = true
 	tally = {}
 	# A value JSON couldn't hold (an inf or NaN once saved) reads back null: drop it.
 	for k: String in (data.get("tally",{}) as Dictionary):
@@ -98,7 +99,7 @@ func save() -> void:
 	_dirty = false
 	_since = 0.0
 	if path == "": return
-	var data := {"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
+	var data := {"economy":Economy.SAVE_VERSION,"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
 	var tmp := path+".tmp"
 	var f := FileAccess.open(tmp,FileAccess.WRITE)
 	if f == null: return
@@ -189,7 +190,7 @@ func worn_in(slot: String, default: String = "") -> String:
 ## tries the line records. Returns the money paid.
 func line_banked(line: Dictionary) -> int:
 	var points := float(line.get("points",0.0))
-	var paid := line_pay(points,float(line.get("mult",1.0)),(line.get("moves",[]) as Array).size())
+	var paid := line_pay(points,(line.get("moves",[]) as Array).size())
 	earn(paid)
 	line["money"] = paid
 	flight.lines.append(line)
@@ -200,9 +201,11 @@ func line_banked(line: Dictionary) -> int:
 	count("lines")
 	return paid
 
-## The money for a line of `points` at `mult` with `moves` moves.
-static func line_pay(points: float, mult: float, moves: int) -> int:
-	var paid := int(round(points*MONEY_PER_POINT*pow(maxf(mult,1.0),MULT_POW)))
+## The money for a line of `points` (as banked and shown: its multiplier
+## already in them) with `moves` moves: Economy.COINS_PER_POINT of the
+## points, at least 1 when it has a move.
+static func line_pay(points: float, moves: int = 1) -> int:
+	var paid := int(round(maxf(points,0.0)*Economy.COINS_PER_POINT))
 	if moves > 0: paid = maxi(paid,1)
 	return paid
 

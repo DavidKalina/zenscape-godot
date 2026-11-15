@@ -41,8 +41,9 @@ const LAND_RADIUS := 45.0
 ## What a find pays the first time it is found, by kind, unless its row says
 ## `pay`: a ring or a landing in plain sight, a place line finished, an event.
 ## A relic in a cracked wall's room pays PAY_ROOM, as a hidden find does.
-const PAY := {"relic":10,"landing":10,"line":30,"event":40}
-const PAY_ROOM := 40
+## The numbers are the economy's (scripts/endless/economy.gd FIND_PAY, FIND_ROOM).
+const PAY: Dictionary = preload("res://scripts/endless/economy.gd").FIND_PAY
+const PAY_ROOM: int = preload("res://scripts/endless/economy.gd").FIND_ROOM
 
 ## The rows, resolved: the table's own keys plus {world, book_id, at
 ## (Vector3.INF none yet), moves (a handle: re-read while near)}.
