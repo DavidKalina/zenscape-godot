@@ -35,6 +35,11 @@ const SITES := [
 	{"name":"cracked/gorge","at":Vector2(-2041.0,-977.0),"yaw":0.785},
 	{"name":"cracked/tarn","at":Vector2(-3425.0,-700.0),"yaw":0.0},
 	{"name":"cracked/long-isle","at":Vector2(621.0,3537.0),"yaw":-2.356},
+	{"name":"cracked/south-scarp","at":Vector2(-1130.0,2800.0),"yaw":2.356},
+	{"name":"cracked/high-shelf","at":Vector2(-1870.0,-1630.0),"yaw":4.32},
+	{"name":"cracked/north-downs","at":Vector2(710.0,-2990.0),"yaw":0.785},
+	{"name":"cracked/east-shore","at":Vector2(3290.0,430.0),"yaw":2.749},
+	{"name":"cracked/west-gorge","at":Vector2(-5476.0,2408.0),"yaw":1.571},
 ]
 ## The room's clear size, in toy widths (WorldScale `opening`): across, high, long.
 const TOY_WIDE := 7.0

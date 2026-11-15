@@ -38,6 +38,11 @@ const CAPTURE_OVER := 1.8
 const POLL := 0.4
 const RETRY := 2.0
 const LAND_RADIUS := 45.0
+## What a find pays the first time it is found, by kind, unless its row says
+## `pay`: a ring or a landing in plain sight, a place line finished, an event.
+## A relic in a cracked wall's room pays PAY_ROOM, as a hidden find does.
+const PAY := {"relic":10,"landing":10,"line":30,"event":40}
+const PAY_ROOM := 40
 
 ## The rows, resolved: the table's own keys plus {world, book_id, at
 ## (Vector3.INF none yet), moves (a handle: re-read while near)}.
@@ -143,6 +148,7 @@ func _resolve() -> void:
 			continue
 		var id := "finds/"+str(e.id)
 		e.at = LayoutOverrides.xform(id,Transform3D(Basis.IDENTITY,p)).origin
+		if str(e.get("anchor","")).begins_with("chamber/"): e["roof"] = _roof(str(e.anchor),e.at)
 		var c := _cell_of(e.at)
 		if not _grid.has(c): _grid[c] = []
 		_grid[c].append(i)
@@ -210,6 +216,14 @@ func _chamber(handle: String) -> Vector3:
 	var smash: Variant = _game.get("smash")
 	if smash == null or not (smash.walls.sites as Dictionary).has(handle): return Vector3.INF
 	return smash.walls.chamber_at(handle)
+
+## The underside of a room's roof over its ring (world y): a pass over the roof
+## comes within the ring's reach (TOY_RING's opening is taller than the room)
+## and doesn't take it.
+func _roof(a: String, at: Vector3) -> float:
+	var smash: Variant = _game.get("smash")
+	var site: Dictionary = smash.walls.sites.get("cracked/"+a.trim_prefix("chamber/"),{}) if smash != null else {}
+	return at.y+float(site.high)*0.55 if not site.is_empty() else INF
 
 func _split(key: String) -> Vector3:
 	const SPLIT_CELL := 1536.0
@@ -316,18 +330,28 @@ func _heard(...args: Array) -> void:
 func fire(event: String) -> void:
 	if _by_event.has(event): complete(int(_by_event[event]))
 
-## Row `i` found. False if it already was.
+## The money row `e` pays the first time it is found (the table's `pay`, else
+## PAY or PAY_ROOM).
+static func pay_of(e: Dictionary) -> int:
+	if e.has("pay"): return int(e.pay)
+	if str(e.get("anchor","")).begins_with("chamber/"): return PAY_ROOM
+	return int(PAY.get(str(e.kind),PAY.relic))
+
+## Row `i` found, and paid for (the corner HUD's money chip ticks it up as it
+## does a line's pay). False if it already was: a find in the book never pays
+## again.
 func complete(i: int) -> bool:
 	var game := _game
 	var e: Dictionary = rows[i]
 	if not game.book.find(e.book_id): return false
+	game.book.earn(pay_of(e))
 	game.book.save()
 	var p: Vector3 = e.at if e.at != Vector3.INF else game.plane.position
 	beat.play(str(e.kind),p,float(got(str(e.world))))
 	hud.found(e,got(str(e.world)),of(str(e.world)))
 	if _live.has(i): (_live[i] as Marks.Mark).taken()
 	found_one.emit(e)
-	print("finds: %s (%d / %d)" % [e.book_id,got(str(e.world)),of(str(e.world))])
+	print("finds: %s (%d / %d), paid %d" % [e.book_id,got(str(e.world)),of(str(e.world)),pay_of(e)])
 	return true
 
 # --- The flight -------------------------------------------------------------------------
@@ -362,7 +386,7 @@ func step(delta: float, game: Node) -> void:
 			node.position = e.at
 		node.tick(delta,p,eye)
 		if e.has("hall"): node.visible = not is_found(e) and game.doors != null and game.doors.holds(e.at)
-		if e.kind == "relic" and flying and a != Vector3.INF and not is_found(e) and _segment_near(a,p,e.at,r): complete(i)
+		if e.kind == "relic" and flying and a != Vector3.INF and not is_found(e) and _segment_near(a,p,e.at,r) and _under(a,p,e): complete(i)
 	# Any stop counts, a taxi in as well as a landing: wheels at rest inside the
 	# stones is what the row asks for, and a rollout can run past them.
 	var stopped: bool = game.hand_landing.can_exit()
@@ -394,6 +418,13 @@ func _landed(game: Node, p: Vector3) -> void:
 		if e.kind != "landing" or is_found(e): continue
 		if Vector2(p.x-e.at.x,p.z-e.at.z).length() <= float(e.get("radius",LAND_RADIUS)) and absf(p.y-float(e.at.y)) < 30.0:
 			complete(i)
+
+## A room's ring: the pass's nearest point to it under the roof.
+static func _under(a: Vector3, b: Vector3, e: Dictionary) -> bool:
+	if not e.has("roof"): return true
+	var ab := b-a
+	var k := clampf((e.at-a).dot(ab)/maxf(ab.length_squared(),0.0001),0.0,1.0)
+	return (a+ab*k).y < float(e.roof)
 
 static func _segment_near(a: Vector3, b: Vector3, c: Vector3, r: float) -> bool:
 	var ab := b-a
