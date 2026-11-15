@@ -173,6 +173,7 @@ const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
 const Whale = preload("res://scripts/endless/whale.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
+const GoldenTrees = preload("res://scripts/endless/golden_trees.gd")
 const Parry = preload("res://scripts/endless/parry.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
@@ -547,6 +548,8 @@ var stage: RefCounted
 ## The doors between the regions (--world=doors; scripts/endless/region_doors.gd).
 var doors: Node3D
 var finds: Node
+## The golden trees (scripts/endless/golden_trees.gd; wilderness only).
+var golden: Node3D
 var menu: Control
 ## The pause menu (Esc, the pad's Start), or null with `--menus=old` or `--ui=old`.
 var pause_menu: Control
@@ -932,6 +935,11 @@ func _ready() -> void:
 		finds.setup(self)
 		if smash != null: finds.listen(smash.walls.broken,"broken")
 		if burrower != null: finds.listen(burrower.caught,"caught")
+		# The golden trees: a surge roll fells one, its ring over the stump (scripts/endless/golden_trees.gd).
+		if finds.world == "wilderness" and trees != null:
+			golden = GoldenTrees.new()
+			add_child(golden)
+			golden.setup(self)
 	if peak != null and PeakSpirals.wanted():
 		spirals = PeakSpirals.new()
 		spirals.name = "PeakSpirals"
@@ -1462,6 +1470,7 @@ func tick(delta: float) -> void:
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
 	FrameLog.mark(&"t_roofed")
+	if golden != null: golden.before(delta)
 	var knocked: Dictionary = knock.before(delta,self)
 	FrameLog.mark(&"knock_before")
 	solid_pad = WorldScale.reach_rolled(float(plane.bank)+float(plane.spin))

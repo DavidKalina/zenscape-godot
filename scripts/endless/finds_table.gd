@@ -13,6 +13,11 @@ extends RefCounted
 ##           "line"     a place line finished once, see below
 ##   title   what it reads as once found (else the id, spaced)
 ##   hint    optional: what the blank reads as before it is found
+##   pay     optional: the money it pays the first time it is found (PilotBook
+##           `earn`); else finds.gd PAY for its kind, PAY_ROOM for a relic in a
+##           cracked wall's room. By how hard it is to come across: about 10 in
+##           plain sight, 20 off the path, 40 hidden (shop_stock.gd's header:
+##           decent flying earns 5-7 a minute, a wild line 30 or more)
 ## Where it stands (relic and landing; an event may have none), one of:
 ##   at      Vector3 exactly, or Vector2 on the ground there
 ##   anchor  a name:
@@ -33,6 +38,8 @@ extends RefCounted
 ##             (--ice-tunnel=0: none)
 ##             the room behind a cracked wall: "chamber/<place>" for the wall
 ##             `cracked/<place>` (cracked_walls.gd SITES)
+##             a golden tree's stump once it is felled: "golden/<id>"
+##             (golden_trees.gd SITES; handed by it, so absent till then)
 ##             a way tower's foot: "way/bay", "way/south", "way/isle" (way_towers.gd)
 ##             "doors/amber-hall/deep": deep in the door's hall; give the row
 ##             `hall` true as well, and it's seen only from inside
@@ -64,11 +71,15 @@ extends RefCounted
 const SEED := 1
 const HOVER := 16.0
 
-## The areas in the order they read (worlds share them).
+## The areas in the order they read (worlds share them): round the start, then
+## out and up; the Wilderness page flows them over four columns in this order.
 const AREAS := {
 	"meadow":"The start meadow",
+	"north":"The north downs",
 	"coast":"The near coast",
+	"east":"The east hills",
 	"south":"The south meadows",
+	"west":"The west lands",
 	"foothills":"The foothills",
 	"peak":"The Peak",
 	"amberlands":"The Amberlands",
@@ -89,8 +100,10 @@ const WORLDS := {
 			"title":"The ring in the east room","hint":"Cracked stone, east of the meadow"},
 		{"id":"north-room","area":"meadow","kind":"relic","anchor":"chamber/start-north","up":0.0,
 			"title":"The ring in the green cup's room"},
-		{"id":"the-cup","area":"meadow","kind":"landing","at":Vector2(500.0,-830.0),"radius":60.0,
+		{"id":"the-cup","area":"meadow","kind":"landing","pay":20,"at":Vector2(500.0,-830.0),"radius":60.0,
 			"title":"Set down in the green cup","hint":"A green cup in the hills, north"},
+		{"id":"gold-spruce","area":"meadow","kind":"relic","pay":40,"anchor":"golden/gold-spruce","up":9.0,
+			"title":"The ring of the golden spruce","hint":"One tree in the near wood isn't green"},
 		{"id":"burrower-catch","area":"meadow","kind":"event","event":"caught",
 			"title":"Caught the burrower","hint":"Skim low, and something runs"},
 		# The way south, in the first frame's left edge, down the bay to the tower
@@ -99,22 +112,44 @@ const WORLDS := {
 			"title":"The ring at the bay's head"},
 		{"id":"bay-ring","area":"meadow","kind":"relic","at":Vector2(140.0,800.0),"up":6.0,
 			"title":"The ring down the bay"},
-		{"id":"tower-ring","area":"meadow","kind":"relic","anchor":"way/bay","up":17.0,"offset":Vector3(9.25,0.0,-18.5),
+		{"id":"tower-ring","area":"meadow","kind":"relic","pay":20,"anchor":"way/bay","up":17.0,"offset":Vector3(9.25,0.0,-18.5),
 			"title":"The ring in the old colonnade","hint":"A ruin stands at the bay's far end"},
+		# More round the meadow: over the ridge on the way to the saddle, a fold
+		# behind the start, the field under the scarp south-east.
+		{"id":"ridge-ring","area":"meadow","kind":"relic","at":Vector2(800.0,-480.0),"up":20.0,
+			"title":"The ring on the ridge","hint":"Over the ridge, on the way to the saddle"},
+		{"id":"gully-ring","area":"meadow","kind":"relic","pay":40,"at":Vector2(-150.0,-250.0),"up":8.0,
+			"title":"The ring in the gully","hint":"Low behind the start, where the land folds"},
+		{"id":"scarp-field","area":"meadow","kind":"landing","pay":20,"at":Vector2(1300.0,950.0),"radius":60.0,
+			"title":"Set down under the scarp","hint":"A field at the foot of a tall scarp"},
 		# The south meadows: the tower on the way, the strait to the isles.
 		{"id":"south-tower","area":"south","kind":"relic","anchor":"way/south","up":15.0,
 			"title":"The ring in the shrine's doorway"},
-		{"id":"gap-ring","area":"south","kind":"relic","at":Vector2(-1300.0,2900.0),"up":16.0,
+		{"id":"gap-ring","area":"south","kind":"relic","pay":20,"at":Vector2(-1300.0,2900.0),"up":16.0,
 			"title":"The ring in the gap"},
-		{"id":"strait-ring","area":"south","kind":"relic","at":Vector2(-880.0,3540.0),"up":8.0,
+		{"id":"gold-grove","area":"south","kind":"relic","pay":40,"anchor":"golden/gold-grove","up":9.0,
+			"title":"The ring where the gold tree stood","hint":"Gold among the clumps by the gap"},
+		{"id":"strait-ring","area":"south","kind":"relic","pay":20,"at":Vector2(-880.0,3540.0),"up":8.0,
 			"title":"The ring in the strait"},
+		{"id":"south-field","area":"south","kind":"landing","at":Vector2(-1450.0,2450.0),"radius":60.0,
+			"title":"Set down in the south meadow","hint":"Open grass west of the shrine"},
+		{"id":"scarp-room","area":"south","kind":"relic","anchor":"chamber/south-scarp","up":0.0,
+			"title":"The ring in the scarp's room","hint":"Cracked stone under a scarp, south"},
+		{"id":"pond-ring","area":"south","kind":"relic","anchor":"pond/-1750_4107","up":8.0,
+			"title":"The ring on the south pond"},
+		{"id":"shore-arch","area":"south","kind":"relic","pay":20,"anchor":"endless/arch/-2_8/0","up":15.0,
+			"title":"The ring under the shore arch","hint":"An arch on the far side of the strait"},
+		{"id":"south-stack","area":"south","kind":"relic","pay":20,"anchor":"endless/rock/stacks/-5_9/0","pillar":0,"up":14.0,
+			"title":"The ring over the south stack"},
+		{"id":"south-ravine","area":"south","kind":"relic","pay":20,"at":Vector2(-1350.0,5000.0),"up":7.0,
+			"title":"The ring in the south ravine","hint":"Low in a ravine past the shore arch"},
 		# The foothills: the glacier and its gorge (spec-icefield.md: the long
 		# crevasse, the ice arch by the head, the tunnel, the slot way's gates).
-		{"id":"ice-skim","area":"foothills","kind":"relic","anchor":"peak/crevasse","up":8.0,
+		{"id":"ice-skim","area":"foothills","kind":"relic","pay":20,"anchor":"peak/crevasse","up":8.0,
 			"title":"The ring low over the ice","hint":"Low over the old ice"},
 		{"id":"gorge-room","area":"foothills","kind":"relic","anchor":"chamber/gorge","up":0.0,
 			"title":"The ring in the gorge room"},
-		{"id":"bend-ring","area":"foothills","kind":"relic","anchor":"peak/ice-arch/1","up":0.0,
+		{"id":"bend-ring","area":"foothills","kind":"relic","pay":40,"anchor":"peak/ice-arch/1","up":0.0,
 			"title":"The ring under the ice arch","hint":"Under the ice at the glacier's head"},
 		{"id":"gorge-run","area":"foothills","kind":"line","place":"foothills","name":"gorge_run",
 			"title":"The gorge run","hint":"Gates up the ice, bend after bend","mark":58.0,"gates":[
@@ -136,34 +171,58 @@ const WORLDS := {
 				{"at":Vector3(-2783,679,-1107),"half":Vector2(6.0,4.0)},
 				{"at":Vector3(-2900,701,-1086),"half":Vector2(6.0,4.0)},
 				{"at":Vector3(-2939,723,-979),"half":Vector2(6.0,4.0)}]},
+		{"id":"serac-ring","area":"foothills","kind":"relic","anchor":"endless/rock/ice-forms/-2_0/0","up":25.0,
+			"title":"The ring over the seracs"},
+		{"id":"valley-head","area":"foothills","kind":"relic","pay":20,"anchor":"endless/rock/valley/-4_-1/0","up":8.0,
+			"title":"The ring at the valley's head","hint":"Follow the valley up to where it ends"},
+		{"id":"fold-ring","area":"foothills","kind":"relic","pay":40,"at":Vector2(-2100.0,100.0),"up":8.0,
+			"title":"The ring in the deep fold","hint":"A fold in the hills, deeper than it looks"},
+		{"id":"spur-ring","area":"foothills","kind":"relic","pay":20,"at":Vector2(-1350.0,-1250.0),"up":12.0,
+			"title":"The ring on the spur"},
+		{"id":"shelf-room","area":"foothills","kind":"relic","anchor":"chamber/high-shelf","up":0.0,
+			"title":"The ring in the high room","hint":"Walls stand high on the Peak's north flank"},
 		# The Peak.
-		{"id":"tarn-shore","area":"peak","kind":"landing","anchor":"peak/strip/mid","offset":Vector3(15.0,0.0,2.6),"radius":130.0,
+		{"id":"tarn-shore","area":"peak","kind":"landing","pay":20,"anchor":"peak/strip/mid","offset":Vector3(15.0,0.0,2.6),"radius":130.0,
 			"title":"Set down by the tarn","hint":"A lake high up, with a shore to stop on"},
-		{"id":"tarn-skim","area":"peak","kind":"relic","anchor":"peak/tarn","up":5.0,
+		{"id":"tarn-skim","area":"peak","kind":"relic","pay":20,"anchor":"peak/tarn","up":5.0,
 			"title":"The ring on the black water"},
 		{"id":"tarn-room","area":"peak","kind":"relic","anchor":"chamber/tarn","up":0.0,
 			"title":"The ring in the tarn room","hint":"Walls stand on the high plateau"},
-		{"id":"crown-gap","area":"peak","kind":"relic","anchor":"peak/tower/0","up":40.0,"offset":Vector3(39.0,0.0,-98.0),
+		{"id":"crown-gap","area":"peak","kind":"relic","pay":20,"anchor":"peak/tower/0","up":40.0,"offset":Vector3(39.0,0.0,-98.0),
 			"title":"The ring in the crown"},
 		{"id":"dike-hole","area":"peak","kind":"relic","anchor":"peak/hole/2","up":0.0,
 			"title":"The ring in the black wall","hint":"A hole in the black wall"},
-		{"id":"high-hole","area":"peak","kind":"relic","anchor":"peak/hole/5","up":0.0,
+		{"id":"high-hole","area":"peak","kind":"relic","pay":20,"anchor":"peak/hole/5","up":0.0,
 			"title":"The ring in the high hole"},
 		{"id":"summit-ring","area":"peak","kind":"relic","anchor":"peak/summit","up":22.0,
 			"title":"The ring over the summit","hint":"Higher than anything here"},
+		{"id":"low-hole","area":"peak","kind":"relic","anchor":"peak/hole/0","up":0.0,
+			"title":"The ring in the low hole","hint":"The black wall's lowest hole"},
+		{"id":"sill-eye","area":"peak","kind":"relic","pay":40,"anchor":"peak/sill/1","up":0.0,
+			"title":"The ring in the sill's eye","hint":"A thin wall across the slot has an eye"},
+		{"id":"bench-eye","area":"peak","kind":"relic","pay":20,"anchor":"peak/sill/3","up":0.0,
+			"title":"The ring in the bench wall"},
+		{"id":"boulder-ring","area":"peak","kind":"relic","pay":20,"anchor":"endless/rock/boulders/-7_-1/0","up":12.0,
+			"title":"The ring among the boulders","hint":"Boulders strewn on the high ground"},
 		# The near coast: arches, stacks, the islands, the light and the ship.
 		{"id":"saddle-ring","area":"coast","kind":"relic","at":Vector2(1260.0,-900.0),"up":22.0,
 			"title":"The ring on the saddle"},
 		{"id":"sea-arch-ring","area":"coast","kind":"relic","anchor":"endless/arch/3_-2/0","up":14.0,
 			"title":"The ring under the sea arch","hint":"A tall arch stands on the east shore"},
-		{"id":"aqueduct-ring","area":"coast","kind":"relic","anchor":"endless/arch/4_0/0","up":14.0,
+		{"id":"aqueduct-ring","area":"coast","kind":"relic","pay":20,"anchor":"endless/arch/4_0/0","up":14.0,
 			"title":"The ring under the aqueduct"},
-		{"id":"high-arch","area":"coast","kind":"relic","anchor":"endless/arch/3_3/0","up":10.0,
+		{"id":"high-arch","area":"coast","kind":"relic","pay":20,"anchor":"endless/arch/3_3/0","up":10.0,
 			"title":"The ring in the high arch","hint":"A lone arch on the southern hill"},
 		{"id":"stack-top","area":"coast","kind":"relic","anchor":"endless/rock/stacks/4_-2/0","pillar":0,"up":14.0,
 			"title":"The ring over the stacks","hint":"On top of the rocks in the bay"},
 		{"id":"giant-stack","area":"coast","kind":"relic","anchor":"endless/rock/stacks/4_5/0","pillar":0,"up":14.0,
 			"title":"The ring over the giant"},
+		# The whale's bay, north of the stacks: the ring is let out where it rises
+		# with the plane near (scripts/endless/whale_home.gd).
+		{"id":"whale-ring","area":"coast","kind":"relic","pay":40,"anchor":"whale/home","up":10.0,
+			"title":"The ring where the whale rose","hint":"Something blows in the deep bay, north-east"},
+		{"id":"whale-tail","area":"coast","kind":"event","pay":40,"event":"whale/tail",
+			"title":"Close past the whale's flukes","hint":"When it dives, pass the tail"},
 		{"id":"stack-run","area":"coast","kind":"line","place":"coast","name":"round_the_stacks",
 			"title":"Round the stacks","hint":"Gates in the bay, out and back through the rocks","mark":20.0,"gates":[
 				{"at":Vector3(1900,-24,-600),"half":Vector2(9.0,5.0)},
@@ -189,6 +248,8 @@ const WORLDS := {
 				{"at":Vector3(2554,5,426),"dir":Vector3(-0.09,0.0,-1.0),"half":Vector2(3.0,2.0)},
 				{"at":Vector3(2515,42,362),"dir":Vector3(-0.5,0.0,-0.85),"half":Vector2(9.0,5.0)},
 				{"at":Vector3(2425,80,300),"dir":Vector3(-0.9,0.0,-0.4),"half":Vector2(10.0,6.0)}]},
+		{"id":"gold-shore","area":"coast","kind":"relic","pay":40,"anchor":"golden/gold-shore","up":9.0,
+			"title":"The ring in the felled gold wood","hint":"A gold crown in the east hills' wood"},
 		{"id":"sound-ring","area":"coast","kind":"relic","at":Vector2(560.0,2120.0),"up":6.0,
 			"title":"The ring on the sound"},
 		{"id":"isle-tower","area":"coast","kind":"relic","anchor":"way/isle","up":17.0,"offset":Vector3(9.25,0.0,-0.5),
@@ -199,16 +260,61 @@ const WORLDS := {
 			"title":"Set down on Long Isle","hint":"An island with room to land"},
 		{"id":"isle-room","area":"coast","kind":"relic","anchor":"chamber/long-isle","up":0.0,
 			"title":"The ring in the island's room"},
-		{"id":"light-rock","area":"coast","kind":"landing","at":Vector2(2097.0,3222.0),"radius":140.0,
+		{"id":"light-rock","area":"coast","kind":"landing","pay":20,"at":Vector2(2097.0,3222.0),"radius":140.0,
 			"title":"Set down on Light Rock","hint":"There's a flat under the lighthouse"},
 		{"id":"lamp-ring","area":"coast","kind":"relic","anchor":"coast/lighthouse","up":50.0,"offset":Vector3(18.0,0.0,-14.0),
 			"title":"The ring by the lamp"},
-		{"id":"boat-deck","area":"coast","kind":"landing","at":Vector2(2225.0,3330.0),"radius":90.0,
+		{"id":"boat-deck","area":"coast","kind":"landing","pay":40,"at":Vector2(2225.0,3330.0),"radius":90.0,
 			"title":"Set down on the Rock's south shelf","hint":"Past the light, a long shelf runs down the Rock"},
-		{"id":"ship-hold","area":"coast","kind":"relic","anchor":"coast/ship","up":8.0,
+		{"id":"ship-hold","area":"coast","kind":"relic","pay":40,"anchor":"coast/ship","up":8.0,
 			"title":"The ring on the gun deck","hint":"Something sails off the Horn. It has a way in"},
-		{"id":"horn-mouth","area":"coast","kind":"relic","at":Vector2(2930.0,3900.0),"up":12.0,
+		{"id":"horn-mouth","area":"coast","kind":"relic","pay":20,"at":Vector2(2930.0,3900.0),"up":12.0,
 			"title":"The ring in the Horn's mouth"},
+		# The gold balloons (balloon_odd.gd SITES): a ring let out when the plane
+		# bounces off the gold one in a group of four.
+		{"id":"gold-balloon","area":"meadow","kind":"relic","pay":40,"anchor":"balloon/meadow","up":0.0,
+			"title":"The ring the gold balloon let go","hint":"One balloon east of the meadow is gold. Give it a nudge"},
+		{"id":"south-balloon","area":"south","kind":"relic","pay":40,"anchor":"balloon/south","up":0.0,
+			"title":"The ring from the southern gold balloon","hint":"A gold balloon among blue ones, south over the sound"},
+		{"id":"coast-balloon","area":"coast","kind":"relic","pay":40,"anchor":"balloon/coast","up":0.0,
+			"title":"The ring from the gold balloon on the coast","hint":"Bump the gold one, south-east along the shore"},
+		{"id":"ridge-arch","area":"coast","kind":"relic","pay":20,"anchor":"endless/arch/4_1/0","up":19.0,
+			"title":"The ring under the ridge arch","hint":"An arch on the hill past the aqueduct"},
+		{"id":"far-stack","area":"coast","kind":"relic","anchor":"endless/rock/stacks/7_2/0","pillar":0,"up":14.0,
+			"title":"The ring over the far stack"},
+		# The far lands: north past the cup, east past the arches, west past the Peak.
+		{"id":"downs-ring","area":"north","kind":"relic","at":Vector2(400.0,-2400.0),"up":25.0,
+			"title":"The ring over the downs"},
+		{"id":"downs-flat","area":"north","kind":"landing","at":Vector2(-1450.0,-2950.0),"radius":60.0,
+			"title":"Set down on the north flats","hint":"Flat grass, a long way north"},
+		{"id":"downs-room","area":"north","kind":"relic","anchor":"chamber/north-downs","up":0.0,
+			"title":"The ring in the downs' room","hint":"Cracked stone on the north downs"},
+		{"id":"north-arch","area":"north","kind":"relic","pay":20,"anchor":"endless/arch/0_-10/0","up":10.0,
+			"title":"The ring under the north arch","hint":"An arch on a hill by the north sea"},
+		{"id":"north-stack","area":"north","kind":"relic","pay":20,"anchor":"endless/rock/stacks/1_-10/0","pillar":0,"up":14.0,
+			"title":"The ring over the north stack"},
+		{"id":"north-split","area":"north","kind":"relic","pay":20,"anchor":"endless/split/-1_-4","up":8.0,
+			"title":"The ring in the north split","hint":"The land splits open by the north sea"},
+		{"id":"east-stack","area":"east","kind":"relic","anchor":"endless/rock/stacks/8_0/0","pillar":0,"up":14.0,
+			"title":"The ring over the east stack"},
+		{"id":"east-arch","area":"east","kind":"relic","pay":20,"anchor":"endless/arch/9_3/0","up":12.0,
+			"title":"The ring under the east arch","hint":"A rock arch down the east shore"},
+		{"id":"shore-room","area":"east","kind":"relic","anchor":"chamber/east-shore","up":0.0,
+			"title":"The ring in the shore room","hint":"Cracked stone on a shore, east"},
+		{"id":"east-flat","area":"east","kind":"landing","pay":20,"at":Vector2(5050.0,-1750.0),"radius":60.0,
+			"title":"Set down on the east flats"},
+		{"id":"east-split","area":"east","kind":"relic","pay":40,"anchor":"endless/split/2_-2","up":6.0,
+			"title":"The ring in the east split","hint":"The land splits open, north-east"},
+		{"id":"west-flat","area":"west","kind":"landing","at":Vector2(-4750.0,450.0),"radius":60.0,
+			"title":"Set down on the west flats","hint":"Flat land far past the Peak"},
+		{"id":"west-arch","area":"west","kind":"relic","anchor":"endless/arch/-10_6/1","up":15.0,
+			"title":"The ring under the west arch"},
+		{"id":"west-vale","area":"west","kind":"relic","pay":20,"at":Vector2(-4200.0,3200.0),"up":8.0,
+			"title":"The ring in the far vale","hint":"A vale running down to the west sea"},
+		{"id":"west-split","area":"west","kind":"relic","pay":40,"anchor":"endless/split/-4_1","up":6.0,
+			"title":"The ring in the west split","hint":"Up the gorge from its mouth"},
+		{"id":"gorge-mouth-room","area":"west","kind":"relic","anchor":"chamber/west-gorge","up":0.0,
+			"title":"The ring in the gorge mouth's room","hint":"Cracked stone in a gorge's mouth, far west"},
 	],
 	"amberlands":[],
 }

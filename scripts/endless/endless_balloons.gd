@@ -23,6 +23,11 @@ extends Node3D
 ## cloth or the basket is a graze for the near-miss chain (NearMiss
 ## `shot_pass`, as the pirate ship's balls). Nothing here is solid and nothing
 ## pushes the plane: flying through the cloth only shakes it, and scores nothing.
+## The envelope is the exception: the plane touching it bounces off softly
+## (scripts/endless/balloon_bounce.gd), and the balloon dents where it was hit
+## (`poke`), jolts away and sways back. The basket and ropes stay open. A few
+## fixed groups hold a find in their odd, gold balloon (scripts/endless/
+## balloon_odd.gd): a bounce off it lets the find out.
 ##
 ## In the dark (the celestial's `daylight` low: dusk, the blue hour, night)
 ## each balloon is a lantern: the canvas shader passes the burner's light
@@ -47,7 +52,7 @@ extends Node3D
 ## --balloon-fields=0 no fields; --balloon-field-gap=S the mean wait between
 ## fields (300 s); --balloons-now a low group of three ahead of the start, at
 ## once; --balloon-field-now a field ahead of the start, at once;
-## --balloon-scale=X their size over SIZE; --balloon-pool=N the pool (26);
+## --balloon-scale=X their size over SIZE; --balloon-pool=N the pool (32: a field, a group and two odd groups);
 ## --balloon-glow=X the lantern's strength (1; 0 none, the day's look at
 ## night); --balloon-lamps=N the real lights (2; 0 none).
 ##
@@ -60,6 +65,9 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 const Clouds = preload("res://scripts/endless/endless_clouds.gd")
+const BalloonBounce = preload("res://scripts/endless/balloon_bounce.gd")
+const BalloonOdd = preload("res://scripts/endless/balloon_odd.gd")
+const Finds = preload("res://scripts/endless/finds.gd")
 
 const MODEL := "res://assets/models/balloon/balloon.glb"
 
@@ -83,7 +91,7 @@ const BASKET_R := 0.9
 
 # --- The pool ---
 ## Balloons made at setup (hidden ones cost nothing drawn).
-const POOL := 26
+const POOL := 32
 
 # --- Groups ---
 ## The most balloons in a group.
@@ -234,6 +242,21 @@ const AWAKE := 220.0
 ## times the square root of the balloon's own size).
 const REACH := 10.0
 
+# --- The bounce (balloon_bounce.gd moves the plane) ---
+## The dent where the plane hit (model m at a head-on touch at cruise), and its
+## spring back (rad/s, damping): it overshoots once, a little, and settles.
+const POKE := 2.6
+const POKE_RATE := 6.0
+const POKE_DAMP := 0.45
+## The balloon's jolt away from the plane (m/s at a head-on touch at cruise)
+## and its spring back to its place (rad/s, damping): a slow bob.
+const JOLT := 2.6
+const JOLT_RATE := 1.1
+const JOLT_DAMP := 0.38
+## The rock and the basket's swing a bounce sets going (rad/s).
+const BOUNCE_ROCK := 0.35
+const BOUNCE_SWING := 0.9
+
 # --- The step ---
 ## A balloon is stepped every frame within this of the eye (m); past it,
 ## THINK_TURNS of them a frame by turns.
@@ -299,7 +322,7 @@ const FESTIVAL_WEAR := Vector2(0.2,0.45)
 const PATTERNS := 5
 
 enum { AIR, GROUND, LIFT }
-enum { SOLO, FIELD }
+enum { SOLO, FIELD, ODD }
 
 class Balloon:
 	var root: Node3D
@@ -365,6 +388,17 @@ class Balloon:
 	var least := INF
 	var least_at := Vector3.ZERO
 	var through := false
+	# The bounce: the dent (model m, in `poke_way`) and the jolt off its place
+	# (m), each on a spring; an odd group's (balloon_odd.gd): its site, whether
+	# it is the odd one, the lantern held lit in it.
+	var poke := 0.0
+	var poke_v := 0.0
+	var poke_way := Vector3.UP
+	var jolt := Vector3.ZERO
+	var jolt_v := Vector3.ZERO
+	var site := -1
+	var odd := false
+	var lit := 0.0
 
 ## None at all (--balloons=0, --no-balloons, or the world's `balloons` layer off).
 var enabled := true
@@ -419,6 +453,11 @@ var dark := 0.0
 var _mats: Array[ShaderMaterial] = []
 var _lamps: Array[OmniLight3D] = []
 var _lamp_most := LAMPS
+## The odd groups (balloon_odd.gd), seed 1 only; bounces off any balloon.
+var odd_groups: BalloonOdd
+var bounces := 0
+var _seed := 0
+var _odd_tried := false
 
 ## Whether to make any: --balloons=0 or --no-balloons none.
 static func wanted() -> bool:
@@ -429,6 +468,7 @@ static func wanted() -> bool:
 
 func setup(land_seed: int) -> void:
 	_rng.seed = hash([land_seed,"balloons"])
+	_seed = land_seed
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--balloons="): _most = clampi(int(a.get_slice("=",1)),1,GROUP)
 		elif a.begins_with("--balloon-gap="): _gap = maxf(float(a.get_slice("=",1)),1.0)
@@ -555,6 +595,12 @@ func step(delta: float, game: Node) -> void:
 	_clock += delta
 	var plane: RefCounted = game.plane
 	var eye: Vector3 = game.camera.global_position
+	if not _odd_tried:
+		_odd_tried = true
+		if Finds.wanted(_seed) and game.get("finds") != null:
+			odd_groups = BalloonOdd.new()
+			odd_groups.setup(game)
+	if odd_groups != null: odd_groups.step(self,game)
 	if (_now or _field_now) and bool(game.hand_landing.flying()):
 		if _now: _place_now(game)
 		if _field_now: _field_ahead(game)
@@ -592,8 +638,8 @@ func step(delta: float, game: Node) -> void:
 			if b.state != GROUND:
 				b.at += drift*(b.drift_k*delta)
 				b.at.y += b.rise*delta
-				b.root.position = b.at
-			if b.glow != b.burn: _glow(b,delta)
+				b.root.position = b.at+b.jolt
+			if b.glow != maxf(b.burn,b.lit): _glow(b,delta)
 			var a := AWAKE*b.k
 			b.hot = (b.at-eye).length_squared() < HOT*HOT or (to_plane-b.at).length_squared() < a*a or not b.still
 			if b.hot: _think(b,game,plane,eye,view)
@@ -774,7 +820,7 @@ func _free_balloon() -> Balloon:
 
 func _lost(kind: int) -> void:
 	if kind == FIELD: _field = maxi(_field-1,0)
-	else: _solo = maxi(_solo-1,0)
+	elif kind == SOLO: _solo = maxi(_solo-1,0)
 
 ## The ones on the ground: open grass near `q.site`, a spot tried a frame
 ## (GROUND_TRIES of them, each further out), each at least GROUND_STEP from
@@ -908,6 +954,13 @@ func _put(b: Balloon, game: Node, q: Dictionary) -> void:
 	b.least = INF
 	b.through = false
 	b.armed = true
+	b.poke = 0.0
+	b.poke_v = 0.0
+	b.jolt = Vector3.ZERO
+	b.jolt_v = Vector3.ZERO
+	b.site = -1
+	b.odd = false
+	b.lit = 0.0
 	# Its cloth: muted or festival, no two in a row alike.
 	var tones: Array
 	var wear := 1.0
@@ -927,6 +980,7 @@ func _put(b: Balloon, game: Node, q: Dictionary) -> void:
 		g.set_instance_shader_parameter(&"wear",wear)
 	b.envelope.set_instance_shader_parameter(&"shudder",0.0)
 	b.envelope.set_instance_shader_parameter(&"wash",Vector4.ZERO)
+	b.envelope.set_instance_shader_parameter(&"poke",Vector4.ZERO)
 	_ranges(b)
 	_set_burn(b,0.0)
 	for g: GeometryInstance3D in [b.envelope,b.far]: g.set_instance_shader_parameter(&"glow",0.0)
@@ -962,9 +1016,10 @@ func _set_burn(b: Balloon, v: float) -> void:
 ## The cloth's glow after the burn: up fast, back slowly. By day it only
 ## follows (the shader doesn't read it then).
 func _glow(b: Balloon, delta: float) -> void:
-	if dark <= 0.0: b.glow = b.burn
-	elif b.burn > b.glow: b.glow = minf(b.glow+delta*GLOW_UP,b.burn)
-	else: b.glow = maxf(b.glow-delta/GLOW_BACK,b.burn)
+	var want := maxf(b.burn,b.lit)
+	if dark <= 0.0: b.glow = want
+	elif want > b.glow: b.glow = minf(b.glow+delta*GLOW_UP,want)
+	else: b.glow = maxf(b.glow-delta/GLOW_BACK,want)
 	for g: GeometryInstance3D in [b.envelope,b.far]: g.set_instance_shader_parameter(&"glow",b.glow)
 
 ## The real lights, in the dark: on the LAMPS balloons nearest the eye, each
@@ -1048,7 +1103,7 @@ func _think(b: Balloon, game: Node, plane: RefCounted, eye: Vector3, view: Vecto
 	# Going: far off, or behind the view a while; faded out, then taken.
 	var off := b.at-eye
 	var far2 := off.length_squared()
-	if not b.leaving:
+	if not b.leaving and b.kind != ODD:
 		if far2 > GONE_BEHIND*GONE_BEHIND and off.dot(view) < 0.0: b.behind += dt
 		else: b.behind = 0.0
 		if far2 > GONE*GONE or b.behind > GONE_WAIT: b.leaving = true
@@ -1067,7 +1122,10 @@ func _think(b: Balloon, game: Node, plane: RefCounted, eye: Vector3, view: Vecto
 	# The slow turn; the rest only near the plane or while it still moves.
 	if b.state == AIR: b.turn += TURN*dt
 	var awake := d2 < AWAKE*AWAKE*b.k*b.k
-	if awake: _wash(b,dt,game,plane,to,sqrt(d2))
+	if awake:
+		_bounce(b,game,plane)
+		to = plane.position-b.at
+		_wash(b,dt,game,plane,to,to.length())
 	if not awake and b.still:
 		var near := NEAR_END*b.scale*1.15
 		if far2 < near*near: b.root.basis = Basis(Vector3.UP,b.turn).scaled(Vector3.ONE*b.scale)
@@ -1186,9 +1244,56 @@ func _wash(b: Balloon, delta: float, game: Node, plane: RefCounted, to: Vector3,
 		b.through = false
 		b.armed = false
 
+## The plane touching `b`'s envelope bounces off it (balloon_bounce.gd), never
+## left inside; the balloon dents there, jolts away from it, rocks and swings,
+## and an odd one lets its find out. A touch scores no graze.
+func _bounce(b: Balloon, game: Node, plane: RefCounted) -> void:
+	if not bool(game.hand_landing.flying()): return
+	var t := BalloonBounce.touch(b.at+b.jolt,b.scale,R,LOW_BALL,plane.position)
+	if t.is_empty(): return
+	b.through = true
+	var res := BalloonBounce.push_off(plane,t,func(q: Vector3) -> float: return _solid_under(game,q))
+	if res.is_empty(): return
+	bounces += 1
+	var n: Vector3 = t.normal
+	var k := float(res.into)*clampf(float(res.before)/float(plane.cruise()),0.6,1.8)/sqrt(b.k)
+	b.poke_way = (b.root.basis.orthonormalized().inverse()*n).normalized()
+	# Pressed in over a tenth of a second, then sprung back.
+	b.poke_v = maxf(b.poke_v,POKE*minf(k,1.4)*POKE_RATE*1.6)
+	b.jolt_v -= n*(JOLT*k)
+	var away := Vector2(-n.x,-n.z)
+	if away.length_squared() < 0.0001:
+		var vel: Vector3 = plane.velocity
+		away = -Vector2(vel.x,vel.z)
+	away = away.normalized()
+	b.rock_v += away*(BOUNCE_ROCK*k)
+	b.swing_v += away*(BOUNCE_SWING*k)
+	b.shudder = 1.0
+	b.still = false
+	res["balloon"] = balloons.find(b)
+	if odd_groups != null: odd_groups.bounced(self,game,b,res)
+
+## The top of what is under `q` (land, trees, stone, the sea), a body's top
+## too when `q` is in it or over it (under an overhang, the floor under it).
+func _solid_under(game: Node, q: Vector3) -> float:
+	var g: Variant = game.plane_ground(q,2.0)
+	var h: float = float(game.field.height(q.x,q.z))
+	if g is float: h = float(g)
+	elif g is Vector2 and q.y >= (g as Vector2).y-3.0: h = maxf(h,(g as Vector2).x)
+	return maxf(h,Field.SEA_Y)
+
 ## The rock about the envelope and the basket's swing, eased back to rest; on
-## the ground only a little sway and no swing.
+## the ground only a little sway and no swing. The bounce's dent and jolt too.
 func _swing(b: Balloon, delta: float) -> void:
+	b.poke_v += (-b.poke*(POKE_RATE*POKE_RATE)-b.poke_v*(2.0*POKE_DAMP*POKE_RATE))*delta
+	b.poke += b.poke_v*delta
+	b.jolt_v += (-b.jolt*(JOLT_RATE*JOLT_RATE)-b.jolt_v*(2.0*JOLT_DAMP*JOLT_RATE))*delta
+	b.jolt += b.jolt_v*delta
+	if b.state == GROUND and b.jolt.y < 0.0:
+		b.jolt.y = 0.0
+		b.jolt_v.y = maxf(b.jolt_v.y,0.0)
+	b.root.position = b.at+b.jolt
+	b.envelope.set_instance_shader_parameter(&"poke",Vector4(b.poke_way.x,b.poke_way.y,b.poke_way.z,b.poke))
 	var most := GROUND_ROCK if b.state == GROUND else ROCK_MOST
 	b.rock_v += (-b.rock*(ROCK_RATE*ROCK_RATE)-b.rock_v*(2.0*ROCK_DAMP*ROCK_RATE))*delta
 	b.rock += b.rock_v*delta
@@ -1223,12 +1328,19 @@ func _swing(b: Balloon, delta: float) -> void:
 		b.gondola.basis = Basis.IDENTITY
 	b.envelope.set_instance_shader_parameter(&"shudder",b.shudder)
 	b.envelope.set_instance_shader_parameter(&"wash",Vector4(b.dent_way.x,b.dent_way.y,b.dent_way.z,b.dent))
-	if b.shudder <= 0.0 and b.dent <= 0.0 and lean < 0.002 and hang < 0.002 and b.rock_v.length_squared() < 0.00001 and b.swing_v.length_squared() < 0.00001:
+	var settled := absf(b.poke) < 0.002 and absf(b.poke_v) < 0.01 and b.jolt.length_squared() < 0.0004 and b.jolt_v.length_squared() < 0.0004
+	if settled and b.shudder <= 0.0 and b.dent <= 0.0 and lean < 0.002 and hang < 0.002 and b.rock_v.length_squared() < 0.00001 and b.swing_v.length_squared() < 0.00001:
 		b.still = true
 		b.rock = Vector2.ZERO
 		b.swing = Vector2.ZERO
 		b.rock_v = Vector2.ZERO
 		b.swing_v = Vector2.ZERO
+		b.poke = 0.0
+		b.poke_v = 0.0
+		b.jolt = Vector3.ZERO
+		b.jolt_v = Vector3.ZERO
+		b.root.position = b.at
+		b.envelope.set_instance_shader_parameter(&"poke",Vector4.ZERO)
 
 # --- The burner's roar ------------------------------------------------------------
 

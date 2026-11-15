@@ -16,6 +16,69 @@ import numpy as np
 
 K = {}          # the build's constants
 
+# A bake's settings (hero_plane_bake.py, a skin's own atlas): the build paints
+# with these defaults, which leave its atlas as it was.
+BAKE_DEFAULTS = {
+	"WEAR": 1.0,      # chips: 0 factory fresh, 1 the plane's own, 2 battered
+	"DIRT": 1.0,      # soot, oil, dust and streaks: 0 clean, 2 filthy
+	"BARE": 0.0,      # the livery's coat off the metal (body forward, cowl), 0..1
+	"BARE_C": None,   # the bared metal's colour (None: aluminium)
+	"RUST": 0.0,      # chips on metal rust, and rust runs back from them, 0..1
+	"RUST_C": None,   # the corrosion's colour (None: rust; a verdigris for copper)
+	"CLOTH": "doped", # the wings' and tail's cloth: doped (cream, takes the wing
+	                  # colour), silver (aluminium dope, takes no livery) or bare
+	                  # (skinned in the bared metal, BARE_C, like the body aft)
+}
+
+
+def chipped(x, a, b):
+	"""The wear's threshold: sst(a, b, x) at WEAR 1, fewer chips below, more above."""
+	w = K["WEAR"]
+	if w <= 1.0:
+		return sst(a, b, x) * w
+	d = (w - 1.0) * 0.08
+	return sst(a - d, b - d, x)
+
+
+def bare_metal(p):
+	"""Bared metal, polished along the airflow (BARE_C, or aluminium)."""
+	c = np.array(K["BARE_C"] if K["BARE_C"] is not None else K["ALU_C"], dtype=np.float32)
+	tone = 1.0 + (p.along - 0.5) * 0.22 + (p.big - 0.5) * 0.12
+	return np.broadcast_to(c, p.col.shape) * tone[..., None]
+
+
+RUST_C = np.array((0.36, 0.17, 0.08), dtype=np.float32)
+def rust_c():
+	return np.array(K["RUST_C"] if K["RUST_C"] is not None else RUST_C, dtype=np.float32)
+
+
+SILVER_C = np.array((0.7, 0.7, 0.68), dtype=np.float32)
+
+
+def silver_cloth(p, t=None):
+	"""CLOTH silver: the cloth doped in aluminium, by t (all of it by default);
+	CLOTH bare: skinned in the bared metal instead."""
+	if K["CLOTH"] not in ("silver", "bare"):
+		return
+	t = np.ones(p.col.shape[:2], dtype=np.float32) if t is None else t
+	if K["CLOTH"] == "bare":
+		p.lay(bare_metal(p), t, None, 0.24, 0.35, 1.0)
+		return
+	tone = 1.0 + (p.big - 0.5) * 0.1 + (p.mid - 0.5) * 0.06
+	p.lay(SILVER_C * tone[..., None], t, None, 0.45, 0.25, 0.55)
+
+
+def rusted(p, t):
+	"""Rust where metal shows under chips: t is the chips' share."""
+	r = K["RUST"]
+	if r <= 0.0:
+		return
+	c = rust_c()
+	p.lay(c * (0.8 + 0.4 * p.fine[..., None]), np.clip(t * r, 0.0, 1.0), None, 0.9, 0.0, 0.15)
+	# Runs: back along the wind from each chip.
+	run = blur(t, 6.0) * 3.0 * sst(0.45, 0.75, p.along)
+	p.stain(c * 0.85, np.clip(run * r * 0.6, 0.0, 0.7), 0.85)
+
 
 # --- Tools --------------------------------------------------------------------
 
@@ -150,6 +213,8 @@ class Part:
 	def stain(self, colour, t, rough=None):
 		"""Dirt on the paint: colours it and leaves the mask at a lower share, so
 		a livery shows through a light stain and not a heavy one."""
+		if K["DIRT"] != 1.0:
+			t = np.clip(t * K["DIRT"], 0.0, 1.0)
 		self.col = over(self.col, np.broadcast_to(colour, self.col.shape), t)
 		self.mk *= (1.0 - t * 0.85)[..., None]
 		if rough is not None:
@@ -216,6 +281,7 @@ def paint_wing(cv, reg, top, upper):
 	tone = 1.0 + (p.big - 0.5) * 0.11 + (p.mid - 0.5) * 0.07
 	p.shade(tone)
 	p.col = over(p.col, np.array((0.87, 0.76, 0.55), dtype=np.float32), sst(0.5, 0.75, p.big) * 0.22)
+	silver_cloth(p)
 	if not top:
 		p.shade(np.full_like(a, 0.95))
 	# The bays go slack and catch shade toward their middles: the ribs read as
@@ -295,7 +361,7 @@ def paint_wing(cv, reg, top, upper):
 		p.shade(1.0 - (1.0 - sst(0.0, 0.0012, np.abs(d))) * 0.08)
 	# Wear: chips at the nose to primer and bare wood, rubbed tape.
 	nose_edge = 1.0 - sst(0.01, 0.06, c)
-	chips = sst(0.62, 0.68, p.chip + nose_edge * 0.22 + (p.fine - 0.5) * 0.3) * (0.15 + nose_edge)
+	chips = chipped(p.chip + nose_edge * 0.22 + (p.fine - 0.5) * 0.3, 0.62, 0.68) * (0.15 + nose_edge)
 	chips = np.clip(chips, 0.0, 1.0) * sst(0.5, 0.75, nose_edge + (p.chip > 0.72) * 0.4)
 	p.lay(K["PRIMER_C"], chips * 0.9, None, 0.85, 0.0)
 	# The wind's dirt: long streaks back the chord, heavier aft of the spar;
@@ -343,6 +409,9 @@ def paint_body(cv):
 	p.shade(1.0 + (p.big - 0.5) * 0.2 + (p.mid - 0.5) * 0.12)
 	p.col = over(p.col, np.array((0.78, 0.45, 0.28), dtype=np.float32), sst(0.5, 0.8, p.big) * 0.2)
 	p.col = over(p.col, np.array((0.56, 0.24, 0.16), dtype=np.float32), sst(0.5, 0.8, 1.0 - p.mid) * 0.14)
+	if K["BARE"] > 0.0:
+		skin = metal + fabric * (K["CLOTH"] == "bare")
+		p.lay(bare_metal(p), skin * K["BARE"], None, 0.22, 0.35, 1.0)
 
 	# Metal: panel seams, rivets and access plates.
 	seams_z = (-0.44, -0.33, -0.22, -0.11, K["FABRIC_FROM"])
@@ -367,8 +436,14 @@ def paint_body(cv):
 	p.hgt -= seam * 2.4
 	p.shade(1.0 + riv * 0.16)
 	p.hgt += riv * 1.6
+	if K["RUST"] > 0.0:
+		# Corrosion gathered in the seams and round the rivets, a little run aft.
+		gather = np.clip(blur(np.maximum(seam, riv), 4.0) * 3.0, 0.0, 1.0)
+		gather *= 0.55 + 0.45 * sst(0.35, 0.65, p.fine)
+		p.lay(rust_c() * (0.85 + 0.3 * p.fine[..., None]), gather * K["RUST"], None, 0.8, 0.0, 0.1)
 	# Rivet halos: paint rubbed thin round each head.
-	p.lay(K["ALU_C"], riv * sst(0.5, 0.72, p.chip + (1.0 - sst(-0.33, 0.1, z)) * 0.08) * 0.8, None, 0.4, 0.0, 1.0)
+	halo = riv * chipped(p.chip + (1.0 - sst(-0.33, 0.1, z)) * 0.08, 0.5, 0.72) * 0.8
+	p.lay(K["ALU_C"], halo, None, 0.4, 0.0, 1.0)
 	# Hatches: oil tank, battery, tool locker, with dzus fasteners.
 	for (cz, cs, wz, ws) in ((-0.27, 0.115, 0.04, 0.03), (-0.165, -0.115, 0.03, 0.026), (-0.27, -0.115, 0.04, 0.03), (-0.165, 0.115, 0.03, 0.026)):
 		dd = np.maximum(np.abs(z - cz) - wz, np.abs(s - cs) - ws)
@@ -466,10 +541,11 @@ def paint_body(cv):
 	# Wear. Hands: the flank under the cockpit and round the step, rubbed to
 	# bare skin in places, the paint chipped along every seam nearest to it.
 	near = np.exp(-(((z - 0.03) / 0.12) ** 2)) * np.exp(-(((aphi - 1.45) / 0.55) ** 2))
-	worn = sst(0.56, 0.66, p.chip + near * 0.2 + (p.fine - 0.5) * 0.25) * metal
+	worn = chipped(p.chip + near * 0.2 + (p.fine - 0.5) * 0.25, 0.56, 0.66) * metal
 	on_seam = np.maximum(blur(seam, 3.0) * 3.0, 0.0)
 	chips = worn * np.clip(on_seam * 2.0 + near * 0.7, 0.0, 1.0) * sst(0.6, 0.7, p.chip + (p.fine - 0.5) * 0.3 + on_seam * 0.25)
 	p.lay(K["ALU_C"], chips, None, 0.36, 0.0, 1.0)
+	rusted(p, np.clip(chips + halo, 0.0, 1.0))
 	p.stain(K["DUST_C"], near * sst(0.45, 0.8, p.mid) * 0.22)
 	p.stain(K["SOOT_C"], near * sst(0.5, 0.8, p.fine) * 0.1)
 	# The fabric's scrapes low on the tail, and the chafed keel.
@@ -526,6 +602,8 @@ def paint_cowl(cv):
 	p.rgh[:] = 0.4
 	p.coat[:] = 0.62
 	p.shade(1.0 + (p.big - 0.5) * 0.3 + (p.mid - 0.5) * 0.16)
+	if K["BARE"] > 0.0:
+		p.lay(bare_metal(p), np.full_like(q, K["BARE"]), None, 0.22, 0.35, 1.0)
 	bay = math.tau / K["CYLINDERS"]
 	# A polished brass lip.
 	lip = sst(0.05, 0.08, q) * (1.0 - sst(front - 0.05, front - 0.04, q))
@@ -564,8 +642,9 @@ def paint_cowl(cv):
 	p.hgt += (blur(lou, 3.0) * 2.2 - lou * 3.4) * 1.0
 	# Chips along the skirt and the blisters' crowns; rubbed metal round fasteners.
 	crown = np.exp(-(((t + bay * 0.5) % bay - bay * 0.5) / 0.14) ** 2) * band(q, 0.3, 0.6, 0.04)
-	chips = sst(0.84, 0.88, p.chip + crown * 0.05 + sst(0.9, 1.0, q) * 0.1 + (p.fine - 0.5) * 0.16)
+	chips = chipped(p.chip + crown * 0.05 + sst(0.9, 1.0, q) * 0.1 + (p.fine - 0.5) * 0.16, 0.84, 0.88)
 	p.lay(K["ALU_C"], chips * (1.0 - lip), None, 0.34, 0.0, 1.0)
+	rusted(p, chips * (1.0 - lip))
 	# Soot: back from the lip low down, heavy over the stubs, heat straw on top.
 	lower = np.abs(t % math.tau - math.pi)     # from the keel
 	low = 1.0 - sst(0.5, 1.7, lower)
@@ -595,6 +674,7 @@ def paint_fin(cv, reg):
 	p.coat[:] = 0.45
 	p.shade(1.0 + (p.big - 0.5) * 0.3 + (p.mid - 0.5) * 0.16)
 	p.lay(K["WING_C"], rudder, 2, 0.6, 0.3)
+	silver_cloth(p, rudder)
 	p.shade(1.0 + (p.big - 0.5) * 0.1 * rudder)
 	p.lay(K["BODY_C"], band(y, -0.2, 0.17, 0.001) * rudder, 0, 0.46, 0.45)
 	# Ribs, horizontal; a spar line; cloth weave.
@@ -617,7 +697,7 @@ def paint_fin(cv, reg):
 	# Dirt: the wash streaks back along the fin; soot low; chips at the top.
 	p.stain(K["DUST_C"], sst(0.5, 0.8, p.along) * 0.22)
 	p.stain(K["SOOT_C"], (1.0 - sst(0.05, 0.16, y)) * sst(0.35, 0.7, p.along) * 0.42)
-	chips = sst(0.76, 0.8, p.chip + (p.fine - 0.5) * 0.2 + sst(0.27, 0.31, y) * 0.1)
+	chips = chipped(p.chip + (p.fine - 0.5) * 0.2 + sst(0.27, 0.31, y) * 0.1, 0.76, 0.8)
 	p.lay(K["PRIMER_C"], chips * 0.85, None, 0.8, 0.0)
 	cz = 0.6
 	cx = (0.77 - cz) * D if right else (cz - 0.47) * D
@@ -636,6 +716,7 @@ def paint_tailplane(cv):
 	p.rgh[:] = 0.6
 	p.coat[:] = 0.3
 	p.shade(1.0 + (p.big - 0.5) * 0.14)
+	silver_cloth(p)
 	pitch = 0.052
 	rib = np.abs(((a / pitch + 0.5) % 1.0) - 0.5) * pitch
 	tape = 1.0 - sst(0.0042, 0.0056, rib)
@@ -748,7 +829,7 @@ def paint_swatches(cv):
 			p.coat[:] = 0.4
 			p.shade(n)
 			p.stain(K["DUST_C"], sst(0.55, 0.8, p.mid) * 0.25)
-			chips = sst(0.76, 0.8, p.chip)
+			chips = chipped(p.chip, 0.76, 0.8)
 			p.lay(K["ALU_C"], chips * 0.8, None, 0.4, 0.0, 1.0)
 		elif name == "brass":
 			p.col = polished(p)
@@ -816,8 +897,14 @@ def halve(a):
 	return (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2]) * 0.25
 
 
-def paint_all(constants, scale=1):
+def paint_all(constants, scale=1, **bake):
+	"""The atlas's maps. `bake`: BAKE_DEFAULTS's names (a skin's own atlas)."""
 	K.update(constants)
+	for k, v in BAKE_DEFAULTS.items():
+		K[k] = bake.get(k, v)
+	unknown = set(bake) - set(BAKE_DEFAULTS)
+	if unknown:
+		raise ValueError("paint_all: no bake setting %s" % sorted(unknown))
 	cv = Canvas()
 	# What no region covers: the plane's own dull terracotta, never a bright seam.
 	cv.a[:] = K["BODY_C"] * 0.5
