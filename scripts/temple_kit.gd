@@ -36,6 +36,13 @@ const PIECES: Array[StringName] = [
 	&"aqueduct_arch_broken",
 	&"aqueduct_pier_broken",
 	&"aqueduct_rubble",
+	# The colonnaded street (art/blender/temple_kit/street_build.py; scripts/endless/street_site.gd).
+	&"street_kerb",
+	&"street_paving",
+	&"street_paving_broken",
+	&"street_arch",
+	&"street_lintel_cross",
+	&"street_stump",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
