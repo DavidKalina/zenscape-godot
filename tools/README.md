@@ -23,6 +23,9 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | A flight taped and filmed again from any camera (trailer shots: no HUD, no dropped frames, any size) | fly with `python tools/play.py -- --record`, then `python tools/movie.py last --from 12 --to 20 --cam flyby` (`--list`, `--preview`; movie.py, below) |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | A still of a moment in a driven run (the plane touching down, a piece by its AABB) | in a driver: `await shot_at("side", node, {"when": cond})`, then step frames; run with `drive.py --rendered` (drive.gd, Shots) |
+| A plane skin's sheet: the hero plane wearing it from a few angles, by day and (when it glows) by night, in one image | `python tools/skin_sheet.py paint/moonstone` (`captures/skins/<id>.png`; several ids stack into `--out`; `sheen:gloss[@id]` a finish alone; skin_sheet.py, below) |
+| A plane skin's decal (stripes, bands, discs, numbers, a checker, scallops, a free mask) in the plane's own units | a short script on `art/blender/hero_plane/hero_plane_decal.py`'s `Decal`, run with `python tools/blender.py run art/blender/hero_plane/skins/<batch>.py` (hero_plane_decal.py, below) |
+| A plane skin's own atlas (less or more wear and dirt, bare metal or copper, rust, silver-doped cloth) | `python tools/blender.py run art/blender/hero_plane/hero_plane_bake.py -- assets/models/hero_plane/skins/<batch>/<name> --wear 0.2 --bare 1` (hero_plane_bake.py, below) |
 | A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
@@ -154,6 +157,92 @@ The views are three, front, back, left, right, top and close. The HUD is
 hidden unless you pass `--hud`. Files go to `captures/shots/<scene>_<view>.png`
 unless `--out` says otherwise. Read the PNGs and judge them yourself.
 Headless runs can't take stills.
+
+## skin_sheet.py: a plane skin's sheet
+
+```
+python tools/skin_sheet.py paint/moonstone                     # captures/skins/paint_moonstone.png
+python tools/skin_sheet.py paint/harbour paint/night --night   # a night row though they don't glow
+python tools/skin_sheet.py sheen:satin sheen:gloss sheen:matte sheen:metal --no-night --out captures/skins/sheens.png
+python tools/skin_sheet.py sheen:metal@paint/ochre --views port,starboard,tail,chase
+```
+
+A skin is a ShopStock id from any batch (`scripts/endless/skins/`), or
+`sheen:NAME[@id]`: that skin's livery (Harbour's by default) in the sheen
+alone, or `glow:HEX[*POWER][@id]` (quote it in the shell): that livery with
+its body and trim glowing HEX at POWER (1), to tune a glow. The plane is frozen in flight over the endless land
+(`tools/harness/skin_sheet.gd`), painted through `ShopStock._paint`, the
+shop's own path. A skin's sheet is a row of views at `--day-hour` (11), and
+a second at `--night-hour` (1) when its finish has a glow (`--night` for
+all, `--no-night` for none): two windows, one after the other, under
+shot.py's window lock. Views, in the plane's own frame: port, starboard,
+quarter (ahead, above), top, tail, and chase, where the play camera sits at
+a cruise (GlideCamera's BACK, UP and FOV): flying distance. Default
+port,quarter,top,chase. Several skins stack, rows in the order given, into
+`--out` (default `captures/skins/sheet.png`). The stills are kept in
+`captures/skins/raw/`. Exit non-zero when a skin is unknown or a still is
+missing. About 20 s a window.
+
+## hero_plane_decal.py: a plane skin's decal
+
+```
+python tools/blender.py run art/blender/hero_plane/skins/demo.py   # writes assets/models/hero_plane/skins/demo/chequer_decal.png
+```
+
+A skin's `decal` (ShopStock) is one premultiplied RGBA PNG at half the
+atlas's size (2048x1300, lossless, about 100-150 KB), laid over the livery
+on the painted parts, under the atlas's own wear and dirt. A batch's script
+(`art/blender/hero_plane/skins/<batch>.py`) draws it with `Decal` in the
+plane's own units, region by region, and saves it under
+`assets/models/hero_plane/skins/<batch>/` (the `.import` is written with it):
+`stripe`, `band`, `rect`, `disc` (a ring with `ring=`), `text` (FONT's
+letters and numbers), `checker`, `scallop` and `mask(on, colour, fn(a, b,
+side))`; a shape with colour `None` erases (cuts a hole in what is laid). The regions (`body`, the wings `up_top`/`up_under`/`lo_top`/
+`lo_under` or `wings_top`/`wings_under`/`wings`, `tail`, `fin`, `cowl`) and
+their frames are in the module's docstring. The body and cowl are mirrored
+side to side by default (`mirror=False` for one side); the wings and tail
+are always mirrored (one atlas for both halves). Blender's Python runs it
+(numpy); a decal takes a couple of seconds. A finish's `glow_on: ["decal"]`
+lights it in its own colours after dark (`glow:ffffff@<id>` on the sheet).
+
+## hero_plane_bake.py: a plane skin's own atlas
+
+```
+python tools/blender.py run art/blender/hero_plane/hero_plane_bake.py -- \
+    assets/models/hero_plane/skins/demo/silverwing --wear 0.15 --dirt 0.3 --bare 1 --cloth silver
+```
+
+A skin's `bake` (ShopStock) swaps the atlas's albedo, mask and orm for its
+own; the normal map is shared. The bake maker paints the whole atlas again
+with `hero_plane_paint.py`'s other settings (`BAKE_DEFAULTS`; all at their
+defaults it paints the plane's own atlas, byte for byte in the mask and
+orm): `wear` (chips; 0 fresh, 2 battered), `dirt` (soot, oil, dust; 0
+clean, 2 filthy), `bare` (the livery's coat off the forward metal and
+the cowl, 0..1; the deck, cheat line and marks stay painted), `bare_c` (the
+bared metal's hex: copper `d97f48`, brass `a8964a`, gold `ffc23a`;
+aluminium else), `rust` (rust in the metal's chips, runs back from them and
+gathered in the body's seams and rivets, 0..1), `rust_c` (the corrosion's
+hex: a verdigris `4f9a7a`; rust else) and `cloth` (`doped`; `silver`:
+aluminium dope on the wings, tail and rudder that takes no livery colour;
+or `bare`: those and the body aft skinned in the bared metal, so `bare 1`
+makes the whole airframe metal but the scheme). From a batch's script: `from
+hero_plane.hero_plane_bake import bake; bake(out, wear=0.2, bare=1.0)`.
+About 15 s a bake. It writes `<out>_albedo.jpg` (2048x1300, JPEG 90),
+`<out>_mask.png` (2048x1300, RGBA) and `<out>_orm.jpg` (2048x1300, JPEG 90)
+with their `.import`s, and prints the row's `bake` value. In the build the
+albedo and orm import as lossy WebP and the mask lossless (lossy WebP drops
+the colour wherever its alpha is 0, and a mask's alpha is the dark slot).
+Sizes of the three sources: a fresh clean bake (wear 0, dirt 0) 0.6 MB,
+Silverwing 1.2 MB (imported 0.94 MB: albedo 0.23, mask 0.65, orm 0.06), a
+battered rusty copper one (wear 2, dirt 1.8, rust 1) 2.5 MB; the mask is
+most of it and grows with the dirt, and imports at about its PNG's size. A row may leave out a map it doesn't
+change. Bared metal and silver cloth take no livery (mask 0), so the
+finish's sheens (which act on the paint) don't reach them either; a
+coloured bared metal (gold, copper, brass) then reads as paint of its
+colour. The row's finish `bare` (0..1, ShopStock; `finish_bare` in
+hero_surface.gdshader) puts the metal mirror on it, following the normal
+map: 1 polished, ~0.6 dull. Without it only grey (aluminium) reads as metal.
+Metal batch: `art/blender/hero_plane/skins/metal.py` (`-- gold` remakes one).
 
 ## movie.py: a taped flight, filmed
 
