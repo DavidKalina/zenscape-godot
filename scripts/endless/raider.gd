@@ -93,7 +93,7 @@ const LIVERY := {"body":Color("1d1c20"),"dark":Color("0e0e10"),"trim":Color("e02
 ## RIBBON*RIBBON_EVERY s of its line), its width at the tail and the end
 ## (m, times SIZE), never under RIBBON_PX m per m from the eye (so it keeps
 ## a few pixels far off), its colour and alpha at the tail.
-const RIBBON := 30
+const RIBBON := 60
 const RIBBON_EVERY := 0.05
 const RIBBON_W := Vector2(1.8,0.5)
 const RIBBON_PX := 0.006
@@ -188,6 +188,34 @@ const TAIL_HOLD := 0.5
 const KEEP_M := Vector2(22.0,150.0)
 const GETAWAY_M := 140.0
 const GETAWAY_S := 3.0
+## The stream (round 4: no embers, the chase alone): the air it leaves behind
+## it, along its ribbon. The plane within STREAM_R m of the ribbon's line
+## (`--raider-stream-r=`; held STREAM_HOLD s past leaving) is in it: `stream`
+## rises over STREAM_IN s and falls over STREAM_OUT s. In it the plane is
+## drawn along, STREAM_OVER m/s over its own pace at the full
+## (`--raider-stream-over=`, raider_chase.gd `_skim`), the raider holds
+## close (raider_chase.gd), and the ribbon runs to STREAM_COLOR and
+## STREAM_WIDE times as wide. Out of it the raider runs at its own pace and
+## pulls away.
+##
+## Beating it (round 5: a test of flight, no ram): `follow` (0..1, the bar
+## at the top of the view) fills while the plane is in the stream, full in
+## FOLLOW_S s (`--raider-follow=S`) flown on the ribbon's own line and
+## FOLLOW_EDGE of that pace at the stream's edge, and drains over
+## FOLLOW_DRAIN s out of it. Full, it is beaten (a bell, BEATEN, it leaves);
+## got away, GOT AWAY. The surge roll kills it only with `--raider-kill`.
+const FOLLOW_S := 12.0
+const FOLLOW_EDGE := 0.35
+const FOLLOW_DRAIN := 30.0
+const RESULT_S := 2.5
+const STREAM_R := 8.0
+const STREAM_HOLD := 0.3
+const STREAM_IN := 0.4
+const STREAM_OUT := 1.0
+const STREAM_OVER := 16.0
+const STREAM_FILL := 12.0
+const STREAM_COLOR := Color(1.0,0.86,0.4,1.0)
+const STREAM_WIDE := 1.7
 const STAGGER_S := 1.2
 
 const MIX_PASSES := Vector2i(2,3)
@@ -267,6 +295,15 @@ var _unseen_t := 0.0
 ## Round 2: the plane on its tail (held TAIL_HOLD s past slipping off), the
 ## seconds since it last was, the stagger's clock, the getaway's.
 var on_tail := false
+## In its stream now, and how far in (0..1, eased).
+var in_stream := false
+var stream := 0.0
+var _off_stream := INF
+## How far the plane has beaten it (0..1), and how near the stream's middle
+## it flies (0 at its edge..1).
+var follow := 0.0
+var centred := 0.0
+var _trail: Control
 var _off_tail := INF
 var stagger_t := 0.0
 var _away_t := 0.0
@@ -327,7 +364,9 @@ func setup(g: Node3D) -> void:
 		"tail_m":_flag("--raider-tail-m",ON_TAIL_M),"tail_cos":cos(deg_to_rad(_flag("--raider-tail-deg",ON_TAIL_DEG))),
 		"keep_near":_flag("--raider-keep-near",KEEP_M.x),"keep_far":_flag("--raider-keep-far",KEEP_M.y),
 		"getaway":_flag("--raider-getaway",GETAWAY_M),"getaway_s":_flag("--raider-getaway-s",GETAWAY_S),
-		"stagger":_flag("--raider-stagger",STAGGER_S)}
+		"stagger":_flag("--raider-stagger",STAGGER_S),
+		"stream_r":_flag("--raider-stream-r",STREAM_R),"stream_over":_flag("--raider-stream-over",STREAM_OVER),
+		"follow":maxf(_flag("--raider-follow",FOLLOW_S),1.0),"kill":"--raider-kill" in LaunchArgs.user_args()}
 	flight = SkyTraffic.Flight.new()
 	mode = mode_of(LaunchArgs.user_args())
 	if mode != &"dogfight":
@@ -391,6 +430,8 @@ func setup(g: Node3D) -> void:
 	add_child(_layer)
 	_mark = Marker.new()
 	_layer.add_child(_mark)
+	_trail = Trail.new()
+	_layer.add_child(_trail)
 
 func alive() -> bool:
 	return state != &"away" and state != &"dead"
@@ -531,10 +572,12 @@ func _spawn() -> void:
 ## Chased or not, and gone for good when not: far off, or long out of view.
 func _watch(delta: float, dist: float) -> void:
 	_tail_step(delta,dist)
+	_stream_step(delta)
 	# Behind past GETAWAY_M for GETAWAY_S s: it got away, locked on or not.
 	_away_t = _away_t+delta if (chase.running() and dist > float(tuning.getaway)) else 0.0
 	if _away_t > float(tuning.getaway_s):
 		stats.got_away = int(stats.get("got_away",0))+1
+		(_trail as Trail).say("GOT AWAY",_clock+RESULT_S,false)
 		_leave()
 		return
 	var lock: Node = game.get("lock_on")
@@ -558,12 +601,45 @@ func _tail_step(delta: float, dist: float) -> void:
 	on_tail = _off_tail <= TAIL_HOLD
 	if on_tail: stats.tail_s = float(stats.get("tail_s",0.0))+delta
 
+## In its stream: the plane within stream_r m of the ribbon's line.
+func _stream_step(delta: float) -> void:
+	var now := false
+	if chase.running() and _ribbon.visible and bool(game.hand_landing.flying()):
+		var p: Vector3 = game.plane.position
+		var least := INF
+		for i in RIBBON-1:
+			least = minf(least,_seg_least(_ribbon_points[i]-p,_ribbon_points[i+1]-p))
+		now = least <= float(tuning.stream_r)
+		centred = clampf(1.0-least/maxf(float(tuning.stream_r),0.1),0.0,1.0)
+	_off_stream = 0.0 if now else _off_stream+delta
+	in_stream = _off_stream <= STREAM_HOLD
+	stream = lerpf(stream,1.0 if in_stream else 0.0,_ease(STREAM_IN if in_stream else STREAM_OUT,delta))
+	if in_stream:
+		stats.stream_s = float(stats.get("stream_s",0.0))+delta
+		follow = minf(follow+delta/float(tuning.follow)*lerpf(FOLLOW_EDGE,1.0,centred if now else 0.0),1.0)
+		if follow >= 1.0: _beaten()
+	else:
+		follow = maxf(follow-delta/FOLLOW_DRAIN,0.0)
+
+## Followed to the full: beaten. A bell, the word, and it leaves.
+func _beaten() -> void:
+	stats.beaten = int(stats.get("beaten",0))+1
+	stats.beaten_in = t
+	if game.get("sound") != null: game.sound.shot("line-flourish",1.0,1.0)
+	(_trail as Trail).say("BEATEN",_clock+RESULT_S,true)
+	_leave()
+
 ## Panicking: on its tail and not staggered by a parried ember.
 func panic() -> bool:
 	return on_tail and stagger_t <= 0.0 and state == &"flee"
 
 func _untail() -> void:
 	on_tail = false
+	follow = 0.0
+	centred = 0.0
+	in_stream = false
+	stream = 0.0
+	_off_stream = INF
 	_off_tail = INF
 	stagger_t = 0.0
 	_away_t = 0.0
@@ -854,6 +930,8 @@ func _hit(p: Vector3, events: Dictionary) -> void:
 func try_kill(g: Node3D) -> Vector3:
 	game = g
 	if not alive() or figure == null: return Vector3.INF
+	# The chase is a test of flight: no ram unless asked.
+	if mode == &"chase" and not bool(tuning.kill): return Vector3.INF
 	var p: Vector3 = game.plane.position
 	var d := minf(sweep,flight.position.distance_to(p))
 	if state == &"flee":
@@ -1043,9 +1121,9 @@ func _trail_ribbon(delta: float, tail: Vector3) -> void:
 		if along.length_squared() < 0.000001: along = flight.forward()
 		var across := along.cross(eye-p)
 		if across.length_squared() < 0.000001: across = Vector3.UP
-		var w := maxf(lerpf(RIBBON_W.x,RIBBON_W.y,age)*SIZE,eye.distance_to(p)*RIBBON_PX)
+		var w := maxf(lerpf(RIBBON_W.x,RIBBON_W.y,age)*SIZE,eye.distance_to(p)*RIBBON_PX)*lerpf(1.0,STREAM_WIDE,stream)
 		across = across.normalized()*w*0.5
-		var c := RIBBON_COLOR
+		var c := RIBBON_COLOR.lerp(STREAM_COLOR,stream)
 		c.a *= (1.0-age)*smoothstep(0.0,0.05,age+0.01)
 		_ribbon_mesh.surface_set_color(c)
 		_ribbon_mesh.surface_set_uv(Vector2(0.0,age))
@@ -1068,6 +1146,12 @@ static func _ease(seconds: float, delta: float) -> float:
 # --- The marker ---------------------------------------------------------------
 
 func _hud(on: bool) -> void:
+	var bar := _trail as Trail
+	bar.on = on and mode == &"chase" and state == &"flee" and chase.running()
+	bar.fill = follow
+	bar.hot = stream
+	bar.clock = _clock
+	bar.queue_redraw()
 	var m := _mark as Marker
 	if not on or game.camera == null:
 		m.on = false
@@ -1104,6 +1188,45 @@ func _hud(on: bool) -> void:
 	if state == &"tell": m.text = "RAM!"
 	elif state == &"flee" and mode == &"mix" and t < RUNS_S: m.text = "RUNS"
 	m.queue_redraw()
+
+## The bar of the chase: how far it is beaten, bright while in its stream;
+## and the result's word for a moment after.
+class Trail extends Control:
+	var on := false
+	var fill := 0.0
+	var hot := 0.0
+	var clock := 0.0
+	var word := ""
+	var until := -INF
+	var won := false
+
+	func _init() -> void:
+		set_anchors_preset(Control.PRESET_FULL_RECT)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func say(text: String, to: float, good: bool) -> void:
+		word = text
+		until = to
+		won = good
+
+	func _draw() -> void:
+		var size := get_viewport_rect().size
+		var font := ThemeDB.fallback_font
+		if clock < until:
+			var col := Color(1.0,0.86,0.4) if won else Color(0.95,0.3,0.25)
+			var fs := int(size.y*0.06)
+			var w := font.get_string_size(word,HORIZONTAL_ALIGNMENT_LEFT,-1,fs).x
+			var at := Vector2((size.x-w)*0.5,size.y*0.22)
+			draw_string_outline(font,at,word,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,6,Color(0.05,0.03,0.03,0.8))
+			draw_string(font,at,word,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,col)
+		if not on: return
+		var bw := size.x*0.22
+		var bh := maxf(size.y*0.009,5.0)
+		var r := Rect2((size.x-bw)*0.5,size.y*0.085,bw,bh)
+		draw_rect(r.grow(2.0),Color(0.05,0.03,0.03,0.55))
+		var c := Color(1.0,0.12,0.26).lerp(Color(1.0,0.86,0.4),hot)
+		c.a = lerpf(0.55,1.0,hot)
+		draw_rect(Rect2(r.position,Vector2(bw*clampf(fill,0.0,1.0),bh)),c)
 
 class Marker extends Control:
 	const EDGE := 40.0

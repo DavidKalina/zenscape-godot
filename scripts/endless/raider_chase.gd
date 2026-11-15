@@ -208,6 +208,10 @@ const KEEP_EASE := 1.05
 const KEEP_GAIN := 0.6
 const KEEP_OVER := 4.0
 const KEEP_FLOOR := 0.95
+const STREAM_OUT_PACE := 1.15
+## Out of its stream it is never slower than the plane + this (m/s): skimming
+## beside the stream does not catch it.
+const STREAM_OUT_OVER := 7.0
 ## The taped line: the least between its points (m); how near the line the
 ## plane must be for it to show up (m) and how far on along it (m); the tape
 ## left past it at least (m).
@@ -546,7 +550,10 @@ func step(delta: float, p: Vector3, rel: Vector3, dist: float, ps: float) -> voi
 		# past keep_near (more, nearer), so a plane that holds its line and its
 		# Boost sits keep_near m behind it; never under KEEP_FLOOR of Boost, so
 		# a plane off the Boost or off the line still loses it.
-		if ahead: pace = maxf(ps+(float(rt.keep_near)-gap)*KEEP_GAIN,float(plane.boost_speed())*KEEP_FLOOR)
+		# Round 4: held so only for a plane in its stream (raider.gd `stream`);
+		# out of it, it runs at STREAM_OUT_PACE of Boost, the plane + STREAM_OUT_OVER at least, and pulls away.
+		var own := maxf(float(plane.boost_speed())*STREAM_OUT_PACE,ps+STREAM_OUT_OVER)
+		if ahead: pace = lerpf(own,maxf(ps+(float(rt.keep_near)-gap)*KEEP_GAIN,float(plane.boost_speed())*KEEP_FLOOR),float(raider.stream))
 		else: pace = float(plane.boost_speed())*float(tuning.pace)
 	if not ahead: pace = maxf(pace,ps+AHEAD_OVER)
 	pace *= float(raider.pace_k())  # pulling away after an ember's hit
@@ -994,4 +1001,6 @@ func _skim(delta: float) -> void:
 	_seen = moments.size()
 	heat = lerpf(heat,k,raider._ease(HEAT_UP if k > heat else HEAT_DOWN,delta))
 	skim_over = heat*float(tuning.skim)
+	# Drawn along in its stream (raider.gd).
+	if raider.mode == &"chase": skim_over += float(raider.stream)*float(raider.tuning.stream_over)
 	plane.skim_over = skim_over

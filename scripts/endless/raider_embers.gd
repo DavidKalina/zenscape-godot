@@ -26,6 +26,7 @@ extends RefCounted
 ## a missed one knocks the plane back out of tail range (KEEP, SHOVE, PULL).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const EVERY := 2.2
 const TAIL_FIRST := 0.6
@@ -121,7 +122,7 @@ func _init(r: Node3D) -> void:
 	_size = float(r.get_script().get_script_constant_map().get("SIZE",1.0))
 	tuning = {"every":maxf(r._flag("--raider-ember-every",EVERY),0.2),"speed":maxf(r._flag("--raider-ember-speed",SPEED),2.0),
 		"seek":r._flag("--raider-ember-seek",SEEK),"close":maxf(r._flag("--raider-ember-close",CLOSE),0.0),
-		"arc":r._flag("--raider-ember-arc",ARC_M),"arc_in":maxf(r._flag("--raider-ember-in",ARC_IN),ARC_FREE+0.1)}
+		"arc":r._flag("--raider-ember-arc",ARC_M),"on":"--raider-embers" in LaunchArgs.user_args(),"arc_in":maxf(r._flag("--raider-ember-in",ARC_IN),ARC_FREE+0.1)}
 	_root = Node3D.new()
 	_root.name = "Embers"
 	_root.top_level = true
@@ -181,7 +182,8 @@ func step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> void:
 	var game: Node3D = raider.game
 	var flying: bool = game.hand_landing.flying()
 	var on: bool = raider.state == &"flee" and raider.chase.running() and flying
-	if on and raider.mode == &"chase": on = bool(raider.panic())
+	# Round 4: the chase has no embers unless `--raider-embers` asks.
+	if on and raider.mode == &"chase": on = bool(tuning.on) and bool(raider.panic())
 	if on:
 		_wait -= delta
 		if _wait <= 0.0 and _may_fire(p):
