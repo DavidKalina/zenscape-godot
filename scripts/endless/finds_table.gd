@@ -53,6 +53,9 @@ extends RefCounted
 ##   pillar  with a stacks anchor: that pillar's top, not the group's middle
 ##   under   true: it stands in a bore under the land (the ice tunnel), lit by
 ##           the bore's own lights (find_marks.gd HALL_LAYER as well)
+##   reveal  true: when its anchor is handed mid-flight (a lane's
+##           `finds.anchor`) and it is not in the book yet, the flight holds
+##           while the camera goes to it rising into view (find_reveal.gd)
 ## Each spot then goes through the layout file as `finds/<id>`, so a find can
 ## be moved by hand without touching this table.
 ##
@@ -103,7 +106,7 @@ const WORLDS := {
 		{"id":"the-cup","area":"meadow","kind":"landing","pay":2000,"at":Vector2(500.0,-830.0),"radius":60.0,
 			"title":"Set down in the green cup","hint":"A green cup in the hills, north"},
 		{"id":"gold-spruce","area":"meadow","kind":"relic","pay":4000,"anchor":"golden/gold-spruce","up":9.0,
-			"title":"The ring of the golden spruce","hint":"One tree in the near wood isn't green"},
+			"title":"The ring of the golden spruce","hint":"One tree in the near wood isn't green","reveal":true},
 		{"id":"burrower-catch","area":"meadow","kind":"event","event":"caught",
 			"title":"Caught the burrower","hint":"Skim low, and something runs"},
 		# The way south, in the first frame's left edge, down the bay to the tower
@@ -128,7 +131,7 @@ const WORLDS := {
 		{"id":"gap-ring","area":"south","kind":"relic","pay":2000,"at":Vector2(-1300.0,2900.0),"up":16.0,
 			"title":"The ring in the gap"},
 		{"id":"gold-grove","area":"south","kind":"relic","pay":4000,"anchor":"golden/gold-grove","up":9.0,
-			"title":"The ring where the gold tree stood","hint":"Gold among the clumps by the gap"},
+			"title":"The ring where the gold tree stood","hint":"Gold among the clumps by the gap","reveal":true},
 		{"id":"strait-ring","area":"south","kind":"relic","pay":2000,"at":Vector2(-880.0,3540.0),"up":8.0,
 			"title":"The ring in the strait"},
 		{"id":"south-field","area":"south","kind":"landing","at":Vector2(-1450.0,2450.0),"radius":60.0,
@@ -220,7 +223,7 @@ const WORLDS := {
 		# The whale's bay, north of the stacks: the ring is let out where it rises
 		# with the plane near (scripts/endless/whale_home.gd).
 		{"id":"whale-ring","area":"coast","kind":"relic","pay":4000,"anchor":"whale/home","up":10.0,
-			"title":"The ring where the whale rose","hint":"Something blows in the deep bay, north-east"},
+			"title":"The ring where the whale rose","hint":"Something blows in the deep bay, north-east","reveal":true},
 		{"id":"whale-tail","area":"coast","kind":"event","pay":4000,"event":"whale/tail",
 			"title":"Close past the whale's flukes","hint":"When it dives, pass the tail"},
 		{"id":"stack-run","area":"coast","kind":"line","place":"coast","name":"round_the_stacks",
@@ -249,7 +252,7 @@ const WORLDS := {
 				{"at":Vector3(2515,42,362),"dir":Vector3(-0.5,0.0,-0.85),"half":Vector2(9.0,5.0)},
 				{"at":Vector3(2425,80,300),"dir":Vector3(-0.9,0.0,-0.4),"half":Vector2(10.0,6.0)}]},
 		{"id":"gold-shore","area":"coast","kind":"relic","pay":4000,"anchor":"golden/gold-shore","up":9.0,
-			"title":"The ring in the felled gold wood","hint":"A gold crown in the east hills' wood"},
+			"title":"The ring in the felled gold wood","hint":"A gold crown in the east hills' wood","reveal":true},
 		{"id":"sound-ring","area":"coast","kind":"relic","at":Vector2(560.0,2120.0),"up":6.0,
 			"title":"The ring on the sound"},
 		{"id":"isle-tower","area":"coast","kind":"relic","anchor":"way/isle","up":17.0,"offset":Vector3(9.25,0.0,-0.5),
