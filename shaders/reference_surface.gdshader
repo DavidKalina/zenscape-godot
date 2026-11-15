@@ -198,6 +198,12 @@ uniform vec2 flower_end = vec2(0.0, 0.08);
 // batch of only the kept share (0, keep) or only the rest (keep, 1), so the
 // far band draws the kept batches alone (endless_grass.gd `_rank_split`).
 uniform vec2 flower_rank = vec2(0.0, 1.0);
+// The hand-over between a plant and its far plant (endless_grass.gd
+// FLOWER_SWAP, MeadowFlowerMesh build_far): each plant swaps at its own
+// distance, `.x` give or take half of `.y` (ring metres); a batch of the
+// plant (`.z` 1) draws those nearer, one of the far plant (`.z` -1) those
+// farther, so each is drawn exactly once. `.z` 0 off.
+uniform vec3 flower_swap = vec3(0.0);
 // The plant's detail (leaves, bracts and buds: UV2.y's fraction,
 // MeadowFlowerMesh DETAIL) shrinks away from `.x` to `.y` metres, so far
 // flowers are stems and heads. `.x` 0 keeps it at every distance.
@@ -478,7 +484,7 @@ void vertex() {
 		VERTEX += kept - flower_offset;
 		flower_offset = kept;
 	}
-	if (flower_heads && (flower_far.z < 1.0 || flower_lod.x > 0.0)) {
+	if (flower_heads && (flower_far.z < 1.0 || flower_lod.x > 0.0 || flower_swap.z != 0.0)) {
 		float far_d = endless_ring_d(zs_camera_position, MODEL_MATRIX[3].xyz);
 		float far_t = smoothstep(flower_far.x, flower_far.y, far_d);
 		float keep = mix(1.0, flower_far.z, far_t);
@@ -489,6 +495,10 @@ void vertex() {
 		float soft = flower_end.y;
 		float fade = smoothstep(keep * (1.0 + soft), keep * (1.0 + soft) - soft, rank);
 		if (flower_lod.x > 0.0 && fract(UV2.y) > 0.125) fade *= 1.0 - smoothstep(flower_lod.x, flower_lod.y, far_d);
+		if (flower_swap.z != 0.0) {
+			float swap_rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(41.93, 17.57))) * 43758.5453);
+			if ((far_d - flower_swap.x - flower_swap.y * (swap_rank - 0.5)) * flower_swap.z > 0.0) fade = 0.0;
+		}
 		if (UV2.y > 0.5) {
 			vec3 grown = flower_offset * (pow(1.0 / max(head_keep, 0.01), flower_far.w) - 1.0);
 			VERTEX += grown;
