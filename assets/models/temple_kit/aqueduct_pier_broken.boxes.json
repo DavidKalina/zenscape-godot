@@ -1,0 +1,15 @@
+{
+ "piece": "aqueduct_pier_broken",
+ "boxes": [
+  [
+   -2.0,
+   -10.0,
+   -2.5,
+   4.0,
+   27.6,
+   5.0
+  ]
+ ],
+ "tris": 1556,
+ "far_tris": 12
+}

@@ -12,12 +12,15 @@ extends Node3D
 ## Only the wilderness has them: they go while the plane is anywhere else.
 ## Each stands as a temple-kit ruin (temple_site.gd: the temple on the isle,
 ## the colonnade at the bay, the shrine to the south) instead of the old
-## belfry, unless `--temple=0`.
+## belfry, unless `--temple=0`. The aqueduct across the north downs
+## (aqueduct_site.gd) streams from here too, its kit builds taking turns
+## with the ruins'.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const TempleSite = preload("res://scripts/endless/temple_site.gd")
+const AqueductSite = preload("res://scripts/endless/aqueduct_site.gd")
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -37,9 +40,16 @@ const CLEAR := 38.0
 var game: Node3D
 ## handle -> {name, coded, xf, seed, state ("away", "building", "up"), task, made, node, record}.
 var sites := {}
+## The aqueduct (aqueduct_site.gd), or null with `--aqueduct=0`.
+var aqueduct: Node3D
 
 func setup(g: Node3D) -> void:
 	game = g
+	if AqueductSite.wanted():
+		aqueduct = AqueductSite.new()
+		aqueduct.name = "Aqueduct"
+		add_child(aqueduct)
+		aqueduct.setup(g)
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
 		var temple: bool = TempleSite.has(str(site.name)) and TempleSite.wanted()
@@ -66,6 +76,7 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 			continue
 		if p.x < x0-500.0 or p.x > x1+500.0 or p.y < z0-500.0 or p.y > z1+500.0: continue
 		out.append([p,1.0,0.0,CLEAR,CLEAR])
+	out.append_array(AqueductSite.tree_keepouts(x0,z0,x1,z1))
 	return out
 
 ## One frame: the towers streamed round the eye.
@@ -76,6 +87,7 @@ func step(eye: Vector3) -> void:
 	var kit_busy := false
 	for handle: String in sites:
 		if sites[handle].temple and str(sites[handle].state) == "building": kit_busy = true
+	if aqueduct != null and aqueduct.step(eye,kit_busy,here): kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]
 		var d: float = (site.xf as Transform3D).origin.distance_to(eye) if here else INF

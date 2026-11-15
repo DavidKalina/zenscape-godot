@@ -29,6 +29,13 @@ const PIECES: Array[StringName] = [
 	&"podium_floor",
 	&"wall_door",
 	&"wall_broken",
+	# The aqueduct (art/blender/temple_kit/aqueduct_build.py; scripts/endless/aqueduct_site.gd).
+	&"aqueduct_pier",
+	&"aqueduct_arch",
+	&"aqueduct_arch_b",
+	&"aqueduct_arch_broken",
+	&"aqueduct_pier_broken",
+	&"aqueduct_rubble",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
