@@ -15,7 +15,7 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const SEASONS := {
 	"fall":{
-		# A thin late bloom: the drifts' flowers off under the turned woods.
+		# Past the bloom: the drifts' flowers off.
 		"flora":{"flowers":false},
 		"paint":{
 			# The painted turf past the tufts: the meadow's green given way to
