@@ -23,11 +23,16 @@ extends Node3D
 ## Flags: `--whale=0` none; `--whale-now` the first as soon as the plane has been
 ## STINT_NOW s over open sea, and again every COOLDOWN_NOW s; `--whale-cooldown=S`,
 ## `--whale-first=S`, `--whale-chance=P`, `--whale-retry=S`.
+##
+## Its home water (scripts/endless/whale_home.gd): near the deep bay north-east
+## of the start it lies under the water, blows, and comes up for a plane that
+## flies to it, which lets a find out. `--whale-home=0` none.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WhaleBody = preload("res://scripts/endless/whale_body.gd")
+const WhaleHome = preload("res://scripts/endless/whale_home.gd")
 
 ## Rarity (s of flight; a share).
 const COOLDOWN := 600.0
@@ -91,6 +96,8 @@ const BACK_DEEP := 9.0
 const OVER := 0.6
 
 var body: Node3D
+## Its home water (null with --whale-home=0).
+var home: Node
 ## Read by drivers and the numbers: staged now, how many so far, where the last
 ## one was and which way, the last spot's refusal, this frame's cost (ms).
 var staged := false
@@ -156,6 +163,10 @@ func setup(game: Node3D, land_seed: int) -> void:
 	_blow = _emitter(BLOW,4.2,1,true)
 	_sheet = _emitter(SHEET,1.6,0,false)
 	_spume = _emitter(SPUME,2.4,1,false)
+	if WhaleHome.wanted():
+		home = WhaleHome.new()
+		add_child(home)
+		home.setup(self,land_seed)
 
 ## A spray emitter of the plane's own kind (WaterContact `_emitter`): drops (0)
 ## or mist (1), a burst or running.
@@ -199,6 +210,7 @@ func _send(e: GPUParticles3D, values: Dictionary) -> void:
 
 ## One frame (the study's `tick`).
 func step(delta: float, game: Node3D) -> void:
+	if home != null and bool(home.step(delta,game)) and not staged: return
 	if staged:
 		var from := Time.get_ticks_usec()
 		_staged_step(delta,game)
