@@ -540,7 +540,7 @@ func _draw() -> void:
 					var opt_parts: Array = row.get("parts",[])
 					for j in mini(opt_parts.size(),rects.size()):
 						if str(opt_parts[j]) == "" or ShopStock.has(book,str(opt_parts[j])): continue
-						draw_circle(Vector2(rects[j].end.x-1.0*k,rects[j].get_center().y-6.0*k),2.6*k,Color(Kit.HEAD,a))
+						draw_circle(Vector2(rects[j].end.x+4.0*k,rects[j].get_center().y-7.0*k),2.4*k,Color(Kit.HEAD,a))
 					var dots: Array = row.get("dots",[])
 					for j in mini(dots.size(),rects.size()):
 						# Each option's colour, a bar over its name.
@@ -579,7 +579,10 @@ func _draw() -> void:
 				"list":
 					var names: Array = row.names
 					var notes: Array = row.get("notes",[])
-					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"%d / %d" % [int(row.on)+1,names.size()],Kit.VALUE_PAD,a)
+					var count := "%d / %d" % [int(row.on)+1,names.size()]
+					# A preset picked that Enter would load: said so.
+					if bool(row.get("load",false)) and i == sel and not book.fitting.is_empty() and not fitting_row(i): count = ("A" if Pad.using_pad() else "Enter")+" loads"
+					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,count,Kit.VALUE_PAD,a)
 					var first := _list_first(row)
 					var lines := list_rects(i)
 					for line: Array in lines:
