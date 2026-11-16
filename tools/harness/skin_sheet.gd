@@ -6,7 +6,10 @@ extends "res://tools/harness/drive.gd"
 ##   --skins=paint/moonstone,sheen:gloss   ids (ShopStock.item), or
 ##       sheen:NAME[@id]: a skin's livery (Harbour's by default) in that
 ##       sheen alone, to compare finishes; glow:HEX[*POWER][@id]: that
-##       livery with its trim and body glowing HEX at POWER (1), to tune a glow
+##       livery with its trim and body glowing HEX at POWER (1), to tune a glow;
+##       pattern:ID[:A[:B]][@id]: a pattern (PlanePatterns) in colours A and B
+##       (hex; its own else) over that skin (the plane's own paint by default),
+##       put on as the hangar does (PlaneLook.apply)
 ##   --tag=day   --dir=captures/skins/raw   --views=port,quarter,top,chase
 ##
 ## Prints `SKIN <id> glow=<0|1> rarity=<r>` per skin and `LIGHT daylight=<d>`;
@@ -48,7 +51,8 @@ func drive() -> void:
 			check(false,"skin "+id,"no such skin (ShopStock.item, sheen:NAME[@id] or glow:HEX[*POWER][@id])")
 			continue
 		print("SKIN %s glow=%d rarity=%s" % [id,int(i.get("finish",{}).has("glow")),ShopStock.rarity(i)])
-		ShopStock._paint(fig,i)
+		if i.has("look"): PlaneLook.apply(fig,i.look,(i.get("livery",{}) as Dictionary).duplicate(),ShopStock.finish_values(i))
+		else: ShopStock._paint(fig,i)
 		await frames(4)
 		var basis := fig.global_basis.orthonormalized()
 		for v: String in views:
@@ -79,6 +83,16 @@ static func _row(id: String) -> Dictionary:
 			row["decal"] = lit.decal
 			row.finish.glow_on = ["decal"]
 		return row
+	if id.begins_with("pattern:"):
+		var p := id.trim_prefix("pattern:").get_slice("@",0).split(":")
+		var under: Dictionary = ShopStock.item(id.get_slice("@",1)).duplicate() if "@" in id else {"slot":"paint","name":"pattern"}
+		if PlanePatterns.item(p[0]).is_empty() or under.is_empty(): return {}
+		var pattern := {"id":p[0]}
+		if p.size() > 1: pattern["a"] = p[1]
+		if p.size() > 2: pattern["b"] = p[2]
+		under["id"] = id
+		under["look"] = {"pattern":pattern}
+		return under
 	if not id.begins_with("sheen:"): return ShopStock.item(id)
 	var rest := id.trim_prefix("sheen:")
 	var sheen := rest.get_slice("@",0)

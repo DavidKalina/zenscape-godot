@@ -12,8 +12,10 @@ extends RefCounted
 ## what it lacks comes from the skin worn under it (the book's `worn.paint`,
 ## a ShopStock row), so an empty look is that skin as the shop sells it.
 ##   paint    the four zones' colours, hex without the #.
+##   pattern  {"id": a PlanePatterns id, "a": hex, "b": hex}: a shape over the
+##            paint in two colours (scripts/endless/plane_patterns.gd).
 ## Parts to come, each with its own key and its own lines in `apply`:
-## `pattern`, `finish`, `decal`, `wear`.
+## `finish`, `decal`, `wear`.
 ##
 ## The book's look is worn through ShopStock `dress` (the one place that
 ## dresses the flight's plane, and only when the look's key changed), which
@@ -68,5 +70,8 @@ static func apply(figure: Node3D, look: Dictionary, livery: Dictionary, values: 
 	if not figure.has_method("refinish"): return
 	# A part that changes the finish's values (finish, decal, wear) does it
 	# here, before `refinish`.
+	# Pattern: its mask and two colours, taken with the finish (PlaneFigure
+	# HERO_PATTERN), so a refinish without one takes it off.
+	values.merge(PlanePatterns.values(look.get("pattern")),true)
 	figure.refinish(values)
 	# A part with uniforms of its own (pattern) sets them here, after.

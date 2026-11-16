@@ -77,6 +77,15 @@ uniform float glow_power = 0.0;
 uniform sampler2D decal_tex : source_color, hint_default_transparent, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float decal_on = 0.0;
 uniform float glow_decal = 0.0;
+// The look's pattern (scripts/endless/plane_look.gd `pattern`): a mask in the
+// atlas's own UV whose R is the share of pattern_a and G of pattern_b, made by
+// art/blender/hero_plane/patterns.py. Laid over the zones' paint and under
+// the decal, on the painted parts only and in the atlas's own tone, as the
+// decal is. One sample, not taken while pattern_on is 0.
+uniform sampler2D pattern_tex : hint_default_black, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform float pattern_on = 0.0;
+uniform vec3 pattern_a : source_color = vec3(1.0);
+uniform vec3 pattern_b : source_color = vec3(0.0);
 // Per instance (the airframe's and wires': the hinged parts' x is their own):
 // the wing tips' bend, by distance out along the span, scripts/plane_figure.gd.
 instance uniform float flex = 0.0;
@@ -112,13 +121,23 @@ void fragment() {
 	tint = mix(tint, paint_dark / BASE_DARK, m.a);
 	base *= tint;
 	float painted = clamp(m.r + m.g + m.b + m.a, 0.0, 1.0);
+	// The atlas's own light and dark in the paint (its tone, a stain's edge)
+	// carried into what is laid over it (the pattern, the decal), so it sits
+	// in the coat.
+	float tone = 1.0;
+	if (pattern_on + decal_on > 0.0) {
+		vec3 clean = (BASE_BODY * m.r + BASE_TRIM * m.g + BASE_WING * m.b + BASE_DARK * m.a) / max(m.r + m.g + m.b + m.a, 0.001);
+		tone = clamp(dot(atlas, vec3(0.3, 0.55, 0.15)) / max(dot(clean, vec3(0.3, 0.55, 0.15)), 0.002), 0.3, 1.4);
+	}
+	float patterned = 0.0;
+	if (pattern_on > 0.0) {
+		vec2 pat = texture(pattern_tex, UV).rg * painted;
+		patterned = min(pat.r + pat.g, 1.0);
+		base = base * (1.0 - patterned) + (pattern_a * pat.r + pattern_b * pat.g) * tone;
+	}
 	vec4 dec = vec4(0.0);
 	if (decal_on > 0.0) {
 		dec = texture(decal_tex, UV);
-		// The atlas's own light and dark in the paint (its tone, a stain's
-		// edge) carried into the decal, so it sits in the coat.
-		vec3 clean = (BASE_BODY * m.r + BASE_TRIM * m.g + BASE_WING * m.b + BASE_DARK * m.a) / max(m.r + m.g + m.b + m.a, 0.001);
-		float tone = clamp(dot(atlas, vec3(0.3, 0.55, 0.15)) / max(dot(clean, vec3(0.3, 0.55, 0.15)), 0.002), 0.3, 1.4);
 		dec *= painted;
 		base = base * (1.0 - dec.a) + dec.rgb * tone;
 	}
@@ -129,7 +148,8 @@ void fragment() {
 	}
 	// What glows is dimmed under its light, so the light keeps its colour.
 	float night = 1.0 - smoothstep(0.1, 0.65, zs_daylight);
-	float glow_slot = glow_power > 0.0 ? clamp(dot(m, glow_slots), 0.0, 1.0) * (1.0 - dec.a) * night : 0.0;
+	// A pattern is paint over a glowing zone: dark by night, as a decal is.
+	float glow_slot = glow_power > 0.0 ? clamp(dot(m, glow_slots), 0.0, 1.0) * (1.0 - dec.a) * (1.0 - patterned) * night : 0.0;
 	float glow_mark = glow_power > 0.0 ? dec.a * glow_decal * night : 0.0;
 	float glowing = clamp(glow_slot + glow_mark, 0.0, 1.0);
 	base *= 1.0 - 0.92 * glowing;

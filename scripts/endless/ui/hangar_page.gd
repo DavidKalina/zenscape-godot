@@ -38,6 +38,7 @@ const ShopStock = preload("res://scripts/endless/shop_stock.gd")
 ## script here.
 const SECTIONS: Array[GDScript] = [
 	preload("res://scripts/endless/ui/hangar/paint_section.gd"),
+	preload("res://scripts/endless/ui/hangar/pattern_section.gd"),
 ]
 
 ## Measures, px in the mock-ups' 1280x800 frame (the settings page's).
@@ -51,6 +52,8 @@ const BACK_H := 30.0
 const BACK_GAP := 8.0
 ## A swatch's width and the gap to the next.
 const SWATCH := Vector2(13.0,4.0)
+## A list row's width, from its left arrow to its right.
+const LIST_W := 176.0
 const FOOT := [["Up Down","D-pad","select"],["Left Right","Left Right","change"],["Q E","R stick","turn"],["Esc","B","back"]]
 
 ## The eye: the plane stands SHIFT of the view's width right of its middle
@@ -199,6 +202,8 @@ func accept() -> void:
 	elif str(row.kind) == "seg":
 		var n := (row.opts as Array).size()
 		set_to(sel,float((int(row.on)+1)%n))
+	elif str(row.kind) == "list":
+		set_to(sel,float((int(row.on)+1)%(row.names as Array).size()))
 
 func _show_part(to: int) -> void:
 	if to == part: return
@@ -274,6 +279,16 @@ func swatch_rects(i: int) -> Array[Rect2]:
 		x += (SWATCH.x+SWATCH.y)*k
 	return out
 
+## A list row ({id, label, kind:"list", names:[String], on:int}: one name
+## of many, shown alone between two arrows; Left and Right step it through
+## the section's `change`, Enter and a click step it through `set_to` with
+## the new index, round the ends): its left arrow's and right arrow's rects.
+func list_rects(i: int) -> Array[Rect2]:
+	var k := _k()
+	var right := slip_rect().end.x-Kit.VALUE_PAD*k
+	var y := row_top(i)
+	return [Rect2(right-LIST_W*k,y,18.0*k,ROW_H*k),Rect2(right-18.0*k,y,18.0*k,ROW_H*k)]
+
 func _row_at(at: Vector2) -> int:
 	for i in rows.size():
 		if is_row(i) and row_rect(i).has_point(at): return i
@@ -322,6 +337,15 @@ func _draw() -> void:
 						var bar := Rect2(rects[j].position.x,rects[j].get_center().y-12.0*k,rects[j].size.x-2.0*k,maxf(roundf(4.0*k),2.0))
 						draw_rect(bar.grow(maxf(roundf(k),1.0)),Color(Kit.INK,0.45*a))
 						draw_rect(bar,Color(dots[j] as Color,a))
+				"list":
+					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"",0.0,a)
+					var ends := list_rects(i)
+					var cy := y+ROW_H*k*0.5
+					var slid := roundf(arrive.x*k)
+					var mark := Kit.TICK if _sel_t[i] >= 0.0 else Kit.DIM
+					Kit.text(self,Kit.NUM,"<",Vector2(ends[0].position.x-slid,cy),13.5,k,0.0,mark,0.0,a)
+					Kit.text(self,Kit.NUM,">",Vector2(ends[1].end.x-slid,cy),13.5,k,0.0,mark,1.0,a)
+					Kit.text(self,Kit.NUM,str((row.names as Array)[int(row.on)]).to_upper(),Vector2((ends[0].end.x+ends[1].position.x)*0.5-slid,cy),13.5,k,0.07,Kit.INK,0.5,a)
 				"swatches":
 					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"",0.0,a)
 					var chips := swatch_rects(i)
@@ -493,6 +517,12 @@ func _click(at: Vector2) -> void:
 				if rects[o].grow_individual(14.0*k,0.0,4.0*k,0.0).has_point(at):
 					set_to(i,float(o))
 					return
+		"list":
+			# The left arrow steps back; the name and the right arrow, on.
+			var ends := list_rects(i)
+			var n := (row.names as Array).size()
+			if ends[0].grow_individual(8.0*k,0.0,6.0*k,0.0).has_point(at): set_to(i,float(posmod(int(row.on)-1,n)))
+			elif at.x > ends[0].end.x: set_to(i,float((int(row.on)+1)%n))
 		"swatches":
 			var chips := swatch_rects(i)
 			for o in chips.size():
