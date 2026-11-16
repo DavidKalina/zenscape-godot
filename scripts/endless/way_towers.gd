@@ -28,6 +28,8 @@ const TholosSite = preload("res://scripts/endless/tholos_site.gd")
 const TheatreSite = preload("res://scripts/endless/theatre_site.gd")
 const ArenaSite = preload("res://scripts/endless/arena_site.gd")
 const BathsSite = preload("res://scripts/endless/baths_site.gd")
+const CitadelSite = preload("res://scripts/endless/citadel_site.gd")
+const TombsSite = preload("res://scripts/endless/tombs_site.gd")
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -61,6 +63,9 @@ var theatre: Node3D
 var arena: Node3D
 ## The bath house (baths_site.gd), or null with `--baths=0`.
 var baths: Node3D
+## The citadel on the cape (citadel_site.gd) and the road of tombs to it (tombs_site.gd), or null with `--citadel=0`.
+var citadel: Node3D
+var tombs: Node3D
 
 func setup(g: Node3D) -> void:
 	game = g
@@ -103,6 +108,15 @@ func setup(g: Node3D) -> void:
 		baths.name = "Baths"
 		add_child(baths)
 		baths.setup(g)
+	if CitadelSite.wanted():
+		citadel = CitadelSite.new()
+		citadel.name = "Citadel"
+		add_child(citadel)
+		citadel.setup(g)
+		tombs = TombsSite.new()
+		tombs.name = "Tombs"
+		add_child(tombs)
+		tombs.setup(g)
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
 		var temple: bool = TempleSite.has(str(site.name)) and TempleSite.wanted()
@@ -136,6 +150,8 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	out.append_array(TheatreSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(ArenaSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(BathsSite.tree_keepouts(x0,z0,x1,z1))
+	out.append_array(CitadelSite.tree_keepouts(x0,z0,x1,z1))
+	out.append_array(TombsSite.tree_keepouts(x0,z0,x1,z1))
 	return out
 
 ## One frame: the towers streamed round the eye.
@@ -153,6 +169,8 @@ func step(eye: Vector3) -> void:
 	if theatre != null and theatre.step(eye,kit_busy,here): kit_busy = true
 	if arena != null and arena.step(eye,kit_busy,here): kit_busy = true
 	if baths != null and baths.step(eye,kit_busy,here): kit_busy = true
+	if citadel != null and citadel.step(eye,kit_busy,here): kit_busy = true
+	if tombs != null and tombs.step(eye,kit_busy,here): kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]
 		var d: float = (site.xf as Transform3D).origin.distance_to(eye) if here else INF

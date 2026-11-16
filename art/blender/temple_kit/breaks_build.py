@@ -23,6 +23,12 @@ pale fresh breaks, with solids of its own.
 - `agora_lintel_cracked`: the kit's lintel cracked and sagged.
 - `agora_altar_cracked`, `agora_altar_smashed`: the altar split; its lowest
   course left.
+- `citadel_blocking_cracked`, `citadel_blocking_left`: the wall in a postern's
+  or a tower door's mouth cracked foot to head; its lowest course left.
+- `tombs_tower_cracked`, `tombs_tower_stump`: the tower tomb cut twice on the
+  slant and slipped; its base and the foot of its shaft left.
+- `tombs_arch_cracked`, `tombs_arch_broken`: the street's arch, over the road
+  of tombs, cracked through its ring; its two piers left.
 - `temple_break_chunk`: one lump of stone, about a metre, for the debris.
 
 To add one: an entry in VARIANTS (the source's script, its piece, the --only
@@ -252,6 +258,43 @@ def altar_smashed(p):
     p.boxes = [((-5.3, -3.5, -0.4), (5.3, 3.5, 0.8)), ((5.8, -2.0, -0.2), (8.6, 4.0, 0.9))]
 
 
+def blocking_cracked(p):
+    bands = [(-5.0, 2.6, -0.9), (2.6, 5.8, 1.3), (5.8, 9.0, -1.1), (9.0, 12.2, 1.0), (12.2, 30.0, -0.3)]
+    both(p, lambda bm: cracked(bm, bands, 1.1, _about((-7.25, 0, -2.2), -0.02, "Y"), Matrix.Translation((0.06, 0.35, -0.3))))
+
+
+def blocking_left(p):
+    both(p, lambda bm: kept(bm, [[((0, 0, 0.9), (0.06, 0.0, 1.0))]]))
+    p.boxes = [((-7.2, 0.0, -2.2), (7.2, 2.0, 0.9))]
+
+
+def tomb_cracked(p):
+    cuts = [(10.5, (0.5, 0.15, 1.0)), (19.5, (-0.45, 0.2, 1.0))]
+    both(p, lambda bm: slipped(bm, cuts, 0.9, 1.1, 0.04))
+
+
+def tomb_stump(p):
+    both(p, lambda bm: kept(bm, [[((0, 0, 7.5), (0.25, 0.1, 1.0))]]))
+    p.boxes = [((-6.5, -6.5, -1.6), (6.5, 6.5, 2.4)), ((-4.5, -4.5, 2.4), (4.5, 4.5, 6.6))]
+
+
+def road_arch_cracked(p):
+    bands = [(-70.0, 9.0), (9.0, 14.0), (14.0, 17.6), (17.6, 40.0)]
+    cuts = [[-5.6, -5.3, -4.0, -4.7], [0.3, 0.3, 1.1, 0.2], [5.6, 5.4, 4.2, 4.9]]
+    mats = [_about((-9.9, 0, 9.0), 0.04),
+            Matrix.Translation((0.0, 0.12, -1.0)) @ _about((-2.2, 0, 13.5), 0.1),
+            Matrix.Translation((0.0, -0.12, -0.75)) @ _about((2.6, 0, 13.5), -0.085),
+            _about((9.9, 0, 9.0), -0.035)]
+    both(p, lambda bm: shattered(bm, bands, cuts, 0.8, mats))
+
+
+def road_arch_broken(p):
+    regions = [[((-7.0, 0, 12.0), (1.0, 0.0, 0.5))], [((7.3, 0, 11.0), (-1.0, 0.0, 0.45))]]
+    both(p, lambda bm: kept(bm, regions))
+    p.boxes = [b for b in p.boxes if b[1][2] <= 9.6 and abs(b[0][0] + b[1][0]) > 14.0]
+    p.boxes += [((-11.8, -1.7, 9.0), (-8.6, 1.7, 12.6)), ((8.6, -1.7, 9.0), (11.8, 1.7, 11.6))]
+
+
 # name: (the source's script, its piece, the args that build only that piece, the cut).
 VARIANTS = {
     "aqueduct_arch_cracked": ("aqueduct_build.py", "aqueduct_arch", ["--only=aqueduct_arch"], arch_cracked),
@@ -263,6 +306,13 @@ VARIANTS = {
     "agora_lintel_cracked": ("entablature_build.py", "lintel", ["--only=lintel"], lintel_cracked),
     "agora_altar_cracked": ("agora_build.py", "agora_altar", ["--only=agora_altar"], altar_cracked),
     "agora_altar_smashed": ("agora_build.py", "agora_altar", ["--only=agora_altar"], altar_smashed),
+    # The citadel and the road of tombs (citadel_build.py, tombs_build.py; the road's arch is the street's).
+    "citadel_blocking_cracked": ("citadel_build.py", "citadel_blocking", ["--only=citadel_blocking"], blocking_cracked),
+    "citadel_blocking_left": ("citadel_build.py", "citadel_blocking", ["--only=citadel_blocking"], blocking_left),
+    "tombs_tower_cracked": ("tombs_build.py", "tombs_tower", ["--only=tombs_tower"], tomb_cracked),
+    "tombs_tower_stump": ("tombs_build.py", "tombs_tower", ["--only=tombs_tower"], tomb_stump),
+    "tombs_arch_cracked": ("street_build.py", "street_arch", ["--only=street_arch"], road_arch_cracked),
+    "tombs_arch_broken": ("street_build.py", "street_arch", ["--only=street_arch"], road_arch_broken),
 }
 
 

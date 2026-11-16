@@ -1,0 +1,15 @@
+{
+ "piece": "citadel_blocking_left",
+ "boxes": [
+  [
+   -7.2,
+   -2.2,
+   -2.0,
+   14.4,
+   3.1,
+   2.0
+  ]
+ ],
+ "tris": 923,
+ "far_tris": 60
+}
