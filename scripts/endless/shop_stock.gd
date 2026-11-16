@@ -45,6 +45,14 @@ extends RefCounted
 ## (`put_part`); `wearing` says whether the plane has it on. SECTIONS is the
 ## shop's list: the slots, then the parts' sections. `--hangar-all` has every
 ## part.
+##
+## Presets (spec-hangar.md, "Skins as presets"): a paint row is a preset, a
+## whole look (`preset`; PlaneLook `from_skin`), and wearing one is loading
+## it (`wear`, `load_look`): the book's look becomes the preset's, to change
+## in the hangar from there. The pilot's own are kept in the book's
+## `presets` by slot (CUSTOM_SLOTS; `save_custom`). Loading over a look that
+## is no preset (`saved_as`) keeps that look as the book's LAST preset, so
+## it can be had back.
 
 
 const SLOTS := ["paint","ribbon"]
@@ -250,9 +258,49 @@ static func locked(book: RefCounted, look: Dictionary) -> Array[String]:
 		if not has(book,id): out.append(id)
 	return out
 
-## The look the plane wears by `book`: its own, else its worn skin as one.
+## The look the plane wears by `book`, whole: its own, else its worn skin as one.
 static func look_of(book: RefCounted) -> Dictionary:
 	return PlaneLook.of(book,item(worn(book,"paint")))
+
+## The pilot's own preset slots, and the book's key for the look a loaded
+## preset replaced.
+const CUSTOM_SLOTS := 5
+const LAST := "last"
+
+## Skin `id` as a look: its preset.
+static func preset(id: String) -> Dictionary:
+	return PlaneLook.from_skin(item(id))
+
+## The name of the preset `look` is as it stands (one of the pilot's own, or
+## a skin's), "" for a look that is none of them.
+static func saved_as(book: RefCounted, look: Dictionary) -> String:
+	for slot: String in book.presets:
+		if slot != LAST and book.presets[slot] == look: return custom_name(slot)
+	for i: Dictionary in items("paint"):
+		if PlaneLook.from_skin(i) == look: return String(i.name)
+	return ""
+
+static func custom_name(slot: String) -> String:
+	return "Custom "+slot
+
+## `look` (whole) becomes what the plane wears; `skin` names the skin it is
+## the preset of ("" for one of the pilot's own). The look it replaces, when
+## it is no preset, is kept as the book's LAST.
+static func load_look(book: RefCounted, look: Dictionary, skin := "") -> void:
+	var was := look_of(book)
+	if was != look and saved_as(book,was) == "": book.set_preset(LAST,was)
+	if skin != "": book.wear("paint",skin)
+	book.set_look(look.duplicate(true))
+
+## `id` worn in `slot`. A paint worn is its preset loaded.
+static func wear(book: RefCounted, slot: String, id: String) -> void:
+	if slot == "paint": load_look(book,preset(id),id)
+	else: book.wear(slot,id)
+
+## `look` kept in the pilot's slot `n` (0..CUSTOM_SLOTS-1), over what was
+## there.
+static func save_custom(book: RefCounted, n: int, look: Dictionary) -> void:
+	book.set_preset(str(n+1),look.duplicate(true))
 
 ## `look_of(book)` with part `id` put on it: what buying or choosing the part
 ## in the shop keeps (`put_part`), and what trying it shows.

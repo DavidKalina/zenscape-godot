@@ -33,6 +33,10 @@ const SURFACES := [
 	# hero_plane_bake.py --wear 0 --dirt 0.
 	{"id":"fresh","name":"Factory fresh","price":3000,"rarity":"common","bare":0.0,
 		"bake":{"albedo":SKINS+"surface/fresh_albedo.jpg","mask":SKINS+"surface/fresh_mask.png","orm":SKINS+"surface/fresh_orm.jpg"}},
+	# Meridian's own bake (skins/heritage.gd; --wear 0.1 --dirt 0.15), as a
+	# surface, so that skin too is a whole look (PlaneLook `from_skin`).
+	{"id":"kept","name":"Well kept","price":3500,"rarity":"common","bare":0.0,
+		"bake":{"albedo":SKINS+"heritage/meridian_albedo.jpg","mask":SKINS+"heritage/meridian_mask.png","orm":SKINS+"heritage/meridian_orm.jpg"}},
 	# hero_plane_bake.py --wear 1.6 --dirt 1.4.
 	{"id":"weathered","name":"Weathered","price":4000,"rarity":"common","bare":0.0,
 		"bake":{"albedo":SKINS+"surface/weathered_albedo.jpg","mask":SKINS+"surface/weathered_mask.png","orm":SKINS+"surface/weathered_orm.jpg"}},

@@ -8,9 +8,13 @@ extends RefCounted
 ##
 ##     {"paint": {"body": "b9583b", "trim": "2f6670", "wing": "ece2c8", "dark": "2f4a4f"}}
 ##
-## Each part of a look is a key of its own, and a look may lack any of them:
-## what it lacks comes from the skin worn under it (the book's `worn.paint`,
-## a ShopStock row), so an empty look is that skin as the shop sells it.
+## Each part of a look is a key of its own. A whole look has them all but the
+## pattern (none without its key) and is the same over any skin: `from_skin`
+## makes one of a skin (a preset), `of` one of what a book holds, and the
+## hangar keeps only whole ones. A look may still lack keys (a book from
+## before presets): what it lacks comes from the skin named by the book's
+## `worn.paint` (a ShopStock row), so an empty look is that skin as the shop
+## sells it.
 ##   paint    the four zones' colours, hex without the #.
 ##   finish   how the paint shines, {"sheen": a ShopStock SHEENS name,
 ##            "pearl": hex, "pearl_amount": 0..1, "glow": hex, "glow_on":
@@ -42,19 +46,36 @@ const FINISH_KEYS: Array[String] = ["finish_rough","finish_coat","finish_metal",
 	"pearl","pearl_amount","glow","glow_slots","glow_power","glow_decal"]
 const WEAR_KEYS: Array[String] = ["albedo_tex","mask_tex","orm_tex","finish_bare"]
 
-## The look `book` holds, or the worn skin's (`row`, its ShopStock paint row)
-## as a look when it holds none: a copy, the hangar's to change.
+## The look `book` holds, whole: what it lacks filled from the skin under it
+## (`row`, the ShopStock paint row its `worn.paint` names), so with no look
+## that skin as one. A copy, the hangar's to change.
 static func of(book: PilotBook, row: Dictionary) -> Dictionary:
-	if not book.look.is_empty(): return book.look.duplicate(true)
-	return from_skin(row)
+	return whole(book.look,row)
+
+## `look` with what it lacks filled from the skin `row`, as `apply` would
+## show the two together: a copy.
+static func whole(look: Dictionary, row: Dictionary) -> Dictionary:
+	var out := from_skin(row)
+	for key: String in look:
+		if key == "paint":
+			for zone in ZONES:
+				if look.paint is Dictionary and look.paint.get(zone) is String: out.paint[zone] = look.paint[zone]
+		# "" is the skin's own decal.
+		elif key == "decal" and look.decal is String and look.decal == "": pass
+		elif look[key] is Dictionary or look[key] is Array: out[key] = look[key].duplicate(true)
+		else: out[key] = look[key]
+	return out
 
 ## The plane's own colour for a zone (what a skin without one shows).
 static func own_colour(zone: String) -> Color:
 	return PlaneFigure.HERO_SLOTS[zone][1]
 
-## A ShopStock paint row as a look: its livery as the paint (the plane's own
-## colours for the zones it lacks), its finish when it has one, and its bake
-## as the wear when that is a surface (PlaneFinishes).
+## A ShopStock paint row as a whole look, the skin's preset: its livery as
+## the paint (the plane's own colours for the zones it lacks), its finish
+## (satin with none), its bake as the wear (the plane's own surface with
+## none) and its decal by its catalogue id (PlaneDecals; "none" with none).
+## A bake that is no surface or a decal the catalogue lacks is left out: the
+## look then needs that skin under it.
 static func from_skin(row: Dictionary) -> Dictionary:
 	var livery: Dictionary = row.get("livery",{})
 	var paint := {}
@@ -70,9 +91,16 @@ static func from_skin(row: Dictionary) -> Dictionary:
 			"pearl", "glow": finish[key] = (f[key] as Color).to_html(false)
 			"glow_on": finish[key] = (f[key] as Array).duplicate()
 			_: finish[key] = f[key]
-	if not finish.is_empty(): out["finish"] = finish
-	var surface := PlaneFinishes.surface_of(row.get("bake",{}))
-	if surface != "": out["wear"] = surface
+	if not finish.has("sheen"): finish["sheen"] = "satin"
+	out["finish"] = finish
+	if not row.has("bake"): out["wear"] = PlaneFinishes.SURFACES[0].id
+	else:
+		var surface := PlaneFinishes.surface_of(row.bake)
+		if surface != "": out["wear"] = surface
+	if not row.has("decal"): out["decal"] = PlaneDecals.NONE
+	else:
+		for d in PlaneDecals.DECALS:
+			if String(d.path) == String(row.decal): out["decal"] = String(d.id)
 	return out
 
 ## A look's `finish` as a ShopStock row ({id, finish}: its colours as

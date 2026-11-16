@@ -122,7 +122,8 @@ func act() -> void:
 		r.pulse = 1.0
 	if ShopStock.is_part(id):
 		if not ShopStock.wearing(book,id): ShopStock.put_part(book,id)
-	else: book.wear(r.slot,id)
+	# A paint worn is its preset loaded as the look (ShopStock `wear`).
+	else: ShopStock.wear(book,r.slot,id)
 	_refresh()
 
 func leave() -> void:

@@ -15,6 +15,15 @@ extends Control
 ## per frame). The book is written when the page closes. Reset takes the
 ## look off again: the plane wears its skin as the shop sells it.
 ##
+## Presets (hangar/preset_section.gd, the first part): whole looks, the
+## shop's skins and the pilot's own saved ones. Stepping through the list
+## shows each on the plane as a fitting; Enter (or a click on the line
+## picked) loads it: the look becomes the preset, to change from there
+## (ShopStock `load_look`). No question is asked first: a look that was no
+## preset is kept as the list's "Previous look", to load back. A skin not
+## had has a buy row as a part has; bought, it is loaded. The Save row keeps
+## the look in one of the pilot's slots.
+##
 ## Parts (scripts/endless/plane_parts.gd): a row's option may be a part that
 ## is bought (the row's `parts`). One the book does not have (ShopStock
 ## `has`) can still be chosen: it shows on the plane as a fitting (the
@@ -54,6 +63,7 @@ const PlaneParts = preload("res://scripts/endless/plane_parts.gd")
 ## The sections, in the Part row's order. A new part of the look adds its
 ## script here.
 const SECTIONS: Array[GDScript] = [
+	preload("res://scripts/endless/ui/hangar/preset_section.gd"),
 	preload("res://scripts/endless/ui/hangar/paint_section.gd"),
 	preload("res://scripts/endless/ui/hangar/pattern_section.gd"),
 	preload("res://scripts/endless/ui/hangar/finish_section.gd"),
@@ -150,7 +160,18 @@ func _enter_tree() -> void:
 	if book == null:
 		book = PilotBook.new()
 		book.path = ""
-	look = PlaneLook.of(book,ShopStock.item(ShopStock.worn(book,"paint")))
+	_sections.clear()
+	for script in SECTIONS:
+		var s: RefCounted = script.new()
+		if s.has_method("setup"): s.setup(book)
+		_sections.append(s)
+	_take_look()
+	_rebuild()
+	_take_eye()
+
+## The book's look taken up to edit, the sections begun on it.
+func _take_look() -> void:
+	look = ShopStock.look_of(book)
 	# A look kept before parts were sold (or under --hangar-all) may hold
 	# parts not had: a fitting from here on, the book keeping the rest.
 	_kept = look.duplicate(true)
@@ -160,13 +181,7 @@ func _enter_tree() -> void:
 		book.fitting = look.duplicate(true)
 		book.set_look(_kept.duplicate(true))
 		_dress()
-	_sections.clear()
-	for script in SECTIONS:
-		var s: RefCounted = script.new()
-		s.begin(look)
-		_sections.append(s)
-	_rebuild()
-	_take_eye()
+	for s in _sections: s.begin(look)
 
 func _exit_tree() -> void:
 	if Pad.hub.device_changed.is_connected(_device_changed): Pad.hub.device_changed.disconnect(_device_changed)
@@ -280,6 +295,7 @@ func change(dir: int) -> void:
 	var id := str(row.id)
 	if id == "_part": _show_part(clampi(part+dir,0,_sections.size()-1))
 	elif _sections[part].change(id,dir): _changed()
+	_preview()
 	_rebuild()
 
 ## The mouse on row `i`: a slider's 0..1, or the option or swatch clicked.
@@ -287,6 +303,33 @@ func set_to(i: int, v: float) -> void:
 	var id := str(rows[i].id)
 	if id == "_part": _show_part(clampi(int(v),0,_sections.size()-1))
 	elif _sections[part].set_to(id,v): _changed()
+	_preview()
+	_rebuild()
+
+## A section that shows whole looks without changing the edited one (its
+## `preview`): the one it shows now on the plane as a fitting, or none.
+func _preview() -> void:
+	var s := _sections[part]
+	if not s.has_method("preview"): return
+	var show: Dictionary = s.preview()
+	if show == book.fitting: return
+	book.fitting = show.duplicate(true)
+	_dress()
+
+## Enter on a preset's row: the preset picked becomes the look. A skin not
+## had: to its buy row.
+func load_preset() -> void:
+	var line: Dictionary = _sections[part].line()
+	if (line.look as Dictionary).is_empty(): return
+	var id := str(line.part)
+	if id != "" and not ShopStock.has(book,id):
+		select(sel+1)
+		return
+	book.fitting = {}
+	ShopStock.load_look(book,line.look,str(line.skin))
+	_take_look()
+	_dress()
+	_sel_t.resize(0)
 	_rebuild()
 
 ## Enter on the row selected: Back leaves, Reset resets, options step round
@@ -296,6 +339,10 @@ func accept() -> void:
 	if row.has("back"): close()
 	elif str(row.id) == "_reset": reset()
 	elif str(row.kind) == "buy": buy(str(row.part))
+	elif bool(row.get("load",false)): load_preset()
+	elif str(row.kind) == "button":
+		_sections[part].press(str(row.id))
+		_rebuild()
 	# On a part not had Enter goes to its buy row, under it.
 	elif fitting_row(sel): select(sel+1)
 	elif str(row.kind) == "choice": change(1)
@@ -328,6 +375,12 @@ func buy(id: String) -> void:
 		_short = 1.0
 		queue_redraw()
 		return
+	if not ShopStock.is_part(id):
+		# A skin: its preset loaded, the list's row selected again.
+		sel = maxi(sel-1,1)
+		load_preset()
+		book.save()
+		return
 	_changed()
 	book.save()
 	# The buy row goes: back on the part's own row, over it.
@@ -335,14 +388,13 @@ func buy(id: String) -> void:
 	_sel_t.resize(0)
 	_rebuild()
 
-## The look taken off: the plane wears its skin as the shop sells it.
+## The look back to the skin preset loaded last (the book's `worn.paint`), as
+## the shop sells it.
 func reset() -> void:
 	book.fitting = {}
-	book.set_look({})
+	ShopStock.wear(book,"paint",ShopStock.worn(book,"paint"))
+	_take_look()
 	_dress()
-	look = PlaneLook.of(book,ShopStock.item(ShopStock.worn(book,"paint")))
-	_kept = look.duplicate(true)
-	for s in _sections: s.begin(look)
 	_sel_t.resize(0)
 	_rebuild()
 	sel = maxi(row_of("_reset"),1)
@@ -484,6 +536,11 @@ func _draw() -> void:
 					if row.has("ramp"): _draw_ramp(track,row.ramp,k,a)
 				"seg":
 					var rects := Kit.seg_row(self,slip,y,k,str(row.label),PackedStringArray(row.opts as Array),int(row.on),_sel_t[i],Kit.ON,ROW_H,15.0,a)
+					# An option that is a part not had: a small coin by its name.
+					var opt_parts: Array = row.get("parts",[])
+					for j in mini(opt_parts.size(),rects.size()):
+						if str(opt_parts[j]) == "" or ShopStock.has(book,str(opt_parts[j])): continue
+						draw_circle(Vector2(rects[j].end.x-1.0*k,rects[j].get_center().y-6.0*k),2.6*k,Color(Kit.HEAD,a))
 					var dots: Array = row.get("dots",[])
 					for j in mini(dots.size(),rects.size()):
 						# Each option's colour, a bar over its name.
@@ -750,5 +807,7 @@ func _click(at: Vector2) -> void:
 		"list":
 			for line: Array in list_rects(i):
 				if (line[1] as Rect2).has_point(at):
-					set_to(i,float(line[0]))
+					# A preset's line picked already: a click loads it.
+					if bool(row.get("load",false)) and int(line[0]) == int(row.on): accept()
+					else: set_to(i,float(line[0]))
 					return
