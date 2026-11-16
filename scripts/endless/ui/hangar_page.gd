@@ -38,6 +38,7 @@ const ShopStock = preload("res://scripts/endless/shop_stock.gd")
 ## script here.
 const SECTIONS: Array[GDScript] = [
 	preload("res://scripts/endless/ui/hangar/paint_section.gd"),
+	preload("res://scripts/endless/ui/hangar/decal_section.gd"),
 ]
 
 ## Measures, px in the mock-ups' 1280x800 frame (the settings page's).
@@ -51,6 +52,11 @@ const BACK_H := 30.0
 const BACK_GAP := 8.0
 ## A swatch's width and the gap to the next.
 const SWATCH := Vector2(13.0,4.0)
+## A list row: a line's height, the lines shown (a row may say its own) and
+## the space under the last.
+const LIST_LINE := 21.0
+const LIST_LINES := 8
+const LIST_FOOT := 4.0
 const FOOT := [["Up Down","D-pad","select"],["Left Right","Left Right","change"],["Q E","R stick","turn"],["Esc","B","back"]]
 
 ## The eye: the plane stands SHIFT of the view's width right of its middle
@@ -169,6 +175,12 @@ func select(i: int) -> void:
 	queue_redraw()
 
 func move(n: int) -> void:
+	# In a list row Up and Down step through its parts, and leave it at its ends.
+	if absi(n) == 1 and str(rows[sel].get("kind","")) == "list":
+		var to := int(rows[sel].on)+n
+		if to >= 0 and to < (rows[sel].names as Array).size():
+			change(n)
+			return
 	var i := sel
 	for _s in absi(n):
 		i = posmod(i+signi(n),rows.size())
@@ -236,7 +248,28 @@ func _k() -> float:
 	return Kit.scale_of(size)
 
 func _row_h(row: Dictionary) -> float:
+	if str(row.get("kind","")) == "list": return ROW_H+_list_lines(row)*LIST_LINE+LIST_FOOT
 	return HEAD_H if row.has("head") else (BACK_H if row.has("back") else ROW_H)
+
+## A list row's lines shown, and the first of them: the part picked is kept
+## in the middle of the window where the list is longer than it.
+func _list_lines(row: Dictionary) -> int:
+	return mini(int(row.get("lines",LIST_LINES)),(row.names as Array).size())
+
+func _list_first(row: Dictionary) -> int:
+	var lines := _list_lines(row)
+	return clampi(int(row.on)-lines/2,0,(row.names as Array).size()-lines)
+
+## A list row's lines now, top to bottom: [index into its names, rect].
+func list_rects(i: int) -> Array:
+	var row := rows[i]
+	var k := _k()
+	var slip := slip_rect()
+	var first := _list_first(row)
+	var out := []
+	for j in _list_lines(row):
+		out.append([first+j,Rect2(slip.position.x+Kit.LABEL_X*k,row_top(i)+(ROW_H+j*LIST_LINE)*k,slip.size.x-(Kit.LABEL_X+Kit.VALUE_PAD)*k,LIST_LINE*k)])
+	return out
 
 func slip_rect() -> Rect2:
 	var k := _k()
@@ -330,6 +363,25 @@ func _draw() -> void:
 						if j == int(row.on): draw_rect(c.grow(3.0*k),Color(Kit.TICK if _sel_t[i] >= 0.0 else Kit.INK,a),false,maxf(roundf(1.5*k),1.0))
 						draw_rect(c.grow(maxf(roundf(k),1.0)),Color(Kit.INK,0.45*a))
 						draw_rect(c,Color((row.colours as Array)[j] as Color,a))
+				"list":
+					var names: Array = row.names
+					var notes: Array = row.get("notes",[])
+					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"%d / %d" % [int(row.on)+1,names.size()],Kit.VALUE_PAD,a)
+					var first := _list_first(row)
+					var lines := list_rects(i)
+					for line: Array in lines:
+						var at: int = line[0]
+						var r: Rect2 = line[1]
+						var cy := r.get_center().y
+						var on := at == int(row.on)
+						if on:
+							draw_rect(Rect2(r.position.x,r.position.y+1.0*k,r.size.x,r.size.y-2.0*k),Color(Kit.BAND,Kit.BAND.a*a))
+							Kit.slant(self,Rect2(r.position.x+5.0*k,cy-5.5*k,3.0*k,11.0*k),Color(Kit.TICK if _sel_t[i] >= 0.0 else Kit.INK,a))
+						Kit.text(self,Kit.NUM if on else Kit.MED,str(names[at]),Vector2(r.position.x+16.0*k,cy),14.0,k,0.02,Kit.INK if on else Kit.LAND,0.0,a)
+						if at < notes.size(): Kit.text(self,Kit.MED,str(notes[at]).to_upper(),Vector2(r.end.x-6.0*k,cy),10.0,k,0.12,Kit.DIM,1.0,a)
+					# More above or below the window: a mark at its edge.
+					if first > 0: Kit.text(self,Kit.MED,"^",Vector2(slip.position.x+(Kit.LABEL_X-10.0)*k,(lines[0][1] as Rect2).get_center().y),11.0,k,0.0,Kit.DIM,0.5,a)
+					if first+lines.size() < names.size(): Kit.text(self,Kit.MED,"v",Vector2(slip.position.x+(Kit.LABEL_X-10.0)*k,(lines[lines.size()-1][1] as Rect2).get_center().y),11.0,k,0.0,Kit.DIM,0.5,a)
 				_:
 					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"",0.0,a)
 	Kit.prompts(self,Kit.pick(FOOT),size-Vector2(28.0,50.0)*k,k,true,false,a)
@@ -420,6 +472,12 @@ func _input(event: InputEvent) -> void:
 		else: _point(motion.position)
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if button.pressed and (button.button_index == MOUSE_BUTTON_WHEEL_UP or button.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			# The wheel over a list row steps through it.
+			var over := _row_at(button.position)
+			if over >= 0 and str(rows[over].get("kind","")) == "list":
+				select(over)
+				change(-1 if button.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
 		if button.button_index == MOUSE_BUTTON_LEFT:
 			if button.pressed: _click(button.position)
 			else:
@@ -498,4 +556,9 @@ func _click(at: Vector2) -> void:
 			for o in chips.size():
 				if chips[o].grow(2.0*k).has_point(at):
 					set_to(i,float(o))
+					return
+		"list":
+			for line: Array in list_rects(i):
+				if (line[1] as Rect2).has_point(at):
+					set_to(i,float(line[0]))
 					return

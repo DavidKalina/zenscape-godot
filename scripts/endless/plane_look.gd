@@ -12,6 +12,8 @@ extends RefCounted
 ## what it lacks comes from the skin worn under it (the book's `worn.paint`,
 ## a ShopStock row), so an empty look is that skin as the shop sells it.
 ##   paint    the four zones' colours, hex without the #.
+##   decal    a PlaneDecals id (scripts/endless/plane_decals.gd): that decal
+##            over the paint; "none" for no decal; "" or no key, the skin's own.
 ## Parts to come, each with its own key and its own lines in `apply`:
 ## `pattern`, `finish`, `decal`, `wear`.
 ##
@@ -68,5 +70,6 @@ static func apply(figure: Node3D, look: Dictionary, livery: Dictionary, values: 
 	if not figure.has_method("refinish"): return
 	# A part that changes the finish's values (finish, decal, wear) does it
 	# here, before `refinish`.
+	if look.get("decal") is String: PlaneDecals.into(values,look.decal)
 	figure.refinish(values)
 	# A part with uniforms of its own (pattern) sets them here, after.
