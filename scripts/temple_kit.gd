@@ -103,6 +103,20 @@ const PIECES: Array[StringName] = [
 	&"baths_hall_end",
 	&"baths_rubble",
 	&"baths_fragment",
+	# The hillside sanctuary (art/blender/temple_kit/sanctuary_build.py; scripts/endless/sanctuary_site.gd).
+	&"sanctuary_wall",
+	&"sanctuary_wall_burst",
+	&"sanctuary_wall_stump",
+	&"sanctuary_wall_cracked",
+	&"sanctuary_wall_holed",
+	&"sanctuary_arch",
+	&"sanctuary_arch_broken",
+	&"sanctuary_slot_open",
+	&"sanctuary_deck",
+	&"sanctuary_deck_broken",
+	&"sanctuary_stair",
+	&"sanctuary_stair_arch",
+	&"sanctuary_spill",
 ]
 
 const DIR := "res://assets/models/temple_kit/"

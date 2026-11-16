@@ -1,0 +1,15 @@
+{
+ "piece": "sanctuary_wall_cracked",
+ "boxes": [
+  [
+   -9.25,
+   -16.0,
+   -1.7,
+   18.5,
+   42.4,
+   3.4
+  ]
+ ],
+ "tris": 3894,
+ "far_tris": 504
+}

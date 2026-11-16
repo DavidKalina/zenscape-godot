@@ -23,6 +23,8 @@ pale fresh breaks, with solids of its own.
 - `agora_lintel_cracked`: the kit's lintel cracked and sagged.
 - `agora_altar_cracked`, `agora_altar_smashed`: the altar split; its lowest
   course left.
+- `sanctuary_wall_cracked`, `sanctuary_wall_holed`: the sanctuary's wall bay
+  cracked foot to top; the same bay with a ragged breach.
 - `temple_break_chunk`: one lump of stone, about a metre, for the debris.
 
 The bold ones (BOLD: wider, darker cracks, parts fallen out so daylight
@@ -540,6 +542,28 @@ def section_holed(key):
             return True
         p.boxes = split_boxes(p.boxes, left, 1.0)[0]
     return fn
+# The sanctuary's wall bay (sanctuary_build.py): 3 m thick, -16 to 26.4.
+SANCTUARY_BANDS = [(-20.0, 3.0, -0.8), (3.0, 8.0, 1.5), (8.0, 13.0, -1.2), (13.0, 18.0, 1.4), (18.0, 23.0, -0.6),
+                   (23.0, 40.0, 0.9)]
+
+
+def sanctuary_wall_cracked(p):
+    both(p, lambda bm: cracked(bm, SANCTUARY_BANDS, 1.5, Matrix.Identity(4), Matrix.Translation((0.05, -0.45, -0.4))))
+
+
+SANCTUARY_BREACH = [(0.0, 5.0, -6.3, 6.1), (5.0, 10.0, -5.6, 6.6), (10.0, 15.0, -6.0, 5.6), (15.0, 19.0, -5.2, 5.0),
+                    (19.0, 21.5, -3.6, 3.9)]
+
+
+def sanctuary_wall_holed(p):
+    regions = [[((0, 0, 0.0), (0, 0, 1))], [((0, 0, 21.5), (0, 0, -1))]]
+    for z0, z1, a, b in SANCTUARY_BREACH:
+        regions.append(_band(z0, z1) + [((a, 0, 0), (1, 0, 0))])
+        regions.append(_band(z0, z1) + [((b, 0, 0), (-1, 0, 0))])
+    both(p, lambda bm: kept(bm, regions))
+    lo, hi = p.boxes[0]
+    p.boxes = [((lo[0], lo[1], lo[2]), (-6.4, hi[1], hi[2])), ((6.6, lo[1], lo[2]), (hi[0], hi[1], hi[2])),
+               ((-6.4, lo[1], lo[2]), (6.6, hi[1], 0.0)), ((-6.4, lo[1], 19.5), (6.6, hi[1], hi[2]))]
 
 
 # name: (the source's script, its piece, the args that build only that piece, the cut).
@@ -566,6 +590,8 @@ VARIANTS = {
     "baths_wall_w_holed": ("baths_build.py", "baths_rotunda", ["--only=baths_rotunda"], section_holed("w")),
     "baths_wall_ne_cracked": ("baths_build.py", "baths_rotunda", ["--only=baths_rotunda"], section_cracked("ne")),
     "baths_wall_ne_holed": ("baths_build.py", "baths_rotunda", ["--only=baths_rotunda"], section_holed("ne")),
+    "sanctuary_wall_cracked": ("sanctuary_build.py", "sanctuary_wall", ["--only=sanctuary_wall"], sanctuary_wall_cracked),
+    "sanctuary_wall_holed": ("sanctuary_build.py", "sanctuary_wall", ["--only=sanctuary_wall"], sanctuary_wall_holed),
 }
 
 # name: its builder, for a piece with no source in another lane's build.
