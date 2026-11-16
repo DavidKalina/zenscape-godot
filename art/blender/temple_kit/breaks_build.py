@@ -260,7 +260,7 @@ def altar_smashed(p):
 
 def blocking_cracked(p):
     bands = [(-5.0, 2.6, -0.9), (2.6, 5.8, 1.3), (5.8, 9.0, -1.1), (9.0, 12.2, 1.0), (12.2, 30.0, -0.3)]
-    both(p, lambda bm: cracked(bm, bands, 1.1, _about((-7.25, 0, -2.2), -0.02, "Y"), Matrix.Translation((0.06, 0.35, -0.3))))
+    both(p, lambda bm: cracked(bm, bands, 1.7, _about((-7.25, 0, -2.2), -0.03, "Y"), Matrix.Translation((0.1, 0.6, -0.55))))
 
 
 def blocking_left(p):
