@@ -54,6 +54,15 @@ const PIECES: Array[StringName] = [
 	&"agora_altar",
 	&"agora_plinth",
 	&"agora_drum",
+	# The bath house (art/blender/temple_kit/baths_build.py; scripts/endless/baths_site.gd).
+	&"baths_rotunda",
+	&"baths_dome",
+	&"baths_floor",
+	&"baths_hall",
+	&"baths_hall_broken",
+	&"baths_hall_end",
+	&"baths_rubble",
+	&"baths_fragment",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
