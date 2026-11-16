@@ -150,6 +150,17 @@ const PIECES: Array[StringName] = [
 	&"tombs_step_broken",
 	&"tombs_arch_cracked",
 	&"tombs_arch_broken",
+	# The harbour (art/blender/temple_kit/harbour_build.py; scripts/endless/harbour_site.gd).
+	&"harbour_colossus",
+	&"harbour_colossus_head",
+	&"harbour_colossus_arm",
+	&"harbour_mole",
+	&"harbour_mole_broken",
+	&"harbour_quay",
+	&"harbour_quay_steps",
+	&"harbour_shed",
+	&"harbour_shed_broken",
+	&"harbour_shed_end",
 ]
 
 const DIR := "res://assets/models/temple_kit/"

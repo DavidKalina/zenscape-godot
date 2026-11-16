@@ -31,6 +31,7 @@ const BathsSite = preload("res://scripts/endless/baths_site.gd")
 const SanctuarySite = preload("res://scripts/endless/sanctuary_site.gd")
 const CitadelSite = preload("res://scripts/endless/citadel_site.gd")
 const TombsSite = preload("res://scripts/endless/tombs_site.gd")
+const HarbourSite = preload("res://scripts/endless/harbour_site.gd")
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -69,6 +70,8 @@ var sanctuary: Node3D
 ## The citadel on the cape (citadel_site.gd) and the road of tombs to it (tombs_site.gd), or null with `--citadel=0`.
 var citadel: Node3D
 var tombs: Node3D
+## The harbour and its colossus (harbour_site.gd), or null with `--harbour=0`.
+var harbour: Node3D
 
 func setup(g: Node3D) -> void:
 	game = g
@@ -125,6 +128,11 @@ func setup(g: Node3D) -> void:
 		tombs.name = "Tombs"
 		add_child(tombs)
 		tombs.setup(g)
+	if HarbourSite.wanted():
+		harbour = HarbourSite.new()
+		harbour.name = "Harbour"
+		add_child(harbour)
+		harbour.setup(g)
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
 		var temple: bool = TempleSite.has(str(site.name)) and TempleSite.wanted()
@@ -161,6 +169,7 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	out.append_array(SanctuarySite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(CitadelSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(TombsSite.tree_keepouts(x0,z0,x1,z1))
+	out.append_array(HarbourSite.tree_keepouts(x0,z0,x1,z1))
 	return out
 
 ## One frame: the towers streamed round the eye.
@@ -181,6 +190,7 @@ func step(eye: Vector3) -> void:
 	if sanctuary != null and sanctuary.step(eye,kit_busy,here): kit_busy = true
 	if citadel != null and citadel.step(eye,kit_busy,here): kit_busy = true
 	if tombs != null and tombs.step(eye,kit_busy,here): kit_busy = true
+	if harbour != null and harbour.step(eye,kit_busy,here): kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]
 		var d: float = (site.xf as Transform3D).origin.distance_to(eye) if here else INF
