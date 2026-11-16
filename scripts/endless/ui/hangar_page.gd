@@ -19,7 +19,13 @@ extends Control
 ## picture slid sideways: `set_frustum`'s offset). On the title the stage's orbit carries on (menu_stage.gd);
 ## under pause the tree is held, so the page circles the camera itself and
 ## puts it back on leaving. Q E, the right stick or a drag off the slip turn
-## the eye round the plane.
+## the eye round the plane. On the title the eye also comes in to TITLE_R of
+## the stage's distance and TITLE_UP wingspans up, over the meadow's grass.
+##
+## Night: a row with `night` (a glow's) shows the plane after dark while it
+## is selected: the sky's hour set to NIGHT_HOUR, and put back when another
+## row is, or on leaving. Set on the change only; under pause the sky is
+## stepped once by hand, the tree being held.
 ##
 ## The contract with what opens it is the settings page's: `setup(host)`
 ## before it enters the tree, every event taken while up, `closed` once on
@@ -38,6 +44,7 @@ const ShopStock = preload("res://scripts/endless/shop_stock.gd")
 ## script here.
 const SECTIONS: Array[GDScript] = [
 	preload("res://scripts/endless/ui/hangar/paint_section.gd"),
+	preload("res://scripts/endless/ui/hangar/finish_section.gd"),
 ]
 
 ## Measures, px in the mock-ups' 1280x800 frame (the settings page's).
@@ -65,6 +72,9 @@ const SWING := 0.7
 const TURN := 1.6
 const DRAG := 0.008
 const EYE_OVER := 0.4
+const TITLE_R := 0.72
+const TITLE_UP := 0.35
+const NIGHT_HOUR := 0.5
 
 ## For the pause menu: the scene under this page is what it shows, so no
 ## wash is drawn over it.
@@ -94,6 +104,9 @@ var _own_eye := false
 var _eye_was := Transform3D.IDENTITY
 var _fov_was := 0.0
 var _angle := 0.0
+## Whether the sky is held at night for a row, and its phase before.
+var _night_on := false
+var _day_phase := 0.0
 
 func setup(by: Node) -> void:
 	host = by
@@ -123,6 +136,7 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	if Pad.hub.device_changed.is_connected(_device_changed): Pad.hub.device_changed.disconnect(_device_changed)
+	_night(false)
 	_give_eye()
 	if book != null: book.save()
 
@@ -146,6 +160,7 @@ func _rebuild() -> void:
 		_sel_t.fill(Kit.OFF)
 		sel = clampi(sel,1,rows.size()-1)
 		_sel_t[sel] = 0.0
+	_night(bool(rows[sel].get("night",false)))
 	queue_redraw()
 
 func is_row(i: int) -> bool:
@@ -166,6 +181,7 @@ func select(i: int) -> void:
 	_sel_t[sel] = -0.0001
 	sel = i
 	_sel_t[i] = 0.0
+	_night(bool(rows[sel].get("night",false)))
 	queue_redraw()
 
 func move(n: int) -> void:
@@ -196,6 +212,7 @@ func accept() -> void:
 	var row := rows[sel]
 	if row.has("back"): close()
 	elif str(row.id) == "_reset": reset()
+	elif str(row.kind) == "choice": change(1)
 	elif str(row.kind) == "seg":
 		var n := (row.opts as Array).size()
 		set_to(sel,float((int(row.on)+1)%n))
@@ -322,6 +339,11 @@ func _draw() -> void:
 						var bar := Rect2(rects[j].position.x,rects[j].get_center().y-12.0*k,rects[j].size.x-2.0*k,maxf(roundf(4.0*k),2.0))
 						draw_rect(bar.grow(maxf(roundf(k),1.0)),Color(Kit.INK,0.45*a))
 						draw_rect(bar,Color(dots[j] as Color,a))
+				"choice":
+					# One of many, by name: the one chosen, and where it stands.
+					var names: Array = row.opts
+					var name_at := Kit.seg_row(self,slip,y,k,str(row.label),PackedStringArray([str(names[int(row.on)])]),0,_sel_t[i],Kit.ON,ROW_H,15.0,a)
+					Kit.text(self,Kit.MED,"%d/%d" % [int(row.on)+1,names.size()],Vector2(name_at[0].position.x-14.0*k,name_at[0].get_center().y),10.5,k,0.14,Kit.DIM,1.0,a)
 				"swatches":
 					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"",0.0,a)
 					var chips := swatch_rects(i)
@@ -401,10 +423,29 @@ func _eye(delta: float) -> void:
 		cam.fov = lerpf(_fov_was,MenuStage.FOV,w)
 	elif _on_title():
 		host.stage.angle += turn
+		# The stage has placed the eye this frame: nearer and higher from there.
+		var w := smoothstep(0.0,SHIFT_T,_age)
+		var off := cam.global_position-centre
+		var eye := centre+Vector3(off.x,0.0,off.z)*lerpf(1.0,TITLE_R,w)+Vector3.UP*(off.y+TITLE_UP*w*WorldScale.TOY_SPAN*float(host.ground_scale.size()))
+		cam.global_transform = Transform3D(Basis.IDENTITY,eye).looking_at(centre,Vector3.UP)
 	# The plane to the right of the slip: the picture slid right by SHIFT of
 	# its width, the eye where it was (the title parts the grass round it).
 	var tall := 2.0*cam.near*tan(deg_to_rad(cam.fov)*0.5)
 	cam.set_frustum(tall,Vector2(-SHIFT*tall*size.x/maxf(size.y,1.0)*smoothstep(0.0,SHIFT_T,_age),0.0),cam.near,cam.far)
+
+## The sky held at night (`on`) for the row selected, or put back.
+func _night(on: bool) -> void:
+	if on == _night_on or not _game(): return
+	var sky: Variant = host.get("look")
+	if not sky is Node or sky.get("cycle") == null or sky.get("celestial") == null: return
+	_night_on = on
+	if on: _day_phase = float(sky.land_phase())
+	var p := NIGHT_HOUR/24.0 if on else _day_phase
+	sky.cycle.set_phase(p)
+	sky.celestial.set_phase(p)
+	if get_tree().paused:
+		var cam: Camera3D = host.camera
+		sky.step(0.0,cam.global_position,-cam.global_basis.z,cam)
 
 # --- Input -------------------------------------------------------------------------------
 
@@ -481,7 +522,7 @@ func _click(at: Vector2) -> void:
 		close()
 		return
 	match str(row.kind):
-		"button": accept()
+		"button", "choice": accept()
 		"slider":
 			var track := track_rect(i)
 			if at.x < track.position.x-8.0*k or at.x > track.end.x+8.0*k: return

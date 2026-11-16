@@ -11,6 +11,11 @@ extends RefCounted
 ##       {id, label, kind:"seg", opts:[String], on:int, dots:[Color] (optional)}
 ##       {id, label, kind:"slider", frac:0..1, value:String, ramp:[Color] (optional)}
 ##       {id, label, kind:"swatches", colours:[Color], on:int (-1 none)}
+##       {id, label, kind:"choice", opts:[String], on:int}  one of many, only
+##           the chosen name shown; Left and Right go to `change`, Enter and
+##           a click to `change(id, 1)`
+##     any row may have night:true: the page shows the plane after dark
+##     while it is selected (a glow)
 ##   change(id, dir) -> bool    Left or Right on row `id`
 ##   set_to(id, v) -> bool      the mouse: a slider's 0..1, or the index of
 ##                              the option or swatch clicked
