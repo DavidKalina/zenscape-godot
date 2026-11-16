@@ -150,6 +150,25 @@ const PIECES: Array[StringName] = [
 	&"tombs_step_broken",
 	&"tombs_arch_cracked",
 	&"tombs_arch_broken",
+	# The great dome (art/blender/temple_kit/dome_build.py; scripts/endless/dome_site.gd).
+	&"dome_drum",
+	&"dome_drum_door",
+	&"dome_shell",
+	&"dome_floor",
+	&"dome_footing",
+	&"dome_porch_roof",
+	&"dome_slab",
+	&"dome_heap",
+	&"dome_drum_bm2",
+	&"dome_drum_bm1",
+	&"dome_drum_b0",
+	&"dome_drum_bp1",
+	&"dome_drum_bp2",
+	&"dome_shell_bm2",
+	&"dome_shell_bm1",
+	&"dome_shell_b0",
+	&"dome_shell_bp1",
+	&"dome_shell_bp2",
 ]
 
 const DIR := "res://assets/models/temple_kit/"

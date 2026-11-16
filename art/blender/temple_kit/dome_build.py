@@ -732,7 +732,7 @@ def build_porch_roof(lay):
                 x = s * (d * math.cos(PITCH))
                 z = zt + 2.2 + rise - d * math.sin(PITCH) + 0.5
                 lay.block((x, (y0 + y1) / 2, z), (L / 4 - 0.05, y0 - y1 - 0.05, 0.9), chips=r.randint(0, 2),
-                          tilt=(0.0, -s * PITCH), hide=("-z",))
+                          tilt=(0.0, s * PITCH), hide=("-z",))
     lay.p.far_box((0.0, -(PORCH_BACK + PORCH_FRONT) / 2, zt + 1.0), (2 * PORCH_HALF, PORCH_FRONT - PORCH_BACK, 2.0))
     for s in (-1, 1):
         lay.p.far_box((s * PORCH_HALF / 2, -(PORCH_BACK + PORCH_FRONT) / 2, zt + 2.2 + rise / 2), (PORCH_HALF, PORCH_FRONT - PORCH_BACK, rise),
