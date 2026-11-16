@@ -282,6 +282,7 @@ func _make(ch: Dictionary) -> void:
 				for corner in [Vector2(b.position.x,b.position.z),Vector2(b.end.x,b.end.z),
 						Vector2(b.position.x,b.end.z),Vector2(b.end.x,b.position.z)]:
 					reach = maxf(reach,(corner as Vector2).length())
+	var sets: Array = []
 	for id: StringName in by_id:
 		var xfs: Array = by_id[id]
 		var meshes: Array = [TempleKit.lod(id,TempleKit.NEAR),TempleKit.lod(id,TempleKit.MID),
@@ -303,21 +304,10 @@ func _make(ch: Dictionary) -> void:
 		var mid_at := MID_NEAREST+radius if meshes[1] != null else far_at
 		var ranges := [Vector2(0.0,mid_at),Vector2(mid_at,far_at),Vector2(far_at,0.0)]
 		for level in 3:
-			var m: Mesh = meshes[level]
-			if m == null: continue
-			var mm := MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = m
-			mm.instance_count = xfs.size()
-			for i in range(xfs.size()): mm.set_instance_transform(i,xfs[i])
-			mm.custom_aabb = set_box
-			var mmi := MultiMeshInstance3D.new()
-			mmi.multimesh = mm
-			mmi.name = String(id)+(["","_mid","_far"][level] as String)
-			mmi.visibility_range_begin = ranges[level].x
-			mmi.visibility_range_end = ranges[level].y
-			root.add_child(mmi)
-	ch.made = {"node":root,"boxes":boxes,"reach":reach}
+			if meshes[level] == null: continue
+			# Made into a MultiMesh on the main thread (TempleKit.fill).
+			sets.append([meshes[level],xfs,set_box,String(id)+(["","_mid","_far"][level] as String),ranges[level]])
+	ch.made = {"node":root,"boxes":boxes,"reach":reach,"sets":sets}
 
 ## A box cut into LEAN_SLICE-tall pieces.
 static func _sliced(box: AABB) -> Array:
@@ -336,6 +326,7 @@ func _commit(ch: Dictionary) -> void:
 	var made: Dictionary = ch.made
 	ch.erase("made")
 	var root: Node3D = made.node
+	TempleKit.fill(root,made.sets)
 	var xf: Transform3D = ch.xf
 	root.transform = xf
 	add_child(root)

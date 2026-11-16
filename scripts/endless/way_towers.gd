@@ -21,6 +21,7 @@ const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const TempleSite = preload("res://scripts/endless/temple_site.gd")
 const AqueductSite = preload("res://scripts/endless/aqueduct_site.gd")
+const TempleKit = preload("res://scripts/temple_kit.gd")
 const StreetSite = preload("res://scripts/endless/street_site.gd")
 const AgoraSite = preload("res://scripts/endless/agora_site.gd")
 const TholosSite = preload("res://scripts/endless/tholos_site.gd")
@@ -63,6 +64,10 @@ var baths: Node3D
 
 func setup(g: Node3D) -> void:
 	game = g
+	# The kit's models, all loaded here on the main thread while the scene sets
+	# up (about 1.4 s rendered), so no build's worker ever loads one
+	# (TempleKit.warm) and no flight frame pays for a load.
+	while not TempleKit.warm(): pass
 	if AqueductSite.wanted():
 		aqueduct = AqueductSite.new()
 		aqueduct.name = "Aqueduct"
@@ -223,6 +228,7 @@ func _commit(site: Dictionary) -> void:
 func _commit_temple(site: Dictionary, root: Node3D) -> void:
 	var made: Dictionary = site.made
 	site.erase("made")
+	TempleKit.fill(made.node as Node3D,made.sets as Array)
 	root.add_child(made.node as Node3D)
 	var boxes: Array = made.boxes
 	root.add_child(_body(boxes))

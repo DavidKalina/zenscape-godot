@@ -160,7 +160,52 @@ static func lod(id: StringName, level: int) -> Mesh:
 static func has_mid(id: StringName) -> bool:
 	return lod(id,MID) != null
 
+static var _warm_at := 0
+
+## Every piece in PIECES loaded ahead of use, on the main thread only, a few
+## per call inside udget_usec (a call always loads at least one). True once
+## all are in. The way sites hold their builds until then (way_towers.gd
+## step), so a build's worker only ever reads the cache. A worker that loaded a
+## model itself, holding _lock, hung the game when the main thread asked the
+## kit for a mesh or waited for the worker at quit; and a model's meshes made
+## off the main thread (a worker, or the engine's loader threads) broke RIDs
+## in headless runs.
+static func warm(budget_usec := 3000) -> bool:
+	var t0 := Time.get_ticks_usec()
+	while _warm_at < PIECES.size():
+		var id := PIECES[_warm_at]
+		_lock.lock()
+		if not _meshes.has(String(id)): _load(id)
+		_lock.unlock()
+		_warm_at += 1
+		if Time.get_ticks_usec()-t0 > budget_usec: break
+	return _warm_at >= PIECES.size()
+
+## A site's sets made into MultiMeshes under `root`, on the main thread: each
+## set is [mesh, frames, box, name, Vector2(visible from, to)], gathered by the
+## site's build on a worker. A MultiMesh made on the worker itself broke RIDs
+## now and then (headless: "uninitialized RID", "multimesh is null").
+static func fill(root: Node3D, sets: Array) -> void:
+	for s: Array in sets:
+		var xfs: Array = s[1]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = s[0]
+		mm.instance_count = xfs.size()
+		for i in range(xfs.size()): mm.set_instance_transform(i,xfs[i])
+		mm.custom_aabb = s[2]
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.name = s[3]
+		var span: Vector2 = s[4]
+		mmi.visibility_range_begin = span.x
+		mmi.visibility_range_end = span.y
+		root.add_child(mmi)
+
 static func _load(id: StringName) -> void:
+	# A piece missing from PIECES isn't warmed, and loads here on whoever asks.
+	if OS.get_thread_caller_id() != OS.get_main_thread_id():
+		push_error("temple_kit: %s loaded on a worker; add it to PIECES so warm() loads it" % id)
 	_meshes[String(id)] = null
 	_meshes[String(id)+"_mid"] = null
 	_meshes[String(id)+"_far"] = null
