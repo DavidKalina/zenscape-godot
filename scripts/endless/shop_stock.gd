@@ -35,11 +35,24 @@ extends RefCounted
 ## Paints beyond the first seven come in batches, one file each under
 ## scripts/endless/skins/ (its `SKINS`, rows as ITEMS'), gathered from
 ## BATCHES: a new batch is one line there.
+##
+## Parts (docs/design/endless-flight/spec-hangar.md; scripts/endless/plane_parts.gd):
+## the patterns, special finishes and decals a look is made of are sold too.
+## A part is no slot (nothing is worn in its place): its row comes from
+## PlaneParts, its id is kind:name, and `item`, `has` and `buy` take it as
+## they take an item's. Had: bought, or come with a skin that is had
+## (`has`). Bought or chosen in the shop it goes onto the book's look
+## (`put_part`); `wearing` says whether the plane has it on. SECTIONS is the
+## shop's list: the slots, then the parts' sections. `--hangar-all` has every
+## part.
 
 
 const SLOTS := ["paint","ribbon"]
 ## Each slot's heading in the shop.
-const SLOT_NAMES := {"paint":"Paints","ribbon":"Ribbons"}
+const SLOT_NAMES := {"paint":"Paints","ribbon":"Ribbons","pattern":"Patterns","finish":"Finishes","decal":"Decals"}
+const PlaneParts = preload("res://scripts/endless/plane_parts.gd")
+## The shop's sections, in order: the slots, then the parts'.
+const SECTIONS: Array[String] = ["paint","ribbon","pattern","finish","decal"]
 
 ## The skin batches, each a script with `const SKINS := [rows]`.
 const BATCHES := [
@@ -142,8 +155,18 @@ static func items(slot := "") -> Array:
 	return stock().filter(func(i: Dictionary) -> bool: return i.slot == slot)
 
 static func item(id: String) -> Dictionary:
+	if is_part(id): return PlaneParts.row(id)
 	stock()
 	return _by_id.get(id,{})
+
+## What the shop lists under `section` (SECTIONS): a slot's items or a
+## section's parts.
+static func listed(section: String) -> Array:
+	return items(section) if SLOTS.has(section) else PlaneParts.listed(section)
+
+## Whether `id` is a part's (kind:name), not an item's (slot/name).
+static func is_part(id: String) -> bool:
+	return ":" in id
 
 ## The item's rarity (common when it names none).
 static func rarity(i: Dictionary) -> String:
@@ -195,8 +218,58 @@ static func first(slot: String) -> String:
 
 ## Whether `book` has `id`: bought, or free.
 static func has(book: RefCounted, id: String) -> bool:
+	if is_part(id): return _has_part(book,id)
 	var i := item(id)
 	return not i.is_empty() and (int(i.price) == 0 or book.owns(id))
+
+static var _all_parts := -1
+## Whether every part is had (--hangar-all: to try looks, and for stills).
+static func all_parts() -> bool:
+	if _all_parts < 0: _all_parts = int("--hangar-all" in preload("res://scripts/launch_args.gd").user_args())
+	return _all_parts == 1
+
+## The parts each skin comes with, by the skin's id (PlaneParts `of_skin`).
+static var _skin_parts := {}
+
+## A part is had when it is free (no row in PlaneParts), bought, or come
+## with a skin that is had.
+static func _has_part(book: RefCounted, id: String) -> bool:
+	if PlaneParts.row(id).is_empty() or all_parts() or book.owns(id): return true
+	if _skin_parts.is_empty():
+		for i: Dictionary in items("paint"):
+			var with := PlaneParts.of_skin(i)
+			if not with.is_empty(): _skin_parts[i.id] = with
+	for skin: String in _skin_parts:
+		if (_skin_parts[skin] as Array).has(id) and has(book,skin): return true
+	return false
+
+## The parts of `look` that `book` does not have.
+static func locked(book: RefCounted, look: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	for id in PlaneParts.of_look(look):
+		if not has(book,id): out.append(id)
+	return out
+
+## The look the plane wears by `book`: its own, else its worn skin as one.
+static func look_of(book: RefCounted) -> Dictionary:
+	return PlaneLook.of(book,item(worn(book,"paint")))
+
+## `look_of(book)` with part `id` put on it: what buying or choosing the part
+## in the shop keeps (`put_part`), and what trying it shows.
+static func look_with(book: RefCounted, id: String) -> Dictionary:
+	var look := look_of(book)
+	PlaneParts.put(look,id)
+	return look
+
+## Part `id` onto the book's look (kept; worn from the next `dress`).
+static func put_part(book: RefCounted, id: String) -> void:
+	book.set_look(look_with(book,id))
+
+## Whether the plane has `id` on: an item worn in its slot, or a part on the
+## look (a skin's own part under a look that lacks its kind too).
+static func wearing(book: RefCounted, id: String) -> bool:
+	if not is_part(id): return worn(book,String(item(id).get("slot",""))) == id
+	return PlaneParts.of_look(look_of(book)).has(id)
 
 ## The item worn in `slot` (its first when the book names none, or one it
 ## does not have).
@@ -213,21 +286,33 @@ static func buy(book: RefCounted, id: String) -> bool:
 	return true
 
 ## Puts what `book` wears on `figure` (a PlaneFigure), slot by slot, unless
-## it wears it already. `try` overrides slots for a fitting ({slot: id}).
+## it wears it already. `try` overrides slots for a fitting ({slot: id}), and
+## its `look` is a whole look tried on in place of the book's (a part in the
+## shop); the book's own `fitting` (the hangar's, a part not had shown on the
+## plane) is one too, for every caller while it is set.
 static func dress(figure: Node3D, book: RefCounted, try := {}) -> void:
 	if figure == null or book == null: return
 	for slot: String in SLOTS:
 		var id: String = try.get(slot,worn(book,slot))
 		# The hangar's look (PlaneLook), when the book has one, is the paint
 		# worn; a fitting (`try`) still shows the shop's paint over it.
-		var look_key: String = book.look_key if slot == "paint" and not try.has(slot) and book is PilotBook else ""
+		var look: Dictionary = {}
+		var look_key := ""
+		if slot == "paint" and not try.has(slot) and book is PilotBook:
+			var fit: Dictionary = try.get("look",book.fitting)
+			if not fit.is_empty():
+				look = fit
+				look_key = "fit#%d" % fit.hash()
+			elif book.look_key != "":
+				look = book.look
+				look_key = book.look_key
 		var key := id if look_key == "" else look_key
 		if String(figure.get_meta("shop_"+slot,"")) == key: continue
 		figure.set_meta("shop_"+slot,key)
 		match slot:
 			"paint":
 				if look_key == "": _paint(figure,item(id))
-				else: PlaneLook.apply(figure,book.look,(item(id).get("livery",{}) as Dictionary).duplicate(),finish_values(item(id)),finish_values(PlaneLook.finish_row(book.look)))
+				else: PlaneLook.apply(figure,look,(item(id).get("livery",{}) as Dictionary).duplicate(),finish_values(item(id)),finish_values(PlaneLook.finish_row(look)))
 			"ribbon": _ribbon(figure,item(id).get("colours",[]))
 
 ## Repaints the figure in place (PlaneFigure `repaint`) to the paint's

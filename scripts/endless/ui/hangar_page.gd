@@ -15,6 +15,16 @@ extends Control
 ## per frame). The book is written when the page closes. Reset takes the
 ## look off again: the plane wears its skin as the shop sells it.
 ##
+## Parts (scripts/endless/plane_parts.gd): a row's option may be a part that
+## is bought (the row's `parts`). One the book does not have (ShopStock
+## `has`) can still be chosen: it shows on the plane as a fitting (the
+## book's `fitting`), the book keeping the last choice it has, and a buy row
+## appears under its row with the price. Enter on the part's row goes to the
+## buy row, Enter there buys it (ShopStock `buy`: spent, owned, then kept on
+## the look); short of money it refuses. Selecting any other row, another
+## Part or leaving ends the fitting: the look is the kept one again. A list
+## row's lines show the price of each part not had.
+##
 ## The eye: the plane is held to the right of the slip (the camera's
 ## picture slid sideways: `set_frustum`'s offset). On the title the stage's orbit carries on (menu_stage.gd);
 ## under pause the tree is held, so the page circles the camera itself and
@@ -39,6 +49,7 @@ const StickSteps = preload("res://scripts/endless/ui/stick_steps.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const MenuStage = preload("res://scripts/endless/menu_stage.gd")
 const ShopStock = preload("res://scripts/endless/shop_stock.gd")
+const PlaneParts = preload("res://scripts/endless/plane_parts.gd")
 
 ## The sections, in the Part row's order. A new part of the look adds its
 ## script here.
@@ -90,8 +101,13 @@ const NIGHT_HOUR := 0.5
 var shows_scene := true
 var host: Node
 var book: PilotBook
-## The look being edited (PlaneLook), and whether the book holds it.
+## The look being edited (PlaneLook): what the plane shows.
 var look := {}
+## The look as kept: `look` with each part the book does not have back at
+## the last choice it has. The book's, once anything changed.
+var _kept := {}
+## Runs down after a buy was refused (the buy row shakes).
+var _short := 0.0
 ## The section shown: an index into SECTIONS.
 var part := 0
 ## The row selected: an index into `rows`.
@@ -135,6 +151,15 @@ func _enter_tree() -> void:
 		book = PilotBook.new()
 		book.path = ""
 	look = PlaneLook.of(book,ShopStock.item(ShopStock.worn(book,"paint")))
+	# A look kept before parts were sold (or under --hangar-all) may hold
+	# parts not had: a fitting from here on, the book keeping the rest.
+	_kept = look.duplicate(true)
+	var locked := ShopStock.locked(book,look)
+	if not locked.is_empty():
+		PlaneParts.take_off(_kept,locked)
+		book.fitting = look.duplicate(true)
+		book.set_look(_kept.duplicate(true))
+		_dress()
 	_sections.clear()
 	for script in SECTIONS:
 		var s: RefCounted = script.new()
@@ -147,7 +172,10 @@ func _exit_tree() -> void:
 	if Pad.hub.device_changed.is_connected(_device_changed): Pad.hub.device_changed.disconnect(_device_changed)
 	_night(false)
 	_give_eye()
-	if book != null: book.save()
+	if book != null:
+		book.fitting = {}
+		_dress()
+		book.save()
 
 func _device_changed(_pad: bool) -> void:
 	queue_redraw()
@@ -161,7 +189,11 @@ func _rebuild() -> void:
 		var names: Array[String] = []
 		for script in SECTIONS: names.append(str(script.get("TITLE")))
 		rows.append({"id":"_part","label":"Part","kind":"seg","opts":names,"on":part})
-	rows.append_array(_sections[part].rows())
+	for row: Dictionary in _sections[part].rows():
+		rows.append(row)
+		# A part not had: its buy row under it.
+		var id := part_of(row)
+		if id != "" and not ShopStock.has(book,id): rows.append({"id":"_buy:"+id,"kind":"buy","part":id})
 	rows.append({"id":"_reset","label":"Reset to skin","kind":"button"})
 	rows.append({"back":true})
 	if _sel_t.size() != rows.size():
@@ -185,8 +217,43 @@ func row_of(id: String) -> int:
 		if str(rows[i].get("id","back" if rows[i].has("back") else "")) == id: return i
 	return -1
 
+## The part a row's chosen option is ("" for none, or a row without parts).
+func part_of(row: Dictionary) -> String:
+	var parts: Array = row.get("parts",[])
+	var on := int(row.get("on",-1))
+	return str(parts[on]) if on >= 0 and on < parts.size() else ""
+
+## Whether row `i` is a fitting's: a buy row, or one whose chosen part the
+## book does not have.
+func fitting_row(i: int) -> bool:
+	if not is_row(i) or rows[i].has("back"): return false
+	if str(rows[i].kind) == "buy": return true
+	var id := part_of(rows[i])
+	return id != "" and not ShopStock.has(book,id)
+
+## The parts on the look now that the book does not have.
+func fitting() -> Array[String]:
+	return ShopStock.locked(book,look)
+
+## Ends a fitting: the look is the kept one again, on the plane and in the rows.
+func _drop() -> void:
+	if book.fitting.is_empty(): return
+	book.fitting = {}
+	look = _kept.duplicate(true)
+	for s in _sections: s.begin(look)
+	_dress()
+	_sel_t.resize(0)
+	_rebuild()
+
 func select(i: int) -> void:
 	if not is_row(i) or i == sel: return
+	# Off a fitting's rows: the fitting ends, and the rows under it move up.
+	if not book.fitting.is_empty() and not fitting_row(i):
+		var id := "back" if rows[i].has("back") else str(rows[i].id)
+		_drop()
+		i = row_of(id)
+		if i < 0: i = rows.size()-1
+		if i == sel: return
 	_sel_t[sel] = -0.0001
 	sel = i
 	_sel_t[i] = 0.0
@@ -209,7 +276,7 @@ func move(n: int) -> void:
 ## Left or Right on the row selected.
 func change(dir: int) -> void:
 	var row := rows[sel]
-	if row.has("back") or str(row.kind) == "button": return
+	if row.has("back") or str(row.kind) == "button" or str(row.kind) == "buy": return
 	var id := str(row.id)
 	if id == "_part": _show_part(clampi(part+dir,0,_sections.size()-1))
 	elif _sections[part].change(id,dir): _changed()
@@ -228,6 +295,9 @@ func accept() -> void:
 	var row := rows[sel]
 	if row.has("back"): close()
 	elif str(row.id) == "_reset": reset()
+	elif str(row.kind) == "buy": buy(str(row.part))
+	# On a part not had Enter goes to its buy row, under it.
+	elif fitting_row(sel): select(sel+1)
 	elif str(row.kind) == "choice": change(1)
 	elif str(row.kind) == "seg":
 		var n := (row.opts as Array).size()
@@ -235,21 +305,48 @@ func accept() -> void:
 
 func _show_part(to: int) -> void:
 	if to == part: return
+	_drop()
 	part = to
 	_sel_t.resize(0)
 
-## The look changed: kept in the book and put on the plane.
+## The look changed: put on the plane, and kept in the book but for the
+## parts it does not have, which stay at the last choice it has (a fitting).
 func _changed() -> void:
-	book.set_look(look.duplicate(true))
+	var locked := fitting()
+	var keep := look.duplicate(true)
+	PlaneParts.take_off(keep,locked,_kept)
+	book.fitting = {} if locked.is_empty() else look.duplicate(true)
+	if keep != _kept:
+		_kept = keep
+		book.set_look(_kept.duplicate(true))
 	_dress()
+
+## Buys part `id` (a buy row's), when the money stretches: owned, and the
+## look with it on kept. Short, the row shakes.
+func buy(id: String) -> void:
+	if not ShopStock.buy(book,id):
+		_short = 1.0
+		queue_redraw()
+		return
+	_changed()
+	book.save()
+	# The buy row goes: back on the part's own row, over it.
+	sel = maxi(sel-1,1)
+	_sel_t.resize(0)
+	_rebuild()
 
 ## The look taken off: the plane wears its skin as the shop sells it.
 func reset() -> void:
+	book.fitting = {}
 	book.set_look({})
 	_dress()
 	look = PlaneLook.of(book,ShopStock.item(ShopStock.worn(book,"paint")))
+	_kept = look.duplicate(true)
 	for s in _sections: s.begin(look)
+	_sel_t.resize(0)
 	_rebuild()
+	sel = maxi(row_of("_reset"),1)
+	_sel_t[sel] = Kit.ON
 
 func _dress() -> void:
 	var figure: Node3D = host.get("plane_figure") if host != null else null
@@ -355,6 +452,9 @@ func _process(delta: float) -> void:
 		else: t = Kit.OFF if t < -0.5 else minf(t,0.0)-delta
 		_sel_t[i] = t
 		if absf(t) < 0.6: moving = true
+	if _short > 0.0:
+		_short = maxf(_short-delta*3.2,0.0)
+		moving = true
 	_step_stick(delta)
 	_eye(delta)
 	if moving: queue_redraw()
@@ -371,6 +471,10 @@ func _draw() -> void:
 		var y := row_top(i)
 		if row.has("head"):
 			Kit.head(self,slip,y,k,str(row.head),HEAD_H,6.0,38.0,a)
+			# The purse, for the parts' prices.
+			var coins := Vector2(slip.end.x-Kit.VALUE_PAD*k-roundf(arrive.x*k),y+(6.0+HEAD_H*0.5)*k)
+			var w := Kit.text(self,Kit.NUM,coins_text(book.money),coins,14.0,k,0.04,Kit.INK,1.0,a)
+			Kit.text(self,Kit.MED,"COINS",coins-Vector2(w+8.0*k,0.0),10.0,k,0.16,Kit.DIM,1.0,a)
 		elif row.has("back"):
 			Kit.row(self,slip,y,k,"Back",_sel_t[i],BACK_H,15.0,"B" if Pad.using_pad() else "Esc",42.0,a)
 		else:
@@ -397,8 +501,16 @@ func _draw() -> void:
 					var mark := Kit.TICK if _sel_t[i] >= 0.0 else Kit.DIM
 					Kit.text(self,Kit.NUM,"<",Vector2(ends[0].position.x-slid,cy),13.5,k,0.0,mark,0.0,a)
 					Kit.text(self,Kit.NUM,">",Vector2(ends[1].end.x-slid,cy),13.5,k,0.0,mark,1.0,a)
-					Kit.text(self,Kit.NUM,str(opts[int(row.on)]).to_upper(),Vector2((ends[0].end.x+ends[1].position.x)*0.5-slid,cy),13.5,k,0.07,Kit.INK,0.5,a)
+					Kit.text(self,Kit.NUM,str(opts[int(row.on)]).to_upper(),Vector2((ends[0].end.x+ends[1].position.x)*0.5-slid,cy),13.5,k,0.07,Kit.DIM if fitting_row(i) else Kit.INK,0.5,a)
 					Kit.text(self,Kit.MED,"%d/%d" % [int(row.on)+1,opts.size()],Vector2(ends[0].position.x-slid-12.0*k,cy),10.5,k,0.14,Kit.DIM,1.0,a)
+				"buy":
+					# A part not had, shown as a fitting: what it costs, and
+					# how far short the purse is.
+					var price := int(ShopStock.item(str(row.part)).get("price",0))
+					var short := price-int(book.money)
+					var shake := sin(_age*60.0)*6.0*k*_short
+					var words := "Not owned: buy for %s" % coins_text(price) if short <= 0 else "Not owned: %s, %s short" % [coins_text(price),coins_text(short)]
+					Kit.row(self,Rect2(slip.position+Vector2(shake,0.0),slip.size),y,k,words,_sel_t[i],ROW_H,13.5,"" if short > 0 else ("A" if Pad.using_pad() else "Enter"),Kit.VALUE_PAD,a)
 				"swatches":
 					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"",0.0,a)
 					var chips := swatch_rects(i)
@@ -422,13 +534,27 @@ func _draw() -> void:
 							draw_rect(Rect2(r.position.x,r.position.y+1.0*k,r.size.x,r.size.y-2.0*k),Color(Kit.BAND,Kit.BAND.a*a))
 							Kit.slant(self,Rect2(r.position.x+5.0*k,cy-5.5*k,3.0*k,11.0*k),Color(Kit.TICK if _sel_t[i] >= 0.0 else Kit.INK,a))
 						Kit.text(self,Kit.NUM if on else Kit.MED,str(names[at]),Vector2(r.position.x+16.0*k,cy),14.0,k,0.02,Kit.INK if on else Kit.LAND,0.0,a)
-						if at < notes.size(): Kit.text(self,Kit.MED,str(notes[at]).to_upper(),Vector2(r.end.x-6.0*k,cy),10.0,k,0.12,Kit.DIM,1.0,a)
+						# A part not had: its price in place of the note.
+						var parts: Array = row.get("parts",[])
+						var note := str(notes[at]).to_upper() if at < notes.size() else ""
+						var locked := at < parts.size() and str(parts[at]) != "" and not ShopStock.has(book,str(parts[at]))
+						if locked: note = coins_text(int(ShopStock.item(str(parts[at])).get("price",0)))
+						if note != "": Kit.text(self,Kit.NUM if locked else Kit.MED,note,Vector2(r.end.x-6.0*k,cy),11.0 if locked else 10.0,k,0.04 if locked else 0.12,Kit.HEAD if locked else Kit.DIM,1.0,a)
 					# More above or below the window: a mark at its edge.
 					if first > 0: Kit.text(self,Kit.MED,"^",Vector2(slip.position.x+(Kit.LABEL_X-10.0)*k,(lines[0][1] as Rect2).get_center().y),11.0,k,0.0,Kit.DIM,0.5,a)
 					if first+lines.size() < names.size(): Kit.text(self,Kit.MED,"v",Vector2(slip.position.x+(Kit.LABEL_X-10.0)*k,(lines[lines.size()-1][1] as Rect2).get_center().y),11.0,k,0.0,Kit.DIM,0.5,a)
 				_:
 					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"",0.0,a)
 	Kit.prompts(self,Kit.pick(FOOT),size-Vector2(28.0,50.0)*k,k,true,false,a)
+
+## A sum of coins as the slip shows it: 12,500.
+static func coins_text(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = ","+s.right(3)+out
+		s = s.left(s.length()-3)
+	return ("-" if n < 0 else "")+s+out
 
 ## A slider's colours, a strip under its track: `stops` evenly along it.
 func _draw_ramp(track: Rect2, stops: Array, k: float, a: float) -> void:
@@ -602,7 +728,7 @@ func _click(at: Vector2) -> void:
 		close()
 		return
 	match str(row.kind):
-		"button": accept()
+		"button", "buy": accept()
 		"choice": change(-1 if choice_rects(i)[0].grow_individual(8.0*k,0.0,6.0*k,0.0).has_point(at) else 1)
 		"slider":
 			var track := track_rect(i)

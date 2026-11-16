@@ -4,7 +4,8 @@ extends RefCounted
 ## the catalogue (scripts/endless/plane_patterns.gd), None first, then its
 ## colour A or B set by hue, saturation and value or taken from the swatches.
 ## The contract is paint_section.gd's; its Pattern row is a `choice` row
-## (hangar_page.gd). Every pattern is offered: nothing sells them yet.
+## (hangar_page.gd), each option naming its part (`parts`): the page locks
+## the ones not had.
 
 const TITLE := "Pattern"
 const Paint = preload("res://scripts/endless/ui/hangar/paint_section.gd")
@@ -53,8 +54,11 @@ func colour(i: int) -> Color:
 
 func rows() -> Array[Dictionary]:
 	var names: Array[String] = ["None"]
-	for p in PlanePatterns.PATTERNS: names.append(str(p.name))
-	var out: Array[Dictionary] = [{"id":"pattern","label":"Pattern","kind":"choice","opts":names,"on":picked()}]
+	var parts: Array[String] = [""]
+	for p in PlanePatterns.PATTERNS:
+		names.append(str(p.name))
+		parts.append("pattern:"+str(p.id))
+	var out: Array[Dictionary] = [{"id":"pattern","label":"Pattern","kind":"choice","opts":names,"parts":parts,"on":picked()}]
 	var p := _pattern()
 	if p.is_empty(): return out
 	var two: bool = PlanePatterns.item(str(p.id)).two

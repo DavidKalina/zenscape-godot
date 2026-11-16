@@ -23,6 +23,10 @@ extends RefCounted
 ##           there), a click on a line to `set_to(id, index)`
 ##     any row may have night:true: the page shows the plane after dark
 ##     while it is selected (a glow)
+##     a seg, choice or list row may have parts:[String], one for each
+##     option: the part it is (a scripts/endless/plane_parts.gd id; "" or
+##     a free row's for none). The page shows one the book does not have
+##     as locked, with its price, and as a fitting only
 ##   change(id, dir) -> bool    Left or Right on row `id`
 ##   set_to(id, v) -> bool      the mouse: a slider's 0..1, or the index of
 ##                              the option or swatch clicked

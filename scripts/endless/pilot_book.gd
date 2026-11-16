@@ -8,7 +8,9 @@ extends RefCounted
 ##   tally     counts that only grow (trees, clouds, landings, metres ...)
 ##   records   bests: higher wins, except the names in LOWER_WINS
 ##   found     ids met once (gaps, starters, shops), each with its flight
-##   owned     shop items bought; worn: the item worn in each slot
+##   owned     shop items bought (slot/name) and parts of a look bought
+##             (kind:name, scripts/endless/plane_parts.gd); worn: the item
+##             worn in each slot
 ##   opened    what the plane broke open and stays open (cracked walls' handles)
 ##   look      the plane's own look from the hangar (scripts/endless/plane_look.gd),
 ##             {} while none is set; set, it wins over the worn paint
@@ -45,6 +47,10 @@ var opened := {}
 var look := {}
 var look_key := ""
 var _look_rev := 0
+## A look tried on and not kept (the hangar showing a part not had): while
+## not empty ShopStock `dress` puts it on the plane in place of `look`.
+## Never saved.
+var fitting := {}
 var flights := 0
 var flight := {}
 ## Where it is kept ("" never writes).

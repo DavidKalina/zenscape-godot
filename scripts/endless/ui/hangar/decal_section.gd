@@ -3,7 +3,8 @@ extends RefCounted
 ## `decal`, scripts/endless/plane_look.gd): one decal over the paint, picked
 ## from a list: none, the worn skin's own, then the catalogue's
 ## (scripts/endless/plane_decals.gd), the emblems before the whole-plane
-## ones. All can be picked for now (the shop will lock what is not owned).
+## ones. Each line names its part (the row's `parts`): the page locks the
+## ones not had.
 ##
 ## A section as paint_section.gd says; its one row is a `list` row.
 
@@ -16,13 +17,16 @@ var look := {}
 var _ids: Array[String] = []
 var _names: Array[String] = []
 var _notes: Array[String] = []
+var _parts: Array[String] = []
 
 func _init() -> void:
 	_ids = [PlaneDecals.NONE,""]
 	_names = ["None","Skin's own"]
 	_notes = ["",""]
+	_parts = ["",""]
 	for row in PlaneDecals.DECALS:
 		_ids.append(String(row.id))
+		_parts.append("decal:"+String(row.id))
 		_names.append(String(row.name))
 		_notes.append(String(KINDS.get(row.kind,"")))
 
@@ -37,7 +41,7 @@ func picked() -> int:
 	return at if at >= 0 else 1
 
 func rows() -> Array[Dictionary]:
-	return [{"id":"decal","label":"Decal","kind":"list","names":_names,"notes":_notes,"on":picked()}]
+	return [{"id":"decal","label":"Decal","kind":"list","names":_names,"notes":_notes,"parts":_parts,"on":picked()}]
 
 func change(id: String, dir: int) -> bool:
 	return id == "decal" and _pick(picked()+dir)

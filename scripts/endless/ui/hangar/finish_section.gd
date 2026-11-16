@@ -73,18 +73,25 @@ func glow_colour() -> Color:
 
 func rows() -> Array[Dictionary]:
 	var surfaces: Array[String] = []
-	for r: Dictionary in PlaneFinishes.SURFACES: surfaces.append(r.name)
+	var surface_parts: Array[String] = []
+	for r: Dictionary in PlaneFinishes.SURFACES:
+		surfaces.append(r.name)
+		surface_parts.append("surface:"+String(r.id))
 	var sheens: Array[String] = []
-	for r: Dictionary in PlaneFinishes.SHEENS: sheens.append(r.name)
+	var sheen_parts: Array[String] = []
+	for r: Dictionary in PlaneFinishes.SHEENS:
+		sheens.append(r.name)
+		sheen_parts.append("sheen:"+String(r.id))
+	# Each option's part (the page locks the ones not had).
 	var out: Array[Dictionary] = [
-		{"id":"surface","label":"Surface","kind":"choice","opts":surfaces,"on":surface},
-		{"id":"sheen","label":"Sheen","kind":"seg","opts":sheens,"on":sheen},
-		{"id":"pearl","label":"Pearl","kind":"seg","opts":["Off","On"],"on":int(pearl_on)},
+		{"id":"surface","label":"Surface","kind":"choice","opts":surfaces,"parts":surface_parts,"on":surface},
+		{"id":"sheen","label":"Sheen","kind":"seg","opts":sheens,"parts":sheen_parts,"on":sheen},
+		{"id":"pearl","label":"Pearl","kind":"seg","opts":["Off","On"],"parts":["","finish:pearl"],"on":int(pearl_on)},
 	]
 	if pearl_on:
 		out.append({"id":"pearl_hue","label":"Pearl colour","kind":"slider","frac":pearl.x,"value":str(roundi(pearl.x*360.0)),"ramp":_hues(pearl.y)})
 		out.append({"id":"pearl_amount","label":"Pearl amount","kind":"slider","frac":pearl.z,"value":str(roundi(pearl.z*100.0))})
-	out.append({"id":"glow","label":"Glow","kind":"seg","opts":["Off","On"],"on":int(glow_on),"night":glow_on})
+	out.append({"id":"glow","label":"Glow","kind":"seg","opts":["Off","On"],"parts":["","finish:glow"],"on":int(glow_on),"night":glow_on})
 	if glow_on:
 		var dots: Array[Color] = []
 		for i in LIT.size(): dots.append(glow_colour() if lit[i] else UNLIT)
