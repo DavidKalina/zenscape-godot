@@ -1,7 +1,7 @@
 extends "res://scripts/endless/ui/menu_base.gd"
 ## The pause menu (docs/design/ui/mock/Main.dc.html, its pause screen): Esc
 ## or the pad's Start (`menu`, scripts/pad.gd) in flight opens a slip down
-## the left with Resume, Logbook, Photo mode, Hangar, Controls, Settings, Quit to
+## the left with Resume, Logbook, Map, Photo mode, Hangar, Controls, Settings, Quit to
 ## title and Quit, over the flight held still.
 ##
 ## It is the game's overlay while up, as the logbook is (scripts/endless/
@@ -10,8 +10,8 @@ extends "res://scripts/endless/ui/menu_base.gd"
 ## back. It opens only in flight with no other overlay up (the shop, the
 ## logbook and photo mode keep Esc), and not while the title holds the plane.
 ##
-## Logbook opens the game's logbook over the held flight and comes back
-## here when it closes. Photo mode resumes into the game's photo mode (it
+## Logbook and Map open the game's logbook or map over the held flight and
+## come back here when they close. Photo mode resumes into the game's photo mode (it
 ## runs in the game's own tick, so the tree cannot stay held under it).
 ## Quit to title loads the scene again with the title up: nothing in the
 ## game parks a flown plane back on the title's meadow.
@@ -44,6 +44,7 @@ func _init(game: Node = null) -> void:
 	name = "PauseMenu"
 	rows = [{"id":"resume","label":"Resume","key":"Esc","pad":"Start"},
 		{"id":"logbook","label":"Logbook","key":"J"},
+		{"id":"map","label":"Map","key":"M","pad":"View"},
 		{"id":"photo","label":"Photo mode","key":"O","pad":"L3"},
 		{"id":"hangar","label":"Hangar"},
 		{"id":"controls","label":"Controls"},
@@ -121,7 +122,8 @@ func back() -> void:
 func pick(i: int) -> void:
 	match str(rows[i].id):
 		"resume": resume()
-		"logbook": _open_logbook()
+		"logbook": _hand_over(host.logbook,&"open_book")
+		"map": _hand_over(host.get("map_page"),&"open_map")
 		"photo":
 			resume()
 			if host.photo != null and host.overlay == null: host.photo.enter()
@@ -131,13 +133,12 @@ func pick(i: int) -> void:
 		"title": quit_to_title()
 		"quit": get_tree().quit()
 
-## The game's logbook over the held flight; `tick` takes the overlay back
-## when it closes.
-func _open_logbook() -> void:
-	var book: Control = host.logbook
+## The game's logbook or map over the held flight (`open` its opener);
+## `_process` takes the overlay back when it closes.
+func _hand_over(book: Control, open: StringName) -> void:
 	if book == null: return
 	host.overlay = null
-	book.open_book()
+	book.call(open)
 	if host.overlay != book:
 		host.overlay = self
 		return

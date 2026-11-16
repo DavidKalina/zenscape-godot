@@ -32,6 +32,7 @@ const LINES := [
 	{"label":"Race a plane","actions":["fly_challenge"],"note":"hold"},
 	{"label":"Photo mode","keys":"O","actions":["photo"]},
 	{"label":"Logbook","keys":"J"},
+	{"label":"Map","keys":"M","actions":["map"]},
 	{"label":"Up again","keys":"R"},
 	{"label":"Menu","keys":"Esc","actions":["menu"]},
 ]

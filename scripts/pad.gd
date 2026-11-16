@@ -132,6 +132,9 @@ const ACTIONS := {
 	"step_in":[["button",JOY_BUTTON_BACK]],
 	"photo":[["button",JOY_BUTTON_LEFT_STICK]],
 	"menu":[["button",JOY_BUTTON_START]],
+	# In endless flight, pressed: the map page (scripts/endless/ui/map_page.gd).
+	# View is free in flight (step_in and eye_leave are the walker's).
+	"map":[["key",KEY_M],["button",JOY_BUTTON_BACK]],
 	# The menus' selection on the left stick, read as steps with a repeat
 	# (scripts/endless/ui/stick_steps.gd); the d-pad and the keys are the GUI's ui_*.
 	"menu_left":[["axis",JOY_AXIS_LEFT_X,-1.0]],
