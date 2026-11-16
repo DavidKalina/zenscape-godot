@@ -150,6 +150,14 @@ const PIECES: Array[StringName] = [
 	&"tombs_step_broken",
 	&"tombs_arch_cracked",
 	&"tombs_arch_broken",
+	# The great bridge (art/blender/temple_kit/bridge_build.py; scripts/endless/bridge_site.gd).
+	&"bridge_crown",
+	&"bridge_haunch",
+	&"bridge_haunch_broken",
+	&"bridge_abut_e",
+	&"bridge_abut_w",
+	&"bridge_tower",
+	&"bridge_tower_broken",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
