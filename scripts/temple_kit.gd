@@ -95,6 +95,7 @@ const PIECES: Array[StringName] = [
 	&"arena_fallen",
 	# The bath house (art/blender/temple_kit/baths_build.py; scripts/endless/baths_site.gd).
 	&"baths_rotunda",
+	&"baths_rotunda_cut",
 	&"baths_dome",
 	&"baths_floor",
 	&"baths_hall",

@@ -32,6 +32,7 @@ extends Node3D
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
 
 ## The rotunda's centre (world XZ).
 const C := Vector2(-149.0,-4792.0)
@@ -45,6 +46,14 @@ const HALL_HALF := 14.0
 const HALL_END := 82.0
 ## The south-west arch's way out (world XZ, a unit vector).
 const SW := Vector2(-0.788,0.616)
+## What the plane breaks in a surge roll (temple_breaks.gd): stretches of the
+## rotunda's wall, 14 m wide and 20 m high, split foot to top with a hole high
+## in them (breaks_build.py's SECTIONS: "w" 9 degrees north of west, between
+## two of the agora's east columns, on a line through the middle and out the
+## east arch into the hall; "ne" opposite the south-west arch). Each is
+## "baths/wall_<key>"; a ragged breach 8-10 m wide and 17 m high is left. The
+## rotunda is drawn without them (`baths_rotunda_cut`).
+const CRACKED: Array[String] = ["w","ne"]
 ## The trees' keep-out (TreePlan adds its ARCH_CLEAR, 18 m).
 const KEEP_C := Vector2(-126.5,-4792.0)
 const KEEP_HALF := Vector2(68.0,47.0)
@@ -55,6 +64,8 @@ const FAR_NEAREST := 280.0
 var game: Node3D
 ## The one chunk: {xf, pieces ([id, local xf]), state, task, made, node, record}.
 var chunks: Array = []
+## The cracked pieces (temple_breaks.gd).
+var breaks: Node3D
 
 static func wanted() -> bool:
 	return not ("--baths=0" in LaunchArgs.user_args())
@@ -117,19 +128,28 @@ static func grass_off(got: Dictionary, land_seed: int, x0: float, z0: float, n: 
 
 func setup(g: Node3D) -> void:
 	game = g
+	breaks = TempleBreaks.new()
+	add_child(breaks)
+	breaks.setup(g)
 	var all := layout(game.field)
 	var xf := _at(C,floor_y(game.field))
 	var pieces: Array = []
-	for e: Array in all: pieces.append([e[0],xf.affine_inverse()*(e[1] as Transform3D)])
+	for e: Array in all:
+		if e.size() > 2: breaks.add(e[2],e[0],e[1],e[3])
+		else: pieces.append([e[0],xf.affine_inverse()*(e[1] as Transform3D)])
 	chunks.append({"xf":xf,"lo":0,"pieces":pieces,"state":"away","task":-1})
 	_load_meshes()
 
-## Every piece, world: [id, xf].
+## Every piece, world: [id, xf]; a cracked one [id, xf, its name, what is left ([id, xf])].
 static func layout(field: Object) -> Array:
 	var out: Array = []
 	var fl := floor_y(field)
-	# The rotunda: its drum, dome and floor on one origin, unturned.
-	for id: StringName in [&"baths_rotunda",&"baths_dome",&"baths_floor"]: out.append([id,_at(C,fl)])
+	# The rotunda: its drum (less the cracked stretches), dome and floor on one origin, unturned.
+	for id: StringName in [&"baths_rotunda_cut",&"baths_dome",&"baths_floor"]: out.append([id,_at(C,fl)])
+	for key: String in ["w","ne"]:
+		var whole := StringName("baths_wall_%s_cracked" % key)
+		if key in CRACKED: out.append([whole,_at(C,fl),"baths/wall_"+key,[[StringName("baths_wall_%s_holed" % key),_at(C,fl)]]])
+		else: out.append([whole,_at(C,fl)])
 	# The hall's bays, west to east.
 	var kinds: Array[StringName] = [&"baths_hall",&"baths_hall_broken",&"baths_hall_end"]
 	for i in range(BAYS.size()): out.append([kinds[i],_at(C+Vector2(BAYS[i],0.0),fl)])
@@ -162,6 +182,7 @@ func step(eye: Vector3, busy: bool, here: bool) -> bool:
 		if str(ch.state) == "building":
 			if WorkerThreadPool.is_task_completed(int(ch.task)): _commit(ch)
 			else: building = true
+	if here: breaks.step(eye,not busy and not building)
 	for ch: Dictionary in chunks:
 		var o: Vector3 = (ch.xf as Transform3D).origin
 		var d := Vector2(o.x-eye.x,o.z-eye.z).length() if here else INF

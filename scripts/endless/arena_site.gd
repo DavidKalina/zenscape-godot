@@ -27,6 +27,7 @@ extends Node3D
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
 
 const B := TempleKit.BAY
 ## The oval's middle (world XZ); its long axis lies along x.
@@ -52,11 +53,26 @@ const TIER := 22.0
 const OUTER := "FFb.BFFFFFFFFb.BFb..BFFbBFFFFF"
 const UPPER := "Fb...BFFFFb.....X....BF..BFFFF"
 const TOP := "b.........................BFFF"
-const VAULT := "Vv...vVV.VVv....v....vV..vVVVV"
+const VAULT := "Vv...vVV.VVv.........vV..vVVVV"
 const INNER := "II...IIIIIIIII..I....III.IIIII"
-const SEATS := "Ss...sSPSSPSs...s....sPS.PSSPS"
+const SEATS := "Ss...sSPSPPSs...s....sPS.PSSPS"
 const INNER2 := "I.....II.I................IIII"
 const VAULT2 := "...........................VVV"
+## What the plane breaks in a surge roll (temple_breaks.gd):
+## - BLOCKED: a way through (a `P` bay on a side) whose inner arch is walled up,
+##   the wall split in three with holes through it ("arena/block": its sill is
+##   left, the way from the corridor into the arena open; bay 9 faces the open
+##   bay 24 across the arena);
+## - CRACKED_ARCH: the outer wall's arch in this bay, its crown dropped
+##   ("arena/arch": the two piers are left, and what stands on them; the lone
+##   arch keeps no vault behind it, so the gap between the piers is a way in
+##   over the inner wall, 22 m, on a shallow dive or climb);
+## - CRACKED_ROOF: the upper gallery's roof over this bay, its crown strip
+##   sagged and holed ("arena/roof": the stub along the outer wall is left,
+##   the gallery open to the sky there).
+const BLOCKED := 9
+const CRACKED_ARCH := 16
+const CRACKED_ROOF := 28
 ## Fallen stone: [bay, along (m, toward the bay before), inward (m), turn].
 const HEAPS := [[2,2.0,-7.0,0.4],[4,-2.0,-8.0,1.2],[2,-1.0,-24.0,2.0],[4,3.0,9.0,0.2],
 	[13,-2.0,-7.0,2.6],[14,5.0,-24.0,0.9],[14,-5.0,8.0,1.7],[15,2.0,-6.0,0.3],
@@ -89,6 +105,8 @@ var todo: Array = []
 var nodes: Array = []
 var records: Array = []
 var _piece_box := {}
+## The cracked pieces (temple_breaks.gd).
+var breaks: Node3D
 
 static func wanted() -> bool:
 	return not ("--colosseum-ruin=0" in LaunchArgs.user_args())
@@ -158,13 +176,15 @@ static func tile_laid(i: int, j: int) -> bool:
 	if (i == 1 and j == 3) or (i == 4 and j == 1) or (i == 5 and j == 3) or (i == 0 and j == 2): return false
 	return depth(Vector2((i-3)*B,(j-2)*B)) > SEATS_END+2.0
 
-## The site: {y (the datum), bays: [[[id, world xf]]], loose: [[id, world xf]]}.
+## The site: {y (the datum), bays: [[[id, world xf]]], loose: [[id, world xf]],
+## cracked: [[name, id, world xf, what is left ([id, world xf])]]}.
 static func layout(field: Object) -> Dictionary:
 	var y := datum(field)
 	var all := bays()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4051
 	var by_bay: Array = []
+	var cracked: Array = []
 	var turned := Transform3D(Basis(Vector3.UP,PI),Vector3.ZERO)
 	var up := Transform3D(Basis(),Vector3(0.0,TIER,0.0))
 	for i in N:
@@ -176,7 +196,9 @@ static func layout(field: Object) -> Dictionary:
 			var base := xf*Transform3D(Basis(),Vector3(0.0,[0.0,TIER,TOP_AT][tier],0.0))
 			var id: StringName = &"arena_outer" if tier == 0 else &"arena_upper"
 			var broken := StringName(String(id)+"_broken")
-			if c == "F": mine.append([id,base])
+			if c == "F" and tier == 0 and i == CRACKED_ARCH:
+				cracked.append(["arena/arch",&"arena_outer_cracked",base,[[&"arena_outer_gapped",base]]])
+			elif c == "F": mine.append([id,base])
 			if c == "B" or c == "X": mine.append([broken,base])
 			if c == "b" or c == "X": mine.append([broken,base*turned])
 		if VAULT[i] == "V": mine.append([StringName("arena_vault_"+v),xf])
@@ -185,7 +207,11 @@ static func layout(field: Object) -> Dictionary:
 		if SEATS[i] == "S": mine.append([StringName("arena_seats_"+v),xf])
 		elif SEATS[i] == "s": mine.append([StringName("arena_seats_broken_"+v),xf])
 		if INNER2[i] == "I": mine.append([StringName("arena_inner_"+v),xf*up])
-		if VAULT2[i] == "V": mine.append([StringName("arena_vault_"+v),xf*up])
+		if VAULT2[i] == "V" and i == CRACKED_ROOF and v == "a":
+			cracked.append(["arena/roof",&"arena_vault_a_cracked",xf*up,[[&"arena_vault_broken_a",xf*up]]])
+		elif VAULT2[i] == "V": mine.append([StringName("arena_vault_"+v),xf*up])
+		if i == BLOCKED and SEATS[i] == "P" and INNER[i] == "I" and v == "a":
+			cracked.append(["arena/block",&"arena_block_cracked",xf,[[&"arena_block_holed",xf]]])
 		for e: Array in FALLEN:
 			if int(e[0]) != i: continue
 			var w: Vector3 = xf*Vector3(float(e[1]),0.0,-float(e[2]))
@@ -210,7 +236,7 @@ static func layout(field: Object) -> Dictionary:
 			var broken := i <= 1 or rng.randf() < 0.3
 			var q := 1 if i <= 1 else rng.randi_range(0,3)
 			loose.append([&"agora_paving_broken" if broken else &"agora_paving",_tile(field,CENTRE+Vector2((i-3)*B,(j-2)*B),q)])
-	return {"y":y,"bays":by_bay,"loose":loose}
+	return {"y":y,"bays":by_bay,"loose":loose,"cracked":cracked}
 
 ## A heap's frame on the ground: sunk by the fall across its reach.
 static func _on_ground(field: Object, p: Vector2, yaw: float, reach: float, sink: float) -> Transform3D:
@@ -266,7 +292,11 @@ static func grass_off(got: Dictionary, land_seed: int, x0: float, z0: float, n: 
 
 func setup(g: Node3D) -> void:
 	game = g
+	breaks = TempleBreaks.new()
+	add_child(breaks)
+	breaks.setup(g)
 	var lay := layout(game.field)
+	for e: Array in lay.cracked: breaks.add(e[0],e[1],e[2],e[3])
 	var y: float = lay.y
 	var all := bays()
 	var ngroup := ceili(float(N)/GROUP)
@@ -326,6 +356,7 @@ func setup(g: Node3D) -> void:
 ## running elsewhere (one at a time). Returns whether this one is building.
 func step(eye: Vector3, busy: bool, here: bool) -> bool:
 	var d := Vector2(CENTRE.x-eye.x,CENTRE.y-eye.z).length() if here else INF
+	if here: breaks.step(eye,not busy and state != "building")
 	match state:
 		"away":
 			if d < REACH and not busy:

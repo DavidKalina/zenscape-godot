@@ -22,6 +22,7 @@ extends Node3D
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
 
 const B := TempleKit.BAY
 ## The ring's centre.
@@ -43,6 +44,12 @@ const BAYS := {5:&"tholos_lintel_l",0:&"tholos_lintel",1:&"tholos_lintel_r"}
 ## B apart along x), then lone ones [piece, at].
 const PAIR := Vector2(10.0,-4546.0)
 const LONE := [[&"column",Vector2(-5.75,-4428.0)],[&"column_broken",Vector2(12.75,-4428.0)],[&"column",Vector2(21.0,-4570.0)]]
+## What the plane breaks in a surge roll (temple_breaks.gd): the crest pair's
+## lintel, in three with its middle dropped ("tholos/lintel": its two ends are
+## left on the abaci, the way over the pair open), and LONE's columns by
+## index, slipped apart ("tholos/column_<i>": a stump is left).
+const CRACKED_LINTEL := true
+const CRACKED_COLUMNS: Array[int] = [2]
 ## The trees' keep-out (TreePlan adds its ARCH_CLEAR, 18 m).
 const KEEP_C := Vector2(8.0,-4498.0)
 const KEEP_HALF := Vector2(46.0,88.0)
@@ -56,6 +63,8 @@ const ROUND: Array[StringName] = [&"column",&"column_broken"]
 var game: Node3D
 ## Each: {xf, pieces ([id, local xf]), state, task, made, node, record}.
 var chunks: Array = []
+## The cracked pieces (temple_breaks.gd).
+var breaks: Node3D
 
 static func wanted() -> bool:
 	return not ("--tholos=0" in LaunchArgs.user_args())
@@ -106,14 +115,19 @@ static func top(field: Object) -> float:
 
 func setup(g: Node3D) -> void:
 	game = g
+	breaks = TempleBreaks.new()
+	add_child(breaks)
+	breaks.setup(g)
 	var all := layout(game.field)
 	var xf := _at(C,0.0)
 	var pieces: Array = []
-	for e: Array in all: pieces.append([e[0],xf.affine_inverse()*(e[1] as Transform3D)])
+	for e: Array in all:
+		if e.size() > 2: breaks.add(e[2],e[0],e[1],e[3])
+		else: pieces.append([e[0],xf.affine_inverse()*(e[1] as Transform3D)])
 	chunks.append({"xf":xf,"lo":0,"pieces":pieces,"state":"away","task":-1})
 	_load_meshes()
 
-## Every piece, world: [id, xf].
+## Every piece, world: [id, xf]; a cracked one [id, xf, its name, what is left ([id, xf])].
 static func layout(field: Object) -> Array:
 	var out: Array = []
 	var rng := RandomNumberGenerator.new()
@@ -140,10 +154,14 @@ static func layout(field: Object) -> Array:
 	var base := minf(_foot(field,pa),_foot(field,pb))-0.2
 	out.append([&"column",_at(pa,base,0.0)])
 	out.append([&"column",_at(pb,base,PI*0.5)])
-	out.append([&"lintel",_at(PAIR,base)])
-	for e: Array in LONE:
-		var p: Vector2 = e[1]
-		out.append([e[0],_at(p,_foot(field,p)-0.2,rng.randf_range(0.0,TAU))])
+	if CRACKED_LINTEL: out.append([&"lintel_cracked_wide",_at(PAIR,base),"tholos/lintel",[[&"lintel_snapped",_at(PAIR,base)]]])
+	else: out.append([&"lintel",_at(PAIR,base)])
+	for i in range(LONE.size()):
+		var p: Vector2 = LONE[i][1]
+		var at := _at(p,_foot(field,p)-0.2,rng.randf_range(0.0,TAU))
+		if i in CRACKED_COLUMNS and LONE[i][0] == &"column":
+			out.append([&"column_cracked_wide",at,"tholos/column_%d" % i,[[&"street_stump",at]]])
+		else: out.append([LONE[i][0],at])
 	return out
 
 ## The grass kept off the base (endless_grass.gd grow_cell, over its cell's
@@ -176,6 +194,7 @@ func step(eye: Vector3, busy: bool, here: bool) -> bool:
 		if str(ch.state) == "building":
 			if WorkerThreadPool.is_task_completed(int(ch.task)): _commit(ch)
 			else: building = true
+	if here: breaks.step(eye,not busy and not building)
 	for ch: Dictionary in chunks:
 		var o: Vector3 = (ch.xf as Transform3D).origin
 		var d := Vector2(o.x-eye.x,o.z-eye.z).length() if here else INF

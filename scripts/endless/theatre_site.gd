@@ -33,6 +33,7 @@ extends Node3D
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
 
 const C := Vector2(-796.5,-3747.0)
 const UP_DEG := 190.0
@@ -60,6 +61,16 @@ const FLOOR_COLS := 12
 const GONE: Array[Vector2i] = [Vector2i(1,6),Vector2i(2,7),Vector2i(3,5),Vector2i(0,9),Vector2i(4,6),Vector2i(1,2),Vector2i(2,3),Vector2i(0,4)]
 ## Slumped, [ring, sector]: sunk and tipped.
 const SLUMPED: Array[Vector2i] = [Vector2i(1,7),Vector2i(2,6),Vector2i(1,5),Vector2i(3,8),Vector2i(2,10),Vector2i(0,1),Vector2i(4,3)]
+## What the plane breaks in a surge roll (temple_breaks.gd):
+## - the stage wall's bay at this v (between the middle doorway and a side
+##   one), split down from its window's notch, the wedge between the cracks
+##   pushed out ("theatre/stage": a slot 6.5 m wide is left, top to floor);
+## - the rim's lintels by number, in three with the middle dropped
+##   ("theatre/lintel_<k>": their ends are left on the abaci);
+## - the rim's columns by sector, slipped apart ("theatre/column_<k>": a stump).
+const CRACKED_STAGE := 16.0
+const CRACKED_LINTELS: Array[int] = [3]
+const CRACKED_COLUMNS: Array[int] = [10]
 ## The trees' keep-out (TreePlan adds its ARCH_CLEAR, 18 m).
 const KEEP_C := Vector2(-818.0,-3747.0)
 const KEEP_HALF := Vector2(64.0,84.0)
@@ -71,6 +82,8 @@ const FAR_NEAREST := 280.0
 var game: Node3D
 ## {root (the drawing's frame, world), draws ([id, world xf]), groups ([{xf, pieces}]), state, task, made, node, records}.
 var site := {}
+## The cracked pieces (temple_breaks.gd).
+var breaks: Node3D
 
 static func wanted() -> bool:
 	return not ("--theatre=0" in LaunchArgs.user_args())
@@ -140,8 +153,14 @@ func setup(g: Node3D) -> void:
 	var laid := layout(field)
 	var groups: Array = []
 	for k in range(SECTORS+1): groups.append({"xf":group_frame(k,y0),"pieces":[]})
+	breaks = TempleBreaks.new()
+	add_child(breaks)
+	breaks.setup(g)
 	var draws: Array = []
 	for e: Array in laid:
+		if e.size() > 3:
+			breaks.add(e[3],e[0],e[1],e[4])
+			continue
 		draws.append([e[0],e[1]])
 		var gi := int(e[2])
 		var gxf: Transform3D = groups[gi].xf
@@ -154,7 +173,7 @@ static func group_frame(k: int, y0: float) -> Transform3D:
 	if k >= SECTORS: return _frame(C,y0,_yaw(_v()))
 	return _frame(C,y0,_yaw(dir_at(-90.0+SECTOR_DEG*(k+0.5))))
 
-## Every piece, world: [id, xf, group].
+## Every piece, world: [id, xf, group]; a cracked one [id, xf, group, its name, what is left ([id, xf])].
 static func layout(field: Object) -> Array:
 	var out: Array = []
 	var rng := RandomNumberGenerator.new()
@@ -181,14 +200,19 @@ static func layout(field: Object) -> Array:
 		if k == 5 or k == 6: continue
 		var d := dir_at(-90.0+SECTOR_DEG*(k+0.5))
 		var p := C+d*COL_R
-		out.append([&"column_broken" if k == 0 or k == 11 else &"column",_frame(p,top,_yaw(d)),k])
+		var cxf := _frame(p,top,_yaw(d))
+		if k in CRACKED_COLUMNS and k != 0 and k != 11:
+			out.append([&"column_cracked_wide",cxf,k,"theatre/column_%d" % k,[[&"street_stump",cxf]]])
+		else: out.append([&"column_broken" if k == 0 or k == 11 else &"column",cxf,k])
 	for e: Array in [[10.55,-1.5,0.3],[11.3,-4.0,1.2],[5.4,-2.5,0.7]]:
 		var d := dir_at(-90.0+SECTOR_DEG*float(e[0]))
 		out.append([&"agora_drum",_frame(C+d*(COL_R+float(e[1])),top,_yaw(d)+float(e[2])),int(e[0])])
 	for k in [1,2,3,7,8]:
 		var d := dir_at(-90.0+SECTOR_DEG*(k+1))
 		var m := C+d*(COL_R*cos(deg_to_rad(SECTOR_DEG*0.5)))
-		out.append([&"lintel",_frame(m,top,_yaw(d)+PI*0.5),k])
+		var lxf := _frame(m,top,_yaw(d)+PI*0.5)
+		if k in CRACKED_LINTELS: out.append([&"lintel_cracked_wide",lxf,k,"theatre/lintel_%d" % k,[[&"lintel_snapped",lxf]]])
+		else: out.append([&"lintel",lxf,k])
 	# ---- The stage wall: [piece, v, turned].
 	var st := SECTORS
 	var syaw := _yaw(_v())
@@ -198,7 +222,10 @@ static func layout(field: Object) -> Array:
 			[&"theatre_stage_wall",-42.0,false],[&"theatre_stage_wall",-52.0,true],[&"theatre_stage_end",-62.5,true],
 			[&"theatre_stage_fallen",50.0,true],[&"theatre_stage_end",68.5,true]]:
 		var p := at_sv(WALL_S,float(e[1]))
-		out.append([e[0],_frame(p,y0,syaw+(PI if bool(e[2]) else 0.0)),st])
+		var wxf := _frame(p,y0,syaw+(PI if bool(e[2]) else 0.0))
+		if e[0] == &"theatre_stage_wall" and is_equal_approx(float(e[1]),CRACKED_STAGE):
+			out.append([&"theatre_stage_wall_cracked",wxf,st,"theatre/stage",[[&"theatre_stage_wall_holed",wxf]]])
+		else: out.append([e[0],wxf,st])
 	# The -v arch a course up, on the rising ground.
 	out.append([&"theatre_side_arch",_frame(at_sv(FACE_S,-ARCH_V),y0+2.4,syaw),st])
 	out.append([&"theatre_side_arch",_frame(at_sv(FACE_S,ARCH_V),y0,syaw),st])
@@ -284,6 +311,7 @@ func step(eye: Vector3, busy: bool, here: bool) -> bool:
 	if str(site.state) == "building":
 		if WorkerThreadPool.is_task_completed(int(site.task)): _commit()
 		else: building = true
+	if here: breaks.step(eye,not busy and not building)
 	var d := Vector2(C.x-eye.x,C.y-eye.z).length() if here else INF
 	match str(site.state):
 		"away":

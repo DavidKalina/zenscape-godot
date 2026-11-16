@@ -3,7 +3,8 @@ extends Node3D
 ## through in a hot surge roll (scripts/endless/surge_smash.gd), as it does the
 ## cracked walls (cracked_walls.gd). Out of a surge each is stone like the rest.
 ##
-## A site (aqueduct_site.gd, street_site.gd, agora_site.gd) leaves the piece out
+## A site (aqueduct_site.gd, street_site.gd, agora_site.gd, arena_site.gd,
+## theatre_site.gd, baths_site.gd, tholos_site.gd) leaves the piece out
 ## of its MultiMeshes and boxes and hands it here instead:
 ##
 ##   const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
@@ -243,7 +244,9 @@ func _solid_on(s: Dictionary) -> void:
 	if bool(s.on): return
 	s.on = true
 	(s.body as StaticBody3D).collision_layer = game.arches.LAYER
-	game.arches.loose.append(s.record)
+	# First in the list: where a breakable stands in a gap of its site's stone
+	# (an arch walled up), the surge's look ahead finds it before the stone by it.
+	game.arches.loose.push_front(s.record)
 	GroundNative.bump_loose()
 
 func _solid_off(s: Dictionary) -> void:
