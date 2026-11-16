@@ -963,6 +963,7 @@ func _ready() -> void:
 	# Half a second in, not at once: a tree paused before the flight's first
 	# tick ends the run in an access violation when it quits.
 	if _has_arg("--open-settings"): get_tree().create_timer(0.5).timeout.connect(open_settings)
+	if _has_arg("--hangar"): get_tree().create_timer(0.5).timeout.connect(open_hangar)
 
 ## The grass parted round the parked plane in the menu: out to PART_SPANS
 ## wingspans (round the eye EYE_PART_SPANS, and SIGHT_PART_SPANS round the
@@ -2187,6 +2188,15 @@ func _setting_changed(key: String) -> void:
 func key_line_under(menu: bool) -> void:
 	for label: Label in [_hint,_stop_cue]:
 		if label != null: label.modulate.a = 0.0 if menu else 1.0
+
+## `--hangar`: the hangar (scripts/endless/ui/hangar_page.gd) as the game
+## starts, from the title when it is up, else from the pause menu.
+func open_hangar() -> void:
+	if stage != null and stage.holding():
+		if menu != null and menu.has_method("open_hangar"): menu.open_hangar()
+	elif pause_menu != null:
+		pause_menu.open_menu()
+		if pause_menu.is_open(): pause_menu.open_hangar()
 
 ## The settings page (scripts/endless/ui/settings_page.gd) over the flight,
 ## the flight held under it as the logbook holds it; null if another overlay

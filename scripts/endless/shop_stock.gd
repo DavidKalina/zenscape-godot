@@ -218,10 +218,16 @@ static func dress(figure: Node3D, book: RefCounted, try := {}) -> void:
 	if figure == null or book == null: return
 	for slot: String in SLOTS:
 		var id: String = try.get(slot,worn(book,slot))
-		if String(figure.get_meta("shop_"+slot,"")) == id: continue
-		figure.set_meta("shop_"+slot,id)
+		# The hangar's look (PlaneLook), when the book has one, is the paint
+		# worn; a fitting (`try`) still shows the shop's paint over it.
+		var look_key: String = book.look_key if slot == "paint" and not try.has(slot) and book is PilotBook else ""
+		var key := id if look_key == "" else look_key
+		if String(figure.get_meta("shop_"+slot,"")) == key: continue
+		figure.set_meta("shop_"+slot,key)
 		match slot:
-			"paint": _paint(figure,item(id))
+			"paint":
+				if look_key == "": _paint(figure,item(id))
+				else: PlaneLook.apply(figure,book.look,(item(id).get("livery",{}) as Dictionary).duplicate(),finish_values(item(id)))
 			"ribbon": _ribbon(figure,item(id).get("colours",[]))
 
 ## Repaints the figure in place (PlaneFigure `repaint`) to the paint's

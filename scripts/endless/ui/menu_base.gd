@@ -26,6 +26,8 @@ const GAME_NAME := "ZENSCAPE"
 const GAME_BY := "[YOUR NAME]"
 ## The settings page (lane settings). Until it is there, a toast.
 const SETTINGS_PAGE := "res://scripts/endless/ui/settings_page.gd"
+## The hangar's page (loaded when opened: it preloads this file's own kit).
+const HANGAR_PAGE := "res://scripts/endless/ui/hangar_page.gd"
 ## How long a toast shows (s), and its fade at the end.
 const TOAST_S := 2.4
 const TOAST_FADE := 0.3
@@ -261,3 +263,8 @@ func _page_closed(p: Control) -> void:
 func open_settings() -> void:
 	if ResourceLoader.exists(SETTINGS_PAGE): open_page((load(SETTINGS_PAGE) as GDScript).new())
 	else: say("Settings: coming")
+
+## The hangar (hangar_page.gd), where the plane's look is set: the title's
+## and the pause menu's Hangar rows both come here.
+func open_hangar() -> void:
+	open_page((load(HANGAR_PAGE) as GDScript).new())

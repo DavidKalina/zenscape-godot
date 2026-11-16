@@ -1,7 +1,7 @@
 extends "res://scripts/endless/ui/menu_base.gd"
 ## The pause menu (docs/design/ui/mock/Main.dc.html, its pause screen): Esc
 ## or the pad's Start (`menu`, scripts/pad.gd) in flight opens a slip down
-## the left with Resume, Logbook, Photo mode, Controls, Settings, Quit to
+## the left with Resume, Logbook, Photo mode, Hangar, Controls, Settings, Quit to
 ## title and Quit, over the flight held still.
 ##
 ## It is the game's overlay while up, as the logbook is (scripts/endless/
@@ -45,6 +45,7 @@ func _init(game: Node = null) -> void:
 	rows = [{"id":"resume","label":"Resume","key":"Esc","pad":"Start"},
 		{"id":"logbook","label":"Logbook","key":"J"},
 		{"id":"photo","label":"Photo mode","key":"O","pad":"L3"},
+		{"id":"hangar","label":"Hangar"},
 		{"id":"controls","label":"Controls"},
 		{"id":"settings","label":"Settings"},
 		{"id":"title","label":"Quit to title","gap":8.0},
@@ -124,6 +125,7 @@ func pick(i: int) -> void:
 		"photo":
 			resume()
 			if host.photo != null and host.overlay == null: host.photo.enter()
+		"hangar": open_hangar()
 		"controls": open_page(ControlsPage.new())
 		"settings": open_settings()
 		"title": quit_to_title()
@@ -182,7 +184,8 @@ func tick(delta: float) -> void:
 
 func _draw() -> void:
 	var s := k()
-	draw_rect(Rect2(Vector2.ZERO,size),Color(Kit.NIGHT,Kit.WASH_A*_wash))
+	# No wash under a page that shows the scene (the hangar: the plane's colours).
+	if page == null or page.get("shows_scene") != true: draw_rect(Rect2(Vector2.ZERO,size),Color(Kit.NIGHT,Kit.WASH_A*_wash))
 	if page == null:
 		var arrival := Kit.slip_in(age)
 		var slip := Rect2(72.0*s-arrival.x*s,238.0*s,228.0*s,(8.0+30.0+rows_height(30.0)+12.0)*s)

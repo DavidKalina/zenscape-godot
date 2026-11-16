@@ -10,6 +10,8 @@ extends RefCounted
 ##   found     ids met once (gaps, starters, shops), each with its flight
 ##   owned     shop items bought; worn: the item worn in each slot
 ##   opened    what the plane broke open and stays open (cracked walls' handles)
+##   look      the plane's own look from the hangar (scripts/endless/plane_look.gd),
+##             {} while none is set; set, it wins over the worn paint
 ## and `flight`, this flight's own (lift-off to the next lift-off), never
 ## kept: its tallies, its money, its lines, its challenges, the records it
 ## set. The landing summary reads it.
@@ -37,6 +39,12 @@ var found := {}
 var owned := {}
 var worn := {}
 var opened := {}
+## The hangar's look (PlaneLook; `set_look`), {} for none, and a name for
+## this state of it ("" for none) that changes each time it is set: what
+## ShopStock `dress` compares to know the plane wears it already.
+var look := {}
+var look_key := ""
+var _look_rev := 0
 var flights := 0
 var flight := {}
 ## Where it is kept ("" never writes).
@@ -93,13 +101,17 @@ func load_book() -> void:
 	owned = data.get("owned",{})
 	worn = data.get("worn",{})
 	opened = data.get("opened",{})
+	var kept: Variant = data.get("look",{})
+	var was := _dirty
+	set_look(kept if kept is Dictionary else {})
+	_dirty = was
 	flights = int(data.get("flights",0))
 
 func save() -> void:
 	_dirty = false
 	_since = 0.0
 	if path == "": return
-	var data := {"economy":Economy.SAVE_VERSION,"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
+	var data := {"economy":Economy.SAVE_VERSION,"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"look":look,"flights":flights}
 	var tmp := path+".tmp"
 	var f := FileAccess.open(tmp,FileAccess.WRITE)
 	if f == null: return
@@ -179,6 +191,17 @@ func own(item: String) -> void:
 
 func wear(slot: String, item: String) -> void:
 	worn[slot] = item
+	# A paint put on at the shop is what the plane wears: the hangar's look
+	# over it goes (until skins are presets, spec-hangar.md).
+	if slot == "paint" and not look.is_empty(): set_look({})
+	_dirty = true
+
+## The hangar's look (a PlaneLook dictionary, JSON's own types only), or {}
+## for none: kept, and worn from the next `ShopStock.dress`.
+func set_look(to: Dictionary) -> void:
+	look = to
+	_look_rev += 1
+	look_key = "" if look.is_empty() else "look#%d" % _look_rev
 	_dirty = true
 
 func worn_in(slot: String, default: String = "") -> String:
