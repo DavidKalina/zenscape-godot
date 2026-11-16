@@ -8,8 +8,17 @@ extends RefCounted
 ##   tally     counts that only grow (trees, clouds, landings, metres ...)
 ##   records   bests: higher wins, except the names in LOWER_WINS
 ##   found     ids met once (gaps, starters, shops), each with its flight
-##   owned     shop items bought; worn: the item worn in each slot
+##   owned     shop items bought (slot/name) and parts of a look bought
+##             (kind:name, scripts/endless/plane_parts.gd); worn: the item
+##             worn in each slot
 ##   opened    what the plane broke open and stays open (cracked walls' handles)
+##   look      what the plane wears (scripts/endless/plane_look.gd): the one
+##             word on it. {} in a book that never set one: then the skin
+##             `worn.paint` names, as the shop sells it. `worn.paint` is only
+##             the skin preset loaded last (ShopStock `load_look`, which sets
+##             the two together), and what a look from before presets lacks
+##   presets   the looks the pilot saved, by slot ("1".."5"), and "last": the
+##             unsaved look the last preset loaded replaced (ShopStock)
 ## and `flight`, this flight's own (lift-off to the next lift-off), never
 ## kept: its tallies, its money, its lines, its challenges, the records it
 ## set. The landing summary reads it.
@@ -37,6 +46,18 @@ var found := {}
 var owned := {}
 var worn := {}
 var opened := {}
+## The hangar's look (PlaneLook; `set_look`), {} for none, and a name for
+## this state of it ("" for none) that changes each time it is set: what
+## ShopStock `dress` compares to know the plane wears it already.
+var look := {}
+var look_key := ""
+## The saved looks, by slot (`set_preset`).
+var presets := {}
+var _look_rev := 0
+## A look tried on and not kept (the hangar showing a part not had): while
+## not empty ShopStock `dress` puts it on the plane in place of `look`.
+## Never saved.
+var fitting := {}
 var flights := 0
 var flight := {}
 ## Where it is kept ("" never writes).
@@ -93,13 +114,22 @@ func load_book() -> void:
 	owned = data.get("owned",{})
 	worn = data.get("worn",{})
 	opened = data.get("opened",{})
+	var kept: Variant = data.get("look",{})
+	var was := _dirty
+	set_look(kept if kept is Dictionary else {})
+	_dirty = was
+	presets = {}
+	var saved: Variant = data.get("presets",{})
+	if saved is Dictionary:
+		for k: String in saved:
+			if saved[k] is Dictionary: presets[k] = saved[k]
 	flights = int(data.get("flights",0))
 
 func save() -> void:
 	_dirty = false
 	_since = 0.0
 	if path == "": return
-	var data := {"economy":Economy.SAVE_VERSION,"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
+	var data := {"economy":Economy.SAVE_VERSION,"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"look":look,"presets":presets,"flights":flights}
 	var tmp := path+".tmp"
 	var f := FileAccess.open(tmp,FileAccess.WRITE)
 	if f == null: return
@@ -179,6 +209,21 @@ func own(item: String) -> void:
 
 func wear(slot: String, item: String) -> void:
 	worn[slot] = item
+	_dirty = true
+
+## `to` kept as the preset in `slot` ({} empties the slot).
+func set_preset(slot: String, to: Dictionary) -> void:
+	if to.is_empty(): presets.erase(slot)
+	else: presets[slot] = to
+	_dirty = true
+
+## The plane's look (a PlaneLook dictionary, JSON's own types only), or {}
+## for none: kept, and worn from the next `ShopStock.dress`. A paint worn
+## goes through ShopStock `wear`, which sets the look with it.
+func set_look(to: Dictionary) -> void:
+	look = to
+	_look_rev += 1
+	look_key = "" if look.is_empty() else "look#%d" % _look_rev
 	_dirty = true
 
 func worn_in(slot: String, default: String = "") -> String:

@@ -1,7 +1,7 @@
 extends "res://scripts/endless/ui/menu_base.gd"
 ## The title (docs/design/ui/mock/Main.dc.html, its title screen): the
 ## game's name top left over a hairline with its gilt flag, and a small slip
-## lower left with Start, Settings, Credits and Quit. It stands in for
+## lower left with Start, Hangar, Settings, Credits and Quit. It stands in for
 ## scripts/endless/main_menu.gd over the parked plane (studies/
 ## endless_flight.gd `_park_for_menu`; `--menus=old` keeps that one), and
 ## keeps its contract with the stage (scripts/endless/menu_stage.gd):
@@ -25,7 +25,7 @@ func _init(game: Node = null) -> void:
 	super()
 	host = game
 	name = "TitleMenu"
-	rows = [{"id":"start","label":"Start"},{"id":"settings","label":"Settings"},
+	rows = [{"id":"start","label":"Start"},{"id":"hangar","label":"Hangar"},{"id":"settings","label":"Settings"},
 		{"id":"credits","label":"Credits"},{"id":"quit","label":"Quit","gap":8.0}]
 	active = false
 
@@ -61,6 +61,7 @@ func tick(delta: float) -> void:
 func pick(i: int) -> void:
 	match str(rows[i].id):
 		"start": picked.emit("start")
+		"hangar": open_hangar()
 		"settings": open_settings()
 		"credits": open_page(CreditsPage.new())
 		"quit": picked.emit("quit")

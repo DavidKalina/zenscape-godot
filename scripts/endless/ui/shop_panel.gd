@@ -8,7 +8,10 @@ extends Control
 ## the keys.
 ##
 ## `view.rows` is [{id, slot, s (selection 0..1), pulse, ...}], `view.chosen`
-## the index in it.
+## the index in it. A row's slot is its section (ShopStock SECTIONS): the
+## head's tabs, drawn as small as they must be to fit the panel, the count
+## only on the one shown. A part's row (a look's pattern, finish or decal)
+## shows the little plane in the part's `thumb` colours.
 
 const Kit = preload("res://scripts/endless/ui/ui_kit.gd")
 const FlightHud = preload("res://scripts/endless/ui/flight_hud.gd")
@@ -180,25 +183,36 @@ func _draw_head(k: float, _count: int) -> void:
 	draw_style_box(sb,plate)
 	FlightHud.draw_coin(self,Vector2(plate.position.x+17.0*k,y),coin_d)
 	Kit.text(self,Kit.NUM,txt,Vector2(rx,y),fs,k,0.02,Kit.GOLD,1.0)
-	# The sections.
+	# The sections: every name, the one shown with how many of it are had;
+	# as large as fits the panel's width.
 	var x := px
 	var ty := _panel.position.y+72.0*k
-	for slot: String in ShopStock.SLOTS:
+	var held := 0
+	var all := 0
+	for r: Dictionary in view.rows:
+		if r.slot != cur_slot: continue
+		all += 1
+		if ShopStock.has(view.book,r.id): held += 1
+	var count := "%d/%d" % [held,all]
+	var fs_tab := 15.0
+	var gap := 30.0
+	var room := _panel.end.x-22.0*k-px
+	while fs_tab > 9.0:
+		var need := Kit.text_w(Kit.NUM,count,fs_tab-3.0,k,0.04)+6.0*k-gap*k
+		for slot: String in ShopStock.SECTIONS: need += Kit.text_w(Kit.MED,String(ShopStock.SLOT_NAMES.get(slot,slot)).to_upper(),fs_tab,k,0.1)+gap*k
+		if need <= room: break
+		fs_tab -= 0.5
+		gap = maxf(gap-2.0,11.0)
+	for slot: String in ShopStock.SECTIONS:
 		var label := String(ShopStock.SLOT_NAMES.get(slot,slot)).to_upper()
-		var held := 0
-		var all := 0
-		for r: Dictionary in view.rows:
-			if r.slot != slot: continue
-			all += 1
-			if ShopStock.has(view.book,r.id): held += 1
 		var on := slot == cur_slot
 		var col := Kit.CREAM if on else DIM
-		var w := Kit.text(self,Kit.MED,label,Vector2(x,ty),15.0,k,0.14,col)
-		var w2 := Kit.text(self,Kit.NUM,"%d/%d" % [held,all],Vector2(x+w+8.0*k,ty),12.0,k,0.04,Color(Kit.GOLD,0.9 if on else 0.4))
-		var full := w+8.0*k+w2
-		if on: draw_rect(Rect2(x,ty+12.0*k,full,2.5*k),Kit.GOLD)
-		_tab_hits.append({"rect":Rect2(x-6.0*k,ty-15.0*k,full+12.0*k,36.0*k),"slot":slot})
-		x += full+30.0*k
+		var full := Kit.text(self,Kit.MED,label,Vector2(x,ty),fs_tab,k,0.1,col)
+		if on:
+			full += 6.0*k+Kit.text(self,Kit.NUM,count,Vector2(x+full+6.0*k,ty),fs_tab-3.0,k,0.04,Color(Kit.GOLD,0.9))
+			draw_rect(Rect2(x,ty+12.0*k,full,2.5*k),Kit.GOLD)
+		_tab_hits.append({"rect":Rect2(x-gap*0.5*k,ty-15.0*k,full+gap*k,36.0*k),"slot":slot})
+		x += full+gap*k
 	Kit.hair(self,Vector2(px,_panel.position.y+(HEAD_H-4.0)*k),_panel.end.x-22.0*k,k,Color(Kit.GOLD,0.25))
 
 ## The foot: what the key does for the chosen item, and the keys.
@@ -208,7 +222,7 @@ func _draw_foot(k: float, cur: Dictionary, _item: Dictionary) -> void:
 	var top := _panel.end.y-FOOT_H*k
 	Kit.hair(self,Vector2(x,top+2.0*k),_panel.end.x-22.0*k,k,Color(Kit.GOLD,0.25))
 	var had: bool = ShopStock.has(view.book,cur.id)
-	var worn: bool = ShopStock.worn(view.book,cur.slot) == cur.id
+	var worn: bool = ShopStock.wearing(view.book,cur.id)
 	var price := int(item.get("price",0))
 	var money := int(view.book.money)
 	var yy := top+27.0*k
@@ -238,7 +252,7 @@ func _draw_row(r: Dictionary, index: int, rect0: Rect2, k: float, top: float, bo
 	var pop: float = r.pulse
 	var chosen: bool = index == view.chosen
 	var had: bool = ShopStock.has(view.book,r.id)
-	var worn: bool = ShopStock.worn(view.book,r.slot) == r.id
+	var worn: bool = ShopStock.wearing(view.book,r.id)
 	var price := int(item.get("price",0))
 	var can := had or price <= int(view.book.money)
 	var rare := ShopStock.rarity(item)
@@ -280,7 +294,7 @@ func _draw_row(r: Dictionary, index: int, rect0: Rect2, k: float, top: float, bo
 	pb.bg_color = tint
 	pb.set_corner_radius_all(int(6.0*kc))
 	draw_style_box(pb,pv)
-	if r.slot == "paint": _draw_plane(pv,item,dim,kc)
+	if r.slot == "paint" or item.has("thumb"): _draw_plane(pv,item,dim,kc)
 	else: _draw_ribbon(pv,cols,dim,kc)
 	draw_rect(Rect2(pv.position.x+3.0*kc,pv.end.y-3.0*kc,pv.size.x-6.0*kc,2.5*kc),Color(rc,0.9 if rare != "common" else 0.4))
 	if not can: draw_rect(pv,Color(0.05,0.05,0.07,0.18),true)
@@ -345,6 +359,7 @@ func _badge(right: Vector2, word: String, col: Color, ink: Color, kc: float, a: 
 	return w
 
 func _colours(i: Dictionary) -> Array:
+	if i.has("thumb"): return i.thumb
 	if i.has("livery"):
 		var l: Dictionary = i.livery
 		return [l.get("body",Color.WHITE),l.get("trim",Color.WHITE),l.get("wing",Color.WHITE),l.get("dark",Color.BLACK)]

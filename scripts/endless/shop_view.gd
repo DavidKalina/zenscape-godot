@@ -1,8 +1,11 @@
 extends Control
 ## The shop's overlay (shop_sites.gd opens it on its strip; the game's
-## `overlay` while up): the stock by slot (shop_stock.gd) as a list in a
-## panel on the right (ui/shop_panel.gd draws it), the plane standing by
-## wearing the choice. Keys: W S or the arrows (the pad's stick or
+## `overlay` while up): the stock by section (shop_stock.gd SECTIONS: the
+## slots' items, then the parts of a look, scripts/endless/plane_parts.gd)
+## as a list in a panel on the right (ui/shop_panel.gd draws it), the plane
+## standing by wearing the choice. An item is bought and worn in its slot; a
+## part is bought and put on the plane's look (ShopStock `put_part`), and
+## tried on as the look with it. Keys: W S or the arrows (the pad's stick or
 ## d-pad) choose, Q E or A D (the bumpers) change section, Enter (the pad's X) buys
 ## or wears, Esc (B) leaves; Boost takes off, and that leaves too
 ## (shop_sites.gd).
@@ -30,8 +33,8 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	size = get_viewport_rect().size
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for slot: String in ShopStock.SLOTS:
-		for i: Dictionary in ShopStock.items(slot):
+	for section: String in ShopStock.SECTIONS:
+		for i: Dictionary in ShopStock.listed(section):
 			rows.append({"id":i.id,"slot":i.slot,"s":0.0,"pulse":0.0})
 	# Start on what is worn.
 	var worn := ShopStock.worn(book,ShopStock.SLOTS[0])
@@ -91,16 +94,21 @@ func choose_to(index: int) -> void:
 
 ## The next (or previous) section: its worn item chosen.
 func choose_slot_by(by: int) -> void:
-	var at := ShopStock.SLOTS.find(rows[chosen].slot)
-	choose_slot(ShopStock.SLOTS[wrapi(at+by,0,ShopStock.SLOTS.size())])
+	var at := ShopStock.SECTIONS.find(rows[chosen].slot)
+	choose_slot(ShopStock.SECTIONS[wrapi(at+by,0,ShopStock.SECTIONS.size())])
 
+## Section `slot`: the row the plane has on chosen, its first when it has
+## none of them on.
 func choose_slot(slot: String) -> void:
 	if rows[chosen].slot == slot: return
-	var worn := ShopStock.worn(book,slot)
+	var first := -1
 	for k in rows.size():
-		if rows[k].id == worn:
+		if rows[k].slot != slot: continue
+		if first < 0: first = k
+		if ShopStock.wearing(book,rows[k].id):
 			choose_to(k)
 			return
+	if first >= 0: choose_to(first)
 
 ## The chosen item worn, bought first if it is not had (when the money
 ## stretches).
@@ -112,15 +120,22 @@ func act() -> void:
 			if _panel != null: _panel.shake = 1.0
 			return
 		r.pulse = 1.0
-	book.wear(r.slot,id)
+	if ShopStock.is_part(id):
+		if not ShopStock.wearing(book,id): ShopStock.put_part(book,id)
+	# A paint worn is its preset loaded as the look (ShopStock `wear`).
+	else: ShopStock.wear(book,r.slot,id)
 	_refresh()
 
 func leave() -> void:
 	if _leave.is_valid(): _leave.call()
 
 func _refresh() -> void:
-	# Tried on: the chosen item, the rest as worn.
-	ShopStock.dress(figure,book,{rows[chosen].slot:rows[chosen].id})
+	# Tried on: the chosen item, the rest as worn; a part, the look with it on.
+	var id: String = rows[chosen].id
+	if ShopStock.is_part(id): ShopStock.dress(figure,book,{"look":ShopStock.look_with(book,id)})
+	# What is worn shows as the book has it (its look over the paint).
+	elif ShopStock.wearing(book,id): ShopStock.dress(figure,book)
+	else: ShopStock.dress(figure,book,{rows[chosen].slot:id})
 
 ## The chosen row's item id (for drivers).
 func chosen_id() -> String:
