@@ -54,6 +54,24 @@ const PIECES: Array[StringName] = [
 	&"agora_altar",
 	&"agora_plinth",
 	&"agora_drum",
+	# The theatre (art/blender/temple_kit/theatre_build.py; scripts/endless/theatre_site.gd).
+	&"theatre_seat_0",
+	&"theatre_seat_1",
+	&"theatre_seat_2",
+	&"theatre_seat_3",
+	&"theatre_seat_4",
+	&"theatre_seat_broken_0",
+	&"theatre_seat_broken_1",
+	&"theatre_seat_broken_2",
+	&"theatre_seat_broken_3",
+	&"theatre_seat_broken_4",
+	&"theatre_rim",
+	&"theatre_stage_mid",
+	&"theatre_stage_door",
+	&"theatre_stage_wall",
+	&"theatre_stage_end",
+	&"theatre_stage_fallen",
+	&"theatre_side_arch",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
