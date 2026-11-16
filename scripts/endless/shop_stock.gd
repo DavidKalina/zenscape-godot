@@ -227,7 +227,7 @@ static func dress(figure: Node3D, book: RefCounted, try := {}) -> void:
 		match slot:
 			"paint":
 				if look_key == "": _paint(figure,item(id))
-				else: PlaneLook.apply(figure,book.look,(item(id).get("livery",{}) as Dictionary).duplicate(),finish_values(item(id)))
+				else: PlaneLook.apply(figure,book.look,(item(id).get("livery",{}) as Dictionary).duplicate(),finish_values(item(id)),finish_values(PlaneLook.finish_row(book.look)))
 			"ribbon": _ribbon(figure,item(id).get("colours",[]))
 
 ## Repaints the figure in place (PlaneFigure `repaint`) to the paint's
