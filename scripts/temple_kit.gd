@@ -117,6 +117,17 @@ const PIECES: Array[StringName] = [
 	&"sanctuary_stair",
 	&"sanctuary_stair_arch",
 	&"sanctuary_spill",
+	# The viaduct (art/blender/temple_kit/viaduct_build.py; scripts/endless/viaduct_site.gd).
+	&"viaduct_pier",
+	&"viaduct_arch",
+	&"viaduct_arch_b",
+	&"viaduct_arch_broken",
+	&"viaduct_pier_stump",
+	&"viaduct_top_pier",
+	&"viaduct_top_arch",
+	&"viaduct_top_arch_b",
+	&"viaduct_top_arch_broken",
+	&"viaduct_top_stump",
 	# The citadel (art/blender/temple_kit/citadel_build.py; scripts/endless/citadel_site.gd).
 	&"citadel_wall",
 	&"citadel_wall_gallery",
