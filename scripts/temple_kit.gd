@@ -54,6 +54,11 @@ const PIECES: Array[StringName] = [
 	&"agora_altar",
 	&"agora_plinth",
 	&"agora_drum",
+	# The round temple (art/blender/temple_kit/tholos_build.py; scripts/endless/tholos_site.gd).
+	&"tholos_base",
+	&"tholos_lintel",
+	&"tholos_lintel_l",
+	&"tholos_lintel_r",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
