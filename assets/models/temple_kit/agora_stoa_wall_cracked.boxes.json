@@ -1,0 +1,15 @@
+{
+ "piece": "agora_stoa_wall_cracked",
+ "boxes": [
+  [
+   -9.25,
+   -6.0,
+   -1.35,
+   18.5,
+   49.0,
+   2.7
+  ]
+ ],
+ "tris": 4130,
+ "far_tris": 192
+}
