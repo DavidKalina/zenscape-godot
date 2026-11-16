@@ -25,6 +25,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | A still of a moment in a driven run (the plane touching down, a piece by its AABB) | in a driver: `await shot_at("side", node, {"when": cond})`, then step frames; run with `drive.py --rendered` (drive.gd, Shots) |
 | A plane skin's sheet: the hero plane wearing it from a few angles, by day and (when it glows) by night, in one image | `python tools/skin_sheet.py paint/moonstone` (`captures/skins/<id>.png`; several ids stack into `--out`; `sheen:gloss[@id]` a finish alone; skin_sheet.py, below) |
 | A plane skin's decal (stripes, bands, discs, numbers, a checker, scallops, a free mask) in the plane's own units | a short script on `art/blender/hero_plane/hero_plane_decal.py`'s `Decal`, run with `python tools/blender.py run art/blender/hero_plane/skins/<batch>.py` (hero_plane_decal.py, below) |
+| A plane pattern's mask (the hangar's tintable patterns: R colour A, G colour B) | a function on `Pattern` in `art/blender/hero_plane/patterns.py`, a line in its PATTERNS and a row in `scripts/endless/plane_patterns.gd`; `python tools/blender.py run art/blender/hero_plane/patterns.py [-- id ...]`; see it with `python tools/skin_sheet.py pattern:<id>` |
 | A plane skin's own atlas (less or more wear and dirt, bare metal or copper, rust, silver-doped cloth) | `python tools/blender.py run art/blender/hero_plane/hero_plane_bake.py -- assets/models/hero_plane/skins/<batch>/<name> --wear 0.2 --bare 1` (hero_plane_bake.py, below) |
 | A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
@@ -170,7 +171,10 @@ python tools/skin_sheet.py sheen:metal@paint/ochre --views port,starboard,tail,c
 A skin is a ShopStock id from any batch (`scripts/endless/skins/`), or
 `sheen:NAME[@id]`: that skin's livery (Harbour's by default) in the sheen
 alone, or `glow:HEX[*POWER][@id]` (quote it in the shell): that livery with
-its body and trim glowing HEX at POWER (1), to tune a glow. The plane is frozen in flight over the endless land
+its body and trim glowing HEX at POWER (1), to tune a glow, or
+`pattern:ID[:A[:B]][@id]`: a hangar pattern (`scripts/endless/plane_patterns.gd`)
+in colours A and B (hex; its own else) over that skin (the plane's own paint
+by default), put on through `PlaneLook.apply`. The plane is frozen in flight over the endless land
 (`tools/harness/skin_sheet.gd`), painted through `ShopStock._paint`, the
 shop's own path. A skin's sheet is a row of views at `--day-hour` (11), and
 a second at `--night-hour` (1) when its finish has a glow (`--night` for

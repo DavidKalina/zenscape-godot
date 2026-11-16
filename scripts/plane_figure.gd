@@ -784,6 +784,12 @@ func refinish(values: Dictionary) -> void:
 	for m in _hero_paint:
 		var own: Dictionary = _hero_atlas.get(m,{})
 		for key: String in HERO_ATLAS: m.set_shader_parameter(key,values.get(key,own.get(key)))
+		for key: String in HERO_PATTERN: m.set_shader_parameter(key,values.get(key,HERO_PATTERN[key]))
+
+## The hero surface's pattern layer (the look's `pattern`, PlaneLook): its
+## uniforms and their values with none. Set with the finish (`refinish`'s
+## `values`), so whatever refinishes the plane without one takes it off.
+const HERO_PATTERN := {"pattern_tex":null,"pattern_on":0.0,"pattern_a":Color(1,1,1),"pattern_b":Color(0,0,0)}
 
 ## The plane's paints by name, `livery` (see `_init`) repainting the body,
 ## dark, trim and wing and setting their wear (new without); the pieces

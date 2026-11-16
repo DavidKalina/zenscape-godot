@@ -20,8 +20,10 @@ extends RefCounted
 ##   wear     the surface the paint lies on: a PlaneFinishes SURFACES id
 ##            (scripts/endless/plane_finishes.gd), its atlas maps and how its
 ##            bared metal mirrors, in place of the skin's bake.
+##   pattern  {"id": a PlanePatterns id, "a": hex, "b": hex}: a shape over the
+##            paint in two colours (scripts/endless/plane_patterns.gd).
 ## Parts to come, each with its own key and its own lines in `apply`:
-## `pattern`, `decal`.
+## `decal`.
 ##
 ## The book's look is worn through ShopStock `dress` (the one place that
 ## dresses the flight's plane, and only when the look's key changed), which
@@ -128,5 +130,8 @@ static func apply(figure: Node3D, look: Dictionary, livery: Dictionary, values: 
 	if look.get("wear") is String and not PlaneFinishes.row(PlaneFinishes.SURFACES,look.wear).is_empty():
 		for key in WEAR_KEYS: values.erase(key)
 		values.merge(PlaneFinishes.surface_values(look.wear),true)
+	# Pattern: its mask and two colours, taken with the finish (PlaneFigure
+	# HERO_PATTERN), so a refinish without one takes it off.
+	values.merge(PlanePatterns.values(look.get("pattern")),true)
 	figure.refinish(values)
 	# A part with uniforms of its own (pattern) sets them here, after.
