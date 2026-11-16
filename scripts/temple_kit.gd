@@ -54,6 +54,22 @@ const PIECES: Array[StringName] = [
 	&"agora_altar",
 	&"agora_plinth",
 	&"agora_drum",
+	# The amphitheatre (art/blender/temple_kit/arena_build.py; scripts/endless/arena_site.gd).
+	&"arena_outer",
+	&"arena_outer_broken",
+	&"arena_upper",
+	&"arena_upper_broken",
+	&"arena_inner_a",
+	&"arena_inner_b",
+	&"arena_vault_a",
+	&"arena_vault_b",
+	&"arena_vault_broken_a",
+	&"arena_vault_broken_b",
+	&"arena_seats_a",
+	&"arena_seats_b",
+	&"arena_seats_broken_a",
+	&"arena_seats_broken_b",
+	&"arena_fallen",
 ]
 
 const DIR := "res://assets/models/temple_kit/"
