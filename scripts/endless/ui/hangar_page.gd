@@ -509,7 +509,7 @@ func _draw() -> void:
 					var price := int(ShopStock.item(str(row.part)).get("price",0))
 					var short := price-int(book.money)
 					var shake := sin(_age*60.0)*6.0*k*_short
-					var words := "Not owned: buy for %s" % coins_text(price) if short <= 0 else "Not owned: %s, %s short" % [coins_text(price),coins_text(short)]
+					var words := "Preview only: buy for %s" % coins_text(price) if short <= 0 else "Preview only: costs %s (%s short)" % [coins_text(price),coins_text(short)]
 					Kit.row(self,Rect2(slip.position+Vector2(shake,0.0),slip.size),y,k,words,_sel_t[i],ROW_H,13.5,"" if short > 0 else ("A" if Pad.using_pad() else "Enter"),Kit.VALUE_PAD,a)
 				"swatches":
 					Kit.row(self,slip,y,k,str(row.label),_sel_t[i],ROW_H,15.0,"",0.0,a)
