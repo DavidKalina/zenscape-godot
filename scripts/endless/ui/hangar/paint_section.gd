@@ -12,8 +12,15 @@ extends RefCounted
 ##       {id, label, kind:"slider", frac:0..1, value:String, ramp:[Color] (optional)}
 ##       {id, label, kind:"swatches", colours:[Color], on:int (-1 none)}
 ##       {id, label, kind:"choice", opts:[String], on:int}  one of many, only
-##           the chosen name shown; Left and Right go to `change`, Enter and
-##           a click to `change(id, 1)`
+##           the chosen name shown, between two arrows; Left, Right, Enter
+##           and a click go to `change` (round the ends: the left arrow
+##           clicked is -1, Enter and a click elsewhere 1)
+##       {id, label, kind:"list", names:[String], on:int, notes:[String]
+##           (optional, a quiet word at each line's right), lines:int
+##           (optional, the lines shown)}  one of many, a few lines of them
+##           shown under the label; Up, Down, Left, Right and the wheel go
+##           to `change` (not round the ends: Up and Down leave the row
+##           there), a click on a line to `set_to(id, index)`
 ##     any row may have night:true: the page shows the plane after dark
 ##     while it is selected (a glow)
 ##   change(id, dir) -> bool    Left or Right on row `id`

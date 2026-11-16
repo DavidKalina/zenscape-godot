@@ -22,8 +22,9 @@ extends RefCounted
 ##            bared metal mirrors, in place of the skin's bake.
 ##   pattern  {"id": a PlanePatterns id, "a": hex, "b": hex}: a shape over the
 ##            paint in two colours (scripts/endless/plane_patterns.gd).
-## Parts to come, each with its own key and its own lines in `apply`:
-## `decal`.
+##   decal    a PlaneDecals id (scripts/endless/plane_decals.gd): that decal
+##            over the paint; "none" for no decal; "" or no key, the skin's own.
+## A new part gets a key of its own and its own lines in `apply`.
 ##
 ## The book's look is worn through ShopStock `dress` (the one place that
 ## dresses the flight's plane, and only when the look's key changed), which
@@ -120,8 +121,8 @@ static func apply(figure: Node3D, look: Dictionary, livery: Dictionary, values: 
 		if (look.get("paint",{}) as Dictionary).has(zone): livery[zone] = colour(look,zone,livery.get(zone,own_colour(zone)))
 	figure.repaint(livery)
 	if not figure.has_method("refinish"): return
-	# A part that changes the finish's values (finish, decal, wear) does it
-	# here, before `refinish`.
+	# Every part but the paint changes the finish's values here, before
+	# `refinish`, which sets them all at once.
 	# Finish: the look's sheen, pearl and glow in place of the skin's.
 	if look.get("finish") is Dictionary:
 		for key in FINISH_KEYS: values.erase(key)
@@ -133,5 +134,6 @@ static func apply(figure: Node3D, look: Dictionary, livery: Dictionary, values: 
 	# Pattern: its mask and two colours, taken with the finish (PlaneFigure
 	# HERO_PATTERN), so a refinish without one takes it off.
 	values.merge(PlanePatterns.values(look.get("pattern")),true)
+	# Decal: the catalogue's picture in place of the skin's, or none.
+	if look.get("decal") is String: PlaneDecals.into(values,look.decal)
 	figure.refinish(values)
-	# A part with uniforms of its own (pattern) sets them here, after.

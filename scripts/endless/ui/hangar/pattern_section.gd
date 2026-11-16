@@ -3,7 +3,7 @@ extends RefCounted
 ## look's `pattern`, scripts/endless/plane_look.gd): a pattern picked from
 ## the catalogue (scripts/endless/plane_patterns.gd), None first, then its
 ## colour A or B set by hue, saturation and value or taken from the swatches.
-## The contract is paint_section.gd's; its Pattern row is a `list` row
+## The contract is paint_section.gd's; its Pattern row is a `choice` row
 ## (hangar_page.gd). Every pattern is offered: nothing sells them yet.
 
 const TITLE := "Pattern"
@@ -54,7 +54,7 @@ func colour(i: int) -> Color:
 func rows() -> Array[Dictionary]:
 	var names: Array[String] = ["None"]
 	for p in PlanePatterns.PATTERNS: names.append(str(p.name))
-	var out: Array[Dictionary] = [{"id":"pattern","label":"Pattern","kind":"list","names":names,"on":picked()}]
+	var out: Array[Dictionary] = [{"id":"pattern","label":"Pattern","kind":"choice","opts":names,"on":picked()}]
 	var p := _pattern()
 	if p.is_empty(): return out
 	var two: bool = PlanePatterns.item(str(p.id)).two

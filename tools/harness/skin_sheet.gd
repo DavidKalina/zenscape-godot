@@ -9,8 +9,13 @@ extends "res://tools/harness/drive.gd"
 ##       livery with its trim and body glowing HEX at POWER (1), to tune a glow;
 ##       pattern:ID[:A[:B]][@id]: a pattern (PlanePatterns) in colours A and B
 ##       (hex; its own else) over that skin (the plane's own paint by default),
-##       put on as the hangar does (PlaneLook.apply)
-##   --tag=day   --dir=captures/skins/raw   --views=port,quarter,top,chase
+##       put on as the hangar does (PlaneLook.apply);
+##       decal:ID[@id]: a hangar decal (PlaneDecals) over that skin's paint
+##       (the free one by default) in place of its own;
+##       look:PATH[@id]: a whole look (PlaneLook: paint, pattern, finish,
+##       wear, decal), the JSON file at PATH (from the project's root), over
+##       that skin (the free one by default), put on as the hangar does
+##   --tag=day   --dir=captures/skins/raw   --views=port,quarter,top,chase   --size=720x450 (a still's)
 ##
 ## Prints `SKIN <id> glow=<0|1> rarity=<r>` per skin and `LIGHT daylight=<d>`;
 ## saves <dir>/<id with / and : as _>_<tag>_<view>.png.
@@ -27,6 +32,7 @@ const SKIN_VIEWS := {
 	"starboard": [Vector3(1.0,0.12,0.0),0.85],
 	"quarter": [Vector3(-0.8,0.45,-1.0),0.95],
 	"top": [Vector3(0.25,1.0,0.55),0.95],
+	"under": [Vector3(0.25,-1.0,0.55),0.95],
 	"tail": [Vector3(0.35,0.3,1.0),0.95],
 	"chase": [Vector3.ZERO,0.0],
 }
@@ -40,6 +46,8 @@ func drive() -> void:
 	var tag := String(arg("tag","day"))
 	var dir := String(arg("dir","captures/skins/raw"))
 	var views := String(arg("views","port,quarter,top,chase")).split(",",false)
+	var wh := String(arg("size","720x450")).split("x")
+	var size := Vector2i(int(wh[0]),int(wh[1]))
 	var look: Node = study.get("look")
 	var daylight := -1.0
 	if look != null and look.get("celestial") != null:
@@ -48,10 +56,10 @@ func drive() -> void:
 	for id: String in String(arg("skins","")).split(",",false):
 		var i := _row(id)
 		if i.is_empty():
-			check(false,"skin "+id,"no such skin (ShopStock.item, sheen:NAME[@id] or glow:HEX[*POWER][@id])")
+			check(false,"skin "+id,"no such skin (ShopStock.item, sheen:NAME[@id], glow:HEX[*POWER][@id], pattern:ID, decal:ID[@id] or look:PATH[@id])")
 			continue
 		print("SKIN %s glow=%d rarity=%s" % [id,int(i.get("finish",{}).has("glow")),ShopStock.rarity(i)])
-		if i.has("look"): PlaneLook.apply(fig,i.look,(i.get("livery",{}) as Dictionary).duplicate(),ShopStock.finish_values(i))
+		if i.has("look"): PlaneLook.apply(fig,i.look,(i.get("livery",{}) as Dictionary).duplicate(),ShopStock.finish_values(i),ShopStock.finish_values(PlaneLook.finish_row(i.look)))
 		else: ShopStock._paint(fig,i)
 		await frames(4)
 		var basis := fig.global_basis.orthonormalized()
@@ -61,7 +69,7 @@ func drive() -> void:
 				continue
 			var way: Vector3 = basis*(SKIN_VIEWS[v][0] as Vector3).normalized()
 			var out := "%s/%s_%s_%s.png" % [dir,id.replace("/","_").replace(":","_").replace("@","_").replace("*","x"),tag,v]
-			var opts := {"out":out,"dist":float(SKIN_VIEWS[v][1]),"size":Vector2i(720,450)}
+			var opts := {"out":out,"dist":float(SKIN_VIEWS[v][1]),"size":size}
 			if v == "chase":
 				way = basis*Vector3(0.0,0.26,1.0)
 				opts.merge({"eye":fig.global_position+basis*Vector3(0.0,GlideCam.UP.x,GlideCam.BACK.x),"fov":GlideCam.FOV})
@@ -92,6 +100,23 @@ static func _row(id: String) -> Dictionary:
 		if p.size() > 2: pattern["b"] = p[2]
 		under["id"] = id
 		under["look"] = {"pattern":pattern}
+		return under
+	if id.begins_with("look:"):
+		var l := id.trim_prefix("look:")
+		var under := ShopStock.item(l.get_slice("@",1) if "@" in l else ShopStock.first("paint")).duplicate()
+		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://"+l.get_slice("@",0)))
+		if under.is_empty() or not data is Dictionary: return {}
+		under["id"] = id
+		under["look"] = data
+		return under
+	if id.begins_with("decal:"):
+		# A hangar decal (PlaneDecals) over a skin's paint in place of its own.
+		var d := id.trim_prefix("decal:")
+		var under := ShopStock.item(d.get_slice("@",1) if "@" in d else ShopStock.first("paint")).duplicate()
+		var decal := PlaneDecals.item(d.get_slice("@",0))
+		if under.is_empty() or decal.is_empty(): return {}
+		under["id"] = id
+		under["decal"] = decal.path
 		return under
 	if not id.begins_with("sheen:"): return ShopStock.item(id)
 	var rest := id.trim_prefix("sheen:")

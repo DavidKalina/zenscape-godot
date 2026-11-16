@@ -174,7 +174,13 @@ alone, or `glow:HEX[*POWER][@id]` (quote it in the shell): that livery with
 its body and trim glowing HEX at POWER (1), to tune a glow, or
 `pattern:ID[:A[:B]][@id]`: a hangar pattern (`scripts/endless/plane_patterns.gd`)
 in colours A and B (hex; its own else) over that skin (the plane's own paint
-by default), put on through `PlaneLook.apply`. The plane is frozen in flight over the endless land
+by default), put on through `PlaneLook.apply`, or `decal:ID[@id]`: a hangar
+decal (`scripts/endless/plane_decals.gd`) over that skin's paint (the free
+one by default) in place of its own, or `look:PATH[@id]`: a whole look
+(`PlaneLook`: paint, pattern, finish, wear, decal) from the JSON file at
+PATH over that skin. `--size 1440x900` makes the stills the
+window's size, to judge a small mark; the view `under` looks up at the
+plane. The plane is frozen in flight over the endless land
 (`tools/harness/skin_sheet.gd`), painted through `ShopStock._paint`, the
 shop's own path. A skin's sheet is a row of views at `--day-hour` (11), and
 a second at `--night-hour` (1) when its finish has a glow (`--night` for
@@ -208,6 +214,7 @@ side to side by default (`mirror=False` for one side); the wings and tail
 are always mirrored (one atlas for both halves). Blender's Python runs it
 (numpy); a decal takes a couple of seconds. A finish's `glow_on: ["decal"]`
 lights it in its own colours after dark (`glow:ffffff@<id>` on the sheet).
+The hangar's emblems (`skins/emblems.py`; `-- swift bolt` makes only those) draw each mark in its own frame with `place` and signed-distance shapes (polygons, strokes), so edges stay a pixel soft; after making decals run `python tools/godot.py --import` before a sheet, or it shows the old pictures.
 
 ## hero_plane_bake.py: a plane skin's own atlas
 

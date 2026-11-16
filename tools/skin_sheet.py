@@ -41,13 +41,13 @@ def safe(skin: str) -> str:
     return skin.replace("/", "_").replace(":", "_").replace("@", "_").replace("*", "x")
 
 
-def shoot(skins: list[str], tag: str, hour: float, views: str, timeout: int) -> tuple[int, dict[str, bool]]:
+def shoot(skins: list[str], tag: str, hour: float, views: str, timeout: int, size: str = "720x450") -> tuple[int, dict[str, bool]]:
     """One window at `hour`: every skin's views to RAW. Its status, and each
     skin's glow (from the SKIN lines)."""
     args = ["-s", DRIVER, "--fixed-fps", "60", "--rendering-method", "forward_plus",
             "--windowed", "--resolution", "1440x900", "--",
             f"--timeout={timeout}", f"--skins={','.join(skins)}", f"--tag={tag}",
-            f"--dir={RAW}", f"--views={views}", "--scene-args", "--no-title", f"--hour={hour:g}"]
+            f"--dir={RAW}", f"--views={views}", f"--size={size}", "--scene-args", "--no-title", f"--hour={hour:g}"]
     print(f"== {tag}: --hour={hour:g}, {len(skins)} skin(s)", flush=True)
     shot.window_lock()
     try:
@@ -83,6 +83,7 @@ def main() -> int:
     p.add_argument("--night-hour", type=float, default=1.0)
     p.add_argument("--out", default="captures/skins/sheet.png", help="the stacked sheet (several skins)")
     p.add_argument("--timeout", type=int, default=240)
+    p.add_argument("--size", default="720x450", help="a still's size (the window is 1440x900)")
     args = p.parse_args()
     views = [v for v in args.views.split(",") if v]
     why = godot.import_needed()
@@ -93,10 +94,10 @@ def main() -> int:
     for s in args.skins:  # no stale still stands in for one that failed
         for f in (root / RAW).glob(f"{safe(s)}_*.png"):
             f.unlink()
-    worst, glow = shoot(args.skins, "day", args.day_hour, ",".join(views), args.timeout)
+    worst, glow = shoot(args.skins, "day", args.day_hour, ",".join(views), args.timeout, args.size)
     at_night = [] if args.no_night else [s for s in args.skins if args.night or glow.get(s)]
     if at_night:
-        code, _ = shoot(at_night, "night", args.night_hour, ",".join(views), args.timeout)
+        code, _ = shoot(at_night, "night", args.night_hour, ",".join(views), args.timeout, args.size)
         worst = worst or code
     stacked: list[Path] = []
     for s in args.skins:
