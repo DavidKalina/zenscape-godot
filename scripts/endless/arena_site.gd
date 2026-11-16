@@ -9,9 +9,13 @@ extends Node3D
 ## the outer wall's line. Inward from that line: the outer wall (5 m), the
 ## ring corridor (16 m clear, 16 m high at its walls and 20 m at the vault's
 ## crown), the inner wall (3 m), the seating (18 m), the arena (121 m by 81 m).
-## Each bay's state is a letter in the rows below (OUTER, UPPER, VAULT,
-## INNER, SEATS): the east end and the north side's east stand two tiers, the
-## rest one, the west end is breached to the ground.
+## Each bay's state is a letter in the rows below. It stands in four
+## stretches: the north-east (bays 24-2, up to three tiers, the roofed upper
+## gallery), the south (5-12, two tiers), a lone arch (16) and the north-west
+## (21-22); the west end (17-20) is breached to the ground and the east (2-4),
+## the south-west (13-15) and the north (23-24) are open. Bays 3 and 18 lie on
+## the long axis; bays 7/22 and 10/25 are ways straight through and face
+## each other across the arena.
 ##
 ## Drawn as the agora is (agora_site.gd): MultiMeshes per piece and LOD in
 ## groups of GROUP bays, made on the main thread. The flight's solid is one
