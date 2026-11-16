@@ -24,6 +24,7 @@ extends Node3D
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
 
 const B := TempleKit.BAY
 const S := TempleKit.PODIUM_H
@@ -48,6 +49,12 @@ const PAVE_N := Vector2i(9,5)
 ## The trees' keep-out (TreePlan adds its ARCH_CLEAR, 18 m).
 const KEEP_C := Vector2(-288.0,-4764.0)
 const KEEP_HALF := Vector2(92.0,62.0)
+## What the plane breaks in a surge roll (temple_breaks.gd): the stoa's back
+## wall in this bay, cracked foot to top ("agora/wall": a breach is left, to
+## fly out through from under the roof), the lone pair's lintel
+## ("agora/lintel": a stub on one column, the rest fallen) and the altar
+## ("agora/altar": its lowest course is left).
+const CRACKED_WALL := 3
 ## Chunks split along x at these.
 const CUTS: Array[float] = [-320.0,-262.0]
 const REACH := 3000.0
@@ -58,6 +65,8 @@ const FAR_NEAREST := 280.0
 var game: Node3D
 ## Each: {xf, pieces ([id, local xf]), state, task, made, node, record}.
 var chunks: Array = []
+## The cracked pieces (temple_breaks.gd).
+var breaks: Node3D
 
 static func wanted() -> bool:
 	return not ("--agora=0" in LaunchArgs.user_args())
@@ -83,7 +92,13 @@ static func _at(p: Vector2, y: float, yaw := 0.0) -> Transform3D:
 
 func setup(g: Node3D) -> void:
 	game = g
-	var all := layout(game.field)
+	breaks = TempleBreaks.new()
+	add_child(breaks)
+	breaks.setup(g)
+	var all: Array = []
+	for e: Array in layout(game.field):
+		if e.size() > 2: breaks.add(e[2],e[0],e[1],e[3])
+		else: all.append(e)
 	var xs: Array[float] = [-INF]
 	xs.append_array(CUTS)
 	xs.append(INF)
@@ -105,7 +120,7 @@ func setup(g: Node3D) -> void:
 		chunks.append({"xf":xf,"lo":i,"pieces":pieces,"state":"away","task":-1})
 	_load_meshes()
 
-## Every piece, world: [id, xf].
+## Every piece, world: [id, xf]; a cracked one [id, xf, its name, what is left ([id, xf])].
 static func layout(field: Object) -> Array:
 	var out: Array = []
 	var rng := RandomNumberGenerator.new()
@@ -155,7 +170,8 @@ static func layout(field: Object) -> Array:
 		else: out.append([&"agora_stoa_roof",_at(m,top)])
 		# The back wall; its bay under the gap down.
 		var w := Vector2(m.x,STOA_Z-DEPTH)
-		out.append([&"wall_broken" if k == FALLEN-1 else &"agora_stoa_wall",_at(w,top)])
+		if k == CRACKED_WALL: out.append([&"agora_stoa_wall_cracked",_at(w,top),"agora/wall",[[&"agora_stoa_wall_holed",_at(w,top)]]])
+		else: out.append([&"wall_broken" if k == FALLEN-1 else &"agora_stoa_wall",_at(w,top)])
 	# ---- The gate.
 	var gate_g := _low(field,[GATE,GATE+Vector2(0,13.5),GATE+Vector2(0,-13.5)])
 	out.append([&"agora_gate",_at(GATE,gate_g-0.2)])
@@ -202,7 +218,9 @@ static func layout(field: Object) -> Array:
 			[&"agora_drum",Vector2(-318.0,-4771.0),1.0],[&"agora_drum",Vector2(-241.0,-4727.0),2.3],
 			[&"agora_drum",Vector2(-279.0,-4731.0),0.45],[&"agora_drum",Vector2(-346.0,-4721.0),1.9]]:
 		var p: Vector2 = e[1]
-		out.append([e[0],_at(p,_h(field,p.x,p.y)+0.05,float(e[2]))])
+		var xf := _at(p,_h(field,p.x,p.y)+0.05,float(e[2]))
+		if e[0] == &"agora_altar": out.append([&"agora_altar_cracked",xf,"agora/altar",[[&"agora_altar_smashed",xf]]])
+		else: out.append([e[0],xf])
 	# The lone pair under its lintel, a little off the square's lines.
 	var pc := Vector2(-252.0,-4745.0)
 	var yaw := 0.38
@@ -212,7 +230,7 @@ static func layout(field: Object) -> Array:
 	var pair_base := _low(field,[pa,pb])+0.05
 	out.append([&"column",_at(pa,pair_base,0.4)])
 	out.append([&"column",_at(pb,pair_base,2.1)])
-	out.append([&"lintel",_at(pc,pair_base,yaw)])
+	out.append([&"agora_lintel_cracked",_at(pc,pair_base,yaw),"agora/lintel",[[&"lintel_broken",_at(pc,pair_base,yaw)]]])
 	# ---- The paving: tiles on the ground's own tilt, turned at random, broken
 	# toward the fallen corner and under the fallen column, gone in places.
 	for i in range(PAVE_N.x):
@@ -301,6 +319,7 @@ func step(eye: Vector3, busy: bool, here: bool) -> bool:
 		if str(ch.state) == "building":
 			if WorkerThreadPool.is_task_completed(int(ch.task)): _commit(ch)
 			else: building = true
+	if here: breaks.step(eye,not busy and not building)
 	for ch: Dictionary in chunks:
 		var o: Vector3 = (ch.xf as Transform3D).origin
 		var d := Vector2(o.x-eye.x,o.z-eye.z).length() if here else INF

@@ -19,6 +19,7 @@ extends Node3D
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
 
 ## The line's corners, world XZ, start to end: off the big hill's north-west
 ## flank, over the knoll's west shoulder, down across the two hollows, then
@@ -41,6 +42,11 @@ const MISSING := {21:1,47:-1,58:1,59:-1,66:1}
 const COLLAPSE := Vector2i(38,42)
 ## Piers leaning (rad, across the line, + to its right).
 const LEANS := {41:0.1,59:-0.07}
+## Spans cracked by the crown: the plane breaks them in a surge roll
+## (temple_breaks.gd, named "aqueduct/span_<k>"), leaving a gap as MISSING's,
+## a stub on each pier and rubble under. One off the big hill's flank, the
+## tallest over the hollow, two on the downs.
+const CRACKED := [4,30,71,88]
 ## Piers per chunk.
 const CHUNK := 8
 const REACH := 3000.0
@@ -58,6 +64,8 @@ const LEAN_SLICE := 5.0
 var game: Node3D
 ## Each: {xf (the chunk's frame, world), pieces ([id, local xf]), keep, state, task, made, node, record}.
 var chunks: Array = []
+## The cracked spans (temple_breaks.gd).
+var breaks: Node3D
 
 static func wanted() -> bool:
 	return not ("--aqueduct=0" in LaunchArgs.user_args())
@@ -130,6 +138,9 @@ static func _keepouts() -> Array:
 
 func setup(g: Node3D) -> void:
 	game = g
+	breaks = TempleBreaks.new()
+	add_child(breaks)
+	breaks.setup(g)
 	var field: Object = game.field
 	var ps := piers_xz()
 	var n := ps.size()
@@ -168,7 +179,12 @@ func setup(g: Node3D) -> void:
 		var gone := MISSING.has(k) or (k >= COLLAPSE.x and k <= COLLAPSE.y)
 		if not gone:
 			var id: StringName = &"aqueduct_arch" if rng.randf() < 0.55 else &"aqueduct_arch_b"
-			all.append([id,_frame(m,d if rng.randf() < 0.5 else -d,deck),false])
+			var xf := _frame(m,d if rng.randf() < 0.5 else -d,deck)
+			if k in CRACKED:
+				breaks.add("aqueduct/span_%d" % k,&"aqueduct_arch_cracked",xf,[
+					[&"aqueduct_arch_broken",_frame(m,d,deck)],[&"aqueduct_arch_broken",_frame(m,-d,deck)],
+					[&"aqueduct_rubble",_on_ground(field,m,d.rotated(0.3),6.0)]])
+			else: all.append([id,xf,false])
 			continue
 		# A stub on the standing pier at the gap's edge.
 		var stub := 0
@@ -233,6 +249,7 @@ func step(eye: Vector3, busy: bool, here: bool) -> bool:
 		if str(ch.state) == "building":
 			if WorkerThreadPool.is_task_completed(int(ch.task)): _commit(ch)
 			else: building = true
+	if here: breaks.step(eye,not busy and not building)
 	for ch: Dictionary in chunks:
 		var o: Vector3 = (ch.xf as Transform3D).origin
 		var d := Vector2(o.x-eye.x,o.z-eye.z).length() if here else INF

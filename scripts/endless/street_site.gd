@@ -24,6 +24,7 @@ extends Node3D
 const TempleKit = preload("res://scripts/temple_kit.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TempleBreaks = preload("res://scripts/endless/temple_breaks.gd")
 
 ## The agora's west entrance (world XZ): the street arrives here going +x.
 const J := Vector2(-370.0,-4760.0)
@@ -68,6 +69,13 @@ const DRUMS_OUT := [[-1,6],[1,12],[-1,8],[1,21]]
 ## The paving: these stations' bays (station k to k+1) broken; GONE ones none.
 const BROKEN_PAVING := [6,7,8,12,13,16,17,18,19,20]
 const GONE_PAVING := [18]
+## Cracked columns the plane breaks in a surge roll (temple_breaks.gd, named
+## "street/column_<station>_<r|l>"): [side, station], each a "C" standing free
+## of a lintel with no tall column across the way from it (a line through it
+## goes on over the far row); a low stump is left. And the cracked beams of
+## BEAMS ("street/beam_<station>"); their two ends are left on the abaci.
+const CRACKED_COLUMNS := [[-1,9],[-1,18]]
+const CRACKED_BEAMS := [11]
 ## Leaning columns: along the line (rad, + back toward the start) and out from the way.
 const LEAN_ALONG := 0.13
 const LEAN_OUT := 0.05
@@ -87,6 +95,8 @@ const LEAN_SLICE := 4.0
 
 var game: Node3D
 var chunks: Array = []
+## The cracked columns and beams (temple_breaks.gd).
+var breaks: Node3D
 
 static func wanted() -> bool:
 	return not ("--street=0" in LaunchArgs.user_args())
@@ -218,6 +228,9 @@ static func _keepouts() -> Array:
 
 func setup(g: Node3D) -> void:
 	game = g
+	breaks = TempleBreaks.new()
+	add_child(breaks)
+	breaks.setup(g)
 	var field: Object = game.field
 	var st := stations()
 	var n := st.size()
@@ -247,7 +260,11 @@ func setup(g: Node3D) -> void:
 			var out := d.orthogonal()*float(sd)
 			match letter:
 				"C":
-					all.append([k,&"column",_frame(p,d if rng.randf() < 0.5 else -d,y-0.05,S),false])
+					var xf := _frame(p,d if rng.randf() < 0.5 else -d,y-0.05,S)
+					if [sd,k] in CRACKED_COLUMNS:
+						breaks.add("street/column_%d_%s" % [k,"r" if sd < 0 else "l"],&"street_column_cracked",xf,
+							[[&"street_stump",_frame(p,d.rotated(0.7),y-0.05,S)]])
+					else: all.append([k,&"column",xf,false])
 				"L":
 					var xf := _frame(p,d,y-0.1,S)
 					var pivot := Vector3(p.x,y,p.y)
@@ -267,7 +284,9 @@ func setup(g: Node3D) -> void:
 			all.append([k,&"street_arch",_frame(c,d.orthogonal(),yl),false])
 		if k in BEAMS:
 			var yb := minf(foot[Vector2i(k,-1)],foot[Vector2i(k,1)])
-			all.append([k,&"street_lintel_cross",_frame(c,d.orthogonal(),yb),false])
+			var xf := _frame(c,d.orthogonal(),yb)
+			if k in CRACKED_BEAMS: breaks.add("street/beam_%d" % k,&"street_lintel_cross_cracked",xf,[[&"street_lintel_cross_snapped",xf]])
+			else: all.append([k,&"street_lintel_cross",xf,false])
 	# The gate's tall pair, outside the arch's piers, on the ground.
 	for sd: int in [-1,1]:
 		var p: Vector2 = st[0][0]+dirs[0].orthogonal()*float(sd)*GATE_OUT
@@ -378,6 +397,7 @@ func step(eye: Vector3, busy: bool, here: bool) -> bool:
 		if str(ch.state) == "building":
 			if WorkerThreadPool.is_task_completed(int(ch.task)): _commit(ch)
 			else: building = true
+	if here: breaks.step(eye,not busy and not building)
 	for ch: Dictionary in chunks:
 		var o: Vector3 = (ch.xf as Transform3D).origin
 		var d := Vector2(o.x-eye.x,o.z-eye.z).length() if here else INF
