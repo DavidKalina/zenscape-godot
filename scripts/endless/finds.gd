@@ -454,7 +454,7 @@ func _read_book(game: Node) -> void:
 			continue
 		var ids: Variant = e.book
 		for id: String in (ids if ids is Array else [ids]):
-			if game.book.found.has(id):
+			if game.book.found.has(id) or game.book.opened.has(id):
 				complete(i)
 				break
 

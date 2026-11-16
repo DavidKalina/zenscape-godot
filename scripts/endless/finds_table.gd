@@ -64,7 +64,8 @@ extends RefCounted
 ##           the signal `broken(name)` fire "broken/<name>" and "broken";
 ##           `finds.listen(burrower.caught, "caught")` fires "caught". Any
 ##           signal of any arguments; `finds.fire("name")` by hand.
-##   book    id or ids: done when the book has found one ("door/amber-wall").
+##   book    id or ids: done when the book has found one ("door/amber-wall")
+##           or holds it as broken open (PilotBook `opened`: "agora/wall").
 ## A line names its record: `line` "line/<place>/<name>" (a LINES entry in
 ## place_lines.gd), or gives its own `place`, `name` and `gates` and the table
 ## adds it (place_lines.gd's header has the gates' shape). `mark` (s): the time
@@ -79,6 +80,7 @@ const HOVER := 16.0
 const AREAS := {
 	"meadow":"The start meadow",
 	"north":"The north downs",
+	"town":"The old town",
 	"coast":"The near coast",
 	"east":"The east hills",
 	"south":"The south meadows",
@@ -318,6 +320,53 @@ const WORLDS := {
 			"title":"The ring in the west split","hint":"Up the gorge from its mouth"},
 		{"id":"gorge-mouth-room","area":"west","kind":"relic","anchor":"chamber/west-gorge","up":0.0,
 			"title":"The ring in the gorge mouth's room","hint":"Cracked stone in a gorge's mouth, far west"},
+		# The old town on the north downs (aqueduct_site.gd, street_site.gd,
+		# agora_site.gd, baths_site.gd, tholos_site.gd, theatre_site.gd): the spots
+		# are exact where they hang over a ruin's own floor, each probed against
+		# its stone.
+		{"id":"aqueduct-hollow","area":"town","kind":"relic","pay":2000,"at":Vector2(-1132.1,-4126.1),"up":18.0,
+			"title":"The ring under the tall arches","hint":"The aqueduct stands tallest over a hollow"},
+		{"id":"aqueduct-gap","area":"town","kind":"relic","at":Vector3(-1134.1,11.0,-4290.2),
+			"title":"The ring in the aqueduct's gap","hint":"Follow the channel to where it has fallen"},
+		{"id":"aqueduct-channel","area":"town","kind":"relic","at":Vector3(-506.2,9.5,-4496.0),
+			"title":"The ring over the old channel"},
+		{"id":"street-beam","area":"town","kind":"relic","at":Vector2(-663.4,-4650.7),"up":9.0,
+			"title":"The ring down the old street"},
+		{"id":"street-arch","area":"town","kind":"relic","pay":2000,"at":Vector2(-545.7,-4730.9),"up":8.0,
+			"title":"The ring under the street's arch","hint":"Between the columns, where an arch spans the way"},
+		{"id":"agora-square","area":"town","kind":"landing","at":Vector2(-290.0,-4758.0),
+			"title":"Set down on the old square","hint":"Paving at the street's end, wide enough to stop on"},
+		{"id":"agora-pair","area":"town","kind":"relic","pay":2000,"at":Vector2(-252.0,-4745.0),"up":12.0,
+			"title":"The ring between the lone pair","hint":"Two columns stand alone on the square"},
+		{"id":"stoa-ring","area":"town","kind":"relic","pay":4000,"at":Vector3(-329.25,-2.8,-4806.0),
+			"title":"The ring under the long roof","hint":"A roof on columns runs along the square's north side"},
+		{"id":"stoa-wall","area":"town","kind":"event","book":"agora/wall",
+			"title":"Out through the long roof's back wall","hint":"Cracked stone at the back, under the long roof"},
+		{"id":"baths-hall","area":"town","kind":"relic","pay":2000,"at":Vector3(-107.0,-2.3,-4792.0),
+			"title":"The ring in the vaulted hall","hint":"A hall runs east from the dome"},
+		{"id":"baths-pool","area":"town","kind":"relic","pay":2000,"at":Vector3(-149.0,-5.3,-4792.0),
+			"title":"The ring over the dry pool"},
+		{"id":"baths-dome","area":"town","kind":"relic","pay":4000,"at":Vector3(-149.0,30.0,-4792.0),
+			"title":"The ring under the broken dome","hint":"The dome's crown is open to the sky"},
+		{"id":"tholos-ring","area":"town","kind":"relic","pay":2000,"at":Vector3(10.0,102.5,-4476.0),
+			"title":"The ring in the round temple","hint":"A ring of columns on the east ridge"},
+		{"id":"crest-pair","area":"town","kind":"relic","at":Vector3(10.0,113.0,-4546.0),
+			"title":"The ring under the crest's lintel"},
+		{"id":"theatre-rim","area":"town","kind":"relic","at":Vector3(-864.5,19.5,-3759.0),
+			"title":"The ring over the theatre's rim"},
+		{"id":"theatre-door","area":"town","kind":"relic","pay":2000,"at":Vector3(-768.4,-5.3,-3742.1),
+			"title":"The ring in the stage door","hint":"Down the seats and out through the stage wall"},
+		{"id":"orchestra","area":"town","kind":"landing","pay":2000,"at":Vector2(-796.5,-3747.0),"radius":30.0,
+			"title":"Set down on the orchestra","hint":"A flat floor at the foot of the seats"},
+		# The amphitheatre on the south plain (arena_site.gd).
+		{"id":"arena-floor","area":"west","kind":"landing","at":Vector2(-3150.0,2080.0),
+			"title":"Set down in the arena","hint":"A great oval of stone, south of the Peak"},
+		{"id":"arena-gate","area":"west","kind":"relic","pay":2000,"at":Vector3(-3159.4,-7.8,2001.5),
+			"title":"The ring in the arena's north gate"},
+		{"id":"arena-corridor","area":"west","kind":"relic","pay":4000,"at":Vector3(-3124.7,-6.8,2145.3),
+			"title":"The ring in the arena's corridor","hint":"A vaulted way runs round under the seats"},
+		{"id":"arena-gallery","area":"west","kind":"relic","pay":4000,"at":Vector3(-3108.5,15.2,2020.1),
+			"title":"The ring in the upper gallery","hint":"A roofed walk, high in the arena's north-east"},
 	],
 	"amberlands":[],
 }
