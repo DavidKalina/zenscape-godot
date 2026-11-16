@@ -25,6 +25,7 @@ const StreetSite = preload("res://scripts/endless/street_site.gd")
 const AgoraSite = preload("res://scripts/endless/agora_site.gd")
 const TholosSite = preload("res://scripts/endless/tholos_site.gd")
 const TheatreSite = preload("res://scripts/endless/theatre_site.gd")
+const ArenaSite = preload("res://scripts/endless/arena_site.gd")
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -54,6 +55,8 @@ var agora: Node3D
 var tholos: Node3D
 ## The theatre (theatre_site.gd), or null with `--theatre=0`.
 var theatre: Node3D
+## The amphitheatre (arena_site.gd), or null with `--colosseum-ruin=0`.
+var arena: Node3D
 
 func setup(g: Node3D) -> void:
 	game = g
@@ -82,6 +85,11 @@ func setup(g: Node3D) -> void:
 		theatre.name = "Theatre"
 		add_child(theatre)
 		theatre.setup(g)
+	if ArenaSite.wanted():
+		arena = ArenaSite.new()
+		arena.name = "Arena"
+		add_child(arena)
+		arena.setup(g)
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
 		var temple: bool = TempleSite.has(str(site.name)) and TempleSite.wanted()
@@ -113,6 +121,7 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	out.append_array(AgoraSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(TholosSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(TheatreSite.tree_keepouts(x0,z0,x1,z1))
+	out.append_array(ArenaSite.tree_keepouts(x0,z0,x1,z1))
 	return out
 
 ## One frame: the towers streamed round the eye.
@@ -128,6 +137,7 @@ func step(eye: Vector3) -> void:
 	if agora != null and agora.step(eye,kit_busy,here): kit_busy = true
 	if tholos != null and tholos.step(eye,kit_busy,here): kit_busy = true
 	if theatre != null and theatre.step(eye,kit_busy,here): kit_busy = true
+	if arena != null and arena.step(eye,kit_busy,here): kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]
 		var d: float = (site.xf as Transform3D).origin.distance_to(eye) if here else INF
