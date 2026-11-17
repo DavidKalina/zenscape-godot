@@ -102,9 +102,6 @@ static func columns(book: PilotBook) -> Array:
 	for slot: String in book.worn:
 		finds.append({"label":"worn: "+slot.replace("_"," "),"value":str(book.worn[slot]).get_slice("/",1) if "/" in str(book.worn[slot]) else str(book.worn[slot])})
 	var out := [["tallies",tallies],["records",records],["finds",finds]]
-	# The places, each its lines with their best times (place_lines.gd).
-	var places := PlaceLines.logbook_rows(book)
-	if not places.is_empty(): out.append(["places",places])
 	return out
 
 ## The page as text lines (for drivers and checks).

@@ -29,7 +29,8 @@ extends Node
 ##
 ## The trunk declares its lines in LINES (fixed spots) or hands them to
 ## `add_line` once it knows where they stand (from a placed massif).
-## --lines=0: none.
+## Out of the game (2026-11-16): no line stands, and the node is made only
+## with --lines=1.
 
 const RivalRace = preload("res://scripts/endless/rival_race.gd")
 const RivalCourse = preload("res://scripts/endless/rival_course.gd")
@@ -76,7 +77,7 @@ var _seed := 1
 var _prev := Vector3.INF
 
 static func wanted() -> bool:
-	return not "--lines=0" in preload("res://scripts/launch_args.gd").user_args()
+	return "--lines=1" in preload("res://scripts/launch_args.gd").user_args()
 
 func setup(seed: int, game: Node) -> void:
 	name = "PlaceLines"

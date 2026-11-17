@@ -161,7 +161,7 @@ func build() -> void:
 ## value]], places (PlaceLines' rows), large {key: value}, worn [[slot,
 ## item]]}.
 static func pilot(book: PilotBook) -> Dictionary:
-	var out := {"records":[],"tallies":[],"places":PlaceLines.logbook_rows(book),"large":{},"worn":[]}
+	var out := {"records":[],"tallies":[],"places":[],"large":{},"worn":[]}
 	var known := []
 	for row: Array in Tallies.RECORDS:
 		known.append(row[0])

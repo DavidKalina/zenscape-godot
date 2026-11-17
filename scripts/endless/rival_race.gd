@@ -234,6 +234,11 @@ static func pace_wanted() -> float:
 		if a.begins_with("--rival-pace="): return clampf(float(a.get_slice("=",1)),0.3,2.0)
 	return PACE
 
+## Off in the game (2026-11-16): the traffic flies by and can't be
+## challenged. --race=1 or --race-near-start makes the race.
+static func wanted() -> bool:
+	return "--race=1" in LaunchArgs.user_args() or near_start_wanted()
+
 static func near_start_wanted() -> bool:
 	return "--race-near-start" in LaunchArgs.user_args()
 

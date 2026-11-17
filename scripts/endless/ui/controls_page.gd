@@ -29,7 +29,6 @@ const LINES := [
 	{"label":"Knife edge","keys":"Q E","actions":["fly_lean_left","fly_lean_right"],"note":"hold"},
 	{"label":"Flaps, land","keys":"F","actions":["fly_land"]},
 	{},
-	{"label":"Race a plane","actions":["fly_challenge"],"note":"hold"},
 	{"label":"Photo mode","keys":"O","actions":["photo"]},
 	{"label":"Logbook","keys":"J"},
 	{"label":"Map","keys":"M","actions":["map"]},
