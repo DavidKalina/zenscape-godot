@@ -10,22 +10,26 @@ Spec: `spec-five-places.md`. Branch `claude/game-kit-ideas-7fac96`, not pushed.
 | The viaduct | -3245, -3404 | `--viaduct=0` | ffb3e28f | `viaduct_site.gd`, `viaduct_build.py` |
 | Great dome | -960, -2030 | `--dome=0` | 4a8722a8 | `dome_site.gd`, `dome_build.py` |
 | Great bridge | 1226, 1287 | `--bridge=0` | 37cc4063 | `bridge_site.gd`, `bridge_build.py` |
-| The harbour and its sea gate | 865, -2030 (gate 1015, -2035) | `--harbour=0` | f4588942 | `harbour_site.gd`, `harbour_build.py` |
 
 Site scripts are under `scripts/endless/`, builds under `art/blender/temple_kit/`.
-All four places are on the map page.
+All three places are on the map page.
 
 ## Not merged
 
 - **Windmill ridge**: built and flown on branch `worktree-agent-a7fa06d78da6d985e`
   (873c189d). The user saw the stills and rejected it. Left on its branch.
+- **The harbour and its sea gate**: merged, flown by the user and rejected
+  ("freaking sucked"); the merge is reverted (38fa901a). It is on branch
+  `worktree-agent-ab265860292ad27cc` (f4588942), centre 865, -2030.
 - **Colossus**: a script-sculpted figure at the harbour mouth, rejected and
   removed; the sea gate stands in its place. A try at standing the Amberlands
   giant there was stopped at the user's word.
 
 ## Proof run
 
-- Smoke check with all four places in: PASS, 0 errors.
+- Smoke check with the three places in, after the harbour revert: PASS, 0 errors.
+- The user flew a 27 minute flight past all of them with `--frame-log`; the
+  viaduct, dome and bridge were "solid".
 - Map page driver, rendered: 19 checks, 0 failures.
 - Each lane flew its openings through the real play loop on medium weight, with
   and without Boost, off-centre and slanted, by scripted driver (drivers are in
@@ -41,8 +45,6 @@ All four places are on the map page.
   sits against the Peak's flank.
 - Viaduct: one fallen-top span is tighter than the rest (2.5 m on the worst
   line). The plain under it is flat, so the piers are all one height.
-- Harbour gate: stone above 30 m has no bevels and reads blotchy close up; at
-  2 km it is small. The fallen blocks were not flown.
 - 985 "Parameter material is null" errors from one early viaduct flight run
   were not reproduced; they appeared only while several Godot processes ran at
   once.
