@@ -70,7 +70,7 @@ var sanctuary: Node3D
 ## The citadel on the cape (citadel_site.gd) and the road of tombs to it (tombs_site.gd), or null with `--citadel=0`.
 var citadel: Node3D
 var tombs: Node3D
-## The harbour and its colossus (harbour_site.gd), or null with `--harbour=0`.
+## The harbour and its sea gate (harbour_site.gd), or null with `--harbour=0`.
 var harbour: Node3D
 
 func setup(g: Node3D) -> void:

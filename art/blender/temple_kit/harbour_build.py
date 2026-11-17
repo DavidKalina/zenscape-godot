@@ -1,25 +1,27 @@
-﻿"""The temple kit's ruined harbour (lane harbour): the colossus astride its
-mouth, the colossus' fallen head and arm, the moles, the quay and the ship
-sheds, in the kit's stone (temple_lib). scripts/endless/harbour_site.gd lays
-them in the cove on the inland sea's west shore. The columns standing in the
-water are the kit's own.
+"""The temple kit's ruined harbour (lane harbour): the sea gate astride its
+mouth and its fallen stone, the moles, the quay and the ship sheds, in the
+kit's stone (temple_lib). scripts/endless/harbour_site.gd lays them in the
+cove on the inland sea's west shore. The columns standing in the water are
+the kit's own.
 
-    python tools/blender.py run art/blender/temple_kit/harbour_build.py [-- --only=harbour_colossus]
+    python tools/blender.py run art/blender/temple_kit/harbour_build.py [-- --only=harbour_gate]
 
 Every piece's origin is at the sea's level (Blender z 0), so the site lays
 them all at LandField.SEA_Y. Blender frame, z up; Godot (x, y, z) = Blender
 (x, z, -y).
 
 Pieces:
-- `harbour_colossus`: the figure broken off at the chest, a foot on each of
-  two pedestals FOOT_X either side of the origin along x, facing -y (out to
-  sea). Built in courses of stone like a column's drums, weathered. The
-  pedestals stand from the bed (z -36) to PED_TOP; between them the mouth is
-  2 * (FOOT_X - PED_HALF) clear at the water, the crotch ~CROTCH up.
-- `harbour_colossus_head`: the head lying on its right cheek, the neck's
-  break toward +x; origin under its middle at the bed it rests on.
-- `harbour_colossus_arm`: the right arm, broken at the shoulder (origin),
-  lying along +x, the hand open, palm down.
+- `harbour_gate`: two hollow towers GX either side of the origin along x,
+  from the bed (FOOT) up battered bases to BASE_TOP, then shafts 2 SH_X wide
+  with string courses, slits and an arcade at the top stage; the north (+x)
+  one to N_TOP with its cornice and a beacon platform's stump, the south one
+  broken off ragged near S_BREAK. One arch of radius R springs from their
+  inner faces at YS (crown R + YS over the water), voussoirs three across,
+  an archivolt and a keystone; the upper works over it to ATTIC, with a
+  breach from BREACH_Z through them over the crown. The sea (-y) stains and
+  weeds their feet (SeaPiece).
+- `harbour_gate_fallen`: masses of the gate's stone in the shallows: a run
+  of voussoirs, a tower's corner, blocks; origin on the bed.
 - `harbour_mole`, `harbour_mole_broken`: MOLE_L of mole along x, MOLE_W wide,
   its deck MOLE_TOP over the water, the parapet on its -y (seaward) side, down
   to z -30. The broken one has its deck and parapet thrown down on one side.
@@ -46,16 +48,6 @@ args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 only = next((a.split("=")[1] for a in args if a.startswith("--only=")), None)
 
 BAY = T.BAY
-
-# ---- the colossus' numbers --------------------------------------------------------
-FOOT_X = 50.0               # each foot's middle, either side of the origin along x
-PED_TOP = 9.0               # the pedestals' top over the water
-PED_HALF = 13.0             # half the pedestal across x
-PED_Y = (-19.0, 13.0)       # the pedestal along y (the foot points -y)
-PED_FOOT = -36.0
-HIP_X = 11.0
-HIP_Z = 72.0
-CROTCH = 58.0
 
 # ---- the moles, quay and sheds -------------------------------------------------------
 MOLE_L = 19.0
@@ -155,572 +147,592 @@ def both(name, seed, fn):
         lay.export(name)
 
 
-# ---- lofted stone: the figure's limbs ----------------------------------------------
-class Path:
-    """A smooth line through keys [(point, rx, ry)], by arc length."""
+# ---- the sea gate's numbers -----------------------------------------------------------
+GX = 50.0                   # each tower's middle, either side of the origin along x
+FOOT = -36.0                # the towers' foot on the bed
+BASE_TOP = 12.0             # the battered base's top, the plinth course over it
+PLINTH = 1.6
+SH_X = 12.0                 # the tower's shaft: half across x
+SH_Y = 12.0                 # and along y
+SKIN = 3.0                  # the shell's thickness (the towers are hollow)
+YS = 40.0                   # the arch's springing (the impost's top)
+R = GX - SH_X               # 38: the arch springs from the towers' inner faces
+RING = 5.5
+RO = R + RING
+RHW = 8.5                   # the ring's half depth along y
+AHW = 7.5                   # the upper works' half depth
+ATTIC = 96.0                # the upper works' top, under their cornice
+BREACH_Z = 85.0             # the breach's floor over the crown
+N_TOP = 130.0               # the north tower's top, under its cornice
+S_BREAK = 116.0             # the south tower's broken top, about
+COURSE = 2.2
+COURSE_HI = 3.0             # the shafts' courses over the springing
+STRINGS = (40.0, 68.0, 96.0)  # string courses round the shafts (tops)
 
-    def __init__(self, keys):
-        self.keys = [(Vector(k[0]), k[1], k[2]) for k in keys]
-        self.table = []
-        acc = 0.0
-        prev = None
-        n = 60 * (len(keys) - 1)
-        for i in range(n + 1):
-            u = (len(keys) - 1) * i / n
-            p = self.pos(u)
-            if prev is not None:
-                acc += (p - prev).length
-            self.table.append((acc, u))
-            prev = p
-        self.length = acc
 
-    def pos(self, u):
-        k = self.keys
-        n = len(k)
-        i = min(int(u), n - 2)
-        f = u - i
-        p0, p1, p2, p3 = k[max(i - 1, 0)][0], k[i][0], k[i + 1][0], k[min(i + 2, n - 1)][0]
-        f2, f3 = f * f, f * f * f
-        return 0.5 * ((2.0 * p1) + (p2 - p0) * f + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * f2
-                      + (3.0 * p1 - p0 - 3.0 * p2 + p3) * f3)
+def base_half(z):
+    """The battered base's half (x, y) at z: 15.5 x 16.5 at the low water,
+    13 x 14 at its top."""
+    t = max(0.0, min(1.0, (z + 6.0) / (BASE_TOP + 6.0)))
+    return 15.5 - 2.5 * t, 16.5 - 2.5 * t
 
-    def u_at(self, s):
-        s = max(0.0, min(self.length, s))
-        lo, hi = 0, len(self.table) - 1
-        while hi - lo > 1:
-            m = (lo + hi) // 2
-            if self.table[m][0] < s:
-                lo = m
+
+def intrados(x):
+    return YS + math.sqrt(max(0.0, R * R - x * x)) if abs(x) < R else YS
+
+
+def extrados(x):
+    return YS + math.sqrt(max(0.0, RO * RO - x * x)) if abs(x) < RO else YS
+
+
+def breach_half(z, face):
+    """Half the breach's width at z on a face (-1 front, 1 back): it widens
+    upward, ragged."""
+    if z < BREACH_Z:
+        return -1.0
+    return 11.5 + 0.55 * (z - BREACH_Z) + 1.6 * noise.noise(Vector((z * 0.21, face * 3.1, 9.0)))
+
+
+def s_break(u, face):
+    """The south tower's broken top over a point `u` along a face (from the
+    face's middle), higher toward the sea's corner."""
+    k = "fblr".index(face)
+    tilt = {"f": 0.35, "b": 0.35, "l": -0.3, "r": -0.3}[face] * u
+    return S_BREAK + 5.0 * noise.noise(Vector((u * 0.19, k * 2.3, 4.0))) + tilt
+
+
+class SeaPiece(T.Piece):
+    """A piece whose foot stands in the sea: stained dark and grown with weed
+    where the tide washes it, under the kit's own weathering."""
+
+    def paint(self, bm, far=False):
+        # The kit's rain streaks, half as dark: up 140 m of tower they turn it grey.
+        stain = T.STAIN
+        T.STAIN = T.mix(T.STAIN, T.STONE, 0.5)
+        try:
+            col = super().paint(bm, far=far)
+        finally:
+            T.STAIN = stain
+        weed = T.srgb_to_linear((0.17, 0.19, 0.10))
+        wet = T.srgb_to_linear((0.30, 0.31, 0.26))
+        salt = T.srgb_to_linear((0.70, 0.69, 0.62))
+        for f in bm.faces:
+            for loop in f.loops:
+                p = loop.vert.co
+                if p.z > 9.0:
+                    continue
+                c = loop[col][:3]
+                n = noise.noise(Vector((p.x * 0.35, p.y * 0.35, p.z * 0.9 + 3.0)))
+                band = max(0.0, min(1.0, (6.5 + 1.5 * n - p.z) / 3.5))
+                c = T.mix(c, wet, 0.55 * band)
+                w = max(0.0, min(1.0, (1.6 + 1.2 * n - p.z) / 1.4))
+                c = T.mix(c, weed, 0.85 * w)
+                # A pale salt line at the top of the wet band.
+                s = max(0.0, 1.0 - abs(p.z - (6.8 + 1.2 * n)) / 0.5) * (0.5 + 0.5 * n)
+                c = T.mix(c, salt, 0.3 * max(0.0, s))
+                loop[col] = tuple(c) + (1.0,)
+        return col
+
+
+class SeaLay(Lay):
+    def __init__(self, name, seed, mid):
+        super().__init__(name, seed, mid)
+        self.p = SeaPiece(name, seed=seed)
+        self.p.ground = 0.0
+
+
+def both_sea(name, seed, fn):
+    for mid in (False, True):
+        lay = SeaLay(name, seed, mid)
+        fn(lay)
+        lay.export(name)
+
+
+def cuts_of(lay, a0, a1, maxlen):
+    n = max(1, math.ceil((a1 - a0) / maxlen))
+    return [a0] + [a0 + (a1 - a0) * (i + lay.r.uniform(-0.18, 0.18)) / n for i in range(1, n)] + [a1]
+
+
+def face_run(lay, a0, a1, z0, z1, depth, at, along, holes=(), keep=None, maxlen=4.6, chips=2,
+             hide=("-z", "+z"), jut=0.0, bevel=None):
+    """A course of one face of a shell between a0 and a1 (along x or y),
+    with `holes` [(a_mid, half, hz0, hz1)] left open: the jambs cut clean, a
+    long lintel over each. Returns the kept intervals [(a, b)]."""
+    zc = (z0 + z1) / 2
+    segs = [(a0, a1)]
+    lintels = []
+    for (hm, hh, hz0, hz1) in holes:
+        if hz0 <= zc <= hz1:
+            nxt = []
+            for (a, b) in segs:
+                if hm + hh <= a or hm - hh >= b:
+                    nxt.append((a, b))
+                    continue
+                if hm - hh > a:
+                    nxt.append((a, hm - hh))
+                if hm + hh < b:
+                    nxt.append((hm + hh, b))
+            segs = nxt
+        elif hz1 < z0 + 0.05 and z0 - hz1 < COURSE * 0.9:
+            nxt = []
+            for (a, b) in segs:
+                la, lb = max(a, hm - hh - 1.2), min(b, hm + hh + 1.2)
+                if lb - la < 0.5:
+                    nxt.append((a, b))
+                    continue
+                lintels.append((la, lb))
+                if la > a:
+                    nxt.append((a, la))
+                if lb < b:
+                    nxt.append((lb, b))
+            segs = nxt
+    kept = []
+    for (a, b) in segs + lintels:
+        if b - a < 0.45:
+            continue
+        cuts = [a, b] if (a, b) in lintels else cuts_of(lay, a, b, maxlen)
+        run_a = None
+        for u, v in zip(cuts, cuts[1:]):
+            ac = (u + v) / 2
+            if keep is not None and not keep(ac, zc):
+                if run_a is not None:
+                    kept.append((run_a, u))
+                    run_a = None
+                continue
+            ln = v - u - T.JOINT
+            d = depth + (0.5 if (a, b) in lintels else 0.0)
+            atj = at
+            if along == "x":
+                c, s = (ac, atj, zc), (ln, d, z1 - z0 - T.JOINT)
             else:
-                hi = m
-        (s0, u0), (s1, u1) = self.table[lo], self.table[hi]
-        return u0 if s1 <= s0 else u0 + (u1 - u0) * (s - s0) / (s1 - s0)
-
-    def at(self, s):
-        u = self.u_at(s)
-        c = self.pos(u)
-        du = 0.01
-        t = (self.pos(min(u + du, len(self.keys) - 1)) - self.pos(max(u - du, 0.0))).normalized()
-        i = min(int(u), len(self.keys) - 2)
-        f = u - i
-        f = f * f * (3 - 2 * f)
-        rx = self.keys[i][1] + (self.keys[i + 1][1] - self.keys[i][1]) * f
-        ry = self.keys[i][2] + (self.keys[i + 1][2] - self.keys[i][2]) * f
-        return c, t, rx, ry
+                c, s = (atj, ac, zc), (d, ln, z1 - z0 - T.JOINT)
+            kw = {} if bevel is None else {"bevel": bevel}
+            lay.block(c, s, chips=lay.r.randint(0, chips), hide=hide, **kw)
+            if run_a is None:
+                run_a = u
+        if run_a is not None:
+            kept.append((run_a, cuts[-1]))
+    return kept
 
 
-def loft(bm, path, side, segs, rng, course=None, sub=1, step=2.5, bump=None, rough=0.3, end="open",
-         start="open", jag=(0.0, 0.0), matrix=None, inner=False, seed=0.0, seams=4, bites=0.25, groove=0.32):
-    """A tube of stone round `path`: elliptic sections (rx along `side` made
-    square to the path, ry across both), `bump(s, a, p)` metres out at arc
-    length s, angle a (0 along side, pi/2 along path x side), point p. With
-    `course` (m) it is laid in courses like a column's drums: a groove ring
-    between them painted dark, each its own shade and shift, a few vertical
-    joints and the odd bitten edge. `jag` (start, end) metres of ragged
-    break at each end; `start` / `end`: open, flat (a cap) or broken (a
-    ragged cap, pale). Returns the last ring's vertices."""
-    kind, tone, broke = T._layers(bm)
-    deep = T._deep(bm)
-    side = Vector(side)
-    L = path.length
-    rows = []           # (s, groove, course index)
-    if course:
-        K = max(1, round(L / course))
-        cl = L / K
-        e = min(0.2, cl * 0.1)
-        for k in range(K):
-            a = k * cl
-            rows.append((a, True, k))
-            for j in range(sub + 1):
-                rows.append((a + e + (cl - 2 * e) * j / sub, False, k))
-        rows.append((L, True, K - 1))
-        info = []
-        for k in range(K):
-            off = rng.uniform(0, math.tau)
-            info.append({"tone": rng.uniform(0.86, 1.07), "shift": (rng.uniform(-0.08, 0.08), rng.uniform(-0.08, 0.08)),
-                         "seams": [off + math.tau * i / seams + rng.uniform(-0.3, 0.3) for i in range(seams)],
-                         "bites": [(rng.uniform(0, math.tau), rng.uniform(0.15, 0.4), rng.uniform(0.3, 0.9))
-                                   for _ in range(1 if rng.random() < bites else 0)]})
+def shell_course(lay, cx, hx, hy, z0, z1, holes=None, keep=None, maxlen=4.6, chips=2, inner=False, t=SKIN, bevel=None):
+    """One course of a hollow tower's shell: front (-y), back (+y) and the two
+    sides (x = cx -+ hx). `holes[face]`, faces "f", "b", "l", "r"; `keep(face,
+    a, z)` drops a block. `inner` shows the shell's inside (where it is open)."""
+    holes = holes or {}
+    hid = () if inner else None
+    for face, at, sy in (("f", -hy + t / 2, -1), ("b", hy - t / 2, 1)):
+        kp = (lambda a, z, fc=face: keep(fc, a, z)) if keep else None
+        face_run(lay, cx - hx, cx + hx, z0, z1, t, at, "x", holes.get(face, ()), kp, maxlen, chips,
+                 hide=hid if hid is not None else ("+y" if sy < 0 else "-y",), bevel=bevel)
+    for face, at, sx in (("l", cx - hx + t / 2, -1), ("r", cx + hx - t / 2, 1)):
+        kp = (lambda a, z, fc=face: keep(fc, a, z)) if keep else None
+        face_run(lay, -hy + t, hy - t, z0, z1, t, at, "y", holes.get(face, ()), kp, maxlen, chips,
+                 hide=hid if hid is not None else ("+x" if sx < 0 else "-x",), bevel=bevel)
+
+
+def recess(lay, cx, hx, hy, face, hole, t=SKIN):
+    """The dark of a slit's depth: a block behind the opening, inside the shell."""
+    hm, hh, z0, z1 = hole
+    tone = 0.42
+    if face in ("f", "b"):
+        y = (-hy + t + 0.5) if face == "f" else (hy - t - 0.5)
+        lay.block((hm, y, (z0 + z1) / 2), (2 * hh + 1.4, 1.0, z1 - z0 + 1.2), chips=0, tone=tone)
     else:
-        n = max(2, math.ceil(L / step))
-        for i in range(n + 1):
-            rows.append((L * i / n, False, i))
-        info = [{"tone": rng.uniform(0.9, 1.04), "shift": (0, 0), "seams": [], "bites": []} for _ in range(n + 1)]
-    j0, j1 = jag
-    trim0 = lambda a: j0 * (0.5 + 0.5 * noise.noise(Vector((math.cos(a) * 1.3, math.sin(a) * 1.3, seed + 4.1)))) if j0 else 0.0
-    trim1 = lambda a: j1 * (0.55 + 0.45 * noise.noise(Vector((math.cos(a) * 1.4, math.sin(a) * 1.4, seed + 7.3)))) if j1 else 0.0
-    # Rows wholly inside a ragged end are dropped; a ragged ring closes each end.
-    rows = [r for r in rows if r[0] >= j0 and r[0] <= L - j1]
-    if j0:
-        rows.insert(0, (None, False, rows[0][2] if rows else 0))
-    if j1:
-        rows.append((-1.0, False, rows[-1][2] if rows else 0))
-    seam_tol = math.tau / segs * 0.5
-
-    def ring(sv, groove, k):
-        out = []
-        centre = None
-        for i in range(segs):
-            a = math.tau * i / segs
-            s = sv
-            ragged = False
-            if sv is None:
-                s, ragged = trim0(a), True
-            elif sv == -1.0:
-                s, ragged = L - trim1(a), True
-            else:
-                s = max(s, trim0(a))
-                s = min(s, L - trim1(a))
-            c, t, rx, ry = path.at(s)
-            x = (side - t * side.dot(t)).normalized()
-            y = t.cross(x)
-            if centre is None:
-                centre = c
-            inf = info[min(k, len(info) - 1)]
-            dx, dy = inf["shift"]
-            e = x * (rx * math.cos(a)) + y * (ry * math.sin(a))
-            d = e.normalized()
-            p = c + e + x * dx + y * dy
-            dr = 0.0
-            if bump is not None:
-                dr += bump(s, a, p)
-            if rough:
-                q = p + Vector((seed, seed * 0.7, 0.0))
-                dr += rough * noise.noise(q * 0.09) + rough * 0.35 * noise.noise(q * 0.37)
-            br = 1.0 if ragged else 0.0
-            dp = 0.0
-            if course:
-                if groove:
-                    dr -= groove
-                    dp = 1.0
-                for sa in inf["seams"]:
-                    if abs(math.atan2(math.sin(a - sa), math.cos(a - sa))) < seam_tol:
-                        dr -= 0.14
-                        dp = max(dp, 0.6)
-                for (ba, hw, bd) in inf["bites"]:
-                    da = abs(math.atan2(math.sin(a - ba), math.cos(a - ba)))
-                    w = max(0.0, 1.0 - da / hw)
-                    if w > 0:
-                        dr -= bd * w ** 0.7
-                        br = max(br, w)
-            if inner:
-                dr = -dr
-            pt = p + d * dr
-            if matrix is not None:
-                pt = matrix @ pt
-            v = bm.verts.new(pt)
-            v[broke] = br
-            v[deep] = dp
-            out.append(v)
-        if matrix is not None:
-            centre = matrix @ centre
-        return out, centre
-
-    def face(vs, k, centre_a, centre_b, kd):
-        f = bm.faces.new(vs)
-        f[kind] = kd
-        f[tone] = info[min(k, len(info) - 1)]["tone"]
-        f.normal_update()
-        mid = sum((v.co for v in vs), Vector()) / len(vs)
-        axis = (centre_a + centre_b) / 2
-        out = (f.normal.dot(mid - axis) > 0)
-        if out == inner:
-            f.normal_flip()
-        return f
-
-    prev = None
-    last = None
-    first = None
-    for (sv, groove, k) in rows:
-        cur, c = ring(sv, groove, k)
-        if prev is not None:
-            pv, pc, pg = prev
-            kd = T.JOINTFACE if (groove or pg) else T.FACE
-            for i in range(segs):
-                j = (i + 1) % segs
-                face((pv[i], pv[j], cur[j], cur[i]), k, pc, c, kd)
-        else:
-            first = (cur, c)
-        prev = (cur, c, groove)
-        last = (cur, c)
-
-    def cap(rv, c, s_in, kind_cap, at_end):
-        # The axis' far point: past the cap (outward) for orientation.
-        cs, ct, rx, ry = path.at(max(0.0, min(L, s_in)))
-        if kind_cap == "flat":
-            cv = bm.verts.new(matrix @ cs if matrix is not None else cs)
-            for i in range(segs):
-                j = (i + 1) % segs
-                f = bm.faces.new((rv[i], rv[j], cv))
-                f[kind] = T.JOINTFACE
-                f[tone] = 0.9
-                f.normal_update()
-                want = ct if at_end else -ct
-                if matrix is not None:
-                    want = matrix.to_3x3() @ want
-                if f.normal.dot(want) < 0:
-                    f.normal_flip()
-            return
-        # Broken: a ragged heap of a surface, a ring in, then the middle.
-        mid = []
-        for i in range(segs):
-            a = math.tau * i / segs
-            p0 = rv[i].co
-            pc = matrix @ cs if matrix is not None else cs
-            dz = (rng.uniform(-0.6, 0.9)) * (1 if at_end else -1)
-            q = pc + (p0 - pc) * rng.uniform(0.45, 0.65)
-            w = ct if matrix is None else matrix.to_3x3() @ ct
-            q = q + w * dz * 1.5
-            v = bm.verts.new(q)
-            v[broke] = 1.0
-            mid.append(v)
-        w = ct if matrix is None else matrix.to_3x3() @ ct
-        pc = matrix @ cs if matrix is not None else cs
-        cv = bm.verts.new(pc + w * (rng.uniform(-0.5, 0.5)))
-        cv[broke] = 1.0
-        want = w if at_end else -w
-        for i in range(segs):
-            j = (i + 1) % segs
-            for vs in ((rv[i], rv[j], mid[j], mid[i]), (mid[i], mid[j], cv)):
-                f = bm.faces.new(vs)
-                f[kind] = T.BROKEN
-                f[tone] = 0.95
-                f.normal_update()
-                if f.normal.dot(want) < 0:
-                    f.normal_flip()
-    if end != "open" and last is not None:
-        cap(last[0], last[1], L - j1 * 0.8, end, True)
-    if start != "open" and first is not None:
-        cap(first[0], first[1], j0 * 0.8, start, False)
-    return last[0] if last else []
+        x = (cx - hx + t + 0.5) if face == "l" else (cx + hx - t - 0.5)
+        lay.block((x, hm, (z0 + z1) / 2), (1.0, 2 * hh + 1.4, z1 - z0 + 1.2), chips=0, tone=tone)
 
 
-def bridge(bm, a, b, want):
-    """Quads between two rings of the same count, facing `want`."""
-    kind, tone, broke = T._layers(bm)
-    n = len(a)
+def ring_band(lay, cx, hx, hy, z0, z1, jut, chips=1):
+    """A string course or cornice round a shaft: a ring of blocks proud by `jut`."""
+    t = 2.2
+    hx2, hy2 = hx + jut, hy + jut
+    face_run(lay, cx - hx2, cx + hx2, z0, z1, t, -hy2 + t / 2, "x", maxlen=6.0, chips=chips, hide=("+y",))
+    face_run(lay, cx - hx2, cx + hx2, z0, z1, t, hy2 - t / 2, "x", maxlen=6.0, chips=chips, hide=("-y",))
+    face_run(lay, -hy2 + t, hy2 - t, z0, z1, t, cx - hx2 + t / 2, "y", maxlen=6.0, chips=chips, hide=("+x",))
+    face_run(lay, -hy2 + t, hy2 - t, z0, z1, t, cx + hx2 - t / 2, "y", maxlen=6.0, chips=chips, hide=("-x",))
+
+
+def tower_holes(sx):
+    """The openings up one tower, per face: slits, then the arcade at the top
+    (north) or the ragged stage under the break (south). Face a-coordinates:
+    x for f/b, y for l/r."""
+    cx = sx * GX
+    outer = "r" if sx > 0 else "l"
+    inner_f = "l" if sx > 0 else "r"
+    holes = {"f": [], "b": [], "l": [], "r": []}
+    for f in ("f", "b"):
+        holes[f] += [(cx, 1.1, 21.0, 32.0), (cx, 1.1, 48.0, 61.2)]
+        holes[f] += [(cx - 4.5, 1.1, 74.0, 87.0), (cx + 4.5, 1.1, 74.0, 87.0)]
+    holes[outer] += [(0.0, 1.1, 26.0, 37.0), (0.0, 1.1, 50.0, 61.2), (0.0, 1.1, 75.0, 87.0)]
+    # The top stage: an arcade of two tall openings on every face.
+    for f in ("f", "b"):
+        holes[f] += [(cx - 4.4, 2.6, 104.5, 119.5), (cx + 4.4, 2.6, 104.5, 119.5)]
+    for f in (outer, inner_f):
+        holes[f] += [(-4.4, 2.6, 104.5, 119.5), (4.4, 2.6, 104.5, 119.5)]
+    return holes
+
+
+def arch_head(lay, cx, hx, hy, face, hm, hh, zs, t=SKIN):
+    """A round head of voussoirs over an opening (centre hm, half hh), springing at zs."""
+    n = 7
+    rr = hh + 0.7
     for i in range(n):
-        j = (i + 1) % n
-        f = bm.faces.new((a[i], a[j], b[j], b[i]))
-        f[kind] = T.JOINTFACE
-        f[tone] = 0.9
-        f.normal_update()
-        if f.normal.dot(want) < 0:
-            f.normal_flip()
+        a = -math.pi / 2 + (i + 0.5) * math.pi / n
+        u = hm + rr * math.sin(a)
+        z = zs + rr * math.cos(a)
+        chord = 2.0 * (hh + 1.4) * math.tan(math.pi / n / 2)
+        if face in ("f", "b"):
+            y = -hy + t / 2 - 0.15 if face == "f" else hy - t / 2 + 0.15
+            lay.block((u, y, z), (chord, t + 0.3, 1.4), tilt=(0.0, a), chips=1, hide=("-x", "+x"))
+        else:
+            x = cx - hx + t / 2 - 0.15 if face == "l" else cx + hx - t / 2 + 0.15
+            lay.block((x, u, z), (t + 0.3, chord, 1.4), tilt=(-a, 0.0), chips=1, hide=("-y", "+y"))
 
 
-def gauss(x, w):
-    return math.exp(-(x / w) ** 2)
-
-
-def ang(a, b):
-    return abs(math.atan2(math.sin(a - b), math.cos(a - b)))
-
-
-# ---- the colossus ------------------------------------------------------------------
-def leg_path(sx):
-    """sx: -1 the left (x < 0), 1 the right. From inside the foot up past the hip."""
-    ax, az = sx * (FOOT_X - 0.8), PED_TOP + 6.0
-    hx = sx * HIP_X
-    keys = []
-    for t, rx, ry, fwd in ((0.0, 3.4, 3.4, 0.0), (0.1, 3.7, 4.0, 0.2), (0.28, 4.9, 5.6, 0.9), (0.42, 4.3, 4.6, 0.3),
-                           (0.5, 4.5, 4.9, -0.5), (0.58, 5.4, 5.8, -0.2), (0.78, 7.0, 7.4, 0.0), (1.0, 8.6, 8.8, 0.0),
-                           (1.1, 8.4, 8.4, 0.0)):
-        x = ax + (hx - ax) * t
-        z = az + (HIP_Z - az) * t
-        y = 2.0 - 2.0 * t - 3.0 * math.sin(math.pi * min(t, 1.0)) + fwd
-        keys.append(((x, y, z), rx, ry))
-    return Path(keys)
-
-
-def foot_path(sx):
-    fx = sx * FOOT_X
-    keys = [((fx, 9.5, PED_TOP + 2.8), 3.2, 2.8), ((fx, 6.0, PED_TOP + 4.4), 4.5, 4.4),
-            ((fx + sx * 0.3, -1.0, PED_TOP + 3.3), 5.2, 3.3), ((fx + sx * 0.4, -8.5, PED_TOP + 2.0), 5.6, 2.1),
-            ((fx + sx * 0.4, -11.5, PED_TOP + 1.5), 5.3, 1.6)]
-    return Path(keys)
-
-
-TOES = [(-3.7, 1.35, 1.25, 6.0), (-1.4, 1.0, 0.95, 5.2), (0.6, 0.95, 0.9, 4.6), (2.4, 0.85, 0.8, 4.0), (3.9, 0.8, 0.75, 3.2)]
-
-
-def torso_path():
-    # From under the kilt (its flat cap closes the kilt's underside) up past
-    # the shoulders, broken off over them.
-    keys = [((0, 0.6, 48.5), 4.0, 3.0), ((0, 0.5, 51.5), 12.5, 8.0), ((0, 0.4, 56.0), 18.4, 11.6), ((0, 0.4, 63.0), 19.6, 12.0), ((0, 0.6, 70.0), 19.4, 11.8), ((0, 0.3, 78.0), 17.0, 10.6),
-            ((0, 0, 84.0), 15.6, 10.0), ((0, -0.2, 92.0), 17.2, 10.6), ((0, -0.4, 100.0), 19.6, 11.2), ((0, -0.3, 107.0), 22.4, 11.4),
-            ((0, 0.0, 112.0), 23.6, 10.8), ((0, 0.4, 116.5), 19.0, 9.6)]
-    return Path(keys)
-
-
-def torso_bump(s, a, p):
-    z = p.z
-    # a: 0 along +x, pi/2 along +y (the back), -pi/2 the front.
-    back = math.sin(a)
-    out = 0.0
-    out -= 0.9 * gauss(ang(a, math.pi / 2), 0.08) * (1.0 if z > 74 else 0.0)                            # the spine
-    for px in (-1, 1):
-        aa = math.atan2(-0.9, 0.45 * px)
-        out += 2.2 * gauss(ang(a, aa), 0.38) * gauss(z - 101.0, 4.5)                                   # the chest
-        out -= 0.8 * gauss(ang(a, aa), 0.5) * gauss(z - 95.5, 0.9)                                     # its lower edge
-        ab = math.atan2(0.9, 0.5 * px)
-        out += 1.3 * gauss(ang(a, ab), 0.4) * gauss(z - 104.0, 5.0)                                    # the shoulder blades
-        for k in range(3):                                                                             # the belly's blocks
-            out += 0.45 * gauss(ang(a, -math.pi / 2 + px * 0.16), 0.11) * gauss(z - (86.0 + 3.2 * k), 1.0)
-    out -= 0.8 * gauss(ang(a, -math.pi / 2), 0.06) * gauss(z - 82.5, 1.0)                               # the navel
-    out -= 0.6 * gauss(ang(a, -math.pi / 2), 0.05) * gauss(z - 97.0, 5.0)                               # the breastbone
-    for px in (-1, 1):                                                                                 # the collarbones
-        out += 0.9 * gauss(ang(a, math.atan2(-0.55, 0.85 * px)), 0.3) * gauss(z - 110.5, 1.2)
+def shaft_zs():
+    """The shaft's courses from the plinth up: (z0, z1, kind), kind "c" a
+    course, "s" a string course."""
+    out = []
+    z = BASE_TOP + PLINTH
+    while z < N_TOP - 0.01:
+        s = next((st for st in STRINGS if st - 1.3 <= z + 0.01 < st), None)
+        if s is not None and z < s - 0.05:
+            out.append((z, s, "s"))
+            z = s
+            continue
+        nxt = min(z + (COURSE if z < YS else COURSE_HI), N_TOP)
+        nxt_s = next((st - 1.3 for st in STRINGS if z < st - 1.3 < nxt), None)
+        if nxt_s is not None:
+            nxt = nxt_s
+        if nxt - z < 0.6:
+            out[-1] = (out[-1][0], nxt, out[-1][2]) if out else (z, nxt, "c")
+        else:
+            out.append((z, nxt, "c"))
+        z = nxt
     return out
 
 
-def kilt_path(r_in=0.0):
-    keys = [((0, 0, 86.0), 16.6 - r_in, 11.0 - r_in), ((0, 0, 78.0), 18.8 - r_in, 12.2 - r_in), ((0, 0, 68.0), 20.6 - r_in, 13.2 - r_in),
-            ((0, 0, 60.0), 21.6 - r_in, 13.8 - r_in), ((0, 0, 56.5), 21.9 - r_in, 14.0 - r_in)]
-    return Path(keys)
+def tower(lay, sx, solids, fars):
+    cx = sx * GX
+    north = sx > 0
+    # Under the low water: big plain stones, few.
+    for (a, b) in ((FOOT, -20.0), (-20.0, -6.0)):
+        hx, hy = base_half(-6.0)
+        hx, hy = hx + 0.5, hy + 0.5
+        shell_course(lay, cx, hx, hy, a, b, maxlen=9.0, chips=0, t=4.0, bevel=0.0)
+    # The battered base, each course a little in from the one under it.
+    zs = [-6.0 + (BASE_TOP + 6.0) * i / 9 for i in range(10)]
+    for (a, b) in zip(zs, zs[1:]):
+        hx, hy = base_half(a)
+        shell_course(lay, cx, hx, hy, a, b, maxlen=5.4, chips=1)
+    # The plinth: a moulded course proud of the shaft, on the base.
+    ring_band(lay, cx, SH_X, SH_Y, BASE_TOP, BASE_TOP + PLINTH, 1.0)
+    holes = tower_holes(sx)
+    brk = (lambda face, a, z: z < s_break(a - cx if face in "fb" else a, face)) if not north else None
+    top_open = 100.0
+    for (z0, z1, kind) in shaft_zs():
+        if not north and z0 > S_BREAK + 8.0:
+            break
+        if kind == "s":
+            if not north and z0 > S_BREAK - 8.0:
+                continue
+            ring_band(lay, cx, SH_X, SH_Y, z0, z1, 0.7)
+            continue
+        shell_course(lay, cx, SH_X, SH_Y, z0, z1, holes=holes, keep=brk, chips=1,
+                     maxlen=4.6 if z0 < YS else (6.2 if z0 < 70.0 else 7.4), inner=z0 >= top_open, bevel=None if z0 < 30.0 else 0.0)
+    # The heads over the openings, the dark behind the slits.
+    for face, hs in holes.items():
+        for (hm, hh, hz0, hz1) in hs:
+            if not north and hz1 > S_BREAK - 9.0:
+                continue
+            if hh > 2.0:
+                arch_head(lay, cx, SH_X, SH_Y, face, hm, hh, hz1 - hh - 0.3)
+            else:
+                recess(lay, cx, SH_X, SH_Y, face, (hm, hh, hz0, hz1))
+    # The core: the hollow's dark, so no joint or slit shows through.
+    ctop = 101.0 if north else S_BREAK - 13.5
+    lay.block((cx, 0.0, (-6.0 + ctop) / 2), (2 * (SH_X - SKIN) + 0.1, 2 * (SH_Y - SKIN) + 0.1, ctop + 6.0), bevel=0.0,
+              chips=0, tone=0.35)
+    # A floor under the open top stage (or the broken top's rubble).
+    fz = 101.2 if north else S_BREAK - 13.0
+    lay.block((cx, 0.0, fz), (2 * (SH_X - SKIN) + 0.4, 2 * (SH_Y - SKIN) + 0.4, 1.6), chips=3, hide=("-z",))
+    if not north:
+        r = lay.r
+        for i in range(9):
+            lay.block((cx + r.uniform(-6, 6), r.uniform(-6, 6), fz + 1.2 + r.uniform(0, 1.5)),
+                      (r.uniform(2.0, 3.6), r.uniform(1.6, 3.0), r.uniform(1.0, 2.0)),
+                      yaw=r.uniform(0, 3), tilt=(r.uniform(-0.4, 0.4), r.uniform(-0.4, 0.4)), chips=3)
+    if north:
+        # The cornice, a parapet over it, and the stump of the beacon's platform.
+        ring_band(lay, cx, SH_X, SH_Y, N_TOP, N_TOP + 1.4, 1.2)
+        ring_band(lay, cx, SH_X, SH_Y, N_TOP + 1.4, N_TOP + 2.4, 1.8)
+        lay.block((cx, 0.0, N_TOP + 1.2), (2 * SH_X, 2 * SH_Y, 1.6), chips=2, hide=("-z",))
+        par = lambda face, a, z: noise.noise(Vector((a * 0.3, z * 0.1, 2.0 if face in "fb" else 6.0))) > -0.3
+        shell_course(lay, cx, SH_X + 1.0, SH_Y + 1.0, N_TOP + 2.4, N_TOP + 4.0, keep=par, maxlen=3.0, chips=3, t=1.4, inner=True)
+        bk = lambda face, a, z: z < N_TOP + 9.5 + 3.0 * noise.noise(Vector((a * 0.3, 1.0, 7.0 if face in "fb" else 3.0)))
+        for z0 in (N_TOP + 2.4, N_TOP + 4.6, N_TOP + 6.8, N_TOP + 9.0, N_TOP + 11.2):
+            shell_course(lay, cx, 6.5, 6.5, z0, z0 + 2.2, keep=bk, maxlen=3.4, chips=3, t=2.0, inner=True)
+        lay.block((cx, 0.0, N_TOP + 7.0), (9.0, 9.0, 1.0), chips=2, tone=0.5, hide=("-z",))
+    # Solids: never wider than the stone drawn.
+    hx0, hy0 = base_half(-6.0)
+    solids.append(((cx - hx0, -hy0, FOOT), (cx + hx0, hy0, 0.0)))
+    for (a, b) in ((0.0, 4.0), (4.0, 8.0), (8.0, BASE_TOP)):
+        hx, hy = base_half(b)
+        solids.append(((cx - hx, -hy, a), (cx + hx, hy, b)))
+    top = N_TOP + 1.4 if north else S_BREAK - 8.0
+    solids.append(((cx - SH_X - 0.6, -SH_Y - 0.6, BASE_TOP), (cx + SH_X + 0.6, SH_Y + 0.6, BASE_TOP + PLINTH)))
+    solids.append(((cx - SH_X, -SH_Y, BASE_TOP + PLINTH), (cx + SH_X, SH_Y, top)))
+    if north:
+        solids.append(((cx - SH_X - 1.0, -SH_Y - 1.0, top), (cx + SH_X + 1.0, SH_Y + 1.0, N_TOP + 2.4)))
+        solids.append(((cx - 6.5, -6.5, N_TOP + 2.4), (cx + 6.5, 6.5, N_TOP + 8.0)))
+    else:
+        # The ragged top in four quarters, each to the lowest stone of its run.
+        for (xa, xb) in ((cx - SH_X, cx), (cx, cx + SH_X)):
+            lo = min([s_break(a - cx, f) for f in ("f", "b") for a in (xa, xb, (xa + xb) / 2)]
+                     + [s_break(u, f) for f in ("l", "r") for u in (-SH_Y, 0.0, SH_Y)])
+            solids.append(((xa, -SH_Y, top), (xb, SH_Y, max(top, lo - 2.0))))
+    # The far: base, shaft, bands, dark arcade openings.
+    fars.append(((cx, 0.0, (FOOT + BASE_TOP) / 2), (2 * hx0 - 1.0, 2 * hy0 - 1.0, BASE_TOP - FOOT), 1.0))
+    ft = N_TOP if north else S_BREAK - 4.0
+    fars.append(((cx, 0.0, (BASE_TOP + ft) / 2), (2 * SH_X, 2 * SH_Y, ft - BASE_TOP), 1.0))
+    for zt in (BASE_TOP + PLINTH,) + STRINGS:
+        if north or zt < S_BREAK - 8.0:
+            fars.append(((cx, 0.0, zt - 0.7), (2 * SH_X + 1.6, 2 * SH_Y + 1.6, 1.4), 1.0))
+    if north:
+        fars.append(((cx, 0.0, N_TOP + 1.2), (2 * SH_X + 3.0, 2 * SH_Y + 3.0, 2.4), 1.0))
+        fars.append(((cx, 0.0, N_TOP + 6.0), (13.0, 13.0, 8.0), 1.0))
+        for (u, v) in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            for k in (-4.4, 4.4):
+                if u:
+                    fars.append(((cx + u * (SH_X + 0.03), k, 112.0), (0.2, 5.2, 15.0), 0.3))
+                else:
+                    fars.append(((cx + k, v * (SH_Y + 0.03), 112.0), (5.2, 0.2, 15.0), 0.3))
+    else:
+        for (xa, xb, yy) in ((-SH_X, -4.0, 0.0), (-4.0, 4.0, 0.0), (4.0, SH_X, 0.0)):
+            lo = min(s_break(a, f) for f in ("f", "b") for a in (xa, xb))
+            fars.append(((cx + (xa + xb) / 2, 0.0, (ft + lo) / 2), (xb - xa, 2 * SH_Y, max(0.5, lo - ft)), 1.0))
 
 
-def kilt_bump(s, a, p):
-    pleat = abs(math.sin(14 * a))
-    return 0.75 * pleat * min(1.0, s / 8.0)
+NV = 56
 
 
-def neck_path():
-    return Path([((0, 0.6, 110.0), 8.6, 8.8), ((0, 0.2, 117.0), 8.2, 8.4), ((0, -0.4, 122.0), 7.6, 8.0)])
+def ring_arch(lay, solids, fars):
+    """The great arch: voussoirs three across, an archivolt band over them,
+    a keystone at the crown."""
+    rm = R + RING / 2
+    for i in range(NV):
+        a = -math.pi / 2 + (i + 0.5) * math.pi / NV
+        x = rm * math.sin(a)
+        z = YS + rm * math.cos(a)
+        chord = 2.0 * RO * math.tan(math.pi / NV / 2) - 0.06
+        key = i in (NV // 2 - 1, NV // 2)
+        ys = [-RHW, -3.0, 2.4, RHW] if i % 2 else [-RHW, -4.2, 1.4, RHW]
+        for j, (ya, yb) in enumerate(zip(ys, ys[1:])):
+            hy = ("-y",) if j > 0 else ()
+            hy += ("+y",) if j < 2 else ()
+            lay.block((x, (ya + yb) / 2, z), (chord, yb - ya - T.JOINT, RING + (0.8 if key else 0.0)),
+                      tilt=(0.0, a), chips=0, hide=("-x", "+x") + hy)
+    # The archivolt: a band of thin stones on the ring's back, proud on each face.
+    n2 = 40
+    for i in range(n2):
+        a = -math.pi / 2 + (i + 0.5) * math.pi / n2
+        rb = RO + 0.6
+        x = rb * math.sin(a)
+        if abs(x) > R - 0.5 and math.cos(a) < 0.2:
+            continue
+        chord = 2.0 * (RO + 1.2) * math.tan(math.pi / n2 / 2) - 0.06
+        lay.block((x, 0.0, YS + rb * math.cos(a)), (chord, 2 * RHW + 1.6, 1.2), tilt=(0.0, a), chips=2, hide=("-x", "+x"))
+    n = 72
+    for i in range(n):
+        a0 = -math.pi / 2 + i * math.pi / n
+        a1 = a0 + math.pi / n
+        pts = [(rr * math.sin(a), YS + rr * math.cos(a)) for rr in (R, RO) for a in (a0, a1)]
+        xs = [p[0] for p in pts]
+        zs = [p[1] for p in pts]
+        if min(xs) > R or max(xs) < -R:
+            continue
+        # Its foot never under the soffit drawn: the intrados where it is highest
+        # over the box (at the box's x nearest the crown).
+        x0, x1 = max(min(xs), -R), min(max(xs), R)
+        near = 0.0 if x0 < 0.0 < x1 else min(abs(x0), abs(x1))
+        solids.append(((x0, -RHW, max(intrados(near), YS)), (x1, RHW, max(zs))))
+    for i in range(30):
+        a = -math.pi / 2 + (i + 0.5) * math.pi / 30
+        chord = 2.0 * RO * math.tan(math.pi / 30 / 2)
+        fars.append(((rm * math.sin(a), 0.0, YS + rm * math.cos(a)), (chord, 2 * RHW, RING + 1.0), 1.0, a))
 
 
-def arm_stump_path(sx):
-    """The arm left standing (sx: its side): from inside the shoulder down
-    and out to its break above the elbow."""
-    return Path([((sx * 18.0, 0.4, 110.0), 7.6, 7.6), ((sx * 23.5, 0.6, 107.0), 7.4, 7.2),
-                 ((sx * 26.5, 0.8, 99.0), 6.4, 6.2), ((sx * 28.0, 0.4, 88.0), 5.6, 5.6)])
-
-
-def arm_socket_path(sx):
-    """The fallen arm's side: the shoulder's round broken off short."""
-    return Path([((sx * 18.0, 0.4, 110.0), 7.6, 7.6), ((sx * 23.0, 0.5, 108.5), 7.4, 7.2), ((sx * 25.5, 0.6, 106.5), 6.8, 6.6)])
-
-
-def leg_bump_for(path):
-    L = path.length
-
-    def bump(s, a, p):
-        f = -math.pi / 2
-        out = 0.0
-        out += 1.5 * gauss(ang(a, f), 0.45) * gauss(s - 0.455 * L, 2.2)              # the knee
-        out -= 0.5 * gauss(ang(a, f), 0.9) * gauss(s - 0.40 * L, 1.5)               # under it
-        out += 1.4 * gauss(ang(a, -f), 0.7) * gauss(s - 0.30 * L, 5.0)               # the calf
-        out += 1.1 * gauss(ang(a, f + 0.35), 0.45) * gauss(s - 0.66 * L, 6.0)        # the thigh's front
-        out += 0.8 * gauss(ang(a, -f), 0.6) * gauss(s - 0.75 * L, 6.0)               # its back
-        out -= 0.6 * gauss(ang(a, -f), 0.25) * gauss(s - 0.455 * L, 1.6)             # behind the knee
-        return out
-    return bump
-
-
-def belt_path():
-    return Path([((0, 0, 86.5), 16.0, 10.6), ((0, 0, 84.0), 16.9, 11.2), ((0, 0, 81.5), 16.5, 10.9)])
-
-
-def colossus_figure(lay, bm, segs, course, rough, far=False):
+def upper_works(lay, solids, fars):
+    """The spandrels and the attic over the arch, in courses on the ring's
+    back, to ATTIC; the breach through them over the crown; a cornice."""
+    zs = []
+    z = YS + 1.5
+    while z < ATTIC - 0.1:
+        zs.append((z, min(z + COURSE, ATTIC)))
+        z += COURSE
+    for (z0, z1) in zs:
+        for face in (-1, 1):
+            # Two leaves, front and back, each showing one face.
+            at = face * (AHW - 1.6)
+            def keep(a, zc, z0=z0, face=face):
+                bh = breach_half(zc, face)
+                return abs(a) > bh
+            cuts_ok = []
+            cuts = cuts_of(lay, -R, R, 4.4 if z0 < 70 else 5.0)
+            run = None
+            kept = []
+            for u, v in zip(cuts, cuts[1:]):
+                ac = (u + v) / 2
+                lo = max(intrados(u), intrados(v), intrados(0.0) if u < 0.0 < v else 0.0) + 1.0
+                ok = z0 >= lo and z1 > extrados(ac) - 0.6 and keep(ac, (z0 + z1) / 2)
+                if not ok:
+                    if run is not None:
+                        kept.append((run, u))
+                        run = None
+                    continue
+                kw = {"bevel": 0.0} if z0 > 62.0 else {}
+                lay.block((ac, at, (z0 + z1) / 2), (v - u - T.JOINT, 3.2, z1 - z0 - T.JOINT),
+                          chips=lay.r.randint(0, 2 if z0 < 62.0 else 1), hide=("+y" if face < 0 else "-y",), **kw)
+                if run is None:
+                    run = u
+            if run is not None:
+                kept.append((run, cuts[-1]))
+            for (a, b) in kept:
+                solids.append(((a, face * AHW if face < 0 else 0.0, z0), (b, 0.0 if face < 0 else AHW, z1)))
+        # The fill between the leaves, seen only from above in the breach: the
+        # top of the course under the breach's floor.
+    # The core between the leaves, in slices over the ring's back.
+    n = 16
+    for i in range(n):
+        a, b = -R + 2 * R * i / n, -R + 2 * R * (i + 1) / n
+        lo = max(intrados(a), intrados(b)) + 0.5
+        bh = breach_half(BREACH_Z + 1.0, 1)
+        hi = BREACH_Z - 0.6 if min(abs(a), abs(b)) < bh + 3.0 else ATTIC - 0.6
+        if hi > lo:
+            lay.block(((a + b) / 2, 0.0, (lo + hi) / 2), (b - a, 2 * AHW - 3.2, hi - lo), bevel=0.0, chips=0, tone=0.4)
+    # The breach's floor: rubble on the course under it, and the core's top.
+    lay.block((0.0, 0.0, BREACH_Z - 0.6), (30.0, 2 * AHW - 3.0, 1.4), chips=3, hide=("-z",))
     r = lay.r
-    sd = 0.0
-    kw = dict(course=None if far else course, step=8.0 if far else 3.0, rough=0.0 if far else rough, groove=0.2)
+    for i in range(10):
+        lay.block((r.uniform(-11, 11), r.uniform(-4, 4), BREACH_Z + r.uniform(0.2, 1.0)),
+                  (r.uniform(2.0, 3.8), r.uniform(1.6, 3.0), r.uniform(0.9, 1.8)),
+                  yaw=r.uniform(0, 3), tilt=(r.uniform(-0.4, 0.4), r.uniform(-0.4, 0.4)), chips=3)
+    # The breach's cheeks: the core's cut faces between the leaves.
     for sx in (-1, 1):
-        sd += 3.1
-        lp = leg_path(sx)
-        loft(bm, lp, (1, 0, 0), segs, r, sub=2, seed=sd, seams=2, bump=None if far else leg_bump_for(lp), **kw)
-        loft(bm, foot_path(sx), (1, 0, 0), segs, r, sub=1, seed=sd + 1, start="flat", end="open", **kw)
-        if not far:
-            for (ox, rx, rz, ln) in TOES:
-                tx = sx * FOOT_X + sx * ox + sx * 0.4
-                y0 = -10.0
-                p = Path([((tx, y0, PED_TOP + rz), rx, rz), ((tx, y0 - ln * 0.6, PED_TOP + rz * 0.95), rx * 1.02, rz),
-                          ((tx, y0 - ln, PED_TOP + rz * 0.75), rx * 0.8, rz * 0.7)])
-                loft(bm, p, (1, 0, 0), max(10, segs // 4), r, step=1.0, rough=0.06, end="flat", seed=sd + ox)
-    tp = torso_path()
-    loft(bm, tp, (1, 0, 0), segs + (segs // 2), r, sub=2, bump=None if far else torso_bump, start="flat",
-         end="broken", jag=(0.0, 0.0 if far else 2.5), seed=11.0, seams=2, **kw)
-    loft(bm, neck_path(), (1, 0, 0), segs // 2 + 4, r, sub=1, end="broken", jag=(0.0, 0.0 if far else 3.5), seed=12.0, seams=2, **kw)
-    # The arm left standing on the figure's left (+x), broken above the elbow;
-    # the right one (fallen, in the shallows) broken off at the shoulder.
-    loft(bm, arm_stump_path(1), (0, 1, 0), segs // 2 + 6, r, sub=1, end="broken", jag=(0.0, 0.0 if far else 3.0), seed=14.0,
-         seams=2, **kw)
-    loft(bm, arm_socket_path(-1), (0, 1, 0), segs // 2 + 6, r, sub=1, end="broken", jag=(0.0, 0.0 if far else 2.0), seed=15.0,
-         seams=2, **kw)
-    outer = loft(bm, kilt_path(), (1, 0, 0), segs * 2 if not far else segs, r, sub=2, bump=None if far else kilt_bump,
-                 seed=13.0, end="open" if not far else "flat", jag=(0.0, 0.0 if far else 2.2), **kw)
-    if not far:
-        inner = loft(bm, kilt_path(1.3), (1, 0, 0), segs * 2, r, sub=1, step=3.0, course=None, rough=0.1, inner=True,
-                     end="open", jag=(0.0, 2.2), seed=13.0)
-        bridge(bm, outer, inner, Vector((0, 0, -1)))
-        loft(bm, belt_path(), (1, 0, 0), segs + segs // 2, r, course=None, step=1.2, rough=0.15, seed=17.0)
-
-
-def pedestal(lay, sx):
-    fx = sx * FOOT_X
-    x0, x1 = fx - PED_HALF, fx + PED_HALF
-    y0, y1 = PED_Y
-    yc, yd = (y0 + y1) / 2, y1 - y0
-    # Below the low water, few big stones.
-    for (a, b) in ((PED_FOOT, -20.0), (-20.0, -8.0)):
-        lay.run(x0, x1, a, b, yd, at=yc, maxlen=9.0, chips=0)
-    zs = [-8.0 + (PED_TOP - 1.4 + 8.0) * i / 10 for i in range(11)]
-    for i, (a, b) in enumerate(zip(zs, zs[1:])):
-        jut = 0.8 if i == len(zs) - 2 else 0.0
-        lay.run(x0 - jut, x1 + jut, a, b, yd + 2 * jut, at=yc, maxlen=4.6, chips=2, hide=("-z", "+z"))
-    # The top: slabs round the foot, some lifted, the cornice under them.
-    lay.run(x0 - 0.8, x1 + 0.8, PED_TOP - 1.4, PED_TOP, yd + 1.6, at=yc, maxlen=5.5, chips=3, hide=("-z",))
-
-
-def build_colossus(lay):
-    segs = 22 if lay.mid else 56
-    colossus_figure(lay, lay.p.near, segs, None if lay.mid else 4.2, 0.35)
-    if not lay.mid:
-        colossus_figure(lay, lay.p.far, 12, None, 0.0, far=True)
+        for z0 in range(int(BREACH_Z), int(ATTIC), 3):
+            bh = max(breach_half(z0 + 1.5, -1), breach_half(z0 + 1.5, 1)) + 1.0
+            lay.block((sx * (bh + 1.5), 0.0, z0 + 1.5), (3.0, 2 * AHW - 3.0, 3.0 - T.JOINT), chips=2,
+                      hide=("-z", "+z", "-y", "+y"), tone=0.85)
+    # The attic's cornice and its string course over the crown, where not fallen.
+    for face in (-1, 1):
+        keep = lambda a, z, face=face: abs(a) > breach_half(ATTIC, face) + 1.5
+        face_run(lay, -R, R, ATTIC, ATTIC + 1.6, 2.4, face * (AHW + 0.3 - 1.2), "x", keep=keep,
+                 maxlen=3.6, chips=3, hide=("-z", "+y" if face < 0 else "-y"))
+        keep2 = lambda a, z, face=face: abs(a) > breach_half(84.0, face) - 1.0 and z > extrados(a) - 0.5
+        face_run(lay, -R, R, 83.4, 84.6, 1.6, face * (AHW + 0.4 - 0.8), "x", keep=keep2,
+                 maxlen=3.6, chips=2, hide=("-z", "+y" if face < 0 else "-y"))
     for sx in (-1, 1):
-        pedestal(lay, sx)
-        fx = sx * FOOT_X
-        if not lay.mid:
-            lay.p.far_box((fx, sum(PED_Y) / 2, (PED_FOOT + PED_TOP) / 2), (2 * PED_HALF + 1.6, PED_Y[1] - PED_Y[0] + 1.6, PED_TOP - PED_FOOT))
-    # The solids: pedestals, feet, the legs in slabs, the kilt and the torso.
-    boxes = []
+        a0 = sx * (breach_half(ATTIC, 1) + 2.0)
+        lay.block(((a0 + sx * R) / 2, 0.0, ATTIC - 0.2), (abs(sx * R - a0), 2 * AHW - 2.0, 1.2), chips=2, hide=("-z",))
+    # The far: slices of the upper works over the ring's back.
+    n = 19
+    for i in range(n):
+        a, b = -R + 2 * R * i / n, -R + 2 * R * (i + 1) / n
+        lo = min(extrados(a), extrados(b)) - 0.5
+        hi = ATTIC + 1.6
+        bh = breach_half(BREACH_Z + 4.0, 1)
+        if max(abs(a), abs(b)) < bh + 2.0:
+            hi = BREACH_Z
+        elif min(abs(a), abs(b)) < breach_half(ATTIC, 1):
+            hi = BREACH_Z + (min(abs(a), abs(b)) - 11.5) / 0.55
+        if hi > lo:
+            fars.append((((a + b) / 2, 0.0, (lo + hi) / 2), (b - a, 2 * AHW, hi - lo), 1.0))
+
+
+# ---- the fallen blocks ------------------------------------------------------------
+def chunk(lay, c, yaw, tilt, cells, cell, solids, tone=None):
+    """Blocks bound in one fallen mass: `cells` (i, j, k) of size `cell`, laid
+    about `c`, the whole turned by yaw and tilted."""
+    m = (Matrix.Translation(Vector(c)) @ Matrix.Rotation(yaw, 4, "Z")
+         @ Matrix.Rotation(tilt[1], 4, "Y") @ Matrix.Rotation(tilt[0], 4, "X"))
+    pts = []
+    for (i, j, k) in cells:
+        o = Vector((i * cell[0], j * cell[1], k * cell[2]))
+        p = m @ o
+        lay.block(tuple(p), (cell[0] - T.JOINT, cell[1] - T.JOINT, cell[2] - T.JOINT), yaw=yaw, tilt=tilt,
+                  chips=lay.r.randint(1, 3), tone=tone)
+        for dx in (-0.5, 0.5):
+            for dy in (-0.5, 0.5):
+                for dz in (-0.5, 0.5):
+                    pts.append(m @ (o + Vector((dx * cell[0], dy * cell[1], dz * cell[2]))))
+    # A solid: the middle of the mass (the hull shrunk to 70%).
+    lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
+    hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+    mid = (lo + hi) / 2
+    hs = (hi - lo) * 0.35
+    solids.append((tuple(mid - hs), tuple(mid + hs)))
+
+
+def build_fallen(lay):
+    """Masses of the gate's stone thrown into the shallows: a run of the arch's
+    voussoirs still bound together, a corner of a tower, attic blocks. The
+    origin is the bed; the masses reach ~12 m over it, through the surface."""
+    solids = []
+    r = lay.r
+    # A piece of the ring: five voussoirs on a curve, lying on its side.
+    for i in range(5):
+        a = -0.35 + i * 0.17
+        x = 20.0 * math.sin(a)
+        z = 20.0 * math.cos(a) - 14.0
+        lay.block((x - 2.0, 4.0, z + 1.0), (3.6, 7.5, 5.5), tilt=(0.0, a), yaw=0.1, chips=2)
+    solids.append(((-10.0, 1.0, 0.0), (6.0, 7.0, 7.0)))
+    # A corner of a tower, three courses still bound, leaning.
+    chunk(lay, (-12.0, -8.0, 4.0), 0.4, (0.35, -0.2), [(i, j, k) for i in range(3) for j in range(2) for k in range(3)
+                                                       if not (i == 2 and j == 1 and k == 2)], (3.6, 3.0, 2.2), solids)
+    chunk(lay, (9.0, -10.0, 3.0), -0.7, (-0.15, 0.5), [(i, 0, k) for i in range(4) for k in range(4) if i + k < 6],
+          (3.0, 3.0, 2.2), solids)
+    # Single blocks, some breaking the surface, some just under.
+    for i in range(14):
+        a = r.uniform(0, 2 * math.pi)
+        d = r.uniform(6.0, 20.0)
+        s = (r.uniform(2.6, 4.8), r.uniform(2.0, 3.4), r.uniform(1.8, 2.6))
+        zc = r.uniform(0.5, 9.0)
+        c = (d * math.cos(a), d * math.sin(a), zc)
+        lay.block(c, s, yaw=r.uniform(0, 3), tilt=(r.uniform(-0.5, 0.5), r.uniform(-0.5, 0.5)), chips=3)
+        solids.append(((c[0] - s[0] * 0.3, c[1] - s[1] * 0.3, c[2] - s[2] * 0.3), (c[0] + s[0] * 0.3, c[1] + s[1] * 0.3, c[2] + s[2] * 0.3)))
+    # Underneath, the heap's foot down to a deeper bed.
+    for i in range(6):
+        c = (r.uniform(-14, 10), r.uniform(-12, 8), -4.0)
+        lay.block(c, (6.0, 5.0, 8.0), yaw=r.uniform(0, 3), chips=0, hide=("-z",))
+    if not lay.mid:
+        lay.far_boxes([((-14.0, -14.0, -6.0), (12.0, 8.0, 6.0))])
+    lay.solids(solids)
+
+
+def build_gate(lay):
+    solids = []
+    fars = []
     for sx in (-1, 1):
-        fx = sx * FOOT_X
-        boxes.append(((fx - PED_HALF - 0.8, PED_Y[0] - 0.8, PED_FOOT), (fx + PED_HALF + 0.8, PED_Y[1] + 0.8, PED_TOP)))
-        boxes.append(((fx - 6.2, -16.5, PED_TOP), (fx + 6.2, 10.0, PED_TOP + 8.8)))
-        lp = leg_path(sx)
-        n = 11
-        for i in range(n):
-            s0, s1 = lp.length * i / n, lp.length * (i + 1) / n
-            c0, _, rx0, ry0 = lp.at(s0)
-            c1, _, rx1, ry1 = lp.at(s1)
-            rr = max(rx0, ry0, rx1, ry1) * 0.92
-            boxes.append(((min(c0.x, c1.x) - rr, min(c0.y, c1.y) - rr, min(c0.z, c1.z)),
-                          (max(c0.x, c1.x) + rr, max(c0.y, c1.y) + rr, max(c0.z, c1.z))))
-    for (z0, z1, rx, ry) in ((48.5, 52.0, 12.5, 8.0), (52.0, 55.0, 17.5, 11.5), (55.0, 60.0, 21.0, 13.5), (60.0, 68.0, 21.0, 13.4), (68.0, 78.0, 20.0, 12.8), (78.0, 87.0, 17.5, 11.5),
-                             (87.0, 96.0, 17.0, 10.8), (96.0, 104.0, 20.0, 11.6), (104.0, 112.0, 23.0, 11.2), (112.0, 117.0, 21.0, 10.0),
-                             (117.0, 122.0, 8.0, 8.0)):
-        boxes.append(((-rx, -ry, z0), (rx, ry, z1)))
-    boxes.append(((19.0, -7.0, 86.0), (34.0, 7.5, 112.0)))
-    boxes.append(((-31.0, -7.0, 100.0), (-19.0, 7.5, 116.0)))
-    lay.solids(boxes)
-
-
-# ---- the head --------------------------------------------------------------------
-HEAD_H = 24.0
-
-
-def head_path():
-    keys = [((0, 0, -6.0), 6.0, 6.4), ((0, 0.5, 0.0), 6.6, 7.4), ((0, 0.2, 2.5), 7.0, 8.6), ((0, 0, 7.0), 7.6, 9.4),
-            ((0, 0, 11.0), 8.0, 9.8), ((0, 0.2, 15.0), 8.2, 10.0), ((0, 0.4, 18.5), 7.9, 9.6), ((0, 0.6, 21.5), 6.6, 8.2),
-            ((0, 0.6, 23.4), 4.0, 5.2), ((0, 0.6, 24.2), 1.0, 1.4)]
-    return Path(keys)
-
-
-def head_bump(s, a, p):
-    z = p.z
-    front = -math.pi / 2
-    da = math.atan2(math.sin(a - front), math.cos(a - front))     # signed, + toward +x
-    ad = abs(da)
-    out = 0.0
-    # The nose: from the bridge (z 14) out to its tip (z 8), its wings.
-    if 6.4 < z < 14.5:
-        prof = 2.9 * (1.0 - (z - 8.0) / 6.5) if z > 8.0 else 2.9 * (z - 6.4) / 1.6
-        out += max(0.0, prof) * gauss(da, 0.11 + 0.02 * (14.5 - z) / 8)
-        out += 0.6 * gauss(z - 7.6, 0.9) * gauss(ad - 0.2, 0.08)
-    # The eyes' sockets, the lids' swell, the brow over them.
-    for sgn in (-1, 1):
-        out -= 1.6 * gauss(da - sgn * 0.42, 0.16) * gauss(z - 12.3, 1.5)
-        out += 0.45 * gauss(da - sgn * 0.42, 0.11) * gauss(z - 12.0, 0.6)
-    out += 0.9 * gauss(ad - 0.35, 0.35) * gauss(z - 14.6, 0.9)
-    # Cheeks, mouth, lips, chin.
-    out += 0.6 * gauss(ad - 0.62, 0.22) * gauss(z - 8.4, 2.0)
-    out += 0.65 * gauss(da, 0.26) * gauss(z - 5.6, 0.55)
-    out += 0.55 * gauss(da, 0.24) * gauss(z - 4.3, 0.5)
-    out -= 0.7 * gauss(da, 0.30) * gauss(z - 4.95, 0.22)
-    out += 1.0 * gauss(da, 0.32) * gauss(z - 1.9, 1.1)
-    # Ears.
-    for ea in (0.0, math.pi):
-        out += 1.8 * gauss(ang(a, ea), 0.12) * gauss(z - 11.5, 2.4)
-    # Hair: thick curls over the crown and back, a fringe of them on the brow.
-    hair = 0.0
-    if z > 16.0 or (z > 8.0 and ad > 1.25):
-        hair = 1.0
-    if z > 15.6 and ad < 1.25:
-        hair = min(1.0, (z - 15.6) / 0.8)
-    if hair > 0:
-        q = Vector((math.cos(a) * 6.0, math.sin(a) * 6.0, z * 0.8))
-        curl = abs(noise.noise(q * 0.55))
-        out += hair * (1.1 + 1.3 * (1.0 - curl))
-    # The neck narrows under the jaw at the back.
-    if z < 2.0:
-        out -= 1.2 * gauss(ad - math.pi, 1.0) * gauss(z - 0.5, 1.5)
-    return out
-
-
-def head_lie():
-    # Laid on its right cheek: the head's +z (up) to +x... the neck toward -x
-    # would bury the face; here the head's axis runs along +x (crown to +x),
-    # its face turned up and to -y a little.
-    # Rolled onto the back of the skull, so the face looks up (and a little
-    # to -y): from the air and from the water it reads as a face.
-    return (Matrix.Translation((0.0, 0.0, 6.5)) @ Matrix.Rotation(math.radians(-64.0), 4, "X")
-            @ Matrix.Rotation(math.radians(90.0), 4, "Y") @ Matrix.Translation((0.0, 0.0, -9.0)))
-
-
-def build_head(lay):
-    m = head_lie()
-    segs = 32 if lay.mid else 96
-    loft(lay.p.near, head_path(), (1, 0, 0), segs, lay.r, course=None, sub=3, step=0.8,
-         bump=head_bump, rough=0.25, start="broken", end="flat", jag=(3.0, 0.0), matrix=m, seed=21.0, bites=0.1)
+        tower(lay, sx, solids, fars)
+    ring_arch(lay, solids, fars)
+    upper_works(lay, solids, fars)
+    # Fallen stones at the south tower's foot, out of the way through.
+    r = lay.r
+    for i in range(8):
+        c = (-GX + r.uniform(-14, 14), -SH_Y - r.uniform(6.0, 14.0), r.uniform(-2.0, 1.8))
+        s = (r.uniform(3.0, 5.0), r.uniform(2.4, 3.6), r.uniform(2.0, 3.0))
+        if abs(c[0]) < R + 6.0:
+            c = (-(R + 6.0) - r.uniform(0, 6), c[1], c[2])
+        lay.block(c, s, yaw=r.uniform(0, 3), tilt=(r.uniform(-0.5, 0.5), r.uniform(-0.5, 0.5)), chips=3)
+        solids.append(((c[0] - s[1] * 0.4, c[1] - s[1] * 0.4, c[2] - s[2] * 0.3), (c[0] + s[1] * 0.4, c[1] + s[1] * 0.4, c[2] + s[2] * 0.3)))
     if not lay.mid:
-        loft(lay.p.far, head_path(), (1, 0, 0), 14, lay.r, step=3.0, bump=head_bump, rough=0.0, start="flat",
-             end="flat", matrix=m, seed=21.0)
-    lay.solids([((-15.5, -12.0, -4.0), (15.5, 12.0, 18.5))])
-
-
-# ---- the arm --------------------------------------------------------------------
-def arm_path():
-    keys = [((0, 0, 0), 7.2, 6.6), ((7, 0, 0.2), 6.0, 5.6), ((15, 0.3, 0.3), 5.6, 5.2), ((24, 0.8, 0.2), 4.4, 4.2),
-            ((27, 1.0, 0.0), 4.5, 4.1), ((33, -1.8, -0.2), 4.7, 4.0), ((42, -6.0, -0.4), 3.7, 3.0),
-            ((49, -9.2, -0.6), 2.3, 3.0), ((52, -10.6, -0.7), 1.9, 4.0), ((57, -12.8, -0.9), 1.8, 4.6)]
-    return Path(keys)
-
-
-def arm_bump(s, a, p):
-    # a: 0 up (+z), pi/2 across. The biceps' swell, the elbow's point, the
-    # forearm's muscle near the elbow.
-    out = 1.3 * gauss(ang(a, 0.0), 0.7) * gauss(s - 13.0, 5.0)
-    out += 1.2 * gauss(ang(a, math.pi), 0.4) * gauss(s - 27.0, 2.0)
-    out += 1.0 * gauss(ang(a, 0.6), 0.6) * gauss(s - 34.0, 4.0)
-    out -= 0.5 * gauss(s - 24.0, 1.5)
-    return out
-
-
-FINGERS = [(-2.9, 0.95, 7.0), (-0.95, 1.05, 8.0), (1.0, 1.0, 7.6), (2.9, 0.85, 6.0)]
-
-
-def build_arm(lay):
-    m = Matrix.Translation((0.0, 0.0, 1.5))
-    segs = 20 if lay.mid else 56
-    loft(lay.p.near, arm_path(), (0, 0, 1), segs, lay.r, course=None, sub=2, step=1.5,
-         rough=0.3, start="broken", end="flat", jag=(4.0, 0.0), matrix=m, seed=31.0, seams=2, bump=arm_bump)
-    if not lay.mid:
-        loft(lay.p.far, arm_path(), (0, 0, 1), 10, lay.r, step=8.0, rough=0.0, start="flat", end="flat", matrix=m)
-    # The hand's fingers, from the knuckles on, slightly curled; the thumb.
-    hand = arm_path()
-    c, t, rx, ry = hand.at(hand.length)
-    side = Vector((0, 0, 1)).cross(t).normalized()
-    for (o, rr, ln) in FINGERS:
-        b = c + side * o
-        keys = [(b - t * 1.0, rr * 1.1, rr), (b + t * ln * 0.5, rr, rr * 0.95), (b + t * ln + Vector((0, 0, -0.9)), rr * 0.8, rr * 0.75)]
-        loft(lay.p.near, Path(keys), (0, 0, 1), 10 if lay.mid else 16, lay.r, step=1.2, rough=0.08, end="flat", matrix=m,
-             seed=33.0 + o)
-    tb = hand.at(hand.length - 5.0)[0] - side * 4.0
-    keys = [(tb, 1.6, 1.3), (tb - side * 2.5 + t * 2.5, 1.35, 1.15), (tb - side * 3.6 + t * 5.5 + Vector((0, 0, -0.6)), 1.0, 0.9)]
-    loft(lay.p.near, Path(keys), (0, 0, 1), 10 if lay.mid else 16, lay.r, step=1.2, rough=0.08, end="flat", matrix=m, seed=39.0)
-    lay.solids([((-4.0, -7.0, -6.0), (27.0, 7.0, 8.0)), ((25.0, -12.0, -5.0), (48.0, 4.0, 6.0)),
-                ((46.0, -20.0, -3.5), (66.0, -4.0, 3.0))])
+        for f in fars:
+            if len(f) == 4:
+                lay.p.far_box(f[0], f[1], tilt=(0.0, f[3]), tone=f[2])
+            else:
+                lay.p.far_box(f[0], f[1], tone=f[2])
+    lay.solids(solids)
 
 
 # ---- the moles -------------------------------------------------------------------
@@ -993,9 +1005,8 @@ def build_shed_end(lay):
 
 
 JOBS = {
-    "harbour_colossus": lambda: both("harbour_colossus", 81, build_colossus),
-    "harbour_colossus_head": lambda: both("harbour_colossus_head", 82, build_head),
-    "harbour_colossus_arm": lambda: both("harbour_colossus_arm", 83, build_arm),
+    "harbour_gate": lambda: both_sea("harbour_gate", 91, build_gate),
+    "harbour_gate_fallen": lambda: both_sea("harbour_gate_fallen", 92, build_fallen),
     "harbour_mole": lambda: both("harbour_mole", 84, lambda lay: build_mole(lay, False)),
     "harbour_mole_broken": lambda: both("harbour_mole_broken", 85, lambda lay: build_mole(lay, True)),
     "harbour_quay": lambda: both("harbour_quay", 86, lambda lay: build_quay(lay, False)),

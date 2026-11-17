@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://jwwfr8sgf6ku"
-path="res://.godot/imported/harbour_colossus_arm.glb-1de3ef4899c4b8569f9f0b1078b89093.scn"
+uid="uid://ernuf4mgfplk"
+path="res://.godot/imported/harbour_gate.glb-f48121416caa34af406a21a0aea04ecd.scn"
 
 [deps]
 
-source_file="res://assets/models/temple_kit/harbour_colossus_arm.glb"
-dest_files=["res://.godot/imported/harbour_colossus_arm.glb-1de3ef4899c4b8569f9f0b1078b89093.scn"]
+source_file="res://assets/models/temple_kit/harbour_gate.glb"
+dest_files=["res://.godot/imported/harbour_gate.glb-f48121416caa34af406a21a0aea04ecd.scn"]
 
 [params]
 

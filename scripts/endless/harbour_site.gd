@@ -1,20 +1,22 @@
-﻿extends Node3D
+extends Node3D
 ## The ruined harbour in the cove on the inland sea's west shore (seed 1, the
 ## wilderness), about (870, -2030), from the harbour's pieces
 ## (art/blender/temple_kit/harbour_build.py) and the kit's columns.
 ##
-## - The colossus astride the mouth at COLOSSUS, facing out to sea (east): a
-##   foot on each pedestal, 100 m apart, 74 m clear between the pedestals at the
-##   water, the crotch ~58 m up. Broken off at the chest, ~105 m high.
-## - The north mole runs from the shore straight out to the north pedestal; the
+## - The sea gate astride the mouth at GATE, facing out to sea (east): two
+##   towers 100 m apart (the north ~140 m high, the south broken off ~115 m),
+##   ~70 m clear between their bases at the water, joined by one arch whose
+##   crown is 78 m over the sea; a breach ~23 m wide through the upper works
+##   over it, its floor at 85 m.
+## - The north mole runs from the shore straight out to the north tower; the
 ##   breakwater curves from the south headland round to the south one (BREAK).
 ## - Five ship sheds side by side on the north shore (SHEDS_X: the first's
 ##   middle), sloping down into the water from their land end, open at both
 ##   ends: 24.75 m clear, ~22 m under the crown. Sheds BROKEN have their
 ##   vaults fallen in over the middle.
 ## - The quay along the west shore (QUAY_X, from QUAY_Z0 north), with steps.
-## - The colossus' head lying in the shallows by the north shore, its arm by
-##   the south shore; four columns standing in the water where the shore sank.
+## - Masses of the gate's fallen stone in the shallows by the north and the
+##   south shore (FALLEN); four columns standing in the water where the shore sank.
 ##
 ## Every piece's origin is at the sea's level (LandField.SEA_Y). Drawn as the
 ## citadel is (citadel_site.gd): chunks of MultiMeshes per piece and LOD
@@ -30,8 +32,8 @@ const Field = preload("res://scripts/endless/land_field.gd")
 
 const B := TempleKit.BAY
 const SEA := Field.SEA_Y
-## The colossus' middle (between its feet), the feet north and south of it.
-const COLOSSUS := Vector2(1015.0,-2035.0)
+## The gate's middle (between its towers), the towers north and south of it.
+const GATE := Vector2(1015.0,-2035.0)
 const FOOT_X := 50.0
 const PED_HALF := 13.0
 ## harbour_build.py's numbers.
@@ -59,10 +61,9 @@ const QUAY_STEPS := [2,8]
 ## The columns in the water: the first's foot (XZ), the line they stand on.
 const COLS_AT := Vector2(752.0,-1888.0)
 const COLS_DIR := Vector2(0.707,0.707)
-const HEAD_AT := Vector2(962.0,-2250.0)
-const HEAD_YAW := 0.55
-const ARM_AT := Vector2(828.0,-1800.0)
-const ARM_YAW := 0.12
+## The fallen stone: where each mass lies, its turn.
+const FALLEN: Array[Vector2] = [Vector2(962.0,-2250.0),Vector2(828.0,-1800.0)]
+const FALLEN_YAW: Array[float] = [0.55,2.2]
 ## The trees' keep-out.
 const KEEP_C := Vector2(865.0,-2030.0)
 const KEEP_HALF := Vector2(225.0,300.0)
@@ -115,13 +116,13 @@ static func _h(field: Object, p: Vector2) -> float:
 static func _frame(p: Vector2, d: Vector2, y: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP,atan2(-d.y,d.x)),Vector3(p.x,y,p.y))
 
-## The colossus' frame: its local +x north (to the north foot), facing east.
-static func colossus_frame() -> Transform3D:
-	return _frame(COLOSSUS,Vector2(0.0,-1.0),SEA)
+## The gate's frame: its local +x north (to the north tower), facing east.
+static func gate_frame() -> Transform3D:
+	return _frame(GATE,Vector2(0.0,-1.0),SEA)
 
 ## The XZ of each foot: [north, south].
 static func feet() -> Array:
-	return [COLOSSUS+Vector2(0.0,-FOOT_X),COLOSSUS+Vector2(0.0,FOOT_X)]
+	return [GATE+Vector2(0.0,-FOOT_X),GATE+Vector2(0.0,FOOT_X)]
 
 ## A point `s` m along a polyline, and the way it runs there.
 static func _along(line: Array[Vector2], s: float) -> Array:
@@ -156,10 +157,10 @@ func _put(c: int, id: StringName, xf: Transform3D) -> void:
 
 ## Every piece into its chunk, in world frames.
 func _lay(field: Object) -> void:
-	# ---- The colossus.
-	var cx := colossus_frame()
-	var col := _chunk("harbour/colossus",cx)
-	_put(col,&"harbour_colossus",cx)
+	# ---- The sea gate.
+	var cx := gate_frame()
+	var col := _chunk("harbour/gate",cx)
+	_put(col,&"harbour_gate",cx)
 	# ---- The north mole: from the pedestal's north face to the shore.
 	var nf: Vector2 = feet()[0]
 	var n0 := nf+Vector2(0.0,-PED_HALF)
@@ -197,11 +198,12 @@ func _lay(field: Object) -> void:
 		_put(quay,ids[i],_frame(p,COLS_DIR,y))
 	var lp := COLS_AT+COLS_DIR*(B*0.5)
 	_put(quay,&"lintel",_frame(lp,COLS_DIR,maxf(feet_y[0],feet_y[1])))
-	# ---- The fallen head and arm, resting on the shallows' bed.
-	var frag := _chunk("harbour/fragments",_frame(HEAD_AT,Vector2(1.0,0.0),SEA))
-	_put(frag,&"harbour_colossus_head",_frame(HEAD_AT,Vector2.from_angle(HEAD_YAW),_low(field,HEAD_AT,12.0)+0.4))
-	var ay := maxf(_low(field,ARM_AT,6.0)+4.2,SEA-1.2)
-	_put(frag,&"harbour_colossus_arm",_frame(ARM_AT,Vector2.from_angle(ARM_YAW),ay))
+	# ---- The gate's fallen stone, on the shallows' bed (never deeper than its
+	# masses reach up through the surface).
+	for i in range(FALLEN.size()):
+		var at: Vector2 = FALLEN[i]
+		var y := clampf(_low(field,at,10.0)+0.3,SEA-8.0,SEA-1.0)
+		_put(_chunk("harbour/fallen_%d" % i,_frame(at,Vector2(1.0,0.0),SEA)),&"harbour_gate_fallen",_frame(at,Vector2.from_angle(FALLEN_YAW[i]),y))
 
 ## The lowest ground within `r` of `c`.
 static func _low(field: Object, c: Vector2, r: float) -> float:

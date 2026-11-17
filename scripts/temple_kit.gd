@@ -151,9 +151,8 @@ const PIECES: Array[StringName] = [
 	&"tombs_arch_cracked",
 	&"tombs_arch_broken",
 	# The harbour (art/blender/temple_kit/harbour_build.py; scripts/endless/harbour_site.gd).
-	&"harbour_colossus",
-	&"harbour_colossus_head",
-	&"harbour_colossus_arm",
+	&"harbour_gate",
+	&"harbour_gate_fallen",
 	&"harbour_mole",
 	&"harbour_mole_broken",
 	&"harbour_quay",
