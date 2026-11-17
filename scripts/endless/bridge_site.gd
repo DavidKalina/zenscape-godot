@@ -89,6 +89,10 @@ static func layout(field: Object) -> Array:
 		var v := float(e[1])
 		out.append([&"aqueduct_rubble",Transform3D(Basis(Vector3.UP,float(e[2])),Vector3(u,_ground(field,u,v)-0.4,v))])
 	out.append([&"baths_rubble",Transform3D(Basis(Vector3.UP,0.9),Vector3(55.0,_ground(field,55.0,-26.0)-0.4,-26.0))])
+	# In the east gate the bank's rock comes up through the paving (to 106.5
+	# at u 83..85, v -6..-3): stone fallen from the tower's broken top heaped
+	# over it, against the -v jamb.
+	out.append([&"aqueduct_rubble",Transform3D(Basis(Vector3.UP,1.3).scaled(Vector3(0.6,0.8,0.6)),Vector3(84.2,YD-0.2,-4.4))])
 	return out
 
 ## The grass kept off the abutments' and towers' footprint (endless_grass.gd
