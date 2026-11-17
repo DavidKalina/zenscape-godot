@@ -168,7 +168,7 @@ const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
 const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
 const SurgeSpray = preload("res://scripts/endless/surge_spray.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
-## Place lines: standing routes with a timed record (--lines=0 none).
+## Place lines: standing routes with a timed record. Out of the game; --lines=1 makes the node.
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
@@ -359,7 +359,7 @@ var coast: Node3D
 var whale: Node3D
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
-## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
+## The place lines (scripts/endless/place_lines.gd); null unless --lines=1.
 var lines: Node
 ## The Peak's ruined stair up the couloir (scripts/endless/peak_stair.gd), or
 ## null with no Peak or --stair=0.
@@ -814,9 +814,12 @@ func _ready() -> void:
 		traffic = EndlessTraffic.new()
 		add_child(traffic)
 		traffic.setup(seed,field,look,EndlessTraffic.wanted())
-		race = RivalRace.new()
-		add_child(race)
-		race.setup(seed)
+		# The traffic can't be challenged in the game; --race=1 (or
+		# --race-near-start) brings the race back.
+		if RivalRace.wanted():
+			race = RivalRace.new()
+			add_child(race)
+			race.setup(seed)
 	if look != null:
 		grass = EndlessGrass.new()
 		grass.setup(seed,look.ground)
