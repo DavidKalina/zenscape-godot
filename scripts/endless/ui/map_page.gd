@@ -28,6 +28,9 @@ const AqueductSite = preload("res://scripts/endless/aqueduct_site.gd")
 const SanctuarySite = preload("res://scripts/endless/sanctuary_site.gd")
 const ArenaSite = preload("res://scripts/endless/arena_site.gd")
 const TempleSite = preload("res://scripts/endless/temple_site.gd")
+const ViaductSite = preload("res://scripts/endless/viaduct_site.gd")
+const DomeSite = preload("res://scripts/endless/dome_site.gd")
+const BridgeSite = preload("res://scripts/endless/bridge_site.gd")
 const WildPlaced = preload("res://scripts/endless/world/wilderness/placed.gd")
 
 ## The sheet, mock px (the 1280x800 frame), and the map's frame inside it.
@@ -151,7 +154,11 @@ static func places(host: Node) -> Array:
 		{"name":"Theatre","kind":"ruin","at":TheatreSite.C},
 		{"name":"Aqueduct","kind":"road","line":AqueductSite.LINE},
 		{"name":"Sanctuary","kind":"ruin","at":SanctuarySite.O},
-		{"name":"Colosseum","kind":"ruin","at":ArenaSite.CENTRE}]
+		{"name":"Colosseum","kind":"ruin","at":ArenaSite.CENTRE},
+		# The viaduct's two ends and its middle (viaduct_site.gd lays it from O along DIR_DEG).
+		{"name":"Viaduct","kind":"road","line":[Vector2(-3514.0,-3870.0),Vector2(-3228.0,-3374.5),Vector2(-2942.0,-2879.0)]},
+		{"name":"Great dome","kind":"ruin","at":DomeSite.C},
+		{"name":"Great bridge","kind":"ruin","at":BridgeSite.O}]
 	for handle: String in TempleSite.SITES:
 		out.append({"name":str(TEMPLE_NAMES.get(handle,"Temple")),"kind":"temple","at":TempleSite.SITES[handle].at})
 	for row: Array in WildPlaced.SITES:
