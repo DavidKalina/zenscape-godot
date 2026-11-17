@@ -43,14 +43,22 @@ All three places are on the map page.
   at 2 km.
 - Dome: the pull-up out of the eye is tight with Boost. Seen from the north it
   sits against the Peak's flank.
-- Viaduct: one fallen-top span is tighter than the rest (2.5 m on the worst
-  line). The plain under it is flat, so the piers are all one height.
-- 985 "Parameter material is null" errors from one early viaduct flight run
-  were not reproduced; they appeared only while several Godot processes ran at
-  once.
+- Viaduct: rebuilt for an arch-by-arch weave (28a9f062): lower piers every
+  57.2 m, 45.2 m openings, two upper arches over each lower. A stick-flown
+  driver weaves spans 5-12 at cruise (27/27 with offset, slant and wobble);
+  with Boost only at full stick, a comfortable Boost weave needs ~70-75 m
+  bays. Not hand-flown yet.
+- Pop-in on the viaduct, dome and bridge (f9b76956): drawn from 8 km, far
+  model only past ~1.1 km. Its frame cost is unmeasured; older places have
+  the same pop and are untouched.
+- Stray render errors: 985 "Parameter material is null" in one early viaduct
+  run, 349 errors in one weave run, and one smoke run failing with
+  "unimplemented base type encountered in renderer scene cull" (five reruns
+  passed). None reproduced, cause unknown.
 - A 260 ms frame on a rendered approach to the bridge, not the bridge's own
   frame, untraced.
-- Frame cost of the four places has not been measured on a flown flight.
+- Frame cost on the user's flight: the places do not slow the frame rate; the
+  dome had the most long frames (thin sample).
 - The merge moved the viaduct's setup out of the citadel's block in
   `way_towers.gd` (the lane had put it between the citadel and the tombs).
 - The harness has no shared flight follower; every lane wrote its own.
