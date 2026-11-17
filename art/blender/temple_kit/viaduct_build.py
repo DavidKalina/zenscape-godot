@@ -353,7 +353,8 @@ JOBS = {
     "viaduct_top_pier": (45, build_top_pier),
     "viaduct_top_arch": (46, lambda L: upper_span(L)),
     "viaduct_top_arch_b": (58, lambda L: upper_span(L)),
-    "viaduct_top_arch_broken": (47, lambda L: upper_span(L, keep_from=-4.0)),
+    # The stub reaches only to -6.5 so a line at y 45 has room either side of the gap.
+    "viaduct_top_arch_broken": (47, lambda L: upper_span(L, keep_from=-6.5)),
     "viaduct_top_stump": (48, build_top_stump),
 }
 
