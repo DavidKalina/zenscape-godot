@@ -120,9 +120,13 @@ void fragment() {
 	ALBEDO = base;
 	ROUGHNESS = roughness_value;
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	// (Times COLOR.a: where little sky is seen, the fill is what the stone round it gives back.)
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, (normal.y * 0.5 + 0.5) * COLOR.a) * zs_hemi_energy / PI;
 	float sunward = clamp(dot(normal, zs_key_direction), 0.0, 1.0);
 	float below = clamp(0.5 - 0.5 * normal.y, 0.0, 1.0);
 	vec3 bounce = zs_cloud_sun * clamp(zs_key_direction.y, 0.0, 1.0) * ground_bounce * below / PI;
-	EMISSION = base * (hemi * fill + bounce + zs_look_bounce_light(normal) + zs_look_fill_light(1.0 - 0.75 * sunward));
+	// COLOR.a: the sky a vertex sees (the great dome's inside bakes it; every
+	// other piece has 1): it dims the fill and the sky's reflection (AO).
+	AO = COLOR.a;
+	EMISSION = base * (hemi * fill + bounce + zs_look_bounce_light(normal) + zs_look_fill_light(1.0 - 0.75 * sunward)) * COLOR.a;
 }

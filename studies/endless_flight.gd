@@ -541,6 +541,8 @@ var replay: FlightReplay
 var tallies := PilotTallies.new()
 var summary: Control
 var logbook: Control
+## The map page (M, the pad's View; scripts/endless/ui/map_page.gd), an overlay as the logbook.
+var map_page: Control
 ## This frame's events (the landing's and the near misses'), for the HUD.
 var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
@@ -1105,7 +1107,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Z roll (full meter: surge roll)  ·  Q E knife edge  ·  F flaps  ·  J logbook  ·  O photo  ·  R up again  ·  B surge  ·  Tab (hold) race a plane  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Z roll (full meter: surge roll)  ·  Q E knife edge  ·  F flaps  ·  J logbook  ·  M map  ·  O photo  ·  R up again  ·  B surge  ·  Tab (hold) race a plane  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
 	layer.add_child(_hint)
 	_hint.visible = GameSettings.hud_hints()
 	_stop_cue = Label.new()
@@ -1151,6 +1153,9 @@ func _build_ui() -> void:
 	if ui_old() or _has_arg("--logbook=old"): logbook = preload("res://scripts/endless/logbook_view.gd").new(self)
 	else: logbook = preload("res://scripts/endless/ui/logbook_book.gd").new(self)
 	layer.add_child(logbook)
+	# The map page (M): idle until opened.
+	map_page = preload("res://scripts/endless/ui/map_page.gd").new(self)
+	layer.add_child(map_page)
 	_fade = ColorRect.new()
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2108,6 +2113,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif Pad.pressed(event,&"fly_land"): _land_key()
 	elif Pad.pressed(event,&"fly_weight"): _next_weight()
 	elif Pad.pressed(event,&"fly_pace"): _next_pace()
+	elif Pad.pressed(event,&"map"): map_page.open_map()
 	elif event.is_action_pressed(&"fly_roll") and not event.is_echo(): roll_button()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
@@ -2132,6 +2138,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if grass != null: grass.set_enabled(not grass.enabled)
 			KEY_H: _next_near_layout()
 			KEY_J: logbook.open_book()
+			KEY_M: map_page.open_map()
 			KEY_K:
 				if look != null and look.land_shade != null: look.land_shade.toggle()
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

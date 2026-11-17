@@ -55,6 +55,11 @@ from mathutils import Matrix, Vector, noise
 
 ROOT = Path(__file__).resolve().parents[3]
 MODELS = ROOT / "assets" / "models" / "temple_kit"
+# A build that sets this (viaduct, dome, bridge) paints its far LOD plain and
+# scales its far's and mid's colours to the near's mean light (`near_mean` in
+# the sidecar), so a LOD swap doesn't flash lighter or darker. The older
+# builds leave it off until they are rebuilt with it on purpose.
+MATCH_LOD_LIGHT = False
 
 # ---- The contract (metres) ----------------------------------------------
 BAY = 18.5                 # column centre to centre
@@ -678,6 +683,12 @@ class Piece:
                     c = mix(c, CREVICE, DEEP_DARK * v[deep])
                 if not far:
                     c = mix(c, STONE_FRESH, 0.75 * v[broke])
+                if far and MATCH_LOD_LIGHT:
+                    # The far's few corners can't carry the streaks and
+                    # blotches (they smear into long bands): plain, matched to
+                    # the near's mean light after (_object).
+                    loop[col] = srgb_to_linear(c) + (1.0,)
+                    continue
                 # Rain streaks: long vertical runs, darker under ledges.
                 streak = noise.noise(Vector((p.x * 0.9, p.y * 0.9, p.z * 0.08)))
                 streak = max(0.0, streak) * (1.0 - max(0.0, nz))
@@ -694,12 +705,47 @@ class Piece:
                 low = max(0.0, 1.0 - h / 1.4)
                 moss = max(up * (0.35 + 0.65 * m), low * m * 0.7)
                 moss = max(0.0, min(1.0, (moss - 0.35) * 1.6))
-                c = mix(c, MOSS, moss * (0.85 if not far else 0.6))
+                c = mix(c, MOSS, moss * (0.85 if not far else 0.6) * getattr(self, "moss_amount", 1.0))
                 loop[col] = srgb_to_linear(c) + (1.0,)
         return col
 
-    def _object(self, bm, name, far):
+    @staticmethod
+    def _mean_light(bm):
+        """The area-weighted mean colour (linear rgb) of what faces out: the
+        light a piece reads as from afar."""
+        col = bm.loops.layers.float_color.get("Col")
+        s = [0.0, 0.0, 0.0]
+        total = 0.0
+        for f in bm.faces:
+            a = f.calc_area()
+            if a <= 0.0:
+                continue
+            for loop in f.loops:
+                c = loop[col]
+                for i in range(3):
+                    s[i] += c[i] * a / len(f.loops)
+            total += a
+        return [x / max(total, 1e-9) for x in s]
+
+    @staticmethod
+    def _match_light(bm, want):
+        """Scales every corner's rgb (alpha kept) so the mean light is `want`'s."""
+        col = bm.loops.layers.float_color.get("Col")
+        have = Piece._mean_light(bm)
+        k = [max(0.5, min(2.0, want[i] / max(have[i], 1e-6))) for i in range(3)]
+        for f in bm.faces:
+            for loop in f.loops:
+                c = loop[col]
+                loop[col] = (c[0] * k[0], c[1] * k[1], c[2] * k[2], c[3])
+        return k
+
+    def _object(self, bm, name, far, match=None):
         self.paint(bm, far=far)
+        if match is not None:
+            k = self._match_light(bm, match)
+            print(f"TEMPLE {name}: light matched to the near's x{k[0]:.2f} {k[1]:.2f} {k[2]:.2f}")
+        elif MATCH_LOD_LIGHT and not far:
+            self.near_mean = self._mean_light(bm)
         bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
@@ -744,19 +790,21 @@ class Piece:
             bpy.data.objects.remove(ob, do_unlink=True)
         MODELS.mkdir(parents=True, exist_ok=True)
         if mid_of is not None:
-            mid, mid_tris = self._object(self.near, mid_of + "_mid", False)
-            glb = MODELS / f"{mid_of}_mid.glb"
-            self._gltf(glb)
             side = MODELS / f"{mid_of}.boxes.json"
             info = json.loads(side.read_text())
+            want = info.get("near_mean") if MATCH_LOD_LIGHT else None
+            mid, mid_tris = self._object(self.near, mid_of + "_mid", False, match=want)
+            glb = MODELS / f"{mid_of}_mid.glb"
+            self._gltf(glb)
             info["mid_tris"] = mid_tris
             side.write_text(json.dumps(info, indent=1) + "\n")
             print(f"TEMPLE {mid_of}_mid: {mid_tris} tris -> {glb}")
             self.near.free()
             self.far.free()
             return
+        self.near_mean = None
         near, near_tris = self._object(self.near, self.name, False)
-        far, far_tris = self._object(self.far, self.name + "_far", True)
+        far, far_tris = self._object(self.far, self.name + "_far", True, match=self.near_mean)
         glb = MODELS / f"{self.name}.glb"
         self._gltf(glb)
         self._sidecar(glb, near_tris, far_tris)
@@ -776,6 +824,8 @@ class Piece:
             boxes.append([round(lo[0], 3), round(lo[2], 3), round(-hi[1], 3),
                           round(hi[0] - lo[0], 3), round(hi[2] - lo[2], 3), round(hi[1] - lo[1], 3)])
         info = {"piece": self.name, "boxes": boxes, "tris": near_tris, "far_tris": far_tris}
+        if getattr(self, "near_mean", None) is not None:
+            info["near_mean"] = [round(x, 5) for x in self.near_mean]
         (MODELS / f"{self.name}.boxes.json").write_text(json.dumps(info, indent=1) + "\n")
         print(f"TEMPLE {self.name}: {near_tris} tris near, {far_tris} far, {len(boxes)} boxes -> {glb}")
         self.near.free()
