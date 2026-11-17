@@ -694,7 +694,7 @@ class Piece:
                 low = max(0.0, 1.0 - h / 1.4)
                 moss = max(up * (0.35 + 0.65 * m), low * m * 0.7)
                 moss = max(0.0, min(1.0, (moss - 0.35) * 1.6))
-                c = mix(c, MOSS, moss * (0.85 if not far else 0.6))
+                c = mix(c, MOSS, moss * (0.85 if not far else 0.6) * getattr(self, "moss_amount", 1.0))
                 loop[col] = srgb_to_linear(c) + (1.0,)
         return col
 
