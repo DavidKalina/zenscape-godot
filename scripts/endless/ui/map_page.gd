@@ -156,7 +156,7 @@ static func places(host: Node) -> Array:
 		{"name":"Sanctuary","kind":"ruin","at":SanctuarySite.O},
 		{"name":"Colosseum","kind":"ruin","at":ArenaSite.CENTRE},
 		# The viaduct's two ends and its middle (viaduct_site.gd lays it from O along DIR_DEG).
-		{"name":"Viaduct","kind":"road","line":[Vector2(-3514.0,-3870.0),Vector2(-3228.0,-3374.5),Vector2(-2942.0,-2879.0)]},
+		{"name":"Viaduct","kind":"road","line":[Vector2(-3512.0,-3866.1),Vector2(-3221.3,-3362.6),Vector2(-2930.6,-2859.1)]},
 		{"name":"Great dome","kind":"ruin","at":DomeSite.C},
 		{"name":"Great bridge","kind":"ruin","at":BridgeSite.O}]
 	for handle: String in TempleSite.SITES:

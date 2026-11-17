@@ -11,14 +11,14 @@ Pieces (each with a mid LOD, <piece>_mid.glb: the same stones, plain):
   tier's floor); it hangs PIER_DEEP down, so it reaches the ground however
   low the land falls.
 - `viaduct_arch`, `viaduct_arch_b`: a lower span: ring, spandrel courses,
-  cornice. Clear OPEN1 (45.2 m) wide, its crown 3.8 m under the lower deck.
+  cornice. Clear OPEN1 (56.4 m) wide, its crown 4.2 m under the lower deck.
 - `viaduct_arch_broken`: a lower span snapped: the ring and courses stand
   out from the -x pier and end ragged.
 - `viaduct_top_pier`: an upper pier, W2 by T2, standing on the lower deck
   (TIER2 under its origin) to the channel's walls. Origin on the top deck.
 - `viaduct_top_arch`, `viaduct_top_arch_b`, `viaduct_top_arch_broken`: the
-  upper spans, two over each lower span (every BAY2), clear OPEN2 (23.6 m)
-  wide from the lower deck to 4 m under the top. Origin on the top deck.
+  upper spans, two over each lower span (every BAY2), clear OPEN2 (28.2 m)
+  wide from the lower deck to 4.4 m under the top. Origin on the top deck.
 - `viaduct_pier_stump`: a lower pier's stump on the ground, STUMP_TOP tall,
   ragged, STUMP_DEEP into the ground. Origin on the ground.
 - `viaduct_top_stump`: an upper pier broken off TOP_STUMP over the lower
@@ -43,45 +43,45 @@ args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 only = next((a.split("=")[1] for a in args if a.startswith("--only=")), None)
 
 # Wide enough to weave arch by arch at cruise (the plane turns back in about
-# 30 to 53 m of line at full to 80% stick): one lower span every BAY, two upper
-# spans over each.
-BAY = 57.2
+# 30 to 53 m of line at full to 80% stick), and the upper arches too (two over
+# each lower span, 34.2 m apart): one lower span every BAY.
+BAY = 68.4
 # The lower tier.
 W1 = 12.0
 T1 = 8.0
-OPEN1 = BAY - W1            # 45.2
+OPEN1 = BAY - W1            # 56.4
 R1 = OPEN1 / 2
-RING1 = 2.6
+RING1 = 3.0
 CORN1_H = 1.2
 CORN1_OUT = 0.35
 SPAN1_TOP = -CORN1_H        # the spandrel's top, the ring's crown
-SPRING1 = SPAN1_TOP - (R1 + RING1)   # -26.4
+SPRING1 = SPAN1_TOP - (R1 + RING1)   # -32.4
 IMPOST_H = 1.0
 IMPOST_OUT = 0.35
-COURSES1 = 12
-PIER_DEEP = 82.0
-COURSED_TO = -54.0
+COURSES1 = 14
+PIER_DEEP = 85.0
+COURSED_TO = -57.0
 PIER_COURSE = 1.8
 # The upper tier, its origin on the top deck; the lower deck TIER2 under it.
 BAY2 = BAY / 2
-TIER2 = 24.0
-W2 = 5.0
+TIER2 = 27.0
+W2 = 6.0
 T2 = 6.0
-OPEN2 = BAY2 - W2           # 23.6
+OPEN2 = BAY2 - W2           # 28.2
 R2 = OPEN2 / 2
-RING2 = 1.4
+RING2 = 1.8
 CORNICE_TOP = -1.8          # the channel's floor
 CORNICE_H = 0.8
 CORNICE_OUT = 0.25
 SPAN2_TOP = CORNICE_TOP - CORNICE_H     # -2.6
-SPRING2 = SPAN2_TOP - (R2 + RING2)      # -15.7
+SPRING2 = SPAN2_TOP - (R2 + RING2)      # -18.5
 WALL_T = 1.1
-COURSES2 = 7
+COURSES2 = 8
 STUMP_TOP = 19.0
 STUMP_DEEP = 10.0
 TOP_STUMP = 8.5
-VOUSSOIRS = 19
-VOUSSOIRS1 = 33
+VOUSSOIRS = 23
+VOUSSOIRS1 = 39
 
 
 class Lay:
@@ -360,13 +360,13 @@ JOBS = {
     "viaduct_pier": (41, build_pier),
     "viaduct_arch": (42, lambda L: lower_span(L)),
     "viaduct_arch_b": (57, lambda L: lower_span(L)),
-    "viaduct_arch_broken": (43, lambda L: lower_span(L, keep_from=-6.0)),
+    "viaduct_arch_broken": (43, lambda L: lower_span(L, keep_from=-7.2)),
     "viaduct_pier_stump": (44, build_pier_stump),
     "viaduct_top_pier": (45, build_top_pier),
     "viaduct_top_arch": (46, lambda L: upper_span(L)),
     "viaduct_top_arch_b": (58, lambda L: upper_span(L)),
-    # The stub reaches only to -7.2 so a line at the top deck's height has room either side of the gap.
-    "viaduct_top_arch_broken": (47, lambda L: upper_span(L, keep_from=-7.2)),
+    # The stub reaches only to -8.6 so a line at the top deck's height has room either side of the gap.
+    "viaduct_top_arch_broken": (47, lambda L: upper_span(L, keep_from=-8.6)),
     "viaduct_top_stump": (48, build_top_stump),
 }
 

@@ -16,8 +16,8 @@ extends Node3D
 ##
 ## The openings, wide enough to weave arch by arch at cruise (in one span,
 ## turn, back through the next): a lower span is 45.2 m clear and from the
-## ground to 3.8 m under Y1 (about 41 m on the plain), its piers 8 m through;
-## an upper span 23.6 m clear from Y1 to 4 m under Y2 (20 m). The ruin:
+## ground to 4.2 m under Y1, its piers 8 m through; an upper span 28.2 m
+## clear (34.2 m apart) from Y1 to 4.4 m under Y2 (22.6 m). The ruin:
 ## FALLEN_TOP upper spans have lost their arch (a stub left on one pier);
 ## FALLEN lower spans have lost both tiers (a stub on one side, the upper
 ## pier over the crown gone), and STUMPS' piers are down to a stump between
@@ -38,27 +38,29 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const O := Vector2(-3520.0,-3880.0)
 const DIR_DEG := 60.0
 ## viaduct_build.py's numbers.
-const BAY := 57.2
+const BAY := 68.4
 const BAY2 := BAY*0.5
 const W1 := 12.0
 const T1 := 8.0
-const W2 := 5.0
-const TIER2 := 24.0
-const CROWN1 := 3.8
-const CROWN2 := 4.0
+const W2 := 6.0
+const TIER2 := 27.0
+const CROWN1 := 4.2
+const CROWN2 := 4.4
 ## The decks (world y).
-const Y1 := 30.0
+const Y1 := 33.0
 const Y2 := Y1+TIER2
-## The first pier's s (pier 1 at s 12, the map's end), and the last pier's index the line may reach.
-const S0 := 12.0-BAY
-const MAX_PIERS := 22
+## The first pier's s (pier 1 at s 16, pier 18 at s 1178.8: the map line's ends; pier 14 at s 905 just
+## clear of the river at s 886..898), and the last pier's index the line may reach.
+const S0 := 16.0-BAY
+const MAX_PIERS := 19
 ## The ruin: FALLEN_TOP by upper span, FALLEN by lower span, STUMPS by lower pier.
-## Lower spans 5 to 12 stand whole, eight to weave in a row.
-const FALLEN_TOP: Array[int] = [12,20,21,33]
-const FALLEN: Array[int] = [4,13,14]
-const STUMPS: Array[int] = [14]
+## Lower spans 4 to 11 stand whole, eight to weave in a row; upper spans 10 to 18 (over lower 5 to 9),
+## nine in a row.
+const FALLEN_TOP: Array[int] = [9,19,20]
+const FALLEN: Array[int] = [3,12,13]
+const STUMPS: Array[int] = [13]
 ## Upper spans from this one to the end have lost their arch; the upper piers past it are stumps.
-const END_TOP := 37
+const END_TOP := 31
 const CHUNK := 3
 ## Streaming and LOD (m): a chunk comes in at REACH, a few pixels in the haze,
 ## so the line never appears whole in view; a piece swaps near -> mid at
@@ -114,6 +116,14 @@ static func pier_s(k: int) -> float:
 static func top_pier_s(m: int) -> float:
 	return S0+m*BAY2
 
+## Whether (s, v) is on river water (no rubble in the stream).
+static func _wet(field: Object, s: float, v := 0.0) -> bool:
+	if not field.has_method("river_y"): return false
+	for d: float in [-3.0,0.0,3.0]:
+		var p := at_sv(s+d,v)
+		if not is_nan(float(field.call("river_y",p.x,p.y))): return true
+	return false
+
 ## The piers the line runs between: [first, last], the first and last whose
 ## top deck stands clear of the land, and one more each end into the rise.
 static func extent(field: Object) -> Vector2i:
@@ -167,9 +177,10 @@ static func layout(field: Object) -> Array:
 				var ms := top_pier_s(m)+BAY2*0.5
 				if m < END_TOP: out.append([&"viaduct_top_arch_broken",_at(ms,Y2,0.0,stub),j])
 			# Low heaps either side of the line, so a weave through the gap at grass height stays clear.
-			for e: Array in [[-15.0,7.0,1.5],[-3.0,-8.0,1.4],[9.0,7.5,1.5],[18.0,-7.0,1.2]]:
+			for e: Array in [[-18.0,8.5,1.5],[-4.0,-9.5,1.4],[11.0,9.0,1.5],[22.0,-8.5,1.2]]:
 				var rs := s+float(e[0])
 				var rv := float(e[1])
+				if _wet(field,rs,rv): continue
 				out.append([&"aqueduct_rubble",_at(rs,_g(field,rs,rv)-0.9,rv,float(j)*1.7+float(e[0]),float(e[2])),j])
 		elif low < Y1-CROWN1-1.0:
 			out.append([&"viaduct_arch_b" if h < 2 else &"viaduct_arch",_at(s,Y1,0.0,flip),j])
@@ -188,7 +199,7 @@ static func layout(field: Object) -> Array:
 			if m < END_TOP+2:
 				var side := 1.0 if h%2 == 0 else -1.0
 				var rs := s+3.0
-				var rv := side*13.0
+				var rv := side*15.0
 				out.append([&"aqueduct_rubble",_at(rs,_g(field,rs,rv)-0.3,rv,float(m)*2.3,1.2),j])
 		else:
 			out.append([&"viaduct_top_arch_b" if h >= 3 else &"viaduct_top_arch",_at(s,Y2,0.0,PI if h%2 == 1 else 0.0),j])
