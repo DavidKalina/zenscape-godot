@@ -34,7 +34,6 @@ const TombsSite = preload("res://scripts/endless/tombs_site.gd")
 const ViaductSite = preload("res://scripts/endless/viaduct_site.gd")
 const DomeSite = preload("res://scripts/endless/dome_site.gd")
 const BridgeSite = preload("res://scripts/endless/bridge_site.gd")
-const HarbourSite = preload("res://scripts/endless/harbour_site.gd")
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -79,8 +78,6 @@ var tombs: Node3D
 var dome: Node3D
 ## The great bridge over the gorge (bridge_site.gd), or null with `--bridge=0`.
 var bridge: Node3D
-## The harbour and its sea gate (harbour_site.gd), or null with `--harbour=0`.
-var harbour: Node3D
 
 func setup(g: Node3D) -> void:
 	game = g
@@ -152,11 +149,6 @@ func setup(g: Node3D) -> void:
 		bridge.name = "Bridge"
 		add_child(bridge)
 		bridge.setup(g)
-	if HarbourSite.wanted():
-		harbour = HarbourSite.new()
-		harbour.name = "Harbour"
-		add_child(harbour)
-		harbour.setup(g)
 	for site: Dictionary in SITES:
 		var at: Vector2 = site.at
 		var temple: bool = TempleSite.has(str(site.name)) and TempleSite.wanted()
@@ -196,7 +188,6 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	out.append_array(TombsSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(DomeSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(BridgeSite.tree_keepouts(x0,z0,x1,z1))
-	out.append_array(HarbourSite.tree_keepouts(x0,z0,x1,z1))
 	return out
 
 ## One frame: the towers streamed round the eye.
@@ -220,7 +211,6 @@ func step(eye: Vector3) -> void:
 	if tombs != null and tombs.step(eye,kit_busy,here): kit_busy = true
 	if dome != null and dome.step(eye,kit_busy,here): kit_busy = true
 	if bridge != null and bridge.step(eye,kit_busy,here): kit_busy = true
-	if harbour != null and harbour.step(eye,kit_busy,here): kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]
 		var d: float = (site.xf as Transform3D).origin.distance_to(eye) if here else INF

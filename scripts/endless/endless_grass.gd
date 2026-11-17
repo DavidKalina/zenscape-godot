@@ -1929,8 +1929,6 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 		preload("res://scripts/endless/bridge_site.gd").grass_off(got,land_seed,x0,z0,n,PAD)
 		# The road of tombs' paving and steps (tombs_site.gd), the same.
 		preload("res://scripts/endless/tombs_site.gd").grass_off(got,land_seed,x0,z0,n,PAD)
-		# The harbour's ship sheds and quay (harbour_site.gd), the same.
-		preload("res://scripts/endless/harbour_site.gd").grass_off(got,land_seed,x0,z0,n,PAD)
 	var hs: PackedFloat32Array = got.heights
 	var ms: PackedFloat32Array = got.meadows
 	var rs: PackedFloat32Array = got.river
