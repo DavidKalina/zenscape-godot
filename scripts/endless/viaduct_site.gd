@@ -166,10 +166,11 @@ static func layout(field: Object) -> Array:
 				var m := 2*j if stub == 0.0 else 2*j+1
 				var ms := top_pier_s(m)+BAY2*0.5
 				if m < END_TOP: out.append([&"viaduct_top_arch_broken",_at(ms,Y2,0.0,stub),j])
-			for e: Array in [[-15.0,3.0,1.9],[-3.0,-4.0,1.6],[9.0,2.5,1.8],[18.0,-5.0,1.3]]:
+			# Low heaps either side of the line, so a weave through the gap at grass height stays clear.
+			for e: Array in [[-15.0,7.0,1.5],[-3.0,-8.0,1.4],[9.0,7.5,1.5],[18.0,-7.0,1.2]]:
 				var rs := s+float(e[0])
 				var rv := float(e[1])
-				out.append([&"aqueduct_rubble",_at(rs,_g(field,rs,rv)-0.4,rv,float(j)*1.7+float(e[0]),float(e[2])),j])
+				out.append([&"aqueduct_rubble",_at(rs,_g(field,rs,rv)-0.9,rv,float(j)*1.7+float(e[0]),float(e[2])),j])
 		elif low < Y1-CROWN1-1.0:
 			out.append([&"viaduct_arch_b" if h < 2 else &"viaduct_arch",_at(s,Y1,0.0,flip),j])
 	# The upper spans over the standing lower ones.

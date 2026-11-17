@@ -153,7 +153,7 @@ def ext_half(R, ring, spring, zt):
 
 
 def soffit(R, spring, x_lo=None, x_hi=None, step=15.0):
-    """[(xa, xb, bottom)]: the opening's soffit as boxes, finer near the springing."""
+    """[(xa, xb, bottom)]: the opening's soffit as boxes, a box every `step` degrees of the ring."""
     x_lo = -R if x_lo is None else x_lo
     x_hi = R if x_hi is None else x_hi
     n = int(round(90.0 / step))
@@ -161,7 +161,8 @@ def soffit(R, spring, x_lo=None, x_hi=None, step=15.0):
     out = []
     for k in range(len(xs) - 1):
         a, b = xs[k + 1], xs[k]
-        z = spring + math.sqrt(max(0.0, R * R - b * b))
+        # The bottom at the mean of the step's two edges: within a few dm of the drawn soffit either way.
+        z = spring + 0.5 * (math.sqrt(max(0.0, R * R - a * a)) + math.sqrt(max(0.0, R * R - b * b)))
         out.append((a, b, z))
         out.append((-b, -a, z))
     return [(max(a, x_lo), min(b, x_hi), z) for a, b, z in out if min(b, x_hi) > max(a, x_lo) + 0.05]
@@ -204,15 +205,16 @@ def lower_span(L, keep_from=None):
         ends.append(x1)
     if keep_from is None:
         lower_cornice(L, -R1, R1)
-        for a, b, z in soffit(R1, SPRING1, step=7.5):
+        for a, b, z in soffit(R1, SPRING1, step=5.0):
             L.p.far_box(((a + b) / 2, 0, (z + SPAN1_TOP) / 2), (b - a, T1, SPAN1_TOP - z))
             L.p.solid((a, -hw, z), (b, hw, 0.0))
         L.p.far_box((0, 0, -CORN1_H / 2), (2 * R1, T1 + 2 * CORN1_OUT, CORN1_H))
         return
-    top = keep_from - 2.0 + r.uniform(-0.7, 0.7)
+    # The cornice breaks off about where the top courses do, not out over the void.
+    top = keep_from - 0.45 * (COURSES1 - 1) + r.uniform(-0.6, 0.8)
     lower_cornice(L, -R1, top, broken=True)
     x_end = max(max(ends), keep_from)
-    for a, b, z in soffit(R1, SPRING1, -R1, x_end, step=7.5):
+    for a, b, z in soffit(R1, SPRING1, -R1, x_end, step=5.0):
         L.p.far_box(((a + b) / 2, 0, (z + SPAN1_TOP) / 2), (b - a, T1, SPAN1_TOP - z))
         L.p.solid((a, -hw, z), (b, hw, 0.0))
     L.p.far_box(((-R1 + top) / 2, 0, -CORN1_H / 2), (top + R1, T1, CORN1_H))
@@ -313,7 +315,7 @@ def upper_span(L, keep_from=None):
         ends.append(x1)
     if keep_from is None:
         channel(L, -R2, R2)
-        for a, b, z in soffit(R2, SPRING2):
+        for a, b, z in soffit(R2, SPRING2, step=7.5):
             L.p.far_box(((a + b) / 2, 0, (z + SPAN2_TOP) / 2), (b - a, T2, SPAN2_TOP - z))
             L.p.solid((a, -hw, z), (b, hw, 0.0))
         L.p.far_box((0, 0, (CORNICE_TOP - CORNICE_H) / 2), (2 * R2, T2 + 2 * CORNICE_OUT, -(CORNICE_TOP - CORNICE_H)))
@@ -321,7 +323,7 @@ def upper_span(L, keep_from=None):
     top = keep_from - 1.3 + r.uniform(-0.4, 0.4)
     channel(L, -R2, top, broken=True)
     x_end = max(max(ends), keep_from)
-    for a, b, z in soffit(R2, SPRING2, -R2, x_end):
+    for a, b, z in soffit(R2, SPRING2, -R2, x_end, step=7.5):
         L.p.far_box(((a + b) / 2, 0, (z + SPAN2_TOP) / 2), (b - a, T2, SPAN2_TOP - z))
         L.p.solid((a, -hw, z), (b, hw, 0.0))
     L.p.far_box(((-R2 + top) / 2, 0, (CORNICE_TOP - CORNICE_H) / 2), (top + R2, T2, -(CORNICE_TOP - CORNICE_H)))
