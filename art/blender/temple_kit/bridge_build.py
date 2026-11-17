@@ -47,12 +47,15 @@ RING_HW = 7.9               # the ring stands a little proud of the spandrel
 YD = 104.0                  # the deck's paving
 SOFFIT = 101.0              # under the deck's bed
 CROWN = 29.5                # the solid spandrel's end
-PIER = (44.5, 48.0)         # the open spandrel's pier
+PIER = (40.5, 43.0)         # the open spandrel's pier
 ABUT = 63.0                 # the abutment's face over the ring
-BAYS = ((CROWN, PIER[0]), (PIER[1], ABUT))   # the open bays, 15 clear
-VR = 7.5                    # a small vault's radius
-VT = 1.2                    # its ring
-VS = SOFFIT - VT - VR + 0.5 # its springing (91.8): its crown's back meets the bed
+BAYS = ((CROWN, PIER[0]), (PIER[1], ABUT))   # the open bays: 11 and (the flown one) 20 clear
+VT = 1.2                    # a small vault's ring
+# Each bay's vault: [middle, radius (half the bay), springing (its crown's back meets the bed)].
+VAULTS = [((a + b) / 2, (b - a) / 2, SOFFIT - VT - (b - a) / 2 + 0.5) for a, b in BAYS]
+VS = min(v[2] for v in VAULTS)  # the lower springing (the outer bay's, 90.3)
+# Where a vault's band of fill or its boxes break, as parts of its radius.
+VAULT_BANDS = (0.37, 0.69, 0.91)
 TOWER_U = 84.0              # the gate towers' middles (u)
 TOWER_HU = 7.0              # half their length along u
 TOWER_HW = 13.0             # half their width
@@ -286,16 +289,16 @@ def build_crown(lay):
 
 
 # ---- the haunch ----------------------------------------------------------------------
-def vault(lay, xm, keep=None):
-    """A small vault over a bay (xm its middle), across the whole width."""
-    n = 9
-    rm = VR + VT / 2
+def vault(lay, xm, vr, vs, keep=None):
+    """A small vault over a bay (xm its middle, vr its radius, vs its springing), across the whole width."""
+    n = 9 if vr < 8.0 else 11
+    rm = vr + VT / 2
     for i in range(n):
         a = -math.pi / 2 + (i + 0.5) * math.pi / n
-        x, z = xm + rm * math.sin(a), VS + rm * math.cos(a)
+        x, z = xm + rm * math.sin(a), vs + rm * math.cos(a)
         if keep is not None and not keep(x, z):
             continue
-        chord = 2.0 * (VR + VT) * math.tan(math.pi / n / 2) - 0.05
+        chord = 2.0 * (vr + VT) * math.tan(math.pi / n / 2) - 0.05
         for ya, yb in ((-HW, -2.4), (-2.4, 2.6), (2.6, HW)):
             lay.block((x, (ya + yb) / 2, z), (chord, yb - ya - T.JOINT, VT), tilt=(0.0, a), chips=1,
                       hide=("-x", "+x") + (("-y",) if ya > -HW else ()) + (("+y",) if yb < HW else ()))
@@ -307,9 +310,9 @@ HAUNCH_Z = [VS, 94.2, 96.6, 99.0, SOFFIT]
 def breach_top(x):
     """The broken haunch's stone stands up to here (less up to 1.6 of noise)."""
     if x < PIER[0]:
-        return 94.0 + 2.2 * (PIER[0] - x)
+        return 92.0 + 2.2 * (PIER[0] - x)
     if x <= PIER[1] + 0.5:
-        return 94.0
+        return 92.0
     return 86.0
 
 
@@ -328,14 +331,23 @@ def haunch(lay, broken):
         z1 = VS if VS - z < 3.4 else z + COURSE
         lay.course(PIER[0], PIER[1], z, z1, k, maxlen=4.0, keep=keep, chips=1)
         z, k = z1, k + 1
-    for xm in ((BAYS[0][0] + BAYS[0][1]) / 2, (BAYS[1][0] + BAYS[1][1]) / 2):
-        vault(lay, xm, keep=keep)
-    ro = VR + VT
-    m0 = (BAYS[0][0] + BAYS[0][1]) / 2
-    m1 = (BAYS[1][0] + BAYS[1][1]) / 2
+    for xm, vr, vs in VAULTS:
+        vault(lay, xm, vr, vs, keep=keep)
+    (m0, _, _), (m1, _, _) = VAULTS
+
+    def half_open(vr, vs, z):
+        """Half the bay's opening (the vault's back) at the top of a band up to z."""
+        if z <= vs:
+            return vr
+        return math.sqrt(max(0.0, (vr + VT) ** 2 - (z - vs) ** 2))
+
     for k, (z0, z1) in enumerate(zip(HAUNCH_Z, HAUNCH_Z[1:])):
-        xe = math.sqrt(max(0.0, ro * ro - (z1 - VS) ** 2))
-        segs = [(CROWN, m0 - xe), (m0 + xe, m1 - xe), (m1 + xe, ABUT)] if xe > 0.5 else [(CROWN, ABUT)]
+        x0 = half_open(VAULTS[0][1], VAULTS[0][2], z1)
+        x1 = half_open(VAULTS[1][1], VAULTS[1][2], z1)
+        segs = []
+        for a, b in ((CROWN, m0 - x0), (m0 + x0, m1 - x1), (m1 + x1, ABUT)):
+            if b - a > 0.3:
+                segs.append((a, b))
         for a, b in segs:
             # The crown's courses end at CROWN; its first stone over the bay shows its face.
             lay.course(max(a, CROWN), b, z0, z1, k + 1, maxlen=3.6, keep=keep, ends=(a > CROWN + 0.1, b < ABUT - 0.1))
@@ -349,14 +361,15 @@ def haunch(lay, broken):
         deck(lay, CROWN, ABUT)
     ring_far(lay, CROWN, RO + 0.1)
     y0, y1 = -HW, HW
-    pier_top = 95.6 if broken else SOFFIT
+    pier_top = 93.6 if broken else SOFFIT
     far = [((PIER[0], y0, extrados(PIER[1])), (PIER[1], y1, pier_top))]
     sol = ring_solids(CROWN, RO + 0.1)
     sol.append(((PIER[0], y0, extrados(PIER[1]) - 1.0), (PIER[1], y1, pier_top)))
     # Over each bay: the vault's back and the fill, in bands.
-    for bi, (m, (ba, bb)) in enumerate(((m0, BAYS[0]), (m1, BAYS[1]))):
-        for z0, z1 in ((VS, 94.6), (94.6, 97.0), (97.0, 98.6), (98.6, SOFFIT)):
-            hw = math.sqrt(max(0.0, VR * VR - (z1 - VS) ** 2)) if z1 - VS < VR else 0.0
+    for bi, ((m, vr, vs), (ba, bb)) in enumerate(zip(VAULTS, BAYS)):
+        zs = [vs] + [vs + f * vr for f in VAULT_BANDS] + [SOFFIT]
+        for z0, z1 in zip(zs, zs[1:]):
+            hw = math.sqrt(max(0.0, vr * vr - (z1 - vs) ** 2)) if z1 - vs < vr else 0.0
             if broken and bi == 1:
                 continue
             out = [((ba, y0, z0), (m - hw, y1, z1)), ((m + hw, y0, z0), (bb, y1, z1))] if hw > 0.3 else \
