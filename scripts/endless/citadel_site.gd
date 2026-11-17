@@ -97,6 +97,17 @@ const FREE := 3400.0
 const MID_NEAREST := 60.0
 const FAR_NEAREST := 300.0
 
+## The streaming and LOD distances, functions so a site that extends this one
+## (dome_site.gd) sets its own: built within reach(), freed past free_at(); a
+## piece swaps near -> mid at mid_nearest() and mid -> far at far_nearest() (m
+## from its set's nearest, so plus the set's radius from its middle); a piece
+## with no mid goes near -> far at nomid_nearest() (INF: at the far swap).
+func reach() -> float: return REACH
+func free_at() -> float: return FREE
+func mid_nearest() -> float: return MID_NEAREST
+func far_nearest() -> float: return FAR_NEAREST
+func nomid_nearest() -> float: return INF
+
 var game: Node3D
 ## Each: {name, xf, pieces ([id, local xf]), state, task, made, node, record}.
 var chunks: Array = []
@@ -321,12 +332,12 @@ func step(eye: Vector3, busy: bool, here: bool) -> bool:
 		var d := Vector2(o.x-eye.x,o.z-eye.z).length() if here else INF
 		match str(ch.state):
 			"away":
-				if d < REACH and not busy and not building:
+				if d < reach() and not busy and not building:
 					ch.state = "building"
 					ch.task = WorkerThreadPool.add_task(_make.bind(ch),false,"Citadel")
 					building = true
 			"up":
-				if d > FREE: _free(ch)
+				if d > free_at(): _free(ch)
 	return building
 
 ## On a worker: the chunk's boxes and its sets (one per piece: its frames, box
@@ -358,8 +369,10 @@ func _make(ch: Dictionary) -> void:
 		for xf: Transform3D in xfs:
 			var b: AABB = xf*piece_box
 			for k in 8: radius = maxf(radius,b.get_endpoint(k).distance_to(centre))
-		var far_at := FAR_NEAREST+radius
-		var mid_at := MID_NEAREST+radius if TempleKit.lod(id,TempleKit.MID) != null else far_at
+		var far_at := far_nearest()+radius
+		var has_mid := TempleKit.lod(id,TempleKit.MID) != null
+		var mid_at := mid_nearest()+radius if has_mid else minf(nomid_nearest()+radius,far_at)
+		if not has_mid: far_at = mid_at
 		var ranges := [Vector2(0.0,mid_at),Vector2(mid_at,far_at),Vector2(far_at,0.0)]
 		for level in 3:
 			var m: Mesh = TempleKit.lod(id,level)

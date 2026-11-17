@@ -31,7 +31,7 @@ Pieces:
   porch looks out along -y).
 - `dome_slab`: a fallen piece of the dome, two coffers on their shell, lying.
 - `dome_heap`: a heap of the drum's blocks, about 26 by 20 m, 7 high.
-Each but the breach's has a mid LOD (<piece>_mid.glb). Every vertex's colour
+Each has a mid LOD (<piece>_mid.glb). Every vertex's colour
 carries in its alpha how much sky it sees (`sky`): the stone shader dims its
 sky fill by it, so the inside reads as an inside.
 """
@@ -44,6 +44,9 @@ from mathutils import Matrix, Vector, noise
 from mathutils.bvhtree import BVHTree
 
 import temple_lib as T
+
+# The far and mid LODs painted to the near's mean light (no flash at a swap).
+T.MATCH_LOD_LIGHT = True
 
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 only = next((a.split("=")[1] for a in args if a.startswith("--only=")), None)
@@ -841,17 +844,17 @@ JOBS = {
     "dome_floor": lambda: both("dome_floor", 84, build_floor, rot=wedge_rot(4)),
     "dome_footing": lambda: both("dome_footing", 85, build_footing, rot=wedge_rot(4)),
     "dome_porch_roof": lambda: both("dome_porch_roof", 86, build_porch_roof, rot=wedge_rot(DOOR_K), breach=True),
-    "dome_slab": lambda: both("dome_slab", 87, build_slab, mid=False),
+    "dome_slab": lambda: both("dome_slab", 87, build_slab),
     "dome_heap": lambda: both("dome_heap", 88, build_heap),
 }
 for _k in (-2, -1, 0, 1, 2):
     JOBS["dome_drum_b" + bk(_k)] = (lambda k: lambda: both("dome_drum_b" + bk(k), 90 + k, lambda lay: build_drum(lay, k=k),
-                                                          rot=wedge_rot(BREACH_K + k), breach=True, mid=abs(k) == 2))(_k)
+                                                          rot=wedge_rot(BREACH_K + k), breach=True))(_k)
     # The breach's floor: the same stones, its sky baked with what fell open.
     JOBS["dome_floor_b" + bk(_k)] = (lambda k: lambda: both("dome_floor_b" + bk(k), 84, build_floor,
                                                            rot=wedge_rot(BREACH_K + k), breach=True))(_k)
     JOBS["dome_shell_b" + bk(_k)] = (lambda k: lambda: both("dome_shell_b" + bk(k), 100 + k, lambda lay: build_shell(lay, k=k),
-                                                           rot=wedge_rot(BREACH_K + k), breach=True, mid=False))(_k)
+                                                           rot=wedge_rot(BREACH_K + k), breach=True))(_k)
 
 for name, job in JOBS.items():
     if only is None or only == name or (only.endswith("*") and name.startswith(only[:-1])):

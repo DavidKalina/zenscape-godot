@@ -53,10 +53,16 @@ const STUMPS: Array[int] = [28]
 ## Spans from this one to the end have lost their upper arch; the upper piers among them are stumps.
 const END_TOP := 40
 const CHUNK := 6
-const REACH := 3200.0
-const FREE := 3600.0
+## Streaming and LOD (m): a chunk comes in at REACH, a few pixels in the haze,
+## so the line never appears whole in view; a piece swaps near -> mid at
+## MID_NEAREST and mid -> far at FAR_NEAREST from its set's nearest (plus the
+## set's radius from its middle), the far only where a bay is a few pixels;
+## a piece with no mid (the rubble) keeps its near to NOMID_NEAREST.
+const REACH := 8000.0
+const FREE := 8400.0
 const MID_NEAREST := 50.0
-const FAR_NEAREST := 300.0
+const FAR_NEAREST := 1000.0
+const NOMID_NEAREST := 250.0
 const CLEAR_ACROSS := 18.0
 
 var game: Node3D
@@ -245,7 +251,9 @@ func _make(ch: Dictionary) -> void:
 			var b: AABB = xf*piece_box
 			for k in 8: radius = maxf(radius,b.get_endpoint(k).distance_to(centre))
 		var far_at := FAR_NEAREST+radius
-		var mid_at := MID_NEAREST+radius if TempleKit.lod(id,TempleKit.MID) != null else far_at
+		var has_mid := TempleKit.lod(id,TempleKit.MID) != null
+		var mid_at := MID_NEAREST+radius if has_mid else minf(NOMID_NEAREST+radius,far_at)
+		if not has_mid: far_at = mid_at
 		var ranges := [Vector2(0.0,mid_at),Vector2(mid_at,far_at),Vector2(far_at,0.0)]
 		for level in 3:
 			var m: Mesh = TempleKit.lod(id,level)

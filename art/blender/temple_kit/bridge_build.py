@@ -34,6 +34,9 @@ from mathutils import Vector, noise
 
 import temple_lib as T
 
+# The far and mid LODs painted to the near's mean light (no flash at a swap).
+T.MATCH_LOD_LIGHT = True
+
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 only = next((a.split("=")[1] for a in args if a.startswith("--only=")), None)
 

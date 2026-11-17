@@ -48,6 +48,21 @@ const HEAPS := [[0.0,30.0,&"dome_heap",0.3,true],[-14.0,38.0,&"dome_heap",2.1,tr
 	[6.0,18.0,&"dome_slab",0.9,true],[-20.0,24.0,&"dome_slab",2.6,true],[18.0,34.0,&"dome_slab",-1.2,true],
 	[-2.0,84.0,&"dome_slab",0.2,false]]
 const KEEP_HALF_D := Vector2(150.0,170.0)
+## Its own distances (not the citadel's, citadel_site.gd reach() etc.): it
+## comes in at DOME_REACH, a few pixels in the haze, so it never appears
+## whole; the mid stands in to DOME_FAR (the far only where the rotunda is
+## small); rubble and the kit's pieces with no mid keep their near to DOME_NOMID.
+const DOME_REACH := 8000.0
+const DOME_FREE := 8400.0
+const DOME_MID := 60.0
+const DOME_FAR := 1200.0
+const DOME_NOMID := 250.0
+
+func reach() -> float: return DOME_REACH
+func free_at() -> float: return DOME_FREE
+func mid_nearest() -> float: return DOME_MID
+func far_nearest() -> float: return DOME_FAR
+func nomid_nearest() -> float: return DOME_NOMID
 
 static func wanted() -> bool:
 	return not ("--dome=0" in LaunchArgs.user_args())

@@ -34,10 +34,15 @@ const YD := 104.0
 const TOWER_U := 84.0
 ## The trees' and grass's keep-out: half along (u) and across (v).
 const KEEP_HALF := Vector2(96.0,16.0)
-const REACH := 3200.0
-const FREE := 3600.0
+## Streaming and LOD (m): it comes in at REACH, a few pixels in the haze, so
+## it never appears whole in view; a piece swaps near -> mid at MID_NEAREST
+## and mid -> far at FAR_NEAREST from its set's nearest (plus the set's radius
+## from its middle); a piece with no mid (the rubble) keeps its near to NOMID_NEAREST.
+const REACH := 8000.0
+const FREE := 8400.0
 const MID_NEAREST := 50.0
-const FAR_NEAREST := 280.0
+const FAR_NEAREST := 1000.0
+const NOMID_NEAREST := 250.0
 
 var game: Node3D
 ## {root, draws ([id, xf]), state, task, made, nodes, records}.
@@ -166,7 +171,9 @@ func _make() -> void:
 			var b: AABB = xf*piece_box
 			for k in 8: radius = maxf(radius,b.get_endpoint(k).distance_to(centre))
 		var far_at := FAR_NEAREST+radius
-		var mid_at := MID_NEAREST+radius if TempleKit.lod(id,TempleKit.MID) != null else far_at
+		var has_mid := TempleKit.lod(id,TempleKit.MID) != null
+		var mid_at := MID_NEAREST+radius if has_mid else minf(NOMID_NEAREST+radius,far_at)
+		if not has_mid: far_at = mid_at
 		sets.append({"id":id,"xfs":xfs,"box":set_box,"ranges":[Vector2(0.0,mid_at),Vector2(mid_at,far_at),Vector2(far_at,0.0)]})
 	var reach := 0.0
 	for b: AABB in boxes:
