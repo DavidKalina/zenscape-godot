@@ -1,4 +1,4 @@
-extends Node3D
+﻿extends Node3D
 ## The ruined harbour in the cove on the inland sea's west shore (seed 1, the
 ## wilderness), about (870, -2030), from the harbour's pieces
 ## (art/blender/temple_kit/harbour_build.py) and the kit's columns.
@@ -83,6 +83,30 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if not wanted(): return []
 	if KEEP_C.x < x0-600.0 or KEEP_C.x > x1+600.0 or KEEP_C.y < z0-600.0 or KEEP_C.y > z1+600.0: return []
 	return [[KEEP_C,1.0,0.0,KEEP_HALF.x,KEEP_HALF.y]]
+
+## The grass kept off the sheds' floors and the quay's deck (endless_grass.gd
+## grow_cell, as agora_site.gd's paving): every node under them reads as a
+## river's water (`river` -1), so no tuft comes up through the stone. Seed 1 only.
+static func grass_off(got: Dictionary, land_seed: int, x0: float, z0: float, n: int, pad: int) -> void:
+	if land_seed != 1 or not wanted() or not got.has("river"): return
+	var gx0 := x0-pad
+	var gz0 := z0-pad
+	# [x0, x1, z0, z1]: the sheds (their walls too) and the quay behind its face.
+	var rects := [[SHEDS_X-SHED_P*0.5-1.0,SHEDS_X+SHED_P*(SHEDS-0.5)+4.0,SHEDS_Z-SHED_L-1.0,SHEDS_Z+1.0],
+		[QUAY_X-13.0,QUAY_X+1.0,QUAY_Z0-B*QUAY_BAYS-1.0,QUAY_Z0+1.0]]
+	var rs: PackedFloat32Array = got.river
+	var hit := false
+	for r: Array in rects:
+		var i0 := maxi(ceili(float(r[0])-gx0),0)
+		var i1 := mini(floori(float(r[1])-gx0),n-1)
+		var j0 := maxi(ceili(float(r[2])-gz0),0)
+		var j1 := mini(floori(float(r[3])-gz0),n-1)
+		for jj in range(j0,j1+1):
+			for ii in range(i0,i1+1):
+				var k := jj*n+ii
+				rs[k] = minf(rs[k],-1.0)
+				hit = true
+	if hit: got.river = rs
 
 static func _h(field: Object, p: Vector2) -> float:
 	return float(field.call("height",p.x,p.y))
@@ -176,7 +200,7 @@ func _lay(field: Object) -> void:
 	# ---- The fallen head and arm, resting on the shallows' bed.
 	var frag := _chunk("harbour/fragments",_frame(HEAD_AT,Vector2(1.0,0.0),SEA))
 	_put(frag,&"harbour_colossus_head",_frame(HEAD_AT,Vector2.from_angle(HEAD_YAW),_low(field,HEAD_AT,12.0)+0.4))
-	var ay := maxf(_low(field,ARM_AT,6.0)+4.2,SEA-2.5)
+	var ay := maxf(_low(field,ARM_AT,6.0)+4.2,SEA-1.2)
 	_put(frag,&"harbour_colossus_arm",_frame(ARM_AT,Vector2.from_angle(ARM_YAW),ay))
 
 ## The lowest ground within `r` of `c`.

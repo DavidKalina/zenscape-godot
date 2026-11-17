@@ -1,4 +1,4 @@
-"""The temple kit's ruined harbour (lane harbour): the colossus astride its
+﻿"""The temple kit's ruined harbour (lane harbour): the colossus astride its
 mouth, the colossus' fallen head and arm, the moles, the quay and the ship
 sheds, in the kit's stone (temple_lib). scripts/endless/harbour_site.gd lays
 them in the cove on the inland sea's west shore. The columns standing in the
@@ -210,7 +210,7 @@ class Path:
 
 
 def loft(bm, path, side, segs, rng, course=None, sub=1, step=2.5, bump=None, rough=0.3, end="open",
-         start="open", jag=(0.0, 0.0), matrix=None, inner=False, seed=0.0, seams=4, bites=0.25):
+         start="open", jag=(0.0, 0.0), matrix=None, inner=False, seed=0.0, seams=4, bites=0.25, groove=0.32):
     """A tube of stone round `path`: elliptic sections (rx along `side` made
     square to the path, ry across both), `bump(s, a, p)` metres out at arc
     length s, angle a (0 along side, pi/2 along path x side), point p. With
@@ -291,7 +291,7 @@ def loft(bm, path, side, segs, rng, course=None, sub=1, step=2.5, bump=None, rou
             dp = 0.0
             if course:
                 if groove:
-                    dr -= 0.32
+                    dr -= groove
                     dp = 1.0
                 for sa in inf["seams"]:
                     if abs(math.atan2(math.sin(a - sa), math.cos(a - sa))) < seam_tol:
@@ -445,8 +445,11 @@ TOES = [(-3.7, 1.35, 1.25, 6.0), (-1.4, 1.0, 0.95, 5.2), (0.6, 0.95, 0.9, 4.6), 
 
 
 def torso_path():
-    keys = [((0, 0, CROTCH), 14.0, 8.5), ((0, 0.5, 63.0), 19.5, 11.2), ((0, 0.6, 70.0), 20.2, 11.6), ((0, 0.3, 78.0), 17.0, 10.4),
-            ((0, 0, 84.0), 15.4, 9.8), ((0, -0.2, 92.0), 16.8, 10.4), ((0, -0.4, 100.0), 18.6, 10.9), ((0, -0.4, 106.0), 19.2, 10.8)]
+    # From under the kilt (its flat cap closes the kilt's underside) up past
+    # the shoulders, broken off over them.
+    keys = [((0, 0.6, 48.5), 4.0, 3.0), ((0, 0.5, 51.5), 12.5, 8.0), ((0, 0.4, 56.0), 18.4, 11.6), ((0, 0.4, 63.0), 19.6, 12.0), ((0, 0.6, 70.0), 19.4, 11.8), ((0, 0.3, 78.0), 17.0, 10.6),
+            ((0, 0, 84.0), 15.6, 10.0), ((0, -0.2, 92.0), 17.2, 10.6), ((0, -0.4, 100.0), 19.6, 11.2), ((0, -0.3, 107.0), 22.4, 11.4),
+            ((0, 0.0, 112.0), 23.6, 10.8), ((0, 0.4, 116.5), 19.0, 9.6)]
     return Path(keys)
 
 
@@ -455,25 +458,63 @@ def torso_bump(s, a, p):
     # a: 0 along +x, pi/2 along +y (the back), -pi/2 the front.
     back = math.sin(a)
     out = 0.0
-    out += 1.6 * max(0.0, back) ** 2 * gauss(z - 67.0, 5.0) * gauss(abs(math.cos(a)) - 0.45, 0.35)   # the seat
     out -= 0.9 * gauss(ang(a, math.pi / 2), 0.08) * (1.0 if z > 74 else 0.0)                            # the spine
     for px in (-1, 1):
         aa = math.atan2(-0.9, 0.45 * px)
-        out += 1.4 * gauss(ang(a, aa), 0.35) * gauss(z - 99.0, 4.0)                                    # the chest
-    out -= 0.7 * gauss(ang(a, -math.pi / 2), 0.06) * gauss(z - 80.5, 1.2)                               # the navel
-    out += 0.5 * gauss(ang(a, -math.pi / 2), 0.25) * gauss(z - 88.0, 3.5)                               # the belly's line
+        out += 2.2 * gauss(ang(a, aa), 0.38) * gauss(z - 101.0, 4.5)                                   # the chest
+        out -= 0.8 * gauss(ang(a, aa), 0.5) * gauss(z - 95.5, 0.9)                                     # its lower edge
+        ab = math.atan2(0.9, 0.5 * px)
+        out += 1.3 * gauss(ang(a, ab), 0.4) * gauss(z - 104.0, 5.0)                                    # the shoulder blades
+        for k in range(3):                                                                             # the belly's blocks
+            out += 0.45 * gauss(ang(a, -math.pi / 2 + px * 0.16), 0.11) * gauss(z - (86.0 + 3.2 * k), 1.0)
+    out -= 0.8 * gauss(ang(a, -math.pi / 2), 0.06) * gauss(z - 82.5, 1.0)                               # the navel
+    out -= 0.6 * gauss(ang(a, -math.pi / 2), 0.05) * gauss(z - 97.0, 5.0)                               # the breastbone
+    for px in (-1, 1):                                                                                 # the collarbones
+        out += 0.9 * gauss(ang(a, math.atan2(-0.55, 0.85 * px)), 0.3) * gauss(z - 110.5, 1.2)
     return out
 
 
 def kilt_path(r_in=0.0):
-    keys = [((0, 0, 85.0), 16.3 - r_in, 10.7 - r_in), ((0, 0, 78.0), 19.5 - r_in, 12.2 - r_in), ((0, 0, 68.0), 22.6 - r_in, 14.2 - r_in),
-            ((0, 0, 58.0), 24.4 - r_in, 15.8 - r_in), ((0, 0, 52.0), 25.0 - r_in, 16.4 - r_in)]
+    keys = [((0, 0, 86.0), 16.6 - r_in, 11.0 - r_in), ((0, 0, 78.0), 18.8 - r_in, 12.2 - r_in), ((0, 0, 68.0), 20.6 - r_in, 13.2 - r_in),
+            ((0, 0, 60.0), 21.6 - r_in, 13.8 - r_in), ((0, 0, 56.5), 21.9 - r_in, 14.0 - r_in)]
     return Path(keys)
 
 
 def kilt_bump(s, a, p):
     pleat = abs(math.sin(14 * a))
     return 0.75 * pleat * min(1.0, s / 8.0)
+
+
+def neck_path():
+    return Path([((0, 0.6, 110.0), 8.6, 8.8), ((0, 0.2, 117.0), 8.2, 8.4), ((0, -0.4, 122.0), 7.6, 8.0)])
+
+
+def arm_stump_path(sx):
+    """The arm left standing (sx: its side): from inside the shoulder down
+    and out to its break above the elbow."""
+    return Path([((sx * 18.0, 0.4, 110.0), 7.6, 7.6), ((sx * 23.5, 0.6, 107.0), 7.4, 7.2),
+                 ((sx * 26.5, 0.8, 99.0), 6.4, 6.2), ((sx * 28.0, 0.4, 88.0), 5.6, 5.6)])
+
+
+def arm_socket_path(sx):
+    """The fallen arm's side: the shoulder's round broken off short."""
+    return Path([((sx * 18.0, 0.4, 110.0), 7.6, 7.6), ((sx * 23.0, 0.5, 108.5), 7.4, 7.2), ((sx * 25.5, 0.6, 106.5), 6.8, 6.6)])
+
+
+def leg_bump_for(path):
+    L = path.length
+
+    def bump(s, a, p):
+        f = -math.pi / 2
+        out = 0.0
+        out += 1.5 * gauss(ang(a, f), 0.45) * gauss(s - 0.455 * L, 2.2)              # the knee
+        out -= 0.5 * gauss(ang(a, f), 0.9) * gauss(s - 0.40 * L, 1.5)               # under it
+        out += 1.4 * gauss(ang(a, -f), 0.7) * gauss(s - 0.30 * L, 5.0)               # the calf
+        out += 1.1 * gauss(ang(a, f + 0.35), 0.45) * gauss(s - 0.66 * L, 6.0)        # the thigh's front
+        out += 0.8 * gauss(ang(a, -f), 0.6) * gauss(s - 0.75 * L, 6.0)               # its back
+        out -= 0.6 * gauss(ang(a, -f), 0.25) * gauss(s - 0.455 * L, 1.6)             # behind the knee
+        return out
+    return bump
 
 
 def belt_path():
@@ -483,10 +524,11 @@ def belt_path():
 def colossus_figure(lay, bm, segs, course, rough, far=False):
     r = lay.r
     sd = 0.0
-    kw = dict(course=None if far else course, step=8.0 if far else 3.0, rough=0.0 if far else rough)
+    kw = dict(course=None if far else course, step=8.0 if far else 3.0, rough=0.0 if far else rough, groove=0.2)
     for sx in (-1, 1):
         sd += 3.1
-        loft(bm, leg_path(sx), (1, 0, 0), segs, r, sub=2, seed=sd, **kw)
+        lp = leg_path(sx)
+        loft(bm, lp, (1, 0, 0), segs, r, sub=2, seed=sd, seams=2, bump=None if far else leg_bump_for(lp), **kw)
         loft(bm, foot_path(sx), (1, 0, 0), segs, r, sub=1, seed=sd + 1, start="flat", end="open", **kw)
         if not far:
             for (ox, rx, rz, ln) in TOES:
@@ -497,7 +539,14 @@ def colossus_figure(lay, bm, segs, course, rough, far=False):
                 loft(bm, p, (1, 0, 0), max(10, segs // 4), r, step=1.0, rough=0.06, end="flat", seed=sd + ox)
     tp = torso_path()
     loft(bm, tp, (1, 0, 0), segs + (segs // 2), r, sub=2, bump=None if far else torso_bump, start="flat",
-         end="broken", jag=(0.0, 0.0 if far else 9.0), seed=11.0, **kw)
+         end="broken", jag=(0.0, 0.0 if far else 2.5), seed=11.0, seams=2, **kw)
+    loft(bm, neck_path(), (1, 0, 0), segs // 2 + 4, r, sub=1, end="broken", jag=(0.0, 0.0 if far else 3.5), seed=12.0, seams=2, **kw)
+    # The arm left standing on the figure's left (+x), broken above the elbow;
+    # the right one (fallen, in the shallows) broken off at the shoulder.
+    loft(bm, arm_stump_path(1), (0, 1, 0), segs // 2 + 6, r, sub=1, end="broken", jag=(0.0, 0.0 if far else 3.0), seed=14.0,
+         seams=2, **kw)
+    loft(bm, arm_socket_path(-1), (0, 1, 0), segs // 2 + 6, r, sub=1, end="broken", jag=(0.0, 0.0 if far else 2.0), seed=15.0,
+         seams=2, **kw)
     outer = loft(bm, kilt_path(), (1, 0, 0), segs * 2 if not far else segs, r, sub=2, bump=None if far else kilt_bump,
                  seed=13.0, end="open" if not far else "flat", jag=(0.0, 0.0 if far else 2.2), **kw)
     if not far:
@@ -525,7 +574,7 @@ def pedestal(lay, sx):
 
 def build_colossus(lay):
     segs = 22 if lay.mid else 56
-    colossus_figure(lay, lay.p.near, segs, None if lay.mid else 2.5, 0.35)
+    colossus_figure(lay, lay.p.near, segs, None if lay.mid else 4.2, 0.35)
     if not lay.mid:
         colossus_figure(lay, lay.p.far, 12, None, 0.0, far=True)
     for sx in (-1, 1):
@@ -548,9 +597,12 @@ def build_colossus(lay):
             rr = max(rx0, ry0, rx1, ry1) * 0.92
             boxes.append(((min(c0.x, c1.x) - rr, min(c0.y, c1.y) - rr, min(c0.z, c1.z)),
                           (max(c0.x, c1.x) + rr, max(c0.y, c1.y) + rr, max(c0.z, c1.z))))
-    for (z0, z1, rx, ry) in ((50.0, 58.0, 25.0, 16.4), (58.0, 68.0, 23.5, 15.0), (68.0, 78.0, 21.5, 13.5), (78.0, 87.0, 17.5, 11.5),
-                             (87.0, 96.0, 17.0, 10.6), (96.0, 103.0, 19.0, 11.0)):
+    for (z0, z1, rx, ry) in ((48.5, 52.0, 12.5, 8.0), (52.0, 55.0, 17.5, 11.5), (55.0, 60.0, 21.0, 13.5), (60.0, 68.0, 21.0, 13.4), (68.0, 78.0, 20.0, 12.8), (78.0, 87.0, 17.5, 11.5),
+                             (87.0, 96.0, 17.0, 10.8), (96.0, 104.0, 20.0, 11.6), (104.0, 112.0, 23.0, 11.2), (112.0, 117.0, 21.0, 10.0),
+                             (117.0, 122.0, 8.0, 8.0)):
         boxes.append(((-rx, -ry, z0), (rx, ry, z1)))
+    boxes.append(((19.0, -7.0, 86.0), (34.0, 7.5, 112.0)))
+    boxes.append(((-31.0, -7.0, 100.0), (-19.0, 7.5, 116.0)))
     lay.solids(boxes)
 
 
@@ -610,19 +662,21 @@ def head_lie():
     # Laid on its right cheek: the head's +z (up) to +x... the neck toward -x
     # would bury the face; here the head's axis runs along +x (crown to +x),
     # its face turned up and to -y a little.
-    return (Matrix.Translation((0.0, 0.0, 8.2)) @ Matrix.Rotation(math.radians(-24.0), 4, "X")
+    # Rolled onto the back of the skull, so the face looks up (and a little
+    # to -y): from the air and from the water it reads as a face.
+    return (Matrix.Translation((0.0, 0.0, 6.5)) @ Matrix.Rotation(math.radians(-64.0), 4, "X")
             @ Matrix.Rotation(math.radians(90.0), 4, "Y") @ Matrix.Translation((0.0, 0.0, -9.0)))
 
 
 def build_head(lay):
     m = head_lie()
     segs = 32 if lay.mid else 96
-    loft(lay.p.near, head_path(), (1, 0, 0), segs, lay.r, course=None if lay.mid else 2.2, sub=3, step=1.6,
+    loft(lay.p.near, head_path(), (1, 0, 0), segs, lay.r, course=None, sub=3, step=0.8,
          bump=head_bump, rough=0.25, start="broken", end="flat", jag=(3.0, 0.0), matrix=m, seed=21.0, bites=0.1)
     if not lay.mid:
         loft(lay.p.far, head_path(), (1, 0, 0), 14, lay.r, step=3.0, bump=head_bump, rough=0.0, start="flat",
              end="flat", matrix=m, seed=21.0)
-    lay.solids([((-15.5, -11.0, -2.0), (15.5, 11.0, 17.0))])
+    lay.solids([((-15.5, -12.0, -4.0), (15.5, 12.0, 18.5))])
 
 
 # ---- the arm --------------------------------------------------------------------
@@ -633,14 +687,24 @@ def arm_path():
     return Path(keys)
 
 
+def arm_bump(s, a, p):
+    # a: 0 up (+z), pi/2 across. The biceps' swell, the elbow's point, the
+    # forearm's muscle near the elbow.
+    out = 1.3 * gauss(ang(a, 0.0), 0.7) * gauss(s - 13.0, 5.0)
+    out += 1.2 * gauss(ang(a, math.pi), 0.4) * gauss(s - 27.0, 2.0)
+    out += 1.0 * gauss(ang(a, 0.6), 0.6) * gauss(s - 34.0, 4.0)
+    out -= 0.5 * gauss(s - 24.0, 1.5)
+    return out
+
+
 FINGERS = [(-2.9, 0.95, 7.0), (-0.95, 1.05, 8.0), (1.0, 1.0, 7.6), (2.9, 0.85, 6.0)]
 
 
 def build_arm(lay):
     m = Matrix.Translation((0.0, 0.0, 1.5))
     segs = 20 if lay.mid else 56
-    loft(lay.p.near, arm_path(), (0, 0, 1), segs, lay.r, course=None if lay.mid else 2.5, sub=1, step=3.0,
-         rough=0.3, start="broken", end="flat", jag=(4.0, 0.0), matrix=m, seed=31.0)
+    loft(lay.p.near, arm_path(), (0, 0, 1), segs, lay.r, course=None, sub=2, step=1.5,
+         rough=0.3, start="broken", end="flat", jag=(4.0, 0.0), matrix=m, seed=31.0, seams=2, bump=arm_bump)
     if not lay.mid:
         loft(lay.p.far, arm_path(), (0, 0, 1), 10, lay.r, step=8.0, rough=0.0, start="flat", end="flat", matrix=m)
     # The hand's fingers, from the knuckles on, slightly curled; the thumb.
