@@ -43,14 +43,17 @@ All three places are on the map page.
   at 2 km.
 - Dome: the pull-up out of the eye is tight with Boost. Seen from the north it
   sits against the Peak's flank.
-- Viaduct: rebuilt for an arch-by-arch weave (28a9f062): lower piers every
-  57.2 m, 45.2 m openings, two upper arches over each lower. A stick-flown
-  driver weaves spans 5-12 at cruise (27/27 with offset, slant and wobble);
-  with Boost only at full stick, a comfortable Boost weave needs ~70-75 m
-  bays. Not hand-flown yet.
+- Viaduct: rebuilt twice for an arch-by-arch weave (28a9f062, then 931a5106
+  at the user's word, 20% wider): bays 68.4 m, lower openings 56.4 m, upper
+  arches every 34.2 m with 28.2 m openings, decks at 33 and 60, 18 piers.
+  One centre-line weave per tier at cruise passed (upper needs full stick).
+  Offsets, slants, Boost and straight passes were not re-flown at this size.
 - Pop-in on the viaduct, dome and bridge (f9b76956): drawn from 8 km, far
-  model only past ~1.1 km. Its frame cost is unmeasured; older places have
-  the same pop and are untouched.
+  model only past ~1.1 km. A second logged flight (scratch/f2.csv) showed no
+  frame cost. The user still finds it "a bit rough" and parked it: on the
+  dome "the textures clearly changed as I drew near". Which swap they saw
+  (far to mid ~1.2 km, or mid to near ~60 m, untouched) is not confirmed.
+  Older places have the same pop and are untouched.
 - Stray render errors: 985 "Parameter material is null" in one early viaduct
   run, 349 errors in one weave run, and one smoke run failing with
   "unimplemented base type encountered in renderer scene cull" (five reruns
