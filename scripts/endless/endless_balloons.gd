@@ -54,7 +54,9 @@ extends Node3D
 ## once; --balloon-field-now a field ahead of the start, at once;
 ## --balloon-scale=X their size over SIZE; --balloon-pool=N the pool (32: a field, a group and two odd groups);
 ## --balloon-glow=X the lantern's strength (1; 0 none, the day's look at
-## night); --balloon-lamps=N the real lights (2; 0 none).
+## night); --balloon-lamps=N the real lights (2; 0 none);
+## --balloon-bounce=old the plane turned off the cloth at the touch (the first
+## bounce), not taken in and thrown out.
 ##
 ## The model: art/blender/balloon/balloon_build.py (keep R, MOUTH_Y and
 ## FLOOR_Y on its numbers).
@@ -264,6 +266,15 @@ const BOOM_PITCH := Vector2(0.72,0.5)
 const BOOM_THUMP := 0.7
 const BOOM_CREAK := 0.5
 const BOOM_GAP_MS := 300
+## The catch (balloon_bounce.gd's `hold`): the cloth's hollow over how deep the
+## plane is in it, the balloon's jolt over the first bounce's, how fast the
+## hollow springs out as the plane leaves (a share of POKE*POKE_RATE at most),
+## and the cloth's snap heard as it throws the plane (gain, pitch over the
+## boom's).
+const CATCH_POKE := 1.0
+const CATCH_JOLT := 1.5
+const CATCH_SPRING := 0.6
+const SNAP := Vector2(0.8,1.5)
 
 # --- The step ---
 ## A balloon is stepped every frame within this of the eye (m); past it,
@@ -466,6 +477,11 @@ var _lamp_most := LAMPS
 ## The odd groups (balloon_odd.gd), seed 1 only; bounces off any balloon.
 var odd_groups: BalloonOdd
 var bounces := 0
+## The plane in a balloon's cloth (balloon_bounce.gd's Catch) and whose; the
+## first bounce instead with --balloon-bounce=old.
+var caught: BalloonBounce.Catch
+var _caught_b: Balloon
+var _catches := true
 var _seed := 0
 var _odd_tried := false
 
@@ -489,6 +505,7 @@ func setup(land_seed: int) -> void:
 		elif a == "--balloon-field-now" or a == "--balloon-field-now=1": _field_now = true
 		elif a.begins_with("--balloon-glow="): glow_k = clampf(float(a.get_slice("=",1)),0.0,4.0)
 		elif a.begins_with("--balloon-lamps="): _lamp_most = clampi(int(a.get_slice("=",1)),0,8)
+		elif a == "--balloon-bounce=old": _catches = false
 		elif a.begins_with("--balloon-pool="): _pool = clampi(int(a.get_slice("=",1)),GROUP,64)
 	_span = WorldScale.span
 	_wait = _rng.randf_range(FIRST_GAP.x,FIRST_GAP.y)
@@ -611,6 +628,7 @@ func step(delta: float, game: Node) -> void:
 			odd_groups = BalloonOdd.new()
 			odd_groups.setup(game)
 	if odd_groups != null: odd_groups.step(self,game)
+	if caught != null and (not _caught_b.live or not bool(game.hand_landing.flying())): _let_go()
 	if (_now or _field_now) and bool(game.hand_landing.flying()):
 		if _now: _place_now(game)
 		if _field_now: _field_ahead(game)
@@ -1133,7 +1151,8 @@ func _think(b: Balloon, game: Node, plane: RefCounted, eye: Vector3, view: Vecto
 	if b.state == AIR: b.turn += TURN*dt
 	var awake := d2 < AWAKE*AWAKE*b.k*b.k
 	if awake:
-		_bounce(b,game,plane)
+		if _catches: _catch(b,game,plane,dt)
+		else: _bounce(b,game,plane)
 		to = plane.position-b.at
 		_wash(b,dt,game,plane,to,to.length())
 	if not awake and b.still:
@@ -1283,6 +1302,66 @@ func _bounce(b: Balloon, game: Node, plane: RefCounted) -> void:
 	_boom(b,game,k)
 	res["balloon"] = balloons.find(b)
 	if odd_groups != null: odd_groups.bounced(self,game,b,res)
+
+## The plane touching `b`'s envelope is taken in by the cloth and thrown back
+## out (balloon_bounce.gd's catch): the cloth hollows round it as deep as it
+## goes and springs back as it leaves, the balloon is shoved away all the
+## while, rocks and swings, and an odd one lets its find out as it throws the
+## plane. A touch scores no graze.
+func _catch(b: Balloon, game: Node, plane: RefCounted, dt: float) -> void:
+	if caught != null and _caught_b != b: return
+	if not bool(game.hand_landing.flying()): return
+	var centre := b.at+b.jolt
+	var sized := 1.0/sqrt(b.k)
+	if caught == null:
+		var t := BalloonBounce.touch(centre,b.scale,R,LOW_BALL,plane.position)
+		if t.is_empty(): return
+		b.through = true
+		caught = BalloonBounce.begin(plane,t)
+		if caught == null: return
+		_caught_b = b
+		var n: Vector3 = t.normal
+		var k := caught.into*clampf(caught.before/float(plane.cruise()),0.6,1.8)*sized
+		var away := Vector2(-n.x,-n.z)
+		if away.length_squared() < 0.0001:
+			var vel: Vector3 = plane.velocity
+			away = -Vector2(vel.x,vel.z)
+		away = away.normalized()
+		b.rock_v += away*(BOUNCE_ROCK*k)
+		b.swing_v += away*(BOUNCE_SWING*k)
+		_boom(b,game,k)
+	var c := caught
+	var res := BalloonBounce.hold(c,plane,centre,b.scale,R,LOW_BALL,dt,func(q: Vector3) -> float: return _solid_under(game,q))
+	# The balloon shoved the other way: the first bounce's jolt over the whole
+	# of the catch (the cloth turns the speed into it round, about twice it).
+	b.jolt_v -= c.shove*(JOLT*CATCH_JOLT*sized/(2.2*float(plane.cruise())))
+	b.shudder = 1.0
+	b.still = false
+	b.through = true
+	var frame := b.root.basis.orthonormalized().inverse()
+	if res.is_empty():
+		# The hollow where the plane is, as deep as it is in.
+		var to := c.p-centre
+		if to.length_squared() > 0.01: b.poke_way = (frame*to).normalized()
+		b.poke = c.depth/b.scale*CATCH_POKE
+		b.poke_v = 0.0
+		return
+	# Thrown out: the hollow springs out after it and rings.
+	b.poke_v = -minf(maxf(c.v.dot(c.normal),0.0)/b.scale,POKE*POKE_RATE*CATCH_SPRING)
+	bounces += 1
+	var hit := clampf(c.into*c.before/float(plane.cruise())*sized/1.4,0.0,1.0)
+	var sound: Variant = game.get("sound")
+	if sound != null: sound.shot("balloon-boom",SNAP.x*lerpf(BOOM_GAIN.x,BOOM_GAIN.y,hit),SNAP.y*lerpf(BOOM_PITCH.x,BOOM_PITCH.y,hit)*sized)
+	res["balloon"] = balloons.find(b)
+	res["deepest"] = c.deepest
+	res["held"] = c.t
+	_let_go()
+	if odd_groups != null: odd_groups.bounced(self,game,b,res)
+
+## The catch over (the plane thrown out, landed, or the balloon gone).
+func _let_go() -> void:
+	caught = null
+	_caught_b = null
 
 ## The bounce heard (the constants'), `k` its strength: once a touch, however
 ## many frames the plane is pressed on the cloth.
