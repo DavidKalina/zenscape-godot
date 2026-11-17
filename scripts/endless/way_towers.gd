@@ -31,6 +31,7 @@ const BathsSite = preload("res://scripts/endless/baths_site.gd")
 const SanctuarySite = preload("res://scripts/endless/sanctuary_site.gd")
 const CitadelSite = preload("res://scripts/endless/citadel_site.gd")
 const TombsSite = preload("res://scripts/endless/tombs_site.gd")
+const ViaductSite = preload("res://scripts/endless/viaduct_site.gd")
 
 const SITES := [
 	{"name":"way/bay","at":Vector2(130.0,1540.0),"yaw":PI},
@@ -68,6 +69,8 @@ var baths: Node3D
 var sanctuary: Node3D
 ## The citadel on the cape (citadel_site.gd) and the road of tombs to it (tombs_site.gd), or null with `--citadel=0`.
 var citadel: Node3D
+## The two-tier viaduct on the north-west plain (viaduct_site.gd), or null with `--viaduct=0`.
+var viaduct: Node3D
 var tombs: Node3D
 
 func setup(g: Node3D) -> void:
@@ -121,6 +124,11 @@ func setup(g: Node3D) -> void:
 		citadel.name = "Citadel"
 		add_child(citadel)
 		citadel.setup(g)
+	if ViaductSite.wanted():
+		viaduct = ViaductSite.new()
+		viaduct.name = "Viaduct"
+		add_child(viaduct)
+		viaduct.setup(g)
 		tombs = TombsSite.new()
 		tombs.name = "Tombs"
 		add_child(tombs)
@@ -160,6 +168,7 @@ static func tree_keepouts(x0: float, z0: float, x1: float, z1: float) -> Array:
 	out.append_array(BathsSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(SanctuarySite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(CitadelSite.tree_keepouts(x0,z0,x1,z1))
+	out.append_array(ViaductSite.tree_keepouts(x0,z0,x1,z1))
 	out.append_array(TombsSite.tree_keepouts(x0,z0,x1,z1))
 	return out
 
@@ -180,6 +189,7 @@ func step(eye: Vector3) -> void:
 	if baths != null and baths.step(eye,kit_busy,here): kit_busy = true
 	if sanctuary != null and sanctuary.step(eye,kit_busy,here): kit_busy = true
 	if citadel != null and citadel.step(eye,kit_busy,here): kit_busy = true
+	if viaduct != null and viaduct.step(eye,kit_busy,here): kit_busy = true
 	if tombs != null and tombs.step(eye,kit_busy,here): kit_busy = true
 	for handle: String in sites:
 		var site: Dictionary = sites[handle]

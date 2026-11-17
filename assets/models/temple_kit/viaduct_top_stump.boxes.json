@@ -1,0 +1,16 @@
+{
+ "piece": "viaduct_top_stump",
+ "boxes": [
+  [
+   -2.5,
+   0.0,
+   -3.0,
+   5.0,
+   8.5,
+   6.0
+  ]
+ ],
+ "tris": 457,
+ "far_tris": 12,
+ "mid_tris": 102
+}
