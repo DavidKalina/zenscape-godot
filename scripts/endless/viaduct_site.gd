@@ -5,20 +5,25 @@ extends Node3D
 ## (art/blender/temple_kit/viaduct_build.py) and the aqueduct's rubble.
 ##
 ## The line: O, then U (DIR_DEG from +x, toward +z); a point is O + U*s +
-## V*v, V across (U turned a quarter). Piers stand every BAY from S0; span j
-## runs from pier j to pier j+1. The lower deck (the tiers' join) is level at
+## V*v, V across (U turned a quarter). Lower piers stand every BAY from S0;
+## lower span j runs from pier j to pier j+1. The upper tier has two spans
+## over each lower one: upper pier m every BAY2 (the even ones over the lower
+## piers, the odd ones over the lower crowns), upper span m from upper pier m
+## to m+1, over lower span m/2. The lower deck (the tiers' join) is level at
 ## Y1, the top deck at Y2: the lower piers hang from Y1 into the ground, so
 ## they grow as the land falls. Where the land rises past a piece at either
 ## end it is left out, so the viaduct runs into the rises.
 ##
-## The openings: a lower span is 20 m clear and from the ground to 2.7 m under
-## Y1 (about 31 m on the plain); an upper span 21 m clear from Y1 to 4 m
-## under Y2 (20 m). The ruin: FALLEN_TOP spans have lost their upper arch (a
-## stub left on one pier); FALLEN spans have lost both (a stub on one pier,
-## the upper piers standing on the lower), and STUMPS' piers are down to a
-## stump between two fallen spans, so the gap is two bays wide. Rubble under
-## each fallen span. END_TOP: the last upper spans toward the far rise are
-## gone, their upper piers stumps.
+## The openings, wide enough to weave arch by arch at cruise (in one span,
+## turn, back through the next): a lower span is 45.2 m clear and from the
+## ground to 3.8 m under Y1 (about 41 m on the plain), its piers 8 m through;
+## an upper span 23.6 m clear from Y1 to 4 m under Y2 (20 m). The ruin:
+## FALLEN_TOP upper spans have lost their arch (a stub left on one pier);
+## FALLEN lower spans have lost both tiers (a stub on one side, the upper
+## pier over the crown gone), and STUMPS' piers are down to a stump between
+## two fallen spans, so the gap is two bays wide. Rubble under each fallen
+## span. END_TOP: the upper spans from it toward the far rise are gone, their
+## upper piers stumps.
 ##
 ## Drawn and solid as the citadel is (citadel_site.gd): chunks of CHUNK piers,
 ## each in its own frame on the line, MultiMeshes per piece and LOD gathered on
@@ -33,26 +38,28 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const O := Vector2(-3520.0,-3880.0)
 const DIR_DEG := 60.0
 ## viaduct_build.py's numbers.
-const BAY := 26.0
-const W1 := 6.0
+const BAY := 57.2
+const BAY2 := BAY*0.5
+const W1 := 12.0
 const T1 := 8.0
 const W2 := 5.0
 const TIER2 := 24.0
-const CROWN1 := 2.7
+const CROWN1 := 3.8
 const CROWN2 := 4.0
 ## The decks (world y).
-const Y1 := 27.0
+const Y1 := 30.0
 const Y2 := Y1+TIER2
-## The first pier's s, and the last pier's index the line may reach.
-const S0 := -40.0
-const MAX_PIERS := 48
-## The ruin, by span / pier number.
-const FALLEN_TOP: Array[int] = [9,22,34]
-const FALLEN: Array[int] = [15,27,28]
-const STUMPS: Array[int] = [28]
-## Spans from this one to the end have lost their upper arch; the upper piers among them are stumps.
-const END_TOP := 40
-const CHUNK := 6
+## The first pier's s (pier 1 at s 12, the map's end), and the last pier's index the line may reach.
+const S0 := 12.0-BAY
+const MAX_PIERS := 22
+## The ruin: FALLEN_TOP by upper span, FALLEN by lower span, STUMPS by lower pier.
+## Lower spans 5 to 12 stand whole, eight to weave in a row.
+const FALLEN_TOP: Array[int] = [12,20,21,33]
+const FALLEN: Array[int] = [4,13,14]
+const STUMPS: Array[int] = [14]
+## Upper spans from this one to the end have lost their arch; the upper piers past it are stumps.
+const END_TOP := 37
+const CHUNK := 3
 ## Streaming and LOD (m): a chunk comes in at REACH, a few pixels in the haze,
 ## so the line never appears whole in view; a piece swaps near -> mid at
 ## MID_NEAREST and mid -> far at FAR_NEAREST from its set's nearest (plus the
@@ -104,6 +111,9 @@ static func _low(field: Object, s0: float, s1: float, half: float) -> float:
 static func pier_s(k: int) -> float:
 	return S0+k*BAY
 
+static func top_pier_s(m: int) -> float:
+	return S0+m*BAY2
+
 ## The piers the line runs between: [first, last], the first and last whose
 ## top deck stands clear of the land, and one more each end into the rise.
 static func extent(field: Object) -> Vector2i:
@@ -119,53 +129,68 @@ static func extent(field: Object) -> Vector2i:
 static func _at(s: float, y: float, v := 0.0, yaw := 0.0, size := 1.0) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP,yaw).scaled(Vector3.ONE*size),Vector3(s,y,v))
 
-## Every piece in the line's frame: [id, xf, pier index for its chunk].
+## Every piece in the line's frame: [id, xf, lower pier index for its chunk].
 static func layout(field: Object) -> Array:
 	var out: Array = []
 	var ex := extent(field)
+	# The lower piers.
 	for k in range(ex.x,ex.y+1):
 		var s := pier_s(k)
-		var g := _low(field,s-W1*0.5,s+W1*0.5,T1*0.5)
-		var top_end := k > END_TOP and k < ex.y
 		if k in STUMPS:
 			out.append([&"viaduct_pier_stump",_at(s,_g(field,s)-1.5,0.0,0.4),k])
 			continue
-		if g < Y1+0.5: out.append([&"viaduct_pier",_at(s,Y1),k])
-		if top_end: out.append([&"viaduct_top_stump",_at(s,Y1,0.0,PI*float(k%2)),k])
-		elif g < Y2-1.0: out.append([&"viaduct_top_pier",_at(s,Y2),k])
+		if _low(field,s-W1*0.5,s+W1*0.5,T1*0.5) < Y1+0.5: out.append([&"viaduct_pier",_at(s,Y1),k])
+	# The upper piers: none on a stump or over a fallen span's crown.
+	for m in range(2*ex.x,2*ex.y+1):
+		var s := top_pier_s(m)
+		var k := m/2
+		if m%2 == 0 and k in STUMPS: continue
+		if m%2 == 1 and k in FALLEN: continue
+		if _low(field,s-3.0,s+3.0,3.0) >= Y2-1.0: continue
+		if m > END_TOP and m < 2*ex.y: out.append([&"viaduct_top_stump",_at(s,Y1,0.0,PI*float(m%2)),k])
+		else: out.append([&"viaduct_top_pier",_at(s,Y2),k])
+	# The lower spans, and what fell from them.
 	for j in range(ex.x,ex.y):
 		var s := pier_s(j)+BAY*0.5
 		var h := (j*7919)%5
 		var low := _low(field,s-BAY*0.4,s+BAY*0.4,T1*0.5)
 		var flip := PI if h%2 == 1 else 0.0
-		var gone_low := j in FALLEN
-		var gone_top := gone_low or j in FALLEN_TOP or j >= END_TOP
 		# The stub's side: the left pier's (yaw 0) or the right's (PI), never a stump's.
 		var stub := 0.0 if h%2 == 0 else PI
 		if j in STUMPS: stub = PI
 		if (j+1) in STUMPS: stub = 0.0
-		var stubbed := not (j in STUMPS and (j+1) in STUMPS)
-		if gone_low:
-			if stubbed: out.append([&"viaduct_arch_broken",_at(s,Y1,0.0,stub),j])
-		elif low < Y1-CROWN1-1.0:
-			out.append([&"viaduct_arch_b" if h < 2 else &"viaduct_arch",_at(s,Y1,0.0,flip),j])
-		if gone_top:
-			if j == END_TOP: stub = 0.0
-			if stubbed and (j <= END_TOP or gone_low):
-				out.append([&"viaduct_top_arch_broken",_at(s,Y2,0.0,stub),j])
-		elif low < Y2-CROWN2-1.0:
-			out.append([&"viaduct_top_arch_b" if h >= 3 else &"viaduct_top_arch",_at(s,Y2,0.0,flip),j])
-		# What fell: heaps on the ground under a gone span, or beside one that lost its top.
-		if gone_low:
-			for e: Array in [[-6.0,2.0,1.5],[7.0,-3.0,1.3]]:
+		if j in FALLEN:
+			if not (j in STUMPS and (j+1) in STUMPS):
+				out.append([&"viaduct_arch_broken",_at(s,Y1,0.0,stub),j])
+				# The upper span over the stub's pier keeps its own stub.
+				var m := 2*j if stub == 0.0 else 2*j+1
+				var ms := top_pier_s(m)+BAY2*0.5
+				if m < END_TOP: out.append([&"viaduct_top_arch_broken",_at(ms,Y2,0.0,stub),j])
+			for e: Array in [[-15.0,3.0,1.9],[-3.0,-4.0,1.6],[9.0,2.5,1.8],[18.0,-5.0,1.3]]:
 				var rs := s+float(e[0])
 				var rv := float(e[1])
 				out.append([&"aqueduct_rubble",_at(rs,_g(field,rs,rv)-0.4,rv,float(j)*1.7+float(e[0]),float(e[2])),j])
-		elif gone_top and j < END_TOP+2:
-			var side := 1.0 if h%2 == 0 else -1.0
-			var rs := s+3.0
-			var rv := side*13.0
-			out.append([&"aqueduct_rubble",_at(rs,_g(field,rs,rv)-0.3,rv,float(j)*2.3,1.1),j])
+		elif low < Y1-CROWN1-1.0:
+			out.append([&"viaduct_arch_b" if h < 2 else &"viaduct_arch",_at(s,Y1,0.0,flip),j])
+	# The upper spans over the standing lower ones.
+	for m in range(2*ex.x,2*ex.y):
+		var j := m/2
+		if j in FALLEN: continue
+		var s := top_pier_s(m)+BAY2*0.5
+		var h := (m*7919)%5
+		var low := _low(field,s-BAY2*0.4,s+BAY2*0.4,3.0)
+		if low >= Y2-CROWN2-1.0: continue
+		var stub := 0.0 if h%2 == 0 else PI
+		if m in FALLEN_TOP or m >= END_TOP:
+			if m == END_TOP: stub = 0.0
+			if m <= END_TOP: out.append([&"viaduct_top_arch_broken",_at(s,Y2,0.0,stub),j])
+			if m < END_TOP+2:
+				var side := 1.0 if h%2 == 0 else -1.0
+				var rs := s+3.0
+				var rv := side*13.0
+				out.append([&"aqueduct_rubble",_at(rs,_g(field,rs,rv)-0.3,rv,float(m)*2.3,1.2),j])
+		else:
+			out.append([&"viaduct_top_arch_b" if h >= 3 else &"viaduct_top_arch",_at(s,Y2,0.0,PI if h%2 == 1 else 0.0),j])
 	return out
 
 ## TreePlan's keep-outs near a world rectangle, [centre XZ, cos, sin, half across, half along].

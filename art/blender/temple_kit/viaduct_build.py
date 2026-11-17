@@ -11,21 +11,21 @@ Pieces (each with a mid LOD, <piece>_mid.glb: the same stones, plain):
   tier's floor); it hangs PIER_DEEP down, so it reaches the ground however
   low the land falls.
 - `viaduct_arch`, `viaduct_arch_b`: a lower span: ring, spandrel courses,
-  cornice. Clear OPEN1 (20 m) wide, its crown 2.7 m under the lower deck.
+  cornice. Clear OPEN1 (45.2 m) wide, its crown 3.8 m under the lower deck.
 - `viaduct_arch_broken`: a lower span snapped: the ring and courses stand
   out from the -x pier and end ragged.
 - `viaduct_top_pier`: an upper pier, W2 by T2, standing on the lower deck
   (TIER2 under its origin) to the channel's walls. Origin on the top deck.
 - `viaduct_top_arch`, `viaduct_top_arch_b`, `viaduct_top_arch_broken`: the
-  upper spans, clear OPEN2 (21 m) wide from the lower deck to 4 m under the
-  top. Origin on the top deck.
+  upper spans, two over each lower span (every BAY2), clear OPEN2 (23.6 m)
+  wide from the lower deck to 4 m under the top. Origin on the top deck.
 - `viaduct_pier_stump`: a lower pier's stump on the ground, STUMP_TOP tall,
   ragged, STUMP_DEEP into the ground. Origin on the ground.
 - `viaduct_top_stump`: an upper pier broken off TOP_STUMP over the lower
   deck. Origin on the lower deck.
 
 Frame (Blender, z up): the line runs along x, the faces look along +-y.
-Piers at x = k*BAY, spans at (k+0.5)*BAY.
+Lower piers at x = k*BAY, spans at (k+0.5)*BAY; upper piers every BAY2.
 """
 
 import math
@@ -42,41 +42,46 @@ T.MATCH_LOD_LIGHT = True
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 only = next((a.split("=")[1] for a in args if a.startswith("--only=")), None)
 
-BAY = 26.0
+# Wide enough to weave arch by arch at cruise (the plane turns back in about
+# 30 to 53 m of line at full to 80% stick): one lower span every BAY, two upper
+# spans over each.
+BAY = 57.2
 # The lower tier.
-W1 = 6.0
+W1 = 12.0
 T1 = 8.0
-OPEN1 = BAY - W1            # 20.0
+OPEN1 = BAY - W1            # 45.2
 R1 = OPEN1 / 2
-RING1 = 1.7
-CORN1_H = 1.0
-CORN1_OUT = 0.3
+RING1 = 2.6
+CORN1_H = 1.2
+CORN1_OUT = 0.35
 SPAN1_TOP = -CORN1_H        # the spandrel's top, the ring's crown
-SPRING1 = SPAN1_TOP - (R1 + RING1)   # -12.7
-IMPOST_H = 0.8
-IMPOST_OUT = 0.3
-COURSES1 = 8
-PIER_DEEP = 75.0
-COURSED_TO = -48.0
-PIER_COURSE = 1.7
+SPRING1 = SPAN1_TOP - (R1 + RING1)   # -26.4
+IMPOST_H = 1.0
+IMPOST_OUT = 0.35
+COURSES1 = 12
+PIER_DEEP = 82.0
+COURSED_TO = -54.0
+PIER_COURSE = 1.8
 # The upper tier, its origin on the top deck; the lower deck TIER2 under it.
+BAY2 = BAY / 2
 TIER2 = 24.0
 W2 = 5.0
 T2 = 6.0
-OPEN2 = BAY - W2            # 21.0
+OPEN2 = BAY2 - W2           # 23.6
 R2 = OPEN2 / 2
 RING2 = 1.4
 CORNICE_TOP = -1.8          # the channel's floor
 CORNICE_H = 0.8
 CORNICE_OUT = 0.25
 SPAN2_TOP = CORNICE_TOP - CORNICE_H     # -2.6
-SPRING2 = SPAN2_TOP - (R2 + RING2)      # -14.5
+SPRING2 = SPAN2_TOP - (R2 + RING2)      # -15.7
 WALL_T = 1.1
 COURSES2 = 7
-STUMP_TOP = 21.0
+STUMP_TOP = 19.0
 STUMP_DEEP = 10.0
 TOP_STUMP = 8.5
 VOUSSOIRS = 19
+VOUSSOIRS1 = 33
 
 
 class Lay:
@@ -109,11 +114,11 @@ class Lay:
                        chips=c, hide=hide)
             x += L
 
-    def wedge(self, R, ring, spring, theta, depth, chips):
+    def wedge(self, R, ring, spring, theta, depth, chips, n=VOUSSOIRS):
         """One voussoir, its middle on the ring at angle theta (from +x, up),
-        tapered so its joints run to the arch's centre."""
+        tapered so its joints run to the arch's centre; `n` to the half circle."""
         rm = R + ring / 2
-        tang = rm * math.pi / VOUSSOIRS - T.JOINT
+        tang = rm * math.pi / n - T.JOINT
         p = self.p
         real = p.near
         tmp = bmesh.new()
@@ -147,11 +152,12 @@ def ext_half(R, ring, spring, zt):
     return math.sqrt(max(0.0, re * re - d * d))
 
 
-def soffit(R, spring, x_lo=None, x_hi=None):
+def soffit(R, spring, x_lo=None, x_hi=None, step=15.0):
     """[(xa, xb, bottom)]: the opening's soffit as boxes, finer near the springing."""
     x_lo = -R if x_lo is None else x_lo
     x_hi = R if x_hi is None else x_hi
-    xs = [R * math.cos(math.radians(a)) for a in range(0, 91, 15)]
+    n = int(round(90.0 / step))
+    xs = [R * math.cos(math.radians(90.0 * i / n)) for i in range(n + 1)]
     out = []
     for k in range(len(xs) - 1):
         a, b = xs[k + 1], xs[k]
@@ -173,12 +179,13 @@ def lower_span(L, keep_from=None):
     r = L.r
     hw = T1 / 2
     course = (SPAN1_TOP - SPRING1) / COURSES1
-    for i in range(VOUSSOIRS):
-        th = math.pi * (i + 0.5) / VOUSSOIRS
-        if keep_from is not None and th < math.radians(128):
+    for i in range(VOUSSOIRS1):
+        th = math.pi * (i + 0.5) / VOUSSOIRS1
+        if keep_from is not None and th < math.radians(116):
             continue
-        ragged = keep_from is not None and th < math.radians(138)
-        L.wedge(R1, RING1, SPRING1, th, T1 - 0.04 - (0.7 if ragged else 0.0), chips=3 if ragged else r.randint(0, 2))
+        ragged = keep_from is not None and th < math.radians(125)
+        L.wedge(R1, RING1, SPRING1, th, T1 - 0.04 - (0.8 if ragged else 0.0), chips=3 if ragged else r.randint(0, 2),
+                n=VOUSSOIRS1)
     ends = []
     for k in range(COURSES1):
         zb = SPRING1 + k * course
@@ -190,22 +197,22 @@ def lower_span(L, keep_from=None):
                 L.run(-R1, -w, zb, course, T1, length=(1.8, 3.4), hide=("-z", "+z"))
                 L.run(w, R1, zb, course, T1, length=(1.8, 3.4), hide=("-z", "+z"))
             continue
-        reach = keep_from - 0.3 * k + r.uniform(-1.0, 0.7)
+        reach = keep_from - 0.45 * k + r.uniform(-1.4, 1.0)
         x1 = min(-w, reach) if w > 0.05 else reach
         if x1 > -R1 + 0.8:
             L.run(-R1, x1, zb, course, T1, length=(1.6, 3.0), end_chips=3)
         ends.append(x1)
     if keep_from is None:
         lower_cornice(L, -R1, R1)
-        for a, b, z in soffit(R1, SPRING1):
+        for a, b, z in soffit(R1, SPRING1, step=7.5):
             L.p.far_box(((a + b) / 2, 0, (z + SPAN1_TOP) / 2), (b - a, T1, SPAN1_TOP - z))
             L.p.solid((a, -hw, z), (b, hw, 0.0))
         L.p.far_box((0, 0, -CORN1_H / 2), (2 * R1, T1 + 2 * CORN1_OUT, CORN1_H))
         return
-    top = keep_from - 1.5 + r.uniform(-0.5, 0.5)
+    top = keep_from - 2.0 + r.uniform(-0.7, 0.7)
     lower_cornice(L, -R1, top, broken=True)
     x_end = max(max(ends), keep_from)
-    for a, b, z in soffit(R1, SPRING1, -R1, x_end):
+    for a, b, z in soffit(R1, SPRING1, -R1, x_end, step=7.5):
         L.p.far_box(((a + b) / 2, 0, (z + SPAN1_TOP) / 2), (b - a, T1, SPAN1_TOP - z))
         L.p.solid((a, -hw, z), (b, hw, 0.0))
     L.p.far_box(((-R1 + top) / 2, 0, -CORN1_H / 2), (top + R1, T1, CORN1_H))
@@ -351,13 +358,13 @@ JOBS = {
     "viaduct_pier": (41, build_pier),
     "viaduct_arch": (42, lambda L: lower_span(L)),
     "viaduct_arch_b": (57, lambda L: lower_span(L)),
-    "viaduct_arch_broken": (43, lambda L: lower_span(L, keep_from=-4.0)),
+    "viaduct_arch_broken": (43, lambda L: lower_span(L, keep_from=-6.0)),
     "viaduct_pier_stump": (44, build_pier_stump),
     "viaduct_top_pier": (45, build_top_pier),
     "viaduct_top_arch": (46, lambda L: upper_span(L)),
     "viaduct_top_arch_b": (58, lambda L: upper_span(L)),
-    # The stub reaches only to -6.5 so a line at y 45 has room either side of the gap.
-    "viaduct_top_arch_broken": (47, lambda L: upper_span(L, keep_from=-6.5)),
+    # The stub reaches only to -7.2 so a line at the top deck's height has room either side of the gap.
+    "viaduct_top_arch_broken": (47, lambda L: upper_span(L, keep_from=-7.2)),
     "viaduct_top_stump": (48, build_top_stump),
 }
 
