@@ -169,6 +169,11 @@ const PIECES: Array[StringName] = [
 	&"dome_shell_b0",
 	&"dome_shell_bp1",
 	&"dome_shell_bp2",
+	&"dome_floor_bm2",
+	&"dome_floor_bm1",
+	&"dome_floor_b0",
+	&"dome_floor_bp1",
+	&"dome_floor_bp2",
 ]
 
 const DIR := "res://assets/models/temple_kit/"

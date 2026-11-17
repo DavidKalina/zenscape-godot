@@ -215,10 +215,17 @@ class DomePiece(T.Piece):
                 if tree.ray_cast(o, d, 600.0)[0] is None:
                     seen += 1
             sky[v] = seen / len(DIRS)
+        warm = getattr(self, "warm", 0.0)
         for f in bm.faces:
             for loop in f.loops:
                 r, g, b, _ = loop[col]
-                loop[col] = (r, g, b, min(1.0, SKY_LOW + SKY_GAIN * sky[loop.vert]))
+                s = sky[loop.vert]
+                if warm > 0.0 and f.normal.z > 0.5:
+                    # What looks up in the shade is lit by the eye's blue sky
+                    # alone: a warmer stone keeps it stone, not a green slab.
+                    w = warm * max(0.0, 1.0 - 3.0 * s)
+                    r, g, b = r * (1.0 + 0.06 * w), g * (1.0 - 0.04 * w), b * (1.0 + 0.04 * w)
+                loop[col] = (r, g, b, min(1.0, SKY_LOW + SKY_GAIN * s))
         return col
 
 
@@ -628,12 +635,30 @@ def build_shell(lay, k=None):
 
 
 # ---- the floor and the footing ---------------------------------------------------------
+FLOOR_MOSS = 0.12
 FLOOR_RINGS = [0.0, 5.5, 10.5, 15.5, 20.5, 25.5, 30.5, 35.5, 41.0, RI + 0.6]
 
 
 def build_floor(lay):
     r = lay.r
     lay.p.ground = -100.0
+    # A stone floor with a little moss, not a lawn (paint's moss on all that looks up).
+    lay.p.moss_amount = FLOOR_MOSS
+    lay.p.warm = 1.0
+    # The bed under the paving, dark, so the joints between the rings show
+    # mortar, not the grass under the floor.
+    tmp = bmesh.new()
+    kl, tl, bl = T._layers(tmp)
+    rim = [(0.0, 0.0)] + [((RI + 0.6) * math.sin(t), -(RI + 0.6) * math.cos(t)) for t in
+                          (-H0 + 2.0 * H0 * i / 8 for i in range(9))]
+    f = tmp.faces.new([tmp.verts.new((x, y, -0.45)) for (x, y) in rim])
+    f[kl] = T.JOINTFACE
+    f[tl] = 0.55
+    tmp.normal_update()
+    if f.normal.z < 0:
+        f.normal_flip()
+    T._append(lay.p.near, tmp)
+    tmp.free()
     # The middle: one stone of the round's centre disc (a sixteenth), its own shape.
     tmp = bmesh.new()
     kl, tl, bl = T._layers(tmp)
@@ -822,6 +847,9 @@ JOBS = {
 for _k in (-2, -1, 0, 1, 2):
     JOBS["dome_drum_b" + bk(_k)] = (lambda k: lambda: both("dome_drum_b" + bk(k), 90 + k, lambda lay: build_drum(lay, k=k),
                                                           rot=wedge_rot(BREACH_K + k), breach=True, mid=abs(k) == 2))(_k)
+    # The breach's floor: the same stones, its sky baked with what fell open.
+    JOBS["dome_floor_b" + bk(_k)] = (lambda k: lambda: both("dome_floor_b" + bk(k), 84, build_floor,
+                                                           rot=wedge_rot(BREACH_K + k), breach=True))(_k)
     JOBS["dome_shell_b" + bk(_k)] = (lambda k: lambda: both("dome_shell_b" + bk(k), 100 + k, lambda lay: build_shell(lay, k=k),
                                                            rot=wedge_rot(BREACH_K + k), breach=True, mid=False))(_k)
 

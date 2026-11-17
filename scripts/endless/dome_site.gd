@@ -84,14 +84,17 @@ func _lay(field: Object) -> void:
 		var c := _chunk("dome/wedge%d" % k,xf)
 		var drum: StringName = &"dome_drum"
 		var shell: StringName = &"dome_shell"
+		var flr: StringName = &"dome_floor"
 		if BREACH.has(k):
 			drum = StringName("dome_drum_b"+str(BREACH[k]))
 			shell = StringName("dome_shell_b"+str(BREACH[k]))
+			# The same stones, their sky baked with the breach open.
+			flr = StringName("dome_floor_b"+str(BREACH[k]))
 		elif k == DOOR_K:
 			drum = &"dome_drum_door"
 		_put(c,drum,xf)
 		_put(c,shell,xf)
-		_put(c,&"dome_floor",xf)
+		_put(c,flr,xf)
 		# The footing down to the lowest ground under the wedge's outer arc.
 		var a := PI+k*DT
 		var lo := INF
