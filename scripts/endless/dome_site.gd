@@ -38,6 +38,10 @@ const DOOR_K := 8
 ## this far out, the side ones a bay behind it; the decks' rows.
 const PORCH_ROW := 87.0
 const DECK_Z := [62.5,81.0]
+## The front row's middle columns at +-MID_X (not +-B/2): the middle bay
+## wider than the door (about 21 m between shafts, 19.6 at the capitals, the
+## door 16), so a line through the door clears the porch a few metres off.
+const MID_X := 12.5
 ## Rubble: [angle from north (deg, + toward east), r (m), piece, yaw, inside].
 const HEAPS := [[0.0,30.0,&"dome_heap",0.3,true],[-14.0,38.0,&"dome_heap",2.1,true],
 	[10.0,66.0,&"dome_heap",1.0,false],[-8.0,72.0,&"dome_heap",-0.7,false],
@@ -114,12 +118,16 @@ func _lay_porch(field: Object, fy: float) -> void:
 	_put(pc,&"dome_porch_roof",Transform3D(Basis(),o))
 	var along := Basis()
 	var across := Basis(Vector3.UP,-PI*0.5)
-	for x: float in [-1.5*B,-0.5*B,0.5*B,1.5*B]:
+	for x: float in [-1.5*B,-MID_X,MID_X,1.5*B]:
 		_put(pc,&"column",Transform3D(Basis(),o+Vector3(x,0.0,PORCH_ROW)))
 	for x: float in [-1.5*B,1.5*B]:
 		_put(pc,&"column",Transform3D(Basis(),o+Vector3(x,0.0,PORCH_ROW-B)))
-	for x: float in [-B,0.0,B]:
-		_put(pc,&"lintel",Transform3D(along,o+Vector3(x,0.0,PORCH_ROW)))
+	# The lintels from column to column, stretched to the bays' own widths.
+	var xs := [-1.5*B,-MID_X,MID_X,1.5*B]
+	for i in range(3):
+		var x0: float = xs[i]
+		var x1: float = xs[i+1]
+		_put(pc,&"lintel",Transform3D(along*Basis.from_scale(Vector3((x1-x0)/B,1.0,1.0)),o+Vector3((x0+x1)*0.5,0.0,PORCH_ROW)))
 	# The sides: one bay from the front row back to the side column, then on to the drum's face.
 	var face := sqrt(RO*RO-pow(1.5*B,2.0))
 	for x: float in [-1.5*B,1.5*B]:

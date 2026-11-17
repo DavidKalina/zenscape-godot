@@ -395,6 +395,9 @@ def drum_boxes(door=False, gone=None, k=0):
     out = []
     xs = [-10.7, -5.4, 0.0, 5.4, 10.7]
     for xa, xb in zip(xs, xs[1:]):
+        # The inside face at the slice's innermost drawn point (not -RI + 0.9
+        # across, which stood 0.9 m proud of the wall at the wedge's middle).
+        yi = -math.sqrt(RI * RI - max(xa * xa, xb * xb))
         top = OTOP
         if gone is not None:
             rot = wedge_rot(BREACH_K + k)
@@ -402,13 +405,13 @@ def drum_boxes(door=False, gone=None, k=0):
             top = max(FOOT0 + 1.0, min(OTOP, top))
         if door and xa < DOOR_W / 2 and xb > -DOOR_W / 2:
             if xa < -DOOR_W / 2:
-                out.append(((xa, -RO - 0.6, FOOT0), (-DOOR_W / 2, -RI + 0.9, top)))
+                out.append(((xa, -RO - 0.6, FOOT0), (-DOOR_W / 2, yi, top)))
             if xb > DOOR_W / 2:
-                out.append(((DOOR_W / 2, -RO - 0.6, FOOT0), (xb, -RI + 0.9, top)))
-            out.append(((max(xa, -DOOR_W / 2), -RO - 0.6, DOOR_H), (min(xb, DOOR_W / 2), -RI + 0.9, top)))
-            out.append(((max(xa, -DOOR_W / 2), -RO - 0.6, FOOT0), (min(xb, DOOR_W / 2), -RI + 0.9, 0.0)))
+                out.append(((DOOR_W / 2, -RO - 0.6, FOOT0), (xb, yi, top)))
+            out.append(((max(xa, -DOOR_W / 2), -RO - 0.6, DOOR_H), (min(xb, DOOR_W / 2), yi, top)))
+            out.append(((max(xa, -DOOR_W / 2), -RO - 0.6, FOOT0), (min(xb, DOOR_W / 2), yi, 0.0)))
             continue
-        out.append(((xa, -RO - 0.6, FOOT0), (xb, -RI + 0.9, top)))
+        out.append(((xa, -RO - 0.6, FOOT0), (xb, yi, top)))
     # The cornices inside.
     if gone is None:
         out.append(((-9.2, -RI + 0.9, 21.0), (9.2, -RI + 1.6, 23.0)))
@@ -589,7 +592,9 @@ def shell_outer(lay, t0, t1, gone=None):
 def shell_boxes(gone=None, k=0):
     """The dome's solids: bands by elevation, each a box round its stretch of the shell, cut in slices across."""
     out = []
-    bands = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 55.0, 60.0, 65.0, math.degrees(PHI_EYE)]
+    # 2.5 deg bands: a box's inner lower corner stands at most about 0.5 m
+    # proud of the drawn inside (5 deg bands left up to 1.9 m of solid air).
+    bands = [0.0] + [2.5 * i for i in range(2, 28)] + [math.degrees(PHI_EYE)]
     rot = wedge_rot(BREACH_K + k)
     for a, b in zip(bands, bands[1:]):
         pa, pb = math.radians(a), math.radians(b)
@@ -816,7 +821,7 @@ JOBS = {
 }
 for _k in (-2, -1, 0, 1, 2):
     JOBS["dome_drum_b" + bk(_k)] = (lambda k: lambda: both("dome_drum_b" + bk(k), 90 + k, lambda lay: build_drum(lay, k=k),
-                                                          rot=wedge_rot(BREACH_K + k), breach=True, mid=False))(_k)
+                                                          rot=wedge_rot(BREACH_K + k), breach=True, mid=abs(k) == 2))(_k)
     JOBS["dome_shell_b" + bk(_k)] = (lambda k: lambda: both("dome_shell_b" + bk(k), 100 + k, lambda lay: build_shell(lay, k=k),
                                                            rot=wedge_rot(BREACH_K + k), breach=True, mid=False))(_k)
 
