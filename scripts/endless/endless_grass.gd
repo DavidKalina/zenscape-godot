@@ -450,6 +450,9 @@ class Layer extends RefCounted:
 	var pending := {}     # Vector2i -> task id
 	var wanted := {}
 	var queue: Array = []
+	## The cells grown and waiting to stand (Vector2i -> true): not asked for
+	## again meanwhile.
+	var ready := {}
 	## The native placement (ZenScapeGrass, native/terrain_kernels/
 	## grass_cell.h) set up for this layer's site, or null: GDScript.
 	var native: Object
@@ -465,6 +468,9 @@ var bloom_layer := Layer.new()
 ## cells are asked for: near, bloom, far.
 var layers: Array[Layer] = [near_layer,far_layer]
 var _done: Array = []
+## The finished cells waiting to stand (main thread only; each one's key in
+## its layer's `ready`), taken from `_done` each frame.
+var _ready: Array = []
 var _lock := Mutex.new()
 var _quit := false
 var _eye := Vector3.ZERO
@@ -1130,9 +1136,7 @@ func set_enabled(on: bool) -> void:
 			for key: Vector2i in layer.cells.keys(): _free(layer,key)
 			layer.queue.clear()
 			layer.wanted.clear()
-		_lock.lock()
-		_done.clear()
-		_lock.unlock()
+		_forget_done()
 	_planned_at = Vector3.INF
 
 ## The prefetch from the flight's velocity (m/s): PREFETCH s of its level
@@ -1149,9 +1153,7 @@ func step(eye: Vector3, forward := Vector3.ZERO) -> void:
 	_lead_step(forward)
 	_reap()
 	if not enabled:
-		_lock.lock()
-		_done.clear()
-		_lock.unlock()
+		_forget_done()
 		return
 	if ground != null and not _fars.is_empty():
 		var night: Variant = ground.get_shader_parameter("night_grade")
@@ -1286,7 +1288,7 @@ func _plan() -> void:
 		if not _standing.is_empty() and _standing[0].layer == layer and not layer.wanted.has(_standing[0].key): _drop_standing()
 		layer.queue.clear()
 		for key: Vector2i in layer.wanted:
-			if not layer.cells.has(key) and not layer.pending.has(key): layer.queue.append(key)
+			if not layer.cells.has(key) and not layer.pending.has(key) and not _waiting(layer,key): layer.queue.append(key)
 		if StreamLog.on:
 			var log_as := _log_as(layer)
 			for key: Vector2i in layer.queue: StreamLog.want(log_as,key,_cell_d(key))
@@ -1313,7 +1315,7 @@ func _ask() -> void:
 	for layer: Layer in layers:
 		while _tasks() < MAX_TASKS and not layer.queue.is_empty():
 			var key: Vector2i = layer.queue.pop_front()
-			if layer.cells.has(key) or layer.pending.has(key): continue
+			if layer.cells.has(key) or layer.pending.has(key) or _waiting(layer,key): continue
 			var mix := {}
 			if layer.regional.is_empty(): mix = {"groups":[[layer.site,layer.native,true]],"w":PackedFloat32Array()}
 			else: mix = _cell_mix(layer,key)
@@ -1337,33 +1339,69 @@ func _reap() -> void:
 ## first); a cell no longer wanted is dropped.
 func _stand(all := false) -> void:
 	_lock.lock()
-	var ready := _done
+	var fresh := _done
 	_done = []
 	_lock.unlock()
-	if ready.is_empty() and _standing.is_empty(): return
+	for r: Dictionary in fresh:
+		var layer: Layer = r.layer
+		stats.grown += 1
+		stats.grow_ms += float(r.ms)
+		stats.slowest_grow_ms = maxf(stats.slowest_grow_ms,float(r.ms))
+		if StreamLog.on: StreamLog.built(_log_as(layer),r.key,float(r.ms),int(r.ended))
+		if layer.cells.has(r.key) or not layer.wanted.has(r.key) or _waiting(layer,r.key): continue
+		layer.ready[r.key] = true
+		_ready.append(r)
+	if _ready.is_empty() and _standing.is_empty(): return
 	var began := Time.get_ticks_usec()
-	ready.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _cell_d(a.key) < _cell_d(b.key))
 	while all or (Time.get_ticks_usec()-began)/1000.0 <= STAND_BUDGET:
 		if _standing.is_empty():
-			if ready.is_empty(): break
-			var r: Dictionary = ready.pop_front()
-			var layer: Layer = r.layer
-			stats.grown += 1
-			stats.grow_ms += float(r.ms)
-			stats.slowest_grow_ms = maxf(stats.slowest_grow_ms,float(r.ms))
-			if StreamLog.on: StreamLog.built(_log_as(layer),r.key,float(r.ms),int(r.ended))
-			if layer.cells.has(r.key) or not layer.wanted.has(r.key): continue
+			var r := _next_ready()
+			if r.is_empty(): break
 			var node := Node3D.new()
-			node.name = "%s_%d_%d" % ["Far" if layer.far else "Near",r.key.x,r.key.y]
+			node.name = "%s_%d_%d" % ["Far" if (r.layer as Layer).far else "Near",r.key.x,r.key.y]
 			add_child(node)
 			_standing = [r,node,{},0,0]
 		_stand_some(all,began)
 	stats.slowest_stand_ms = maxf(stats.slowest_stand_ms,(Time.get_ticks_usec()-began)/1000.0)
-	if not ready.is_empty():
-		_lock.lock()
-		ready.append_array(_done)
-		_done = ready
-		_lock.unlock()
+
+## The nearest waiting cell still wanted, taken off the list ({}: none); the
+## ones no longer wanted let go on the way. One pass, no sort: a sort of the
+## whole backlog each frame once cost more than the budget, and then nothing
+## stood again.
+func _next_ready() -> Dictionary:
+	var best := -1
+	var best_d := INF
+	var i := _ready.size()-1
+	while i >= 0:
+		var r: Dictionary = _ready[i]
+		var layer: Layer = r.layer
+		if layer.cells.has(r.key) or not layer.wanted.has(r.key):
+			layer.ready.erase(r.key)
+			_ready.remove_at(i)
+			if best > i: best -= 1
+		else:
+			var d := _cell_d(r.key)
+			if d < best_d:
+				best_d = d
+				best = i
+		i -= 1
+	if best < 0: return {}
+	var out: Dictionary = _ready[best]
+	_ready.remove_at(best)
+	(out.layer as Layer).ready.erase(out.key)
+	return out
+
+## True while the cell is grown and waiting to stand, or standing now.
+func _waiting(layer: Layer, key: Vector2i) -> bool:
+	return layer.ready.has(key) or (not _standing.is_empty() and _standing[0].layer == layer and _standing[0].key == key)
+
+## Every finished cell not yet stood let go.
+func _forget_done() -> void:
+	_lock.lock()
+	_done.clear()
+	_lock.unlock()
+	_ready.clear()
+	for layer: Layer in layers: layer.ready.clear()
 
 ## The standing cell's next batches, until the budget is spent (`all`: every
 ## one); the cell is the layer's once its last is stood.

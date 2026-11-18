@@ -15,6 +15,7 @@ extends RefCounted
 ## | setting | file, [section] key | applied by |
 ## |---|---|---|
 ## | graphics preset | look.cfg [graphics] preset | scripts/graphics_preset.gd at the flight's start: `restart` opens the flight again on it (the grass and trees read its flags when they are made) |
+## | grass | look.cfg [graphics] grass_level | scripts/graphics_preset.gd's GRASS flags over the preset's, at the flight's start as the preset is; until one is picked, the preset's own (`grass_default`) |
 ## | 3D resolution | look.cfg [display] scale_3d | RenderResolution.scale_override, as F2 |
 ## | full screen | look.cfg [display] fullscreen | DisplayServer.window_set_mode |
 ## | vsync | look.cfg [display] vsync | DisplayServer.window_set_vsync_mode |
@@ -61,7 +62,7 @@ const VOLUME_STEP := 0.05
 ## The window a start in full screen falls back to when the player picks Windowed.
 const WINDOW := Vector2i(1440,900)
 
-## `changed(key)` after a setter: "preset", "scale", "display", "vsync",
+## `changed(key)` after a setter: "preset", "grass", "scale", "display", "vsync",
 ## "master", "effects", "ambience", "mouse", "invert", "hints".
 class Hub:
 	signal changed(key: String)
@@ -72,6 +73,8 @@ static var _dir := "user://"
 static var _saves := true
 static var _reads := true
 static var _preset := ""
+static var _grass := ""
+static var _grass_kept := false
 static var _scale := -1.0
 static var _fullscreen := true
 static var _fullscreen_kept := false
@@ -93,6 +96,7 @@ static func begin() -> void:
 	var first := not _loaded
 	_ensure()
 	if GraphicsPreset.current in GraphicsPreset.PRESETS: _preset = GraphicsPreset.current
+	if GraphicsPreset.grass in GraphicsPreset.GRASS: _grass = GraphicsPreset.grass
 	if _scale > 0.0 and not _flag("--render-scale="): _apply_scale()
 	if first and DisplayServer.get_name() != "headless":
 		if _fullscreen_kept and not _window_flag(): _apply_window(_fullscreen)
@@ -123,6 +127,7 @@ static func _ensure() -> void:
 	_saves = own_dir or not (script_run or OS.has_environment("ZENSCAPE_NO_BOOK") or "--pilot=fresh" in LaunchArgs.user_args())
 	_reads = own_dir or not script_run
 	_preset = GraphicsPreset.current if GraphicsPreset.current in GraphicsPreset.PRESETS else GraphicsPreset.chosen()
+	_grass = GraphicsPreset.grass if GraphicsPreset.grass in GraphicsPreset.GRASS else GraphicsPreset.chosen_grass(_preset)
 	var sound := FlightSound.load_settings(_dir.path_join(SOUND))
 	_master = float(sound.get("master",1.0))
 	_muted = bool(sound.get("muted",false))
@@ -131,6 +136,7 @@ static func _ensure() -> void:
 	if not _reads: return
 	var look := ConfigFile.new()
 	if look.load(_dir.path_join(LOOK)) == OK:
+		_grass_kept = str(look.get_value("graphics","grass_level","")) in GraphicsPreset.GRASS
 		if look.has_section_key("display","scale_3d"): _scale = _near_scale(float(look.get_value("display","scale_3d")))
 		_fullscreen_kept = look.has_section_key("display","fullscreen")
 		if _fullscreen_kept: _fullscreen = bool(look.get_value("display","fullscreen"))
@@ -180,11 +186,33 @@ static func set_preset(id: String) -> void:
 	_preset = id
 	_put(LOOK,"graphics","preset",id)
 	hub.changed.emit("preset")
+	# The grass follows the preset until the player has picked a level.
+	if not _grass_kept and _grass != GraphicsPreset.grass_default(id):
+		_grass = GraphicsPreset.grass_default(id)
+		hub.changed.emit("grass")
 
-## True while the chosen preset is not the one this flight was built on.
+## True while the chosen preset or grass level is not the one this flight was
+## built on.
 static func preset_pending() -> bool:
 	_ensure()
-	return GraphicsPreset.current in GraphicsPreset.PRESETS and _preset != GraphicsPreset.current
+	if GraphicsPreset.current in GraphicsPreset.PRESETS and _preset != GraphicsPreset.current: return true
+	return GraphicsPreset.grass in GraphicsPreset.GRASS and _grass != GraphicsPreset.grass
+
+## The grass level chosen ("ultra", "high", "medium", "low"): the one in
+## force, or the one the next `restart` brings.
+static func grass() -> String:
+	_ensure()
+	return _grass
+
+## Chooses and keeps a grass level. It takes hold when the flight starts
+## again, as a preset does.
+static func set_grass(id: String) -> void:
+	_ensure()
+	if not id in GraphicsPreset.GRASS or (id == _grass and _grass_kept): return
+	_grass = id
+	_grass_kept = true
+	_put(LOOK,"graphics","grass_level",id)
+	hub.changed.emit("grass")
 
 ## Opens `scene` again on the chosen preset, with the run's own flags (the
 ## preset named among them, so a run that reads no settings file takes it
@@ -193,8 +221,9 @@ static func restart(tree: SceneTree, scene: String, title := false) -> void:
 	_ensure()
 	var args := PackedStringArray()
 	for a: String in LaunchArgs.own_args():
-		if not a.begins_with("--preset=") and a != "--open-settings": args.append(a)
+		if not a.begins_with("--preset=") and not a.begins_with("--grass-level=") and a != "--open-settings": args.append(a)
 	args.append("--preset="+_preset)
+	args.append("--grass-level="+_grass)
 	tree.paused = false
 	LaunchArgs.open_scene(tree,scene,args,title)
 
@@ -353,6 +382,7 @@ static func index(id: String) -> int:
 	_ensure()
 	match id:
 		"preset": return maxi(GraphicsPreset.NAMES.find(_preset),0)
+		"grass": return maxi(GraphicsPreset.GRASS_NAMES.find(_grass),0)
 		"scale": return SCALES.find(_near_scale(scale()))
 		"display": return 0 if fullscreen() else 1
 		"vsync": return 0 if vsync() else 1
@@ -364,6 +394,7 @@ static func index(id: String) -> int:
 static func pick(id: String, i: int) -> void:
 	match id:
 		"preset": set_preset(GraphicsPreset.NAMES[clampi(i,0,GraphicsPreset.NAMES.size()-1)])
+		"grass": set_grass(GraphicsPreset.GRASS_NAMES[clampi(i,0,GraphicsPreset.GRASS_NAMES.size()-1)])
 		"scale": set_scale(SCALES[clampi(i,0,SCALES.size()-1)])
 		"display": set_fullscreen(i == 0)
 		"vsync": set_vsync(i == 0)

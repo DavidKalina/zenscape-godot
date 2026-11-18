@@ -37,6 +37,7 @@ const StickSteps = preload("res://scripts/endless/ui/stick_steps.gd")
 const ROWS: Array[Dictionary] = [
 	{"head":"Graphics"},
 	{"id":"preset","label":"Preset","opts":["Performance","Quality","Full"]},
+	{"id":"grass","label":"Grass","opts":["Ultra","High","Medium","Low"]},
 	{"id":"scale","label":"3D resolution","opts":["100%","85%","75%","67%"]},
 	{"id":"display","label":"Display","opts":["Fullscreen","Windowed"]},
 	{"id":"vsync","label":"VSync","opts":["On","Off"]},
