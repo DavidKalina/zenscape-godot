@@ -382,6 +382,14 @@ func setup(land_seed: int) -> void:
 	ground = ShaderMaterial.new()
 	ground.shader = preload("res://shaders/endless_ground.gdshader")
 	ground.set_shader_parameter("old_rock","--old-rock" in LaunchArgs.user_args())
+	# The land painted simpler from well above (endless_ground `far_simple`):
+	# --far-paint=full keeps the whole paint at every height, --far-paint=a,b
+	# moves the heights (m of the eye over the ground) it comes in over.
+	for a: String in LaunchArgs.user_args():
+		if a == "--far-paint=full": ground.set_shader_parameter("far_simple",Vector3(170.0,340.0,0.0))
+		elif a.begins_with("--far-paint="):
+			var fp := a.get_slice("=",1).split(",")
+			if fp.size() >= 2: ground.set_shader_parameter("far_simple",Vector3(float(fp[0]),maxf(float(fp[1]),float(fp[0])+1.0),1.0))
 	ground.set_shader_parameter("rock_pass1","--rock-pass1" in LaunchArgs.user_args())
 	# --summits=old: the high ground and summit snow before the summits round.
 	if "--summits=old" in LaunchArgs.user_args(): ground.set_shader_parameter("summit_mode",0.0)

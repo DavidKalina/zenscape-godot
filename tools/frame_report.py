@@ -41,7 +41,7 @@ def pct(sorted_values, p):
 
 
 FIXED = ("t", "frame", "tick", "drawn", "physics_steps", "physics_ms", "render_cpu", "render_gpu", "pipelines",
-         "draws", "objects", "nodes", "vram_mb", "x", "y", "z", "speed")
+         "draws", "objects", "nodes", "vram_mb", "x", "y", "z", "speed", "scale")
 
 
 def summary(rows):
@@ -100,6 +100,12 @@ def report(path, skip, top):
         statistics.mean(r["render_cpu"] for r in rows), statistics.mean(r["render_gpu"] for r in rows),
         statistics.mean(r["frame"] - r["tick"] for r in rows),
         sum(r["pipelines"] for r in rows), statistics.mean(r["draws"] for r in rows), statistics.mean(r["objects"] for r in rows)))
+    # The 3D's scale (dynamic resolution moves it): frames at a lower scale
+    # cost less, so two logs compare only where this line matches.
+    scales = sorted(r.get("scale", 0.0) for r in rows)
+    if scales[-1] > 0.0:
+        print("  3D scale %%: mean %.0f, lowest %.0f, %d%% of frames under the highest (%.0f)" % (
+            statistics.mean(scales), scales[0], round(100.0 * sum(1 for v in scales if v < scales[-1] - 0.5) / n), scales[-1]))
     means = sorted(((sum(r[p] for r in rows) / n, max(r[p] for r in rows), p) for p in parts), reverse=True)
     print("  parts, mean / worst ms:", ", ".join("%s %.2f/%.1f" % (p, m, w) for m, w, p in means[:16]))
     hs = hitches(rows)

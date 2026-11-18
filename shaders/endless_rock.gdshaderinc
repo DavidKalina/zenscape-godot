@@ -239,8 +239,14 @@ vec3 er_relief(vec3 p, vec3 n, float fp, vec3 rnd, out float cav) {
 // its steep walls are long thin triangles on the 1-2 m height grid, whose
 // normals swing column to column, and anything snapping that normal cut a
 // wall seen close into triangle-shaped tiles and stair-stepped bars.
-vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, vec4 shape, float ease, inout vec3 bumped, out vec3 glow) {
+// `far`: how far the rock is painted as seen from well above (0 none, 1 all;
+// endless_ground.gdshader `far_simple`): its tones, drift, beds, colour
+// zones, shape and bounce stay, on the land's own normal; the facets' cells
+// and planes, the relief, joints, fissures and their tilts are left out (at 1
+// not worked out at all: three 27-cell searches and the relief's taps).
+vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, vec4 shape, float ease, float far, inout vec3 bumped, out vec3 glow) {
 	glow = vec3(0.0);
+	float near = 1.0 - far;
 	float aa = ease;
 	float sz = rock_size;
 	vec3 q = p / sz;
@@ -254,33 +260,39 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 
 	// Planes: coarse cells (a good 20 m) tilt the face, fine cells (6 m) break
 	// it into facets.
-	vec3 rnd_b;
-	vec2 cell_b = er_cells(vec3(q.x, q.y * 1.5, q.z) / 38.0 + vec3(3.0, 1.0, 6.0), rnd_b);
-	vec3 nf = er_tilt(n, rnd_b, 0.09 * rock_bump * er_keep(38.0, fq));
+	vec3 rnd_b = vec3(0.5);
+	vec2 cell_b = vec2(1.0, 1.0);
+	float keep_b = er_keep(38.0, fq) * near;
+	vec3 nf = n;
+	if (near > 0.0) {
+		cell_b = er_cells(vec3(q.x, q.y * 1.5, q.z) / 38.0 + vec3(3.0, 1.0, 6.0), rnd_b);
+		nf = er_tilt(n, rnd_b, 0.09 * rock_bump * keep_b);
+	}
 	vec2 plane_id = vec2(0.0);
 	vec2 cell_c = vec2(1.0, 1.0);
 	vec3 rnd_c = vec3(0.5);
 	float plane_calm = rock_flat ? 0.0 : rock_plane_calm;
 	float facet_k = 0.0;
-	if (!rock_pass1 && rock_facets > 0.0) {
+	if (!rock_pass1 && rock_facets > 0.0 && near > 0.0) {
 		// Flat planes that follow the form (the normal snapped), each tilted a
 		// little more by its own random cell, then smaller planes up close.
 		float steep = smoothstep(0.97, 0.55, n.y);
-		facet_k = rock_facets * (0.7 + 0.3 * steep);
+		facet_k = rock_facets * (0.7 + 0.3 * steep) * near;
 		vec3 np = er_planes(n, p / sz, 9.0, 6.0, mix(0.05 + fq * 0.004, 0.5, aa), plane_id);
 		cell_c = er_cells(vec3(q.x, q.y * 1.3, q.z) / 70.0 + vec3(1.0, 8.0, 2.0), rnd_c);
 		np = er_tilt(np, rnd_c, 0.34 * rock_bump * (1.0 - 0.5 * plane_calm));
 		nf = normalize(mix(nf, np, clamp(0.95 * facet_k, 0.0, 1.0)));
-		nf = er_tilt(nf, rnd_b, 0.34 * rock_bump * er_keep(38.0, fq) * facet_k * (1.0 - 0.5 * plane_calm));
+		nf = er_tilt(nf, rnd_b, 0.34 * rock_bump * keep_b * facet_k * (1.0 - 0.5 * plane_calm));
 	}
 	float cav = 0.5;
-	if (!rock_pass1 && !rock_flat && rock_relief > 0.0) {
+	if (!rock_pass1 && !rock_flat && rock_relief > 0.0 && near > 0.0) {
 		vec3 off = er_relief(p, n, fp, rnd_c, cav);
-		nf = normalize(nf + off * rock_relief);
+		nf = normalize(nf + off * rock_relief * near);
+		cav = mix(0.5, cav, near);
 	}
 	vec3 rnd_f = vec3(0.5);
 	vec2 cell_f = vec2(1.0, 1.0);
-	float keep_f = er_keep(7.5, fq);
+	float keep_f = er_keep(7.5, fq) * near;
 	if (keep_f > 0.0) {
 		cell_f = er_cells(vec3(q.x, q.y * 2.6, q.z) / 7.5 + vec3(9.0, 4.0, 2.0), rnd_f);
 		nf = er_tilt(nf, rnd_f, (rock_pass1 ? 0.035 : 0.11 * (0.4 + 0.6 * facet_k)) * rock_bump * keep_f);
@@ -292,7 +304,7 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 	// reaches: its painted light leans to the shade tone, so a wall in real
 	// shadow is not painted with sunlit facets (they read as pale sheets).
 	if (!rock_flat) lit = mix(lit, min(lit, 0.3), smoothstep(0.6, 1.0, carved.x) * rock_carve_shade);
-	lit += (rnd_b.x - 0.5) * 0.07 * er_keep(38.0, fq) + (rnd_f.y - 0.5) * 0.02 * keep_f;
+	lit += (rnd_b.x - 0.5) * 0.07 * keep_b + (rnd_f.y - 0.5) * 0.02 * keep_f;
 	float steps = 3.0;
 	float soft = 0.18 + clamp(fq * 0.02, 0.0, 0.3);
 	float tier = lit * steps;
@@ -346,9 +358,9 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 	vec2 along = vec2(cos(az_j), sin(az_j));
 	float u = dot(q.xz, along);
 	float joint = 0.0;
-	{
+	if (near > 0.0) {
 		float bs = 6.4;
-		float jk = er_keep(bs, fq) * (1.0 - aa);
+		float jk = er_keep(bs, fq) * (1.0 - aa) * near;
 		float bid = floor(sy / bs);
 		vec3 hb = er_hash3(ivec3(int(bid), 5, 23));
 		float len = 7.0 + hb.x * 9.0;
@@ -361,24 +373,32 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 		// Each block catches the light a little differently.
 		col *= 1.0 + (er_hash3(ivec3(int(ju), int(bid), 77)).y - 0.5) * 0.22 * jk * smoothstep(0.55, 0.3, n.y);
 	}
-	float fis = er_vnoise(vec3(q.x / 11.0, q.y / 80.0, q.z / 11.0) + vec3(6.0, 3.0, 1.0));
-	float fisk = er_keep(2.0, fq);
-	float fissure = (1.0 - smoothstep(0.0, 0.07 + fq / 11.0 * 0.5, abs(fis - 0.5))) * fisk * smoothstep(0.7, 0.4, n.y);
+	// (Each of these fine marks only where a pixel can still show it.)
+	float fisk = er_keep(2.0, fq) * near;
+	float fissure = 0.0;
+	if (fisk > 0.0) {
+		float fis = er_vnoise(vec3(q.x / 11.0, q.y / 80.0, q.z / 11.0) + vec3(6.0, 3.0, 1.0));
+		fissure = (1.0 - smoothstep(0.0, 0.07 + fq / 11.0 * 0.5, abs(fis - 0.5))) * fisk * smoothstep(0.7, 0.4, n.y);
+	}
 	crack = max(crack, joint * (rock_flat ? 0.8 : 0.4));
 	col *= 1.0 - fissure * 0.28 * (1.0 - 0.6 * rock_rich);
 	// Cracks down the seams between facets.
 	float seam_f = (1.0 - smoothstep(0.0, 0.035 + fq / 7.5 * 0.5, cell_f.y)) * keep_f * 0.0;
-	float seam_b = (1.0 - smoothstep(0.0, 0.035 + fq / 38.0 * 0.5, cell_b.y)) * er_keep(38.0, fq) * 0.25;
+	float seam_b = (1.0 - smoothstep(0.0, 0.035 + fq / 38.0 * 0.5, cell_b.y)) * keep_b * 0.25;
 	float seam_c = (1.0 - smoothstep(0.0, 0.012 + fq / 70.0 * 0.6, cell_c.y)) * er_keep(70.0, fq) * 0.3 * facet_k;
 	crack = max(crack, max(max(seam_f, seam_b), seam_c) * (rock_flat ? 1.0 : min(1.0, rock_seams * 2.0)));
 	// Dry-brush strokes along the beds: light flecks on the lit side.
-	float stroke = er_vnoise(vec3(q.x / 7.0, q.y / 0.8, q.z / 7.0) + vec3(4.0, 1.0, 8.0));
 	float sk = er_keep(0.8, fq);
-	col *= 1.0 + (smoothstep(0.55, 0.62, stroke) - 0.5) * 0.4 * sk * (0.4 + t) * (1.0 - 0.6 * (rock_flat ? 0.0 : rock_calm));
+	if (sk > 0.0) {
+		float stroke = er_vnoise(vec3(q.x / 7.0, q.y / 0.8, q.z / 7.0) + vec3(4.0, 1.0, 8.0));
+		col *= 1.0 + (smoothstep(0.55, 0.62, stroke) - 0.5) * 0.4 * sk * (0.4 + t) * (1.0 - 0.6 * (rock_flat ? 0.0 : rock_calm));
+	}
 	// Weathering streaks running down the face.
-	float gully = er_vnoise(vec3(q.x / 2.6, q.y / 36.0, q.z / 2.6) + vec3(2.0, 0.0, 5.0));
 	float gk = er_keep(2.6, fq);
-	col *= 1.0 - smoothstep(0.55, 0.8, gully) * 0.5 * gk * (1.0 - nf.y) * (1.0 - 0.75 * rock_rich);
+	if (gk > 0.0) {
+		float gully = er_vnoise(vec3(q.x / 2.6, q.y / 36.0, q.z / 2.6) + vec3(2.0, 0.0, 5.0));
+		col *= 1.0 - smoothstep(0.55, 0.8, gully) * 0.5 * gk * (1.0 - nf.y) * (1.0 - 0.75 * rock_rich);
+	}
 	// A pale lip along the facet's top and along the lit side of a seam.
 	float shade = rock_pass1 ? 0.0 : 1.0 - smoothstep(0.05, 0.6, dot(nf, sun));
 	// In shade the lips keep a cool glint and the cracks stay violet, not black.
@@ -421,7 +441,7 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 		}
 		// Stains running down from each bed's lip: dark varnish or rust,
 		// streaked narrow across the face, long down it.
-		{
+		if (er_keep(1.4, fq) > 0.0) {
 			float f = fract(sy / 6.4);
 			float streak = er_vnoise(vec3(q.x / 1.4, q.y / 16.0, q.z / 1.4) + vec3(3.0, 7.0, 1.0));
 			float streak_b = er_vnoise(vec3(q.x / 4.5, q.y / 30.0, q.z / 4.5) + vec3(8.0, 2.0, 5.0));
@@ -432,7 +452,7 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 			col = mix(col, col * stain, run * sk * R);
 		}
 		// Lichen on what faces the sky and the sun: sage and orange flecks.
-		{
+		if (er_keep(2.5, fq) > 0.0) {
 			float lk = er_keep(2.5, fq);
 			float spot = smoothstep(0.62, 0.70, er_vnoise(q / 2.5 + vec3(5.0, 1.0, 7.0)));
 			float patchy = smoothstep(0.5, 0.75, er_vnoise(q / 21.0 + vec3(2.0, 9.0, 4.0)));
@@ -512,5 +532,5 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 }
 
 vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout vec3 bumped, out vec3 glow) {
-	return er_rock_shaped(p, n, fp, sun, mossy, carved, vec4(0.0), 0.0, bumped, glow);
+	return er_rock_shaped(p, n, fp, sun, mossy, carved, vec4(0.0), 0.0, 0.0, bumped, glow);
 }

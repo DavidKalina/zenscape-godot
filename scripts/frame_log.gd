@@ -81,7 +81,7 @@ static func end(tick_ms: float, plane_at: Vector3, speed: float) -> void:
 	var compiled := Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_DRAW)+Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SPECIALIZATION)+Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SURFACE)+Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_MESH)+Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_CANVAS)
 	if _cols != _parts.size():
 		_cols = _parts.size()
-		_file.store_line("t,frame,tick,drawn,physics_steps,physics_ms,render_cpu,render_gpu,pipelines,draws,objects,nodes,vram_mb,x,y,z,speed,"+",".join(_parts))
+		_file.store_line("t,frame,tick,drawn,physics_steps,physics_ms,render_cpu,render_gpu,pipelines,draws,objects,nodes,vram_mb,x,y,z,speed,scale,"+",".join(_parts))
 	var row := PackedStringArray([
 		"%.3f" % ((now-_start)/1000000.0),"%.2f" % ((now-_last)/1000.0),"%.2f" % tick_ms,
 		str(Engine.get_frames_drawn()-_drawn),str(frames-_physics),"%.2f" % (Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)*1000.0),
@@ -89,7 +89,8 @@ static func end(tick_ms: float, plane_at: Vector3, speed: float) -> void:
 		str(int(compiled-_compiled)),str(int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))),
 		str(int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))),str(int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))),
 		"%.0f" % (Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)/1048576.0),
-		"%.0f" % plane_at.x,"%.0f" % plane_at.y,"%.0f" % plane_at.z,"%.1f" % speed])
+		"%.0f" % plane_at.x,"%.0f" % plane_at.y,"%.0f" % plane_at.z,"%.1f" % speed,
+		"%.0f" % ((Engine.get_main_loop() as SceneTree).root.scaling_3d_scale*100.0)])
 	for i in _parts.size():
 		row.append("%.2f" % _ms[i])
 		_ms[i] = 0.0
