@@ -315,6 +315,8 @@ var lightning: Node3D
 var weather_rain: Node3D
 ## The grass carpet round the eye (off at the start under --no-grass), or
 ## null under --plain-look.
+## The 3D's scale following the frame rate (scripts/endless/dynamic_resolution.gd).
+var dynamic_res := preload("res://scripts/endless/dynamic_resolution.gd").new()
 var grass: Node3D
 ## The grass reacting to the wash and the gusts (scripts/endless/
 ## grass_react.gd), or null under --no-grass-react or --plain-look.
@@ -585,6 +587,7 @@ func _ready() -> void:
 	# The player's settings over them (scripts/endless/ui/game_settings.gd).
 	GameSettings.begin()
 	GameSettings.hub.changed.connect(_setting_changed)
+	dynamic_res.begin(get_tree().root)
 	EndlessLook.reset_season_globals()
 	# The world: its shader globals over the reset, its start under the flags.
 	world = WorldProfile.current()
@@ -1448,6 +1451,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	return got
 
 func _process(delta: float) -> void:
+	dynamic_res.tick(delta)
 	if not walk_ready: return
 	if photo.active:
 		photo.step(minf(delta,1.0/20.0))
@@ -2162,7 +2166,8 @@ func _exit_tree() -> void:
 const SCALES := [1.0,0.85,0.75,0.67]
 func _next_scale() -> void:
 	var rr := preload("res://scripts/render_resolution.gd")
-	var now := get_viewport().scaling_3d_scale
+	# (The scale chosen, not the one dynamic resolution has it at now.)
+	var now := GameSettings.ceiling()
 	var i := 0
 	for k in SCALES.size():
 		if absf(SCALES[k]-now) < 0.01: i = k
@@ -2189,6 +2194,7 @@ func _next_preset() -> void:
 ## follows HUD hints, unless the title has it hidden, and the new HUD's
 ## hints (FlightHud.set_hints) with it.
 func _setting_changed(key: String) -> void:
+	if key in ["scale","dynamic"]: dynamic_res.sync()
 	if key != "hints": return
 	if _hint != null: _hint.visible = GameSettings.hud_hints() and stage == null
 	FlightHud.set_hints(GameSettings.hud_hints())
@@ -2279,7 +2285,7 @@ func _show_hud() -> void:
 		seed,ManualLanding.NAMES[hand_landing.phase],float(plane.speed),p.y-maxf(field.height(p.x,p.z),Field.SEA_Y),"down" if flaps else "up",
 		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
-		"  ·  3D at %d%%  ·  %s (F3)" % [roundi(get_viewport().scaling_3d_scale*100.0),GraphicsPreset.title()],
+		"  ·  3D at %d%%%s  ·  %s (F3)" % [roundi(get_viewport().scaling_3d_scale*100.0),dynamic_res.note(),GraphicsPreset.title()],
 		("  ·  %s, %05.2f h (%s)%s" % [look.mood_title(),look.hour(),look.time_note(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_rock_note()+_hall_note()+trees.note()+knock.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]

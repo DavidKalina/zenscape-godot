@@ -17,6 +17,7 @@ extends RefCounted
 ## | graphics preset | look.cfg [graphics] preset | scripts/graphics_preset.gd at the flight's start: `restart` opens the flight again on it (the grass and trees read its flags when they are made) |
 ## | grass | look.cfg [graphics] grass_level | scripts/graphics_preset.gd's GRASS flags over the preset's, at the flight's start as the preset is; until one is picked, the preset's own (`grass_default`) |
 ## | 3D resolution | look.cfg [display] scale_3d | RenderResolution.scale_override, as F2 |
+## | dynamic resolution | look.cfg [display] dynamic_3d (on until chosen) | scripts/endless/dynamic_resolution.gd: the 3D's scale stepped down while the GPU can't hold 60 frames a second and up again when it can, never over the 3D resolution chosen (`ceiling`) |
 ## | full screen | look.cfg [display] fullscreen | DisplayServer.window_set_mode |
 ## | vsync | look.cfg [display] vsync | DisplayServer.window_set_vsync_mode |
 ## | Master, Effects, Ambience | sound.cfg [sound] master, sound, ambience | the buses Master, SFX (SFX Air and SFX Bore feed it; the Genesis bus too) and Ambience, through genesis_audio's and flight_sound's `apply_settings` |
@@ -62,7 +63,7 @@ const VOLUME_STEP := 0.05
 ## The window a start in full screen falls back to when the player picks Windowed.
 const WINDOW := Vector2i(1440,900)
 
-## `changed(key)` after a setter: "preset", "grass", "scale", "display", "vsync",
+## `changed(key)` after a setter: "preset", "grass", "scale", "dynamic", "display", "vsync",
 ## "master", "effects", "ambience", "mouse", "invert", "hints".
 class Hub:
 	signal changed(key: String)
@@ -76,6 +77,8 @@ static var _preset := ""
 static var _grass := ""
 static var _grass_kept := false
 static var _scale := -1.0
+static var _boot_scale := 1.0
+static var _dynamic := true
 static var _fullscreen := true
 static var _fullscreen_kept := false
 static var _vsync := false
@@ -98,6 +101,9 @@ static func begin() -> void:
 	if GraphicsPreset.current in GraphicsPreset.PRESETS: _preset = GraphicsPreset.current
 	if GraphicsPreset.grass in GraphicsPreset.GRASS: _grass = GraphicsPreset.grass
 	if _scale > 0.0 and not _flag("--render-scale="): _apply_scale()
+	# (The scene has just set its own scale: the ceiling until one is chosen.)
+	var root := _root()
+	if root != null: _boot_scale = root.scaling_3d_scale
 	if first and DisplayServer.get_name() != "headless":
 		if _fullscreen_kept and not _window_flag(): _apply_window(_fullscreen)
 		if _vsync_kept and not "--disable-vsync" in OS.get_cmdline_args(): _apply_vsync(_vsync)
@@ -138,6 +144,7 @@ static func _ensure() -> void:
 	if look.load(_dir.path_join(LOOK)) == OK:
 		_grass_kept = str(look.get_value("graphics","grass_level","")) in GraphicsPreset.GRASS
 		if look.has_section_key("display","scale_3d"): _scale = _near_scale(float(look.get_value("display","scale_3d")))
+		_dynamic = bool(look.get_value("display","dynamic_3d",true))
 		_fullscreen_kept = look.has_section_key("display","fullscreen")
 		if _fullscreen_kept: _fullscreen = bool(look.get_value("display","fullscreen"))
 		_vsync_kept = look.has_section_key("display","vsync")
@@ -239,6 +246,23 @@ static func set_scale(value: float) -> void:
 	_apply_scale()
 	_put(LOOK,"display","scale_3d",_scale)
 	hub.changed.emit("scale")
+
+## The 3D resolution chosen (or, until one is, the scale the scene started
+## at): the most dynamic resolution draws at. `scale` is what is drawn now.
+static func ceiling() -> float:
+	_ensure()
+	return _scale if _scale > 0.0 else _boot_scale
+
+## Whether the 3D's scale follows the frame rate (scripts/endless/dynamic_resolution.gd).
+static func dynamic_resolution() -> bool:
+	_ensure()
+	return _dynamic
+
+static func set_dynamic_resolution(on: bool) -> void:
+	_ensure()
+	_dynamic = on
+	_put(LOOK,"display","dynamic_3d",on)
+	hub.changed.emit("dynamic")
 
 static func _near_scale(value: float) -> float:
 	var best: float = SCALES[0]
@@ -383,7 +407,8 @@ static func index(id: String) -> int:
 	match id:
 		"preset": return maxi(GraphicsPreset.NAMES.find(_preset),0)
 		"grass": return maxi(GraphicsPreset.GRASS_NAMES.find(_grass),0)
-		"scale": return SCALES.find(_near_scale(scale()))
+		"scale": return SCALES.find(_near_scale(ceiling()))
+		"dynamic": return 0 if _dynamic else 1
 		"display": return 0 if fullscreen() else 1
 		"vsync": return 0 if vsync() else 1
 		"invert": return 0 if _invert else 1
@@ -396,6 +421,7 @@ static func pick(id: String, i: int) -> void:
 		"preset": set_preset(GraphicsPreset.NAMES[clampi(i,0,GraphicsPreset.NAMES.size()-1)])
 		"grass": set_grass(GraphicsPreset.GRASS_NAMES[clampi(i,0,GraphicsPreset.GRASS_NAMES.size()-1)])
 		"scale": set_scale(SCALES[clampi(i,0,SCALES.size()-1)])
+		"dynamic": set_dynamic_resolution(i == 0)
 		"display": set_fullscreen(i == 0)
 		"vsync": set_vsync(i == 0)
 		"invert": set_invert_pitch(i == 0)
