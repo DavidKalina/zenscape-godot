@@ -77,7 +77,6 @@ static var _preset := ""
 static var _grass := ""
 static var _grass_kept := false
 static var _scale := -1.0
-static var _boot_scale := 1.0
 static var _dynamic := true
 static var _fullscreen := true
 static var _fullscreen_kept := false
@@ -101,9 +100,6 @@ static func begin() -> void:
 	if GraphicsPreset.current in GraphicsPreset.PRESETS: _preset = GraphicsPreset.current
 	if GraphicsPreset.grass in GraphicsPreset.GRASS: _grass = GraphicsPreset.grass
 	if _scale > 0.0 and not _flag("--render-scale="): _apply_scale()
-	# (The scene has just set its own scale: the ceiling until one is chosen.)
-	var root := _root()
-	if root != null: _boot_scale = root.scaling_3d_scale
 	if first and DisplayServer.get_name() != "headless":
 		if _fullscreen_kept and not _window_flag(): _apply_window(_fullscreen)
 		if _vsync_kept and not "--disable-vsync" in OS.get_cmdline_args(): _apply_vsync(_vsync)
@@ -247,11 +243,12 @@ static func set_scale(value: float) -> void:
 	_put(LOOK,"display","scale_3d",_scale)
 	hub.changed.emit("scale")
 
-## The 3D resolution chosen (or, until one is, the scale the scene started
-## at): the most dynamic resolution draws at. `scale` is what is drawn now.
+## The 3D resolution chosen: the scale RenderResolution last gave the window
+## (Settings > 3D resolution or F2, else --render-scale, else the preset's
+## lines over the window's), the most dynamic resolution draws at. `scale` is
+## what is drawn now.
 static func ceiling() -> float:
-	_ensure()
-	return _scale if _scale > 0.0 else _boot_scale
+	return RenderResolution.applied
 
 ## Whether the 3D's scale follows the frame rate (scripts/endless/dynamic_resolution.gd).
 static func dynamic_resolution() -> bool:

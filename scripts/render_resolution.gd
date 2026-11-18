@@ -41,6 +41,9 @@ static var native_scale := 1.0
 ## A graphics preset's height (scripts/graphics_preset.gd), over the kept cap
 ## while above 0; a scale (F2, --render-scale) still wins over it.
 static var preset_lines := 0
+## The scale `apply` last gave the root window: the player's own, which
+## dynamic resolution (scripts/endless/dynamic_resolution.gd) draws under.
+static var applied := 1.0
 
 static func apply(viewport: Viewport, cap: int) -> void:
 	# In pixels: a Retina window's visible rect is in points, half its pixels.
@@ -55,6 +58,7 @@ static func apply(viewport: Viewport, cap: int) -> void:
 	if scale_override > 0.0: scale = scale_override
 	viewport.scaling_3d_mode = mode
 	viewport.scaling_3d_scale = scale
+	if viewport is Window: applied = scale
 
 static func load_cap(path := SETTINGS_PATH) -> int:
 	var file := ConfigFile.new()

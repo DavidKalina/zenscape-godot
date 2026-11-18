@@ -313,10 +313,10 @@ var _weather_debug: Label
 var lightning: Node3D
 ## The weather's rain and wet (scripts/endless/weather_rain.gd), with weather.
 var weather_rain: Node3D
-## The grass carpet round the eye (off at the start under --no-grass), or
-## null under --plain-look.
 ## The 3D's scale following the frame rate (scripts/endless/dynamic_resolution.gd).
 var dynamic_res := preload("res://scripts/endless/dynamic_resolution.gd").new()
+## The grass carpet round the eye (off at the start under --no-grass), or
+## null under --plain-look.
 var grass: Node3D
 ## The grass reacting to the wash and the gusts (scripts/endless/
 ## grass_react.gd), or null under --no-grass-react or --plain-look.
@@ -1451,7 +1451,8 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	return got
 
 func _process(delta: float) -> void:
-	dynamic_res.tick(delta)
+	# (A photo is taken at the 3D resolution chosen.)
+	dynamic_res.tick(delta,photo != null and photo.active)
 	if not walk_ready: return
 	if photo.active:
 		photo.step(minf(delta,1.0/20.0))

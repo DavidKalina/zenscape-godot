@@ -1,12 +1,18 @@
 extends RefCounted
 ## Dynamic resolution: the 3D drawn at fewer pixels while the GPU can't hold
-## TARGET_FPS, and at more again when it can, never above the player's own
-## 3D resolution (GameSettings.ceiling, Settings > 3D resolution).
+## TARGET_FPS (the frame cap, when that is lower), and at more again when it
+## can, never above the player's own 3D resolution (GameSettings.ceiling: the
+## scale RenderResolution last gave the window, from Settings > 3D resolution,
+## --render-scale or the preset's lines).
 ##
 ##     var dyn := DynamicResolution.new()
 ##     dyn.begin(get_viewport())     # after GameSettings.begin
-##     dyn.tick(delta)               # every frame
+##     dyn.tick(delta)               # every frame (`hold`: at the ceiling, photo mode)
 ##     dyn.sync()                    # after the player changes a setting
+##
+## RenderResolution sets the window's scale again whenever the window is
+## resized: `tick` sees the scale is no longer its own and reads the ceiling
+## again.
 ##
 ## It reads the GPU's time for the viewport's last frame (the flight turns
 ## the measuring on) and moves through STEPS. Down when the time has sat over
@@ -25,6 +31,7 @@ extends RefCounted
 ##
 ## Settings > Dynamic resolution turns it off (look.cfg [display] dynamic_3d);
 ## --dynamic-res=0 or =1 for one run, --dynamic-fps=N the frame rate held.
+## The scale is a column of the frame log (scripts/frame_log.gd `scale`).
 ## Off in headless and harness (-s) runs unless --dynamic-res=1, so a
 ## measurement draws what it asked for.
 
@@ -56,6 +63,7 @@ var steps_up := 0
 
 var _viewport: Viewport
 var _budget := 1000.0/TARGET_FPS
+var _own_fps := false
 var _forced := -1
 var _over := 0.0
 var _under := 0.0
@@ -67,7 +75,9 @@ func begin(viewport: Viewport) -> void:
 	_settle = START
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--dynamic-res="): _forced = 1 if a.get_slice("=",1) != "0" else 0
-		elif a.begins_with("--dynamic-fps="): _budget = 1000.0/clampf(a.get_slice("=",1).to_float(),20.0,240.0)
+		elif a.begins_with("--dynamic-fps="):
+			_budget = 1000.0/clampf(a.get_slice("=",1).to_float(),20.0,240.0)
+			_own_fps = true
 	sync()
 
 ## The player's settings read again: on or off, and the ceiling. Off (or a
@@ -83,8 +93,18 @@ func sync() -> void:
 	scale = _viewport.scaling_3d_scale
 	if not on or scale > ceiling: _step_to(ceiling)
 
-func tick(delta: float) -> void:
+func tick(delta: float, hold := false) -> void:
 	if not on or _viewport == null: return
+	# Set by another hand (the window resized, RenderResolution.apply): the
+	# ceiling may have moved with it.
+	if absf(_viewport.scaling_3d_scale-scale) > 0.001:
+		sync()
+		_step_to(scale)
+	if hold:
+		if scale < ceiling-0.005: _step_to(ceiling)
+		return
+	# No faster than the frame cap in force (a preset's 45 has 22 ms a frame).
+	if not _own_fps: _budget = 1000.0/clampf(minf(TARGET_FPS,float(Engine.max_fps)) if Engine.max_fps > 0 else TARGET_FPS,20.0,240.0)
 	var now := RenderingServer.viewport_get_measured_render_time_gpu(_viewport.get_viewport_rid())
 	if now <= 0.0: return
 	if _settle > 0.0:
@@ -92,24 +112,23 @@ func tick(delta: float) -> void:
 		gpu_ms = now
 		return
 	gpu_ms = lerpf(gpu_ms,now,clampf(delta/SMOOTH,0.0,1.0)) if gpu_ms > 0.0 else now
-	var i := _index(scale)
 	if gpu_ms > _budget*DOWN:
 		_under = 0.0
 		_over += delta
-		if _over >= DOWN_HOLD and i < STEPS.size()-1:
+		if _over >= DOWN_HOLD and scale > STEPS[-1]+0.005:
 			steps_down += 1
-			_step_to(STEPS[_fit_down(i)])
+			_step_to(_fit_down())
 		return
 	_over = 0.0
-	var up := _step_up(i)
-	if up < 0:
+	var up := _step_up()
+	if up < 0.0:
 		_under = 0.0
 		return
-	if _at(STEPS[up],UP_WITH) < _budget*UP:
+	if _at(up,UP_WITH) < _budget*UP:
 		_under += delta
 		if _under >= UP_HOLD:
 			steps_up += 1
-			_step_to(STEPS[up])
+			_step_to(up)
 	else: _under = 0.0
 
 ## The GPU's time at scale `s`, taking `with` of it to follow the pixel count.
@@ -117,22 +136,20 @@ func _at(s: float, with: float) -> float:
 	var ratio := (s/scale)*(s/scale)
 	return gpu_ms*(1.0+with*(ratio-1.0))
 
-## The first step below `i` that should fit the budget (the last if none does).
-func _fit_down(i: int) -> int:
-	for k in range(i+1,STEPS.size()):
-		if _at(STEPS[k],DOWN_WITH) < _budget*DOWN_FIT: return k
-	return STEPS.size()-1
+## The first step below the scale that should fit the budget (the last if
+## none does).
+func _fit_down() -> float:
+	for s: float in STEPS:
+		if s < scale-0.005 and _at(s,DOWN_WITH) < _budget*DOWN_FIT: return s
+	return STEPS[-1]
 
-## The step above `i` that the ceiling allows (the ceiling itself when it lies
-## between two steps), or -1.
-func _step_up(i: int) -> int:
-	if scale >= ceiling-0.005 or i <= 0: return -1
-	return i-1 if STEPS[i-1] <= ceiling+0.005 else -1
-
-func _index(s: float) -> int:
-	var best := 0
-	for k in STEPS.size():
-		if absf(STEPS[k]-s) < absf(STEPS[best]-s): best = k
+## The next scale up: the lowest step over the scale that the ceiling allows,
+## else the ceiling itself (it lies between two steps), or -1 at the ceiling.
+func _step_up() -> float:
+	if scale >= ceiling-0.005: return -1.0
+	var best := ceiling
+	for s: float in STEPS:
+		if s > scale+0.005 and s < best: best = s
 	return best
 
 func _step_to(s: float) -> void:
