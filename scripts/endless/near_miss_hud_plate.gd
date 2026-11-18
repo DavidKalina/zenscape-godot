@@ -90,6 +90,19 @@ var fuse := false
 ## "Flight best" on a bank that beats this flight's best line.
 var show_best := true
 
+## The plate's fire on a hot line (`_burn`); `--line-fire=off` leaves it out.
+var fire := not ("--line-fire=off" in preload("res://scripts/launch_args.gd").user_args())
+## Where it starts (the multiplier's heat, 0 at x1 to 1 at the cap), how tall at
+## its most (M over the plate's middle), and how fast it takes and dies (s).
+const FIRE_FROM := 0.04
+const FIRE_FULL := 0.85
+const FIRE_TALL := 62.0
+const FIRE_IN := 0.6
+const FIRE_OUT := 0.35
+var _flame: Node2D
+var _fire := 0.0
+var _plate_right := 120.0
+
 var _k1 := 1.0
 ## The newest pass shown {id, name, fl, clear, band, tag, age}; {} with no line.
 var _pass := {}
@@ -273,6 +286,51 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 	_prev_mult = mult
 	_block.modulate.a = _v_a
 	_block.queue_redraw()
+	_burn(delta,near)
+
+## The plate's fire (shaders/line_flame.gdshader): off the plate's top while a
+## line is live and its multiplier is past FIRE_FROM of the way to its cap,
+## taller with it; a step of the multiplier leaps it. Out on a bank or a loss.
+func _burn(delta: float, near: NearMiss) -> void:
+	if not fire: return
+	if _flame == null:
+		_flame = Node2D.new()
+		_flame.show_behind_parent = true
+		var mat := ShaderMaterial.new()
+		mat.shader = preload("res://shaders/line_flame.gdshader")
+		# The flames' shape: smooth noise that tiles, so it scrolls with no seam.
+		var noise := FastNoiseLite.new()
+		noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		noise.frequency = 0.022
+		noise.fractal_octaves = 2
+		noise.fractal_gain = 0.4
+		var grain := NoiseTexture2D.new()
+		grain.width = 256
+		grain.height = 256
+		grain.seamless = true
+		grain.seamless_blend_skirt = 0.3
+		grain.noise = noise
+		mat.set_shader_parameter(&"grain",grain)
+		_flame.material = mat
+		_flame.draw.connect(_draw_flame)
+		_block.add_child(_flame)
+	var live := _bank.is_empty() and _loss.is_empty() and near.chain_points >= 1.0
+	var want := smoothstep(FIRE_FROM,FIRE_FULL,_mult_heat(_mult_shown)) if live else 0.0
+	_fire = move_toward(_fire,want,delta/(FIRE_IN if want > _fire else FIRE_OUT))
+	_flame.visible = _fire > 0.005
+	if not _flame.visible: return
+	var mat2 := _flame.material as ShaderMaterial
+	mat2.set_shader_parameter(&"heat",_fire)
+	mat2.set_shader_parameter(&"flare",1.0-smoothstep(0.0,0.5,_mult_kick))
+	_flame.queue_redraw()
+
+func _draw_flame() -> void:
+	# From the disc's left to the plate's end, the foot behind the plate.
+	var x0 := -6.0
+	var x1 := maxf(_plate_right+3.0,x0+40.0)
+	var top := 14.0-FIRE_TALL
+	_flame.draw_colored_polygon(PackedVector2Array([_p(x0,top),_p(x1,top),_p(x1,14.0),_p(x0,14.0)]),Color.WHITE,
+		PackedVector2Array([Vector2(0,0),Vector2(1,0),Vector2(1,1),Vector2(0,1)]))
 
 func _on_pass(m: Dictionary, near: NearMiss) -> void:
 	var band := str(m.band)
@@ -642,6 +700,7 @@ func _paint_plate() -> void:
 			mul_gap = lerpf(0.0,9.0,_v_mul_w/46.0)
 	var best_w := (10.0+_w(Kit.MED,"FLIGHT BEST",10.0,0.2))*_v_best
 	var right := x+lost_w+tot_w+mul_gap+mul_w+best_w+19.0
+	_plate_right = right
 	_plate(16.0,0.0,right-16.0,30.0,Color(Kit.PLATE,0.86))
 	if _v_lost:
 		_text(Kit.MED,"LINE LOST",x,15.0,10.5,0.2,LOST)

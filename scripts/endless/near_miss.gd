@@ -197,6 +197,14 @@ var clock := 0.0
 var line_new := not ("--line-score=old" in preload("res://scripts/launch_args.gd").user_args())
 var score_line := LineScoreS.Line.new()
 var line_id := 0
+# The log's flying (`_log_track`): the path last frame, its load (g) and the
+# time to the next track row.
+var _log_vel := Vector3.INF
+var _log_p := Vector3.INF
+# The land's walls at the last track row: left, right, ahead (m; INF for none).
+var _log_walls: Array[float] = [INF,INF,INF]
+var _log_g := 1.0
+var _log_next := 0.0
 var _end_reason := "banked"
 
 var _ground := Tracker.new()
@@ -464,7 +472,9 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	# The ground's moment.
 	if _track(_ground,ground_clear,reach,speed,game):
 		if _ground.surface in ["tree","stone"]:
-			if _ground.least < CLOSE*WorldScale.span: _moment("graze",_ground,reach,cruise,out,game)
+			# A tree of a gap being flown is the gap's (LineMoves `_gap`).
+			if _ground.least < CLOSE*WorldScale.span and not (_ground.surface == "tree" and moves.gap_live()):
+				_moment("graze",_ground,reach,cruise,out,game)
 		elif _ground.closing >= PULL_MIN*_pace(game): _moment("pull-out",_ground,reach,cruise,out,game)
 	if _ground.active:
 		_ground.closing = maxf(_ground.closing,closing)
@@ -474,7 +484,8 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 			_ground.id = hash(Vector2i(floori(ground_at.x/FARM_CELL),floori(ground_at.z/FARM_CELL)))
 	# The stone's moment.
 	var stone_reach := STONE_REACH*WorldScale.span
-	if _track(_stone,stone_clear,stone_reach,speed,game) and (_stone.spur or not _stone.over):
+	if _track(_stone,stone_clear,stone_reach,speed,game) and (_stone.spur or not _stone.over) \
+			and not (_stone.surface == "tree" and moves.gap_live()):
 		_moment("thread" if _stone.sides == 3 else "graze",_stone,stone_reach,cruise,out,game)
 	if _stone.active:
 		if left_clear < stone_reach: _stone.sides |= 1
@@ -539,6 +550,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		_moment("graze",_shot,float(shot.reach),cruise,out,game)
 	# The held moves; one done a frame is chained when nothing else was.
 	moves.step(delta,game,self)
+	if LineLogS.on: _log_track(delta,game)
 	if not out.has("near") and not moves.pending.is_empty():
 		var held: Dictionary = moves.pending.pop_front()
 		held.farm = float(held.get("farm",_farm(held.at,int(held.id))))
@@ -755,7 +767,8 @@ func _line_moment(m: Dictionary, game: Node3D) -> bool:
 	var raw := {"k":float(m.get("k",0.0)),"speed":float(m.get("speed",float(m.get("pace",1.0))*cruise)),
 		"cruise":cruise,"top":float(plane.boost_speed()),
 		"roll_deg":rad_to_deg(float(m.get("roll",LineMoves.roll_of(plane)))),
-		"height":at.y-maxf(land,float(game.water_at(at))),"under":bool(m.get("under",false))}
+		"height":at.y-maxf(land,float(game.water_at(at))),"under":bool(m.get("under",false)),
+		"kind":kind,"width":float(m.get("width",INF)),"closing":float(m.get("closing",0.0))}
 	var f := LineScoreS.factors(raw)
 	var hold := minf(float(m.held)/maxf(float(m.get("held_min",1.0)),0.001),float(t.hold_top)) if m.has("held") else 1.0
 	var farm := 1.0 if m.has("shot") else _farm_same(int(m.get("id",0)))
@@ -776,9 +789,67 @@ func _line_moment(m: Dictionary, game: Node3D) -> bool:
 		"band":str(m.band),"k":raw.k,"clear":float(m.get("clear",INF)),"speed":raw.speed,"cruise":raw.cruise,"top":raw.top,
 		"closing":float(m.get("closing",0.0)),"roll_deg":raw.roll_deg,"height":raw.height,"under":raw.under,
 		"width":float(m.get("width",INF)),"hold":hold,"farm":farm,"f_close":f.close,"f_fast":f.fast,"f_knife":f.knife,
-		"f_low":f.low,"f_under":f.under,"product":f.product,"points":units,"run":m.run,"run_n":m.run_n,
-		"flourish":m.flourish,"mult":score_line.mult,"line_total":score_line.total(),"old_points":float(m.points)})
+		"f_low":f.low,"f_under":f.under,"f_tight":f.tight,"f_pull":f.pull,"product":f.product,"points":units,"run":m.run,"run_n":m.run_n,
+		"flourish":m.flourish,"mult":score_line.mult,"line_total":score_line.total(),"old_points":float(m.points),
+		"x":at.x,"y":at.y,"z":at.z,"turn_dps":rad_to_deg(moves.turn_rate()),"g":_log_g,"climb":moves.path().y,
+		"throttle":float(plane.throttle),"surge":float(plane.surge),
+		"wall_l":_log_walls[0],"wall_r":_log_walls[1],"wall_ahead":_log_walls[2]})
 	return true
+
+## The log's flying (LineLog's track rows): the load on the path each frame,
+## and a row every LineLog.TRACK_EVERY s in the air. Only with --line-log.
+func _log_track(delta: float, game: Node3D) -> void:
+	if not bool(game.hand_landing.flying()) or delta <= 0.0:
+		_log_vel = Vector3.INF
+		_log_p = Vector3.INF
+		_log_g = 1.0
+		return
+	var plane = game.plane
+	var p: Vector3 = plane.position
+	# From the plane's own steps, not LineMoves's smoothed path (that one starts
+	# from rest, which would read as a hard pull).
+	if _log_p != Vector3.INF:
+		var step := (p-_log_p)/delta
+		if _log_vel != Vector3.INF:
+			var pull := ((step-_log_vel)/delta+Vector3(0.0,9.81,0.0)).length()/9.81
+			_log_g = lerpf(_log_g,pull,1.0-exp(-delta/0.15))
+		_log_vel = step
+	_log_p = p
+	var v := moves.path()
+	_log_next -= delta
+	if _log_next > 0.0: return
+	_log_next = LineLogS.TRACK_EVERY
+	var ahead := Vector3(v.x,0.0,v.z).normalized()
+	var port := Vector3(ahead.z,0.0,-ahead.x)
+	_log_walls = [_log_wall(game,p,port),_log_wall(game,p,-port),_log_wall(game,p,ahead)]
+	var land := float(game.field.height(p.x,p.z)) if game.field != null else -INF
+	LineLogS.write({"row":"track","t":snappedf(clock,0.001),"line":line_id if score_line.count > 0 else 0,
+		"speed":float(plane.speed),"cruise":float(plane.cruise()),"top":float(plane.boost_speed()),
+		"roll_deg":rad_to_deg(LineMoves.roll_of(plane)),"height":p.y-maxf(land,float(game.water_at(p))),
+		"clear":ground_clear,"stone":stone_clear,"left":left_clear,"right":right_clear,"over":over_clear,
+		"skim":skimming,"under":overhead,"surface":ground_surface,"x":p.x,"y":p.y,"z":p.z,
+		"turn_dps":rad_to_deg(moves.turn_rate()),"g":_log_g,"climb":v.y,
+		"throttle":float(plane.throttle),"surge":float(plane.surge),
+		"wall_l":_log_walls[0],"wall_r":_log_walls[1],"wall_ahead":_log_walls[2]})
+
+## How far (m) the land stands level with the plane along `dir` (flat, a unit)
+## from `p`: the land's height walked out to LineLog.WALL_FAR, the crossing
+## halved in; INF for open air. The land only (no arch, ruin or tree).
+func _log_wall(game: Node3D, p: Vector3, dir: Vector3) -> float:
+	if game.field == null or dir == Vector3.ZERO: return INF
+	var near_d := 0.0
+	var d := LineLogS.WALL_STEP
+	while d <= LineLogS.WALL_FAR:
+		if float(game.field.height(p.x+dir.x*d,p.z+dir.z*d)) >= p.y:
+			var far_d := d
+			for i in 5:
+				var mid := (near_d+far_d)*0.5
+				if float(game.field.height(p.x+dir.x*mid,p.z+dir.z*mid)) >= p.y: far_d = mid
+				else: near_d = mid
+			return far_d
+		near_d = d
+		d += LineLogS.WALL_STEP
+	return INF
 
 ## The new score's chain: the moment's points (units x points_per_unit), the
 ## line's raw sum (moments and run bonuses) as the chain's points, the bank put

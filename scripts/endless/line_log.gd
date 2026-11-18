@@ -16,10 +16,26 @@ extends RefCounted
 ## multiplier and running total (units) after it, and the old formula's points.
 ## A line's end (row = end): the line, its multiplier and total, and why
 ## (banked or lost).
+## The flying itself, on a moment's row and on a track row (row = track, one
+## every TRACK_EVERY s in the air, scored or not; line = the line under way, 0
+## for none): where (x, y, z), turn_dps (the heading's rate, deg/s, + to the
+## left), g (the load on the path: 1 level, more in a turn or a pull), climb
+## (m/s), throttle, surge (0..1), and on a track row the clearances (m): clear
+## (the ground's), stone, left, right, over (blank for nothing in reach), skim.
+## wall_l, wall_r, wall_ahead (m): how far the land stands at the plane's own
+## height, level to its left, right and along its path, out to WALL_FAR (blank
+## for open air); a moment's row carries the last track row's.
 
 const COLUMNS := ["row","t","line","kind","move","surface","band","k","clear","speed","cruise","top","closing",
 	"roll_deg","height","under","width","hold","farm","f_close","f_fast","f_knife","f_low","f_under","product",
-	"points","run","run_n","flourish","mult","line_total","old_points","reason"]
+	"points","run","run_n","flourish","mult","line_total","old_points","reason",
+	"x","y","z","turn_dps","g","climb","throttle","surge","stone","left","right","over","skim","wall_l","wall_r","wall_ahead","f_tight","f_pull"]
+
+## Seconds between a flight's track rows.
+const TRACK_EVERY := 0.2
+## The walls' walk: how far out the land is looked for, and the step (m).
+const WALL_FAR := 240.0
+const WALL_STEP := 6.0
 
 static var on := false
 static var _file: FileAccess
