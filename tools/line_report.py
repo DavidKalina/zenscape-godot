@@ -28,8 +28,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TUNE_PATH = os.path.join(ROOT, "scripts", "endless", "line_tune.json")
-FACTORS = ["close", "fast", "knife", "low", "under"]
-TAGS = {"close": "CLOSE", "fast": "FAST", "knife": "KNIFE", "low": "LOW", "under": "UNDER"}
+FACTORS = ["close", "fast", "knife", "low", "under", "tight", "pull"]
+TAGS = {"close": "CLOSE", "fast": "FAST", "knife": "KNIFE", "low": "LOW", "under": "UNDER", "tight": "TIGHT",
+        "pull": "LATE"}
 
 
 def load_tune(sets):
@@ -63,6 +64,9 @@ def factors(r, t):
         "knife": ramp(min(abs(r["roll_deg"]), 90.0), t["knife_from"], t["knife_to"], t["knife_cap"]),
         "low": ramp(r["height"], t["low_from"], t["low_to"], t["low_cap"]),
         "under": t["under"] if r["under"] else 1.0,
+        "tight": ramp(r.get("width", 1e9), t["tight_from"], t["tight_to"], t["tight_cap"]),
+        "pull": ramp(r.get("closing", 0.0), t["pull_from"], t["pull_to"], t["pull_cap"])
+        if r.get("kind") == "pull-out" else 1.0,
     }
     p = 1.0
     for n in FACTORS:
@@ -88,9 +92,49 @@ def num(v, default=0.0):
         return default
 
 
-def read_log(path):
+def read_all(path):
     with open(path, newline="") as f:
         return list(csv.DictReader(f))
+
+
+def read_log(path):
+    """The scored rows (moments and line ends)."""
+    return [r for r in read_all(path) if r["row"] != "track"]
+
+
+def read_track(path):
+    """The flying's rows (row = track), as numbers, in time order."""
+    keys = ["t", "speed", "cruise", "roll_deg", "height", "clear", "turn_dps", "g", "climb", "surge",
+            "wall_l", "wall_r", "wall_ahead"]
+    return [{k: num(r.get(k, ""), float("nan")) for k in keys} for r in read_all(path) if r["row"] == "track"]
+
+
+def clock(t):
+    return "%d:%04.1f" % (int(t // 60), t % 60)
+
+
+def flying(track, t0, t1):
+    """The flying between t0 and t1 as a card's line, or None with no track."""
+    rows = [r for r in track if t0 - 0.2 <= r["t"] <= t1 + 0.2]
+    if not rows:
+        return None
+
+    def vals(k):
+        return [r[k] for r in rows if not math.isnan(r[k])]
+
+    g, turn, low = vals("g"), [abs(v) for v in vals("turn_dps")], vals("height")
+    pace = [r["speed"] / max(r["cruise"], 1.0) for r in rows if not math.isnan(r["speed"])]
+    roll = [abs(v) for v in vals("roll_deg")]
+    boost = sum(1 for r in rows if r["surge"] > 0.5) / len(rows)
+    side = []
+    for r in rows:
+        near = [v for v in (r["wall_l"], r["wall_r"]) if not math.isnan(v)]
+        if near:
+            side.append(min(near))
+    walls = ("  wall to %.0f m (beside %d%% of it)" % (min(side), round(100 * len(side) / len(rows)))) if side else ""
+    return "  flying: pace %.2f  peak %.1f g  turn to %.0f deg/s  roll to %.0f  low %.1f m (mean %.1f)  surge %d%%%s" % (
+        sum(pace) / max(len(pace), 1), max(g, default=1.0), max(turn, default=0.0), max(roll, default=0.0),
+        min(low, default=0.0), sum(low) / max(len(low), 1), round(boost * 100), walls)
 
 
 class Line:
@@ -159,16 +203,21 @@ def run_name(kind, surface):
     if kind == "graze":
         return {"tree": "TREES", "stone": "STONE", "land": "LAND", "water": "WAVES"}.get(surface, "GRAZES")
     if kind == "thread":
-        return "ARCHES" if surface == "stone" else "THREADS"
+        return "ARCHES" if surface == "stone" else ("TREE GAPS" if surface == "tree" else "THREADS")
     if kind == "pull-out":
         return "SKIPS" if surface == "water" else "PULL-OUTS"
+    if kind == "barrel roll":
+        return "ROLLS"
+    if kind == "balloon bounce":
+        return "BOUNCES"
     return kind.upper()
 
 
 def moment(r, t):
     """A log row's moment, re-scored from its raw columns."""
     raw = {"k": num(r["k"]), "speed": num(r["speed"]), "cruise": num(r["cruise"], 1.0), "top": num(r["top"], 1.0),
-           "roll_deg": num(r["roll_deg"]), "height": num(r["height"], 1e9), "under": r["under"] == "1"}
+           "roll_deg": num(r["roll_deg"]), "height": num(r["height"], 1e9), "under": r["under"] == "1",
+           "kind": r["kind"], "width": num(r["width"], 1e9), "closing": num(r["closing"])}
     f = factors(raw, t)
     base = t["base"].get(r["kind"], t["base"]["default"])
     units = base * t["band"].get(r["band"], 1.0) * f["product"] * num(r["hold"], 1.0) * num(r["farm"], 1.0)
@@ -207,12 +256,17 @@ def replay(rows, t):
     return [lines[i] for i in order], misses
 
 
-def card(line, t):
+def card(line, t, track=()):
     out = []
     total = line.total(t)
     secs = line.moments[-1]["t"] - line.moments[0]["t"] if line.moments else 0.0
-    out.append("LINE %s  %.1f  x%.1f  %d moments %.1f s%s" % (
-        line.id, total, line.mult, len(line.moments), secs, ("  [" + line.end + "]") if line.end else ""))
+    out.append("LINE %s  %.1f  x%.1f  %d moments %.1f s%s%s" % (
+        line.id, total, line.mult, len(line.moments), secs, ("  [" + line.end + "]") if line.end else "",
+        ("  at " + clock(line.moments[0]["t"])) if line.moments else ""))
+    if line.moments:
+        fly = flying(track, line.moments[0]["t"], line.moments[-1]["t"])
+        if fly:
+            out.append(fly)
     for r in line.runs:
         ms = r["moments"]
         units = sum(m["units"] for m in ms)
@@ -244,16 +298,18 @@ def card(line, t):
         avg = {n: sum(m["f"][n] for m in line.moments) / len(line.moments) for n in FACTORS}
         top = sorted(FACTORS, key=lambda n: -avg[n])[:3]
         out.append("  factors: " + "  ".join("%s %.2f" % (TAGS[n], avg[n]) for n in top))
-    out.append("  = %.2f  (%.2f x%.1f)" % (total, line.raw(t), line.mult))
+    out.append("  = %.2f  (%.2f x%.1f)  %d points on screen" % (
+        total, line.raw(t), line.mult, round(total * t.get("points_per_unit", 100))))
     return out
 
 
 def report(path, t):
     rows = read_log(path)
     lines, _ = replay(rows, t)
+    track = read_track(path)
     text = [os.path.basename(path), ""]
     for line in lines:
-        text += card(line, t) + [""]
+        text += card(line, t, track) + [""]
     best = max((l.total(t) for l in lines), default=0.0)
     return text, best, lines
 

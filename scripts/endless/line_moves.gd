@@ -59,7 +59,7 @@ const GRACE := 0.35
 ## the surf's and the rock's (near_glyphs.gd OLD_ID).
 const GLYPH := {"late pull":"dive","knife edge":"knife","inverted":"inverted","carve":"carve",
 	"canopy run":"canopy","canyon run":"canyon","climb":"climb","surf":"surf","crest run":"crest","slalom":"slalom",
-	"stack orbit":"orbit","smash":"smash"}
+	"stack orbit":"orbit","smash":"smash","balloon bounce":"balloon"}
 
 const KNIFE := deg_to_rad(60.0)
 const INVERTED := deg_to_rad(120.0)
@@ -175,6 +175,30 @@ var _orbit_a := 0.0
 var _orbit_sum := 0.0
 var _orbit_least := INF
 var _orbit_lost := 0.0
+## The tree gap (`_gap`): under way, paid, its narrowest (m) and where, how wide
+## it has opened since it paid, and when the last one ended.
+const GAP_REACH := 2.0
+const GAP_STEPS := 8
+const GAP_BACK := 0.3
+const GAP_AGAIN := 1.0
+const GAP_QUIET := 0.35
+var _gap_on := false
+var _gap_paid := false
+var _gap_width := INF
+var _gap_wide := 0.0
+var _gap_at := Vector3.ZERO
+var _gap_pace := 0.0
+var _gap_roll := 0.0
+var _gap_end := -INF
+## The barrel roll (`_barrel`): the roll last frame, how far round one way, for
+## how long, and the least ground clearance on the way.
+const ROLL_TURN := 1.85*PI
+const ROLL_TIME := 3.0
+const ROLL_LOW := 8.0
+var _roll_last := 0.0
+var _roll_sum := 0.0
+var _roll_t := 0.0
+var _roll_low := INF
 
 func _init() -> void:
 	for name: String in HELD_MIN: _holds[name] = Hold.new()
@@ -190,6 +214,8 @@ func drop() -> void:
 	_run_t = -INF
 	_orbit_id = ""
 	_orbit_sum = 0.0
+	_gap_on = false
+	_roll_sum = 0.0
 
 static func roll_of(plane: RefCounted) -> float:
 	return wrapf(float(plane.bank)+float(plane.spin),-PI,PI)
@@ -270,6 +296,8 @@ func step(delta: float, game: Node3D, near: RefCounted) -> void:
 	else:
 		_dive_since += delta
 	_slalom(game,p,h,span,pace,fast)
+	_gap(game,p,h,span,pace,fast,roll_of(plane))
+	_barrel(game,p,span,pace,fast,roll_of(plane),clear,delta)
 	_orbit(game,p,span,pace,fast,delta)
 	holding = _run >= 2 or (_orbit_id != "" and absf(_orbit_sum) > 0.5*PI)
 	for h2: Hold in _holds.values():
@@ -319,6 +347,18 @@ func _held_move(kind: String, held: float, least_t: float, k: float, least: floa
 	return {"kind":kind,"of":kind,"band":band,"points":points,"k":k,"clear":least,"at":at,"surface":surface,
 		"pace":pace,"held":held,"held_min":least_t,"attitude":"","under":false,
 		"id":hash(Vector2i(floori(at.x/30.0),floori(at.z/30.0)))}
+
+## The plane bounced off a balloon (endless_balloons.gd) at `at`, going `speed`
+## m/s into it, `hit` (0 to 1) how hard; `id` the balloon's own, so the same one
+## again soon is cut (NearMiss `_farm_same`): queued.
+func bounce(game: Node3D, at: Vector3, speed: float, hit: float, id: int) -> void:
+	var plane = game.plane
+	var pace := speed/maxf(float(plane.cruise()),1.0)
+	var band := "razor" if hit > 0.75 else ("close" if hit > 0.4 else "near")
+	var m := {"kind":"balloon bounce","of":"balloon bounce","band":band,"points":300.0*(1.0+hit)*clampf(pace,0.5,2.0),"k":hit,
+		"clear":0.0,"at":at,"surface":"balloon","pace":pace,"speed":speed,"roll":roll_of(plane),
+		"attitude":"","under":false,"id":id}
+	_finish(m,game)
 
 ## A surge smashed `what` (a spur, a plug) at `at`, `id` the stone's own: queued.
 func smash(game: Node3D, what: String, at: Vector3, id: int) -> void:
@@ -397,6 +437,102 @@ func _slalom(game: Node3D, p: Vector3, h: float, span: float, pace: float, fast:
 			_run_at = p
 			_run_pace = maxf(_run_pace,pace)
 		_abeam[side] = now
+
+## A gap between two trees: a tree standing over the plane's height within
+## GAP_REACH spans of both wingtips at once, on a level line. Its narrowest is
+## a thread (surface tree, `width` the opening, m), paid once the gap opens
+## GAP_BACK spans past it or ends; a long way between trees pays again at each
+## new pinch (GAP_AGAIN spans narrower than it had opened since).
+func _gap(game: Node3D, p: Vector3, h: float, span: float, pace: float, fast: bool, roll: float) -> void:
+	var width := INF
+	if game.trees != null and fast and float(game.field.height(p.x,p.z)) >= p.y-30.0:
+		var right := Vector3(cos(h),0.0,-sin(h))
+		width = span
+		for side: float in [-1.0,1.0]:
+			var d := _tree_abeam(game,p,right*side,span)
+			if d == INF:
+				width = INF
+				break
+			width += d
+	if width == INF:
+		if _gap_on:
+			if not _gap_paid: _gap_score(game,span)
+			_gap_on = false
+			_gap_end = _clock
+		return
+	if not _gap_on:
+		_gap_on = true
+		_gap_paid = false
+		_gap_width = INF
+	if _gap_paid:
+		_gap_wide = maxf(_gap_wide,width)
+		if width < _gap_wide-GAP_AGAIN*span:
+			_gap_paid = false
+			_gap_width = INF
+	if _gap_paid: return
+	if width < _gap_width:
+		_gap_width = width
+		_gap_at = p
+		_gap_pace = pace
+		_gap_roll = roll
+	elif width > _gap_width+GAP_BACK*span:
+		_gap_score(game,span)
+		_gap_paid = true
+		_gap_wide = width
+
+## How far past the wingtip (m) a tree stands over `p`'s height along `dir`
+## (flat, a unit), within GAP_REACH spans; INF for none.
+func _tree_abeam(game: Node3D, p: Vector3, dir: Vector3, span: float) -> float:
+	for i in range(1,GAP_STEPS+1):
+		var d := GAP_REACH*span*float(i)/GAP_STEPS
+		if float(game.trees.top_at(p+dir*(span*0.5+d))) > p.y: return d-GAP_REACH*span*0.5/GAP_STEPS
+	return INF
+
+func _gap_score(game: Node3D, span: float) -> void:
+	var room := maxf(_gap_width-span,0.0)*0.5
+	var k := clampf(1.0-room/(GAP_REACH*span),0.0,1.0)
+	var band := "razor" if room < 0.15*span else ("close" if room < 0.5*span else "near")
+	var m := {"kind":"thread","of":"thread","band":band,"points":300.0*(1.0+3.0*k*k)*clampf(_gap_pace,0.5,2.0),"k":k,
+		"clear":room,"at":_gap_at,"surface":"tree","pace":_gap_pace,"roll":_gap_roll,"attitude":"","under":false,
+		"width":_gap_width,"id":hash(Vector2i(floori(_gap_at.x/30.0),floori(_gap_at.z/30.0)))}
+	var roll := absf(_gap_roll)
+	if roll > INVERTED:
+		m.kind = "inverted"
+		m.attitude = "inverted"
+	elif roll > KNIFE:
+		m.kind = "knife edge"
+		m.attitude = "knife"
+	_finish(m,game)
+
+## True while a gap between trees is being flown, or was GAP_QUIET s ago: its
+## trees' own grazes are the gap's (NearMiss `score`).
+func gap_live() -> bool:
+	return _gap_on or _clock-_gap_end <= GAP_QUIET
+
+## A barrel roll: the roll taken ROLL_TURN round one way within ROLL_TIME s,
+## fast. Closer (`k`) the lower it was flown, from ROLL_LOW spans over the
+## ground down.
+func _barrel(game: Node3D, p: Vector3, span: float, pace: float, fast: bool, roll: float, clear: float, delta: float) -> void:
+	var dr := wrapf(roll-_roll_last,-PI,PI)
+	_roll_last = roll
+	if not fast or (_roll_sum != 0.0 and signf(dr) != signf(_roll_sum) and absf(dr) > 0.02) \
+			or (absf(roll) < 0.25 and absf(dr) < 0.5*delta):
+		_roll_sum = 0.0
+	if _roll_sum == 0.0:
+		_roll_low = INF
+		_roll_t = 0.0
+	if not fast: return
+	_roll_sum += dr
+	_roll_t += delta
+	_roll_low = minf(_roll_low,maxf(clear,0.0))
+	if absf(_roll_sum) < ROLL_TURN: return
+	if _roll_t <= ROLL_TIME:
+		var k := clampf(1.0-_roll_low/(ROLL_LOW*span),0.0,1.0)
+		var band := "razor" if k > 0.85 else ("close" if k > 0.6 else "near")
+		_finish({"kind":"barrel roll","of":"barrel roll","band":band,"points":300.0*(1.0+3.0*k*k)*clampf(pace,0.5,2.0),
+			"k":k,"clear":_roll_low,"at":p,"surface":"air","pace":pace,"roll":0.0,"attitude":"","under":false,
+			"id":hash(Vector2i(floori(p.x/30.0),floori(p.z/30.0)))},game)
+	_roll_sum = 0.0
 
 ## A fin of the Peak's carve at `q`, up to the plane's height, or any arch's stone,
 ## or a rock's (the glacier's ice fins, rocks/peak_ice_forms.gd).

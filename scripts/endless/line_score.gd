@@ -12,7 +12,11 @@ extends RefCounted
 ##   Fast: speed from level cruise to top (Boost's held speed) to fast_cap;
 ##   Knife: bank from knife_from to knife_to degrees to knife_cap;
 ##   Low: height over the land from low_from to low_to m to low_cap;
-##   Under: under (a passage under a span or roof).
+##   Under: under (a passage under a span or roof);
+##   Tight: a gap's opening (m, both sides measured) from tight_from down to
+##   tight_to to tight_cap;
+##   Pull (a pull-out's only): the closing rate on the ground (m/s) from
+##   pull_from to pull_to to pull_cap.
 ## - Run: moments of one kind and surface in a row, each within run_gap s of the
 ##   last (one closer than run_echo s to the last is the same pass, paid but not
 ##   counted). From run_min moments on it pays run_scale x n^run_pow x its moments'
@@ -33,8 +37,8 @@ extends RefCounted
 ## points are points_per_unit times them.
 
 const TUNE_PATH := "res://scripts/endless/line_tune.json"
-const FACTORS := ["close","fast","knife","low","under"]
-const TAGS := {"close":"CLOSE","fast":"FAST","knife":"KNIFE","low":"LOW","under":"UNDER"}
+const FACTORS := ["close","fast","knife","low","under","tight","pull"]
+const TAGS := {"close":"CLOSE","fast":"FAST","knife":"KNIFE","low":"LOW","under":"UNDER","tight":"TIGHT","pull":"LATE"}
 
 static var _tune := {}
 
@@ -52,7 +56,8 @@ static func _ramp(x: float, from: float, to: float, cap: float) -> float:
 	return 1.0+(cap-1.0)*clampf((x-from)/(to-from),0.0,1.0)
 
 ## A moment's factors from its raw values {k, speed, cruise, top, roll_deg,
-## height, under}: {close, fast, knife, low, under, product}.
+## height, under, and kind, width, closing when it has them}: {close, fast,
+## knife, low, under, tight, pull, product}.
 static func factors(r: Dictionary) -> Dictionary:
 	var t := tune()
 	var k := clampf(float(r.k),0.0,1.0)
@@ -63,6 +68,9 @@ static func factors(r: Dictionary) -> Dictionary:
 	f.knife = _ramp(bank,float(t.knife_from),float(t.knife_to),float(t.knife_cap))
 	f.low = _ramp(float(r.height),float(t.low_from),float(t.low_to),float(t.low_cap))
 	f.under = float(t.under) if bool(r.under) else 1.0
+	f.tight = _ramp(float(r.get("width",INF)),float(t.tight_from),float(t.tight_to),float(t.tight_cap))
+	f.pull = _ramp(float(r.get("closing",0.0)),float(t.pull_from),float(t.pull_to),float(t.pull_cap)) \
+		if str(r.get("kind","")) == "pull-out" else 1.0
 	var p := 1.0
 	for n: String in FACTORS: p *= float(f[n])
 	f.product = p
@@ -176,7 +184,7 @@ class Line:
 		if int(run.n) >= int(LineScore.tune().run_min): return "%s ×%d" % [_name(kind,surface),int(run.n)]
 		if str(run.move) != kind: return str(run.move).to_upper()
 		if kind == "graze": return "%s GRAZE" % surface.to_upper()
-		if kind == "thread": return "ARCH" if surface == "stone" else "THREAD"
+		if kind == "thread": return "ARCH" if surface == "stone" else ("TREE GAP" if surface == "tree" else "THREAD")
 		if kind == "pull-out": return "SKIP" if surface == "water" else "PULL-OUT"
 		return kind.to_upper()
 
@@ -186,6 +194,8 @@ class Line:
 
 	static func _name(kind: String, surface: String) -> String:
 		if kind == "graze": return {"tree":"TREES","stone":"STONE","land":"LAND","water":"WAVES"}.get(surface,"GRAZES")
-		if kind == "thread": return "ARCHES" if surface == "stone" else "THREADS"
+		if kind == "thread": return "ARCHES" if surface == "stone" else ("TREE GAPS" if surface == "tree" else "THREADS")
 		if kind == "pull-out": return "SKIPS" if surface == "water" else "PULL-OUTS"
+		if kind == "barrel roll": return "ROLLS"
+		if kind == "balloon bounce": return "BOUNCES"
 		return kind.to_upper()

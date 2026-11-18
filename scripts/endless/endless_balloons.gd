@@ -1301,6 +1301,7 @@ func _bounce(b: Balloon, game: Node, plane: RefCounted) -> void:
 	b.still = false
 	_boom(b,game,k)
 	res["balloon"] = balloons.find(b)
+	if game.near != null: game.near.moves.bounce(game,plane.position,float(res.before),clampf(k/1.4,0.0,1.0),hash(["balloon",b.get_instance_id()]))
 	if odd_groups != null: odd_groups.bounced(self,game,b,res)
 
 ## The plane touching `b`'s envelope is taken in by the cloth and thrown back
@@ -1355,6 +1356,8 @@ func _catch(b: Balloon, game: Node, plane: RefCounted, dt: float) -> void:
 	res["balloon"] = balloons.find(b)
 	res["deepest"] = c.deepest
 	res["held"] = c.t
+	# The bounce is a move of the line (LineMoves `bounce`).
+	if game.near != null: game.near.moves.bounce(game,plane.position,float(c.before),hit,hash(["balloon",b.get_instance_id()]))
 	_let_go()
 	if odd_groups != null: odd_groups.bounced(self,game,b,res)
 
