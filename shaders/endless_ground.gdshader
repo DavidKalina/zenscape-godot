@@ -259,6 +259,14 @@ uniform vec2 high_paint_alt = vec2(20.0, 75.0);
 // 1 (--high-paint=old, scripts/endless/grass_sheen.gd): the streaks and washes
 // of lattice noise as they were, for A/B against the smooth plane-wave ones.
 uniform float high_paint_old = 0.0;
+// The land seen from well above it, painted simpler (x..y m of the eye over
+// the ground point; z: 0 off, --far-paint=full): from there the turf and rock
+// edge widens with the pixel until nearly every pixel pays for both paints,
+// and at 2560x1440 the two were 13 of a 28 ms frame. Past y the rock keeps
+// its tones, beds and shape and drops its facets, relief and joints
+// (er_rock_shaped's `far`), and the grass drops its wind crests, tuft specks
+// and far sheen; between x and y the two meet. (By height over the point, so a wall looked up at keeps its paint.)
+uniform vec3 far_simple = vec3(170.0, 340.0, 1.0);
 // Watercolour meadow (docs/design/endless-flight/watercolour-meadow-handoff.md):
 // from the same height up, the turf is a few big washes of colour that bleed
 // into one another (domain-warped), darker pigment pooled on their edges and
@@ -1182,6 +1190,7 @@ void fragment() {
 	// None of the grass shows where sand, a bank or snow covers the ground
 	// whole and no rock (whose ledges and moss take its colour), so its paint
 	// is skipped there: the same pixels (grass_skip; --land-skip=0 paints it).
+	float simple = far_simple.z * smoothstep(far_simple.x, far_simple.y, CAMERA_POSITION_WORLD.y - p.y);
 	bool skip_grass = grass_skip > 0 && (snowy >= 1.0 || pk.y >= 1.0 || (rocky <= 0.0 && (sandy >= 1.0 || banked >= 1.0)));
 	vec3 grass = vec3(0.0);
 	// The grass as the rock's ledges and moss take it (before the near grain).
@@ -1227,10 +1236,15 @@ void fragment() {
 		// The wind: two trains of crests rolling downwind on the air's travel
 		// (grass_look's crest), the grass bowed there showing its paler side;
 		// far off the crests fade to their mean, a faint sheen.
-		float crest_near = zs_grass_crest(gxz, wave_lengths.x, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
-		float crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
-		crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
-		crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
+		// (From well above, `simple`, their mean.)
+		float crest_near = 0.35;
+		float crest_far = 0.35;
+		if (simple < 1.0) {
+			crest_near = zs_grass_crest(gxz, wave_lengths.x, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
+			crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
+			crest_near = mix(0.35, crest_near, (1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp)) * (1.0 - simple));
+			crest_far = mix(0.35, crest_far, (1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp)) * (1.0 - simple));
+		}
 		float air = clamp(zs_wind_plant_local_here(wind_h), 0.0, 2.0);
 		// (Grass that blows as one keeps their mean: the swell carries the motion.)
 		float crest = mix(crest_near * 0.35 + crest_far * 0.65, 0.35, rp_swell.x) * air * wind_sheen;
@@ -1266,10 +1280,13 @@ void fragment() {
 		float toned = mix(1.0, beyond, turf);
 		grass *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
 		grass *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
-		float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
-		float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
-		float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
-			+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp));
+		float speck = 0.0;
+		if (simple < 1.0) {
+			float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
+			float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
+			speck = (speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
+				+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp))) * (1.0 - simple);
+		}
 		// Only off where tufts would be pixels: near, the paint's own grain.
 		float high_up = smoothstep(high_paint_alt.x, high_paint_alt.y, CAMERA_POSITION_WORLD.y - p.y) * high_paint;
 		grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p)) * (1.0 - clamp(high_up, 0.0, 1.0));
@@ -1413,17 +1430,17 @@ void fragment() {
 			grass = zs_silver_paint_hue(grass, silver_flip, 1.0 - thin * 0.6, 0.8, rp_silver);
 		}
 		// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
-		if (grass_sheen.x > 0.0) {
+		if (grass_sheen.x > 0.0 && simple < 1.0) {
 			float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
 			// From high up the paint's washes take over, but where the field's wind
 			// rolls the grass its swells keep reading (zs_wind_up_sheen).
-			float sheen_on = tuft_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up * (1.0 - zs_wind_up_sheen_here(wind_h, rp_swell.x)));
+			float sheen_on = (1.0 - simple) * tuft_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up * (1.0 - zs_wind_up_sheen_here(wind_h, rp_swell.x)));
 			float sheen_s = 0.0;
 			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field_here(gxz, fp, rp_swell.x, wind_h);
 			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s * rp_swell.z, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
 			// The far grass as a fine lawn (far_lawn.gdshaderinc), from past the tufts.
 			if (grass_lawn.x > 0.0) {
-				float lawn_on = tuft_turf * smoothstep(grass_lawn.y, grass_lawn.z, sheen_d) * (1.0 - thin * 0.6);
+				float lawn_on = (1.0 - simple) * tuft_turf * smoothstep(grass_lawn.y, grass_lawn.z, sheen_d) * (1.0 - thin * 0.6);
 				if (lawn_on > 0.0) grass = zs_far_lawn(grass, gxz, normalize(p - CAMERA_POSITION_WORLD), fp, sheen_s, zs_key_irradiance, zs_cool(vec3(0.93, 0.90, 1.02), paint_follow), lawn_on);
 			}
 		}
@@ -1483,7 +1500,7 @@ void fragment() {
 		// (A chunk baked only for the summits' snow has alpha under 0.9: no shape for the rock.)
 		vec4 rock_shape_in = land_shape;
 		if (land_shape.a < 0.9) rock_shape_in.a = 0.0;
-		rock = er_rock_shaped(bed_p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, rock_shape_in, 1.0 - smoothstep(ROCK_EASE.x, ROCK_EASE.y, distance(p, CAMERA_POSITION_WORLD)), lit_n, rock_glow);
+		rock = er_rock_shaped(bed_p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, rock_shape_in, 1.0 - smoothstep(ROCK_EASE.x, ROCK_EASE.y, distance(p, CAMERA_POSITION_WORLD)), simple, lit_n, rock_glow);
 		// Its bounce glow at the sky fill's strength (ER_REF_FILL its luma at
 		// the reference light), so it eases with the fill.
 		float fill_level = clamp(luma(zs_hemi_sky) * zs_hemi_energy / ER_REF_FILL, 0.25, 2.0);
