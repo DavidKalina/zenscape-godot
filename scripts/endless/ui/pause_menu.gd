@@ -190,7 +190,7 @@ func _draw() -> void:
 	if page == null:
 		var arrival := Kit.slip_in(age)
 		var slip := Rect2(72.0*s-arrival.x*s,238.0*s,228.0*s,(8.0+30.0+rows_height(30.0)+12.0)*s)
-		Kit.slip(self,slip,s,arrival.y)
+		Kit.slip(self,slip,s,arrival.y,Kit.GRAIN_A,true)
 		Kit.head(self,slip,slip.position.y+8.0*s,s,"Paused",30.0,0.0,34.0,arrival.y)
 		draw_rows(slip,slip.position.y+38.0*s,s,30.0,16.0,36.0,arrival.y)
 		draw_footer([P_SELECT,P_CHOOSE,["Esc","B","resume"]],s)

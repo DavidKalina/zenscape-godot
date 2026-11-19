@@ -5,8 +5,8 @@ python tools/map_bake.py [--from-json scratch/world_map.json] [--box x0,z0,x1,z1
 
 Dumps the land's heights over the box with tools/site_map.py's dump
 (tools/harness/site_dump.gd, headless, about 40 s; or reuses a dump with
---from-json) and draws it as paper and ink: cream land tinted and shaded by
-height, brown contours (fine every 50 m, firm every 250 m), the sea a grey-blue
+--from-json) and draws it as a painted chart: the land coloured by height (sand, meadow, dry
+hills, rock, snow) and shaded, contours (fine every 50 m, firm every 250 m), the sea a teal
 wash with depth lines off the coast, ponds as water, an inked coast. No names
 or marks: the page draws those itself. Writes assets/ui/map/land_seed1.png
 (x right, z down: north, -z, up) and scripts/endless/ui/map_land.gd (the
@@ -36,15 +36,15 @@ const BOX := Rect2(%.1f,%.1f,%.1f,%.1f)
 const START := Vector2(%.1f,%.1f)
 '''
 
-# Paper and ink (the cream slip's colours, scripts/endless/ui/ui_kit.gd).
-LOW = np.array([241, 233, 210.0])     # lowland paper
-MID = np.array([229, 215, 182.0])     # hills
-HIGH = np.array([206, 190, 158.0])    # the Peak's flanks
-TOP = np.array([236, 231, 220.0])     # snow and ice up top
-SHALLOW = np.array([205, 216, 210.0])
-DEEP = np.array([176, 194, 196.0])
-CONTOUR = np.array([110, 82, 48.0])
-WATERLINE = np.array([70, 100, 112.0])
+# A painted chart: the land's own colours by height (sand at the shore, meadow
+# green, dry hills, brown and grey rock, snow), a teal sea darker with depth.
+RAMP_M = [0.0, 6.0, 14.0, 60.0, 140.0, 260.0, 450.0, 700.0, 900.0]
+RAMP = np.array([[233, 216, 160], [233, 216, 160], [146, 188, 98], [168, 200, 108], [200, 198, 118],
+                 [206, 172, 116], [176, 140, 108], [140, 128, 128], [238, 240, 242.0]])
+SHALLOW = np.array([124, 198, 196.0])
+DEEP = np.array([44, 112, 150.0])
+CONTOUR = np.array([70, 58, 34.0])
+WATERLINE = np.array([28, 78, 108.0])
 COAST = np.array([40, 36, 30.0])
 
 
@@ -114,21 +114,18 @@ def bake(data, px):
         i0, i1 = max(int(cz - r - 2), 0), min(int(cz + r + 3), big)
         j0, j1 = max(int(cx - r - 2), 0), min(int(cx + r + 3), big)
         pond[i0:i1, j0:j1] |= (yy[i0:i1, j0:j1] - cz) ** 2 + (xx[i0:i1, j0:j1] - cx) ** 2 <= r * r
-    # Height tint, in steps of 100 m as a printed map's layers.
-    up = np.clip(np.floor((soft - sea) / 100.0) * 100.0 / 1200.0, 0, 1)[..., None]
-    a = np.clip(up / 0.25, 0, 1)
-    b = np.clip((up - 0.25) / 0.45, 0, 1)
-    c = np.clip((up - 0.8) / 0.2, 0, 1)
-    rgb = LOW * (1 - a) + MID * a
-    rgb = rgb * (1 - b) + HIGH * b
-    rgb = rgb * (1 - c) + TOP * c
+    # Height tint: the shore's sand runs smoothly, above it 20 m layers as a
+    # printed map's.
+    rel = soft - sea
+    rel = np.where(rel < 20.0, rel, np.floor(rel / 20.0) * 20.0)
+    rgb = np.dstack([np.interp(rel, RAMP_M, RAMP[:, i]) for i in range(3)])
     # Shade from the north-west, light: ink on paper, not a photo.
     gz, gx = np.gradient(soft, step)
     n = np.dstack((-gx, -gz, np.ones_like(h) * 1.6))
     n /= np.linalg.norm(n, axis=2, keepdims=True)
     flat = 1.6 / np.sqrt(1.6 * 1.6)
     lit = n @ np.array([-0.5, -0.55, 0.67]) - 0.67 * flat
-    shade = np.clip(1.0 + 0.55 * lit, 0.8, 1.05)[..., None]
+    shade = np.clip(1.0 + 0.95 * lit, 0.62, 1.12)[..., None]
     rgb = rgb * shade
     # Contours on land.
     rgb = over(rgb, lines(soft - sea, 50.0, land) * (1 - pond), CONTOUR, 0.24)
