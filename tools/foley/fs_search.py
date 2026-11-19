@@ -73,7 +73,7 @@ def main():
 			continue
 		open(dest, "wb").write(data)
 		page = "https://freesound.org/people/%s/sounds/%s/" % (r["user"], r["id"])
-		with open(log, "a") as f:
+		with open(log, "a", encoding="utf-8") as f:
 			f.write("\t".join([r["id"], r["user"], r["title"], "%.2f" % r["dur"], str(r["downloads"]), page, a.query]) + "\n")
 		seen.add(r["id"])
 		taken += 1

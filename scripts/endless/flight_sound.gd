@@ -50,6 +50,7 @@ const Audio = preload("res://scripts/genesis_audio.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const AmbientSound = preload("res://scripts/endless/ambient_sound.gd")
+const GrassReact = preload("res://scripts/endless/grass_react.gd")
 
 const SFX := &"SFX"
 const AIR := &"SFX Air"
@@ -179,6 +180,12 @@ const CRASH := 0.7
 ## A tree knocked down (`events` "knock"): its crack, branches and needles
 ## (the fall's creak and thud are scripts/endless/tree_knock.gd's, at the tree).
 const KNOCK := 0.45
+## The grass cut through, low and fast: the loop's gain at full cut (the wash's
+## strength, GrassReact.wash_strength) and full pace, its pace window (m/s),
+## its pitch slow and flat out, and what the wheels' roll adds on the ground.
+const GRASS_SKIM := 0.2
+const GRASS_PACE := Vector2(3.0,22.0)
+const GRASS_PITCH := Vector2(0.85,1.3)
 ## The air over the ground: the breeze's gain on the ground and well up (m
 ## over the land), the thin high wind's (over the sea, up to the ceiling),
 ## the shore's.
@@ -267,6 +274,10 @@ var skid: Bed
 var breeze: Bed
 var thin: Bed
 var shore: Bed
+## The grass skimmed (`_grass`): `grass_cut` the wash's strength there, 0 over
+## water, bare runs (--grass off) and from too high.
+var skim: Bed
+var grass_cut := 0.0
 ## The weather's rain (scripts/endless/weather_rain.gd `rain_to`): made on
 ## its first call with rain, so a run with no rain builds none.
 var rain: Bed
@@ -436,6 +447,9 @@ func _ready() -> void:
 	breeze = _bed(OLD+"wind-bed.wav",AMBIENCE)
 	thin = _bed(KIT+"thin-wind-loop.wav",AMBIENCE)
 	shore = _bed(OLD+"shore-bed.wav",AMBIENCE)
+	skim = _bed(FOLEY+"grass-skim-loop.wav",SFX)
+	skim.attack = 9.0
+	skim.release = 5.0
 	for bed in [rush,whistle,howl]: bed.attack = float(mix.air_attack)
 	for bed in [breeze,thin,shore]:
 		bed.attack = 0.7
@@ -460,10 +474,16 @@ func _ready() -> void:
 		"swish":_takes(KIT+"swish-%d.wav",4),"grind":_takes(FOLEY+"land-grind-%d.wav",6),
 		"crash":_takes(FOLEY+"mesa-break-%d.wav",6),"debris":_takes(KIT+"rock-debris-%d.wav",3),
 		"splash":_takes(FOLEY+"water-splash-%d.wav",6),"leaves":_takes(FOLEY+"trees-%d.wav",6),
-		# A tree knocked down (scripts/endless/tree_knock.gd): broken branches,
-		# a rock crack pitched up for the trunk, a heavy body fall on dirt.
+		# Stone and soil breaking (the bore's rocks, the burrower): a rock crack,
+		# a heavy body fall on dirt.
 		"snap":[load(FOLEY+"trees-6.wav")],"crack":_takes(FOLEY+"mesa-break-%d.wav",2),
 		"thud":[load(FOLEY+"pat-4.wav"),load(FOLEY+"pat-6.wav")],
+		# A tree (tools/foley/make_flight_foley.py, recordings): the trunk's crack,
+		# the lean's creak, the crash through its own branches, the trunk on the
+		# ground, a canopy passed through.
+		"wood-crack":_takes(FOLEY+"wood-crack-%d.wav",6),"tree-creak":_takes(FOLEY+"tree-creak-%d.wav",4),
+		"tree-fall":_takes(FOLEY+"tree-fall-%d.wav",4),"wood-thud":_takes(FOLEY+"wood-thud-%d.wav",4),
+		"leaf-burst":_takes(FOLEY+"leaf-burst-%d.wav",6),
 		# The rival race's beats (scripts/endless/rival_race.gd).
 		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
 		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
@@ -633,6 +653,7 @@ func step(delta: float, game: Node3D, events: Dictionary, boost: float) -> void:
 		_place_wait = PLACE_TICK
 		_read_place(game)
 	_ambience(on_wheels)
+	_grass(game,speed)
 	for bed in _beds: bed.step(delta)
 	if ambient != null: ambient.step(delta,game,self)
 
@@ -755,14 +776,13 @@ func _near(events: Dictionary) -> void:
 			if bool((m as Dictionary).get("flourish",false)): shot("line-flourish",LINE_FLOURISH,1.0)
 			else: shot("line-switch",LINE_SWITCH,1.3)
 		_whoosh_wait = WHOOSH_GAP*float(mix.whoosh_gap)
-		if str((m as Dictionary).get("surface","")) == "tree": shot("leaves",SCRAPE*0.5,1.1)
+		if str((m as Dictionary).get("surface","")) == "tree": shot("leaf-burst",SCRAPE*0.5,1.15)
 	var k: Variant = events.get("knock")
 	if k is Dictionary:
 		# Through a tree: the trunk's crack, branches and a burst of needles.
 		var heft := clampf(float((k as Dictionary).get("heft",0.0)),0.0,1.0)
-		shot("crack",KNOCK*lerpf(0.5,1.0,heft),1.7)
-		shot("snap",KNOCK,lerpf(1.1,0.9,heft))
-		shot("leaves",KNOCK*1.2,0.95)
+		shot("wood-crack",KNOCK*lerpf(0.7,1.2,heft),lerpf(1.15,0.85,heft))
+		shot("leaf-burst",KNOCK*1.1,1.0)
 	for key: String in ["scrape","crash"]:
 		var h: Variant = events.get(key)
 		if not h is Dictionary: continue
@@ -773,7 +793,9 @@ func _near(events: Dictionary) -> void:
 			shot("debris",CRASH*0.6,0.9)
 		else: shot("grind",SCRAPE,1.0)
 		match what:
-			"tree": shot("leaves",SCRAPE*(1.4 if hard else 1.0),1.0)
+			"tree":
+				shot("leaf-burst",SCRAPE*(1.4 if hard else 1.0),1.0)
+				if hard: shot("wood-crack",CRASH*0.7,0.9)
 			"water": shot("splash",SCRAPE*(1.6 if hard else 1.0),0.9)
 			"stone": shot("debris",SCRAPE*0.7,1.1)
 
@@ -850,6 +872,21 @@ func _read_place(game: Node3D) -> void:
 			count += 1
 			if float(field.height(q.x,q.y)) < Field.SEA_Y+0.2: wet += 1
 	water = float(wet)/maxf(count,1)
+
+## The grass skimmed: the wash's strength at the plane's height over the land
+## (as PilotTallies counts the blades cut), by the pace; none over the sea or
+## a river, or with the grass off.
+func _grass(game: Node3D, speed: float) -> void:
+	grass_cut = 0.0
+	var grass: Variant = game.get("grass")
+	var field: Variant = game.get("field")
+	if grass != null and field != null and bool(grass.enabled):
+		var p: Vector3 = game.plane.position
+		var h := float(field.height(p.x,p.z))
+		if h > Field.SEA_Y+0.2 and not (game.has_method("_on_river") and bool(game._on_river())): grass_cut = GrassReact.wash_strength(p.y-h,1.0,WorldScale.span)
+	var pace := smoothstep(GRASS_PACE.x,GRASS_PACE.y,speed)
+	skim.goal = GRASS_SKIM*grass_cut*pace
+	skim.pitch_goal = lerpf(GRASS_PITCH.x,GRASS_PITCH.y,pace)
 
 func _ambience(on_wheels: bool) -> void:
 	var up := smoothstep(BREEZE_HEIGHT.x,BREEZE_HEIGHT.y,agl)

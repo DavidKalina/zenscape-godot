@@ -44,6 +44,11 @@ Sounds, Interface Sounds, RPG Audio) by `tools/foley/make_foley.py`. CC0 asks
 for no credit; every file's source, author and page is listed anyway in
 `foley/SOURCES.tsv`.
 
+The flight's trees and grass (`foley/wood-crack-*`, `tree-creak-*`, `tree-fall-*`,
+`wood-thud-*`, `leaf-burst-*`, `grass-skim-loop.wav`) are cut the same way from
+CC0 Freesound recordings by `tools/foley/make_flight_foley.py`, and listed in
+the same `foley/SOURCES.tsv`.
+
 The clay's land voice (`foley/land-bed-loop.wav`, `foley/land-grind-loop.wav`,
 `foley/land-lurch-1..6.wav`, `foley/land-grind-1..6.wav`) is not cut from
 recordings: it is synthesised from noise, filters and sines by
