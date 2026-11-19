@@ -32,6 +32,9 @@ const ViaductSite = preload("res://scripts/endless/viaduct_site.gd")
 const DomeSite = preload("res://scripts/endless/dome_site.gd")
 const BridgeSite = preload("res://scripts/endless/bridge_site.gd")
 const WildPlaced = preload("res://scripts/endless/world/wilderness/placed.gd")
+const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
+const Book = preload("res://scripts/endless/ui/book_kit.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## The sheet, mock px (the 1280x800 frame), and the map's frame inside it.
 const SHEET := Rect2(44.0,30.0,1192.0,704.0)
@@ -50,6 +53,22 @@ const WASH_T := 0.2
 const TEMPLE_NAMES := {"way/isle":"Isle temple","way/bay":"Bay temple","way/south":"South temple"}
 const FALLS_NAMES := {"wild/river_falls":"River falls","wild/tarn_falls":"Tarn falls","wild/mere_falls":"Mere falls"}
 const WATER_INK := Color("335866")
+## The marks: each place a glyph (near_glyphs.gd) on an ink disc rimmed in
+## cream (a find's rim gold), the plane the dart glyph (the tick's colour)
+## turned its heading's way. Discs' diameters and the plane's box, mock px;
+## a glyph's 24-unit box is GLYPH_IN of its disc. --map-marks=old draws the
+## squares, triangles and circles before them.
+const PLACE_GLYPHS := {"Citadel":"citadel","Town":"ruin","Theatre":"theatre","Sanctuary":"temple","Colosseum":"arena",
+	"Great dome":"dome","Great bridge":"arch"}
+const KIND_GLYPHS := {"temple":"temple","falls":"falls","peak":"peak","ruin":"ruin"}
+const MARK_D := 22.0
+const PEAK_D := 28.0
+const FIND_D := 17.0
+const START_D := 20.0
+const PLANE_D := 30.0
+const GLYPH_IN := 0.8
+const RIM := 1.5
+const MARK_RIM := Color("efe8d4")
 const FOOT := [["Arrows","LS","pan"],["Q E","LT RT","zoom"],["C","Y","plane"],["M","B","close"]]
 
 var game: Node
@@ -65,10 +84,13 @@ var _view: Control
 var _age := 0.0
 var _was_paused := false
 var _drag := false
+## The marks as they were (squares, triangles, circles): --map-marks=old.
+var old_marks := false
 
 func _init(host: Node = null) -> void:
 	game = host
 	name = "MapPage"
+	old_marks = "--map-marks=old" in LaunchArgs.user_args()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -142,7 +164,7 @@ func _build() -> void:
 	if finds != null:
 		for e: Dictionary in finds.rows:
 			if str(e.get("world","")) == str(finds.world) and e.at != Vector3.INF and finds.is_found(e):
-				_finds.append(Vector2(e.at.x,e.at.z))
+				_finds.append({"at":Vector2(e.at.x,e.at.z),"glyph":Book.find_glyph(e)})
 
 ## The built places: {name, kind (ruin, temple, falls, peak, road), at, line}.
 ## Their spots are their own scripts' constants; the Peak's is the land's.
@@ -167,6 +189,7 @@ static func places(host: Node) -> Array:
 	var pk: RefCounted = field.peak() if field != null and field.has_method("peak") else null
 	if pk != null: out.append({"name":"The Peak","kind":"peak","at":pk.centre})
 	for p: Dictionary in out:
+		p.glyph = str(PLACE_GLYPHS.get(str(p.name),KIND_GLYPHS.get(str(p.kind),"")))
 		if p.has("line"):
 			var line: Array = p.line
 			p.at = line[int(line.size()*0.5)]
@@ -360,7 +383,9 @@ func _draw_sheet() -> void:
 			if p.has("line"): _draw_line(v,p.line,k)
 	# The finds found, then the start, then the places' marks and names, then
 	# the plane over all.
-	for at: Vector2 in _finds: _diamond(v,to_screen(at),3.0*k,Kit.GOLD,Kit.INK)
+	for f: Dictionary in _finds:
+		if old_marks: _diamond(v,to_screen(f.at),3.0*k,Kit.GOLD,Kit.INK)
+		else: _mark(v,str(f.glyph),to_screen(f.at),FIND_D,k,Kit.GOLD)
 	_draw_start(v,to_screen(_start()),k)
 	_draw_places(v,k)
 	_draw_plane(v,k)
@@ -399,11 +424,21 @@ func _draw_line(v: Control, line: Array, k: float) -> void:
 
 func _draw_places(v: Control, k: float) -> void:
 	var taken: Array[Rect2] = []
+	if not old_marks:
+		# The finds' marks and the start's keep the names off them.
+		for f: Dictionary in _finds: taken.append(_mark_rect(to_screen(f.at),FIND_D,k))
+		taken.append(_mark_rect(to_screen(_start()),START_D,k))
 	var order := _places.duplicate()
 	# The Peak's name first, then the rest by kind.
 	order.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return _rank(p) < _rank(q))
 	for p: Dictionary in order:
 		var at := to_screen(p.at)
+		if not old_marks:
+			var d := _mark_d(p)
+			if d > 0.0:
+				_mark(v,str(p.glyph),at,d,k,MARK_RIM)
+				taken.append(_mark_rect(at,d,k))
+			continue
 		match str(p.kind):
 			"ruin":
 				v.draw_rect(Rect2(at-Vector2(3.5,3.5)*k,Vector2(7.0,7.0)*k),Kit.CREAM)
@@ -418,6 +453,10 @@ func _draw_places(v: Control, k: float) -> void:
 				v.draw_circle(at,3.4*k,Color(WATER_INK,0.95))
 				v.draw_circle(at,1.4*k,Color("ece5d0"))
 				taken.append(Rect2(at-Vector2(4.0,4.0)*k,Vector2(8.0,8.0)*k))
+	if not old_marks:
+		# The plane, drawn over all, keeps the names off it too.
+		if not pinned(): taken.append(_mark_rect(to_screen(plane_at()),PLANE_D*0.8,k))
+		order.push_front({"name":"Start","kind":"start","at":_start()})
 	for p: Dictionary in order:
 		var at := to_screen(p.at)
 		var kind := str(p.kind)
@@ -432,6 +471,10 @@ func _draw_places(v: Control, k: float) -> void:
 			track = 0.02
 			s = str(p.name)
 		elif kind == "falls": col = WATER_INK
+		elif kind == "start":
+			px = 9.5
+			track = 0.2
+			col = Kit.DIM
 		elif kind == "road":
 			face = Kit.NUM
 			px = 10.5
@@ -440,9 +483,11 @@ func _draw_places(v: Control, k: float) -> void:
 			col = Kit.LAND
 		var w := Kit.text_w(face,s,px,k,track)
 		var h := px*k*1.1
-		var gap := 7.0*k
+		var gap := 7.0*k if old_marks else ((START_D if kind == "start" else _mark_d(p))*0.5+RIM+3.0)*k
 		var tries := [Vector2(gap,-h*0.5),Vector2(-gap-w,-h*0.5),Vector2(-w*0.5,-gap-h),Vector2(-w*0.5,gap)]
-		if kind in ["peak","road"]: tries = [Vector2(-w*0.5,-h*0.5),Vector2(-w*0.5,-h*1.6),Vector2(-w*0.5,h*0.6)]
+		if kind == "road" or (kind == "peak" and old_marks): tries = [Vector2(-w*0.5,-h*0.5),Vector2(-w*0.5,-h*1.6),Vector2(-w*0.5,h*0.6)]
+		# The Peak's name under its mark, else over it.
+		elif kind == "peak": tries = [Vector2(-w*0.5,gap-1.0*k),Vector2(-w*0.5,-gap-h),Vector2(gap,-h*0.5)]
 		for o: Vector2 in tries:
 			var cell := Rect2(at+o,Vector2(w,h))
 			var clear := true
@@ -452,6 +497,24 @@ func _draw_places(v: Control, k: float) -> void:
 			taken.append(cell)
 			_label(v,face,s,Vector2(cell.position.x,cell.get_center().y),px,k,track,col)
 			break
+
+## A place's disc, mock px across (0: no mark, a road's name alone).
+static func _mark_d(p: Dictionary) -> float:
+	if str(p.get("glyph","")) == "": return 0.0
+	return PEAK_D if str(p.kind) == "peak" else MARK_D
+
+static func _mark_rect(at: Vector2, d: float, k: float) -> Rect2:
+	return Rect2(at-Vector2.ONE*(d*0.5+RIM)*k,Vector2.ONE*(d+RIM*2.0)*k)
+
+## A mark: the glyph `id` on an ink disc `d` mock px across, its rim `rim`,
+## a soft shadow under it so it stands off the land.
+func _mark(v: Control, id: String, at: Vector2, d: float, k: float, rim: Color) -> void:
+	var r := d*0.5*k
+	var w := RIM*k
+	v.draw_circle(at+Vector2(0.0,1.4*k),r+w+0.6*k,Color(Kit.NIGHT,0.3),true,-1.0,true)
+	v.draw_circle(at,r+w,rim,true,-1.0,true)
+	v.draw_circle(at,r,Kit.INK,true,-1.0,true)
+	Book.glyph(v,id,"icon",at,d*GLYPH_IN*k)
 
 static func _rank(p: Dictionary) -> int:
 	return ["peak","ruin","temple","falls","road"].find(str(p.kind))
@@ -465,6 +528,10 @@ func _label(v: Control, which: int, s: String, at: Vector2, px: float, k: float,
 	v.draw_string(f,Vector2(roundf(at.x),base_y),s,HORIZONTAL_ALIGNMENT_LEFT,-1,ipx,col)
 
 func _draw_start(v: Control, at: Vector2, k: float) -> void:
+	if not old_marks:
+		# Its name goes with the places' (`_draw_places`), clear of the marks.
+		_mark(v,"start",at,START_D,k,MARK_RIM)
+		return
 	v.draw_arc(at,5.0*k,0.0,TAU,20,Color(Kit.INK,0.85),maxf(1.3*k,1.0),true)
 	v.draw_circle(at,1.6*k,Color(Kit.INK,0.85))
 	_label(v,Kit.MED,"START",at+Vector2(8.0*k,0.0),9.5,k,0.2,Kit.DIM)
@@ -500,6 +567,9 @@ func _draw_plane(v: Control, k: float) -> void:
 	_label(v,Kit.NUM,s,pin+o-Vector2(w*0.5,0.0),11.0,k,0.0,Kit.INK)
 
 func _arrow(v: Control, at: Vector2, way: Vector2, k: float, sc: float) -> void:
+	if not old_marks:
+		_plane_mark(v,at,way,k,sc)
+		return
 	var side := Vector2(-way.y,way.x)
 	var l := 13.0*k*sc
 	var tip := at+way*l
@@ -510,6 +580,28 @@ func _arrow(v: Control, at: Vector2, way: Vector2, k: float, sc: float) -> void:
 	v.draw_colored_polygon(rim,Color("efe8d4"))
 	v.draw_colored_polygon(pts,Color(Kit.TICK,1.0))
 	v.draw_polyline(pts+PackedVector2Array([pts[0]]),Color(Kit.INK,0.9),maxf(1.0*k,1.0),true)
+
+## The plane: the dart glyph (nose up, the tick's colour) turned to
+## `way`, cut out of the land by an ink line and a paper rim round it.
+func _plane_mark(v: Control, at: Vector2, way: Vector2, k: float, sc: float) -> void:
+	var px := maxf(roundf(PLANE_D*k*sc),6.0)
+	var body := Glyphs.texture("dart","icon",px)
+	var cut := Glyphs.texture("dart","shadow",px)
+	if body == null or cut == null: return
+	var sz := Vector2(body.get_size())
+	var r := Rect2(-sz*0.5,sz)
+	v.draw_set_transform(at,atan2(way.x,-way.y))
+	for i in 12:
+		var o := Vector2.from_angle(TAU*i/12.0)
+		v.draw_texture_rect(cut,Rect2(r.position+o*3.2*k+Vector2(0.0,1.4*k).rotated(-atan2(way.x,-way.y)),r.size),false,Color(Kit.NIGHT,0.1))
+	for i in 12:
+		var o := Vector2.from_angle(TAU*i/12.0)
+		v.draw_texture_rect(cut,Rect2(r.position+o*3.0*k,r.size),false,MARK_RIM)
+	for i in 8:
+		var o := Vector2.from_angle(TAU*i/8.0)
+		v.draw_texture_rect(cut,Rect2(r.position+o*1.4*k,r.size),false,Kit.INK)
+	v.draw_texture_rect(body,r,false)
+	v.draw_set_transform(Vector2.ZERO)
 
 ## The north mark and the scale bar.
 func _draw_furniture(v: Control, k: float) -> void:

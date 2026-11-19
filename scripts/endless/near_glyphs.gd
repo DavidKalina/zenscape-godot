@@ -51,6 +51,7 @@ const TINTS := {
 	"relic":"e2b25e","landing":"a8977c","line":"e2b25e","event":"f7c63f","plane":"bone",
 	"falls":"4f8fc0","tunnel":"8d8577","peak":"8fa3ad","stack":"7c9aa8","balloon":"c2694f","whale":"7c9aa8",
 	"burrower":"b9744a","race":"c9ccd4","shop":"e0a548","door":"a8977c",
+	"temple":"d9c7a0","ruin":"a8977c","arena":"b9744a","theatre":"a39274","dome":"c9a26a","citadel":"a39c90","start":"bone","dart":"c2501c",
 	"tree_cluster":"5e8f4c","plane_side":"bone","coin_block":"gilt","surge_burst":"f7c63f"}
 ## The lit and the shade off a mid tone, as the gilt ground's stand off its
 ## mid (d9a441 to f7dc8a and 8f6a2c): the lit keeps LIT_S of the saturation
