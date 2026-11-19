@@ -221,6 +221,9 @@ var _marks_until := -1.0
 var _p_when := PackedFloat32Array()
 var _p_at := PackedVector3Array()
 var _p_size := PackedFloat32Array()
+## Which are a fish breaking the surface (its splash, `_splashes`), not a plop.
+var _p_splash := PackedByteArray()
+var _splashes: Array = []
 var _players: Array[AudioStreamPlayer3D] = []
 var _streams: Array = []
 var _spine := PackedVector3Array()
@@ -310,7 +313,11 @@ func setup(field: RefCounted) -> void:
 	_p_when.fill(-1.0)
 	_p_at.resize(PLOPS*2)
 	_p_size.resize(PLOPS*2)
+	_p_splash.resize(PLOPS*2)
 	if FlightSound.wanted():
+		for i in 4:
+			var s: AudioStream = load("res://assets/audio/foley/fish-splash-%d.wav" % (i+1))
+			if s != null: _splashes.append(s)
 		for path: String in ["res://assets/audio/fish-plop-1.wav","res://assets/audio/fish-plop-2.wav",
 				"res://assets/audio/foley/water-pop-1.wav","res://assets/audio/foley/water-pop-3.wav"]:
 			var s: AudioStream = load(path)
@@ -663,6 +670,7 @@ func _fly(delta: float) -> void:
 		if not l.out and nose > l.level:
 			l.out = true
 			_splash(Vector3(pos.x,l.level,pos.z),vel,l.long/0.6,false)
+			_plop_later(Vector3(pos.x,l.level,pos.z),l.long/0.6,true)
 		if l.out and not l.went_in and vel.y < 0.0 and nose < l.level:
 			l.went_in = true
 			var into := Vector3(pos.x,l.level,pos.z)+vel.normalized()*Vector3(1,0,1)*l.long*0.42
@@ -744,14 +752,17 @@ func _splash(at: Vector3, vel: Vector3, size: float, going_in: bool, after := 0.
 	_s_mm.buffer = _s_buf
 	_s_until = maxf(_s_until,_clock+after+3.5)
 
-func _plop_later(at: Vector3, size: float) -> void:
+## A plop a beat after a fish goes in at `at`, or with `splash` the burst of
+## one breaking the surface (no beat: only the sound's way to the eye).
+func _plop_later(at: Vector3, size: float, splash := false) -> void:
 	if _streams.is_empty(): return
 	var free := 0
 	for i in _p_when.size():
 		if _p_when[i] < 0.0: free = i
-	_p_when[free] = _clock+_rng.randf_range(BEAT.x,BEAT.y)+at.distance_to(_eye)/SOUND_SPEED
+	_p_when[free] = _clock+(0.0 if splash else _rng.randf_range(BEAT.x,BEAT.y))+at.distance_to(_eye)/SOUND_SPEED
 	_p_at[free] = at
 	_p_size[free] = size
+	_p_splash[free] = 1 if splash and not _splashes.is_empty() else 0
 
 func _plops(eye: Vector3) -> void:
 	if _streams.is_empty(): return
@@ -766,7 +777,7 @@ func _plops(eye: Vector3) -> void:
 			var big := clampf((_p_size[i]-0.6)/0.8,0.0,1.0)
 			# A big fish, lower still.
 			var low := 0.72 if _p_size[i] > 2.0 else 1.0
-			a.stream = _streams[_rng.randi()%_streams.size()]
+			a.stream = _splashes[_rng.randi()%_splashes.size()] if _p_splash[i] == 1 else _streams[_rng.randi()%_streams.size()]
 			a.global_position = at
 			a.volume_db = lerpf(PLOP_DB.x,PLOP_DB.y,big)+_rng.randf_range(-2.0,2.0)
 			a.pitch_scale = lerpf(1.3,0.9,big)*low*_rng.randf_range(0.92,1.08)

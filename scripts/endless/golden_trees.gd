@@ -441,9 +441,9 @@ func _fell(site: Dictionary, at: Vector3) -> void:
 	var t: Dictionary = site.tree
 	var foot := Vector3(float(t.x),float(t.foot),float(t.z))
 	var crown := foot+Vector3.UP*float(site.height)*0.7
-	game.sound.shot("snap",1.0,0.85,at)
-	game.sound.shot("crash",0.7,1.3,at)
-	game.sound.shot("creak",0.6,0.55,foot)
+	game.sound.shot("wood-crack",1.0,0.8,at)
+	game.sound.shot("leaf-burst",0.7,0.9,at)
+	game.sound.shot("tree-creak",0.6,0.75,foot)
 	game.debris.burst("wood",foot+Vector3.UP*clampf(at.y-foot.y,1.0,float(site.height)),(Vector3.UP*0.6+flat).normalized(),true)
 	game.debris.burst("needles",crown,(Vector3.UP*0.35+flat).normalized(),true)
 	_leaves(crown,flat,90,float(t.radius)*GROW*WIDE)
@@ -475,8 +475,8 @@ func _shrug(site: Dictionary, at: Vector3, deep: float) -> void:
 	var crown := Vector3(float(t.x),float(t.foot)+float(site.height)*0.75,float(t.z))
 	game.debris.burst("needles",crown,(Vector3.UP*0.35+flat).normalized(),heft > 0.5)
 	_leaves(crown,flat,30,float(t.radius)*GROW*WIDE)
-	game.sound.shot("leaves",0.5,0.9,crown)
-	game.sound.shot("creak",0.25,0.8,crown)
+	game.sound.shot("leaf-burst",0.5,0.9,crown)
+	game.sound.shot("tree-creak",0.25,0.9,crown)
 
 func _sway_step(site: Dictionary, delta: float) -> void:
 	var s := float(site.sway)
@@ -530,8 +530,8 @@ func _fall_step(site: Dictionary, delta: float) -> void:
 		var crown := pivot.position+Vector3(f.way)*float(site.height)*0.65
 		if int(f.bounces) == 0:
 			var t0 := Time.get_ticks_usec()
-			game.sound.shot("thud",0.9,0.75,crown)
-			game.sound.shot("leaves",0.6,0.7,crown)
+			game.sound.shot("wood-thud",0.9,0.75,crown)
+			game.sound.shot("tree-fall",0.7,0.85,crown)
 			game.debris.burst("needles",crown,Vector3.UP,true)
 			_leaves(crown,Vector3.UP,60,float(t.radius)*GROW*WIDE)
 			game.feel_hit(0.008,2.0)

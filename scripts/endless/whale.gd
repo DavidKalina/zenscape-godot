@@ -300,6 +300,20 @@ func _stone(game: Node3D, q: Vector3) -> bool:
 	if g is Vector2: return true
 	return g != null and float(g) > Field.SEA_Y-2.0
 
+## The whale's voice through the flight's sound (FlightSound `shot`), heard
+## VOICE_REACH m off and full within VOICE_UNIT m: its song as it comes up, the
+## blows (a burst pitched down to its size), the flukes sliding under.
+const VOICE_REACH := 1400.0
+const VOICE_UNIT := 90.0
+const CALL_GAIN := 0.9
+const BLOW_GAIN := 1.0
+const BLOW_PITCH := 0.6
+const SPLASH_GAIN := 1.0
+const SPLASH_PITCH := 0.7
+static func voice(game: Node3D, kind: String, gain: float, pitch: float, at: Vector3) -> void:
+	var s: Variant = game.get("sound")
+	if s != null: s.shot(kind,gain,pitch,at,s.SFX,false,VOICE_REACH,VOICE_UNIT)
+
 ## The whale comes up at `at` (on the water), swimming along `heading`.
 func _stage(game: Node3D, at: Vector3, heading: Vector3) -> void:
 	spot = at
@@ -320,6 +334,7 @@ func _stage(game: Node3D, at: Vector3, heading: Vector3) -> void:
 	body.set_effect("surface_y",_level)
 	body.set_effect("sheet",0.0)
 	body.play()
+	voice(game,"whale-call",CALL_GAIN,1.0,at)
 
 func _staged_step(delta: float, game: Node3D) -> void:
 	var plane = game.plane
@@ -345,6 +360,7 @@ func _staged_step(delta: float, game: Node3D) -> void:
 	# The blows.
 	if (_blown == 0 and t >= float(beats.blow)) or (_blown == 1 and t >= BLOW_AGAIN):
 		_puff(body.socket(&"blowhole"),1.2 if _blown == 0 else 0.7,level)
+		voice(game,"whale-blow",BLOW_GAIN*(1.0 if _blown == 0 else 0.7),BLOW_PITCH,body.socket(&"blowhole"))
 		_blown += 1
 	# The flukes' water.
 	var up: float = beats["fluke.up"]
@@ -367,6 +383,7 @@ func _staged_step(delta: float, game: Node3D) -> void:
 	if _foam <= 0.0 and game.water != null:
 		_foam = FOAM_EVERY
 		_wash(game,t,level)
+	if was < slide and t >= slide: voice(game,"whale-splash",SPLASH_GAIN,SPLASH_PITCH,body.socket(&"fluke"))
 	if was < slide+1.5 and t >= slide+1.5: _rings = RINGS_OUT
 	if t >= WhaleBody.LENGTH:
 		_end()

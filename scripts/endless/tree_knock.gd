@@ -371,7 +371,7 @@ func _fall(game: Node3D, t: Dictionary, stood: Dictionary, way: Vector3, speed: 
 		"blow":blow,"rest":rest,"k":1.5*9.8*FALL_G/height,"height":height,"phase":"fall",
 		"bounces":0,"t":0.0,"twist":rng.randf_range(-TWIST,TWIST),"base":pivot.position.y,"stump_y":foot.y,
 		"sink":SINK,"depth":float(t.radius)*1.8+stump+1.0,"way":way,"girth":float(t.radius)/0.85+CLEAR_EYE})
-	game.sound.shot("creak",0.3,0.6,foot)
+	game.sound.shot("tree-creak",0.4,0.9,foot)
 	# Only so many lie at once: the oldest not yet sinking goes, fast.
 	while _lying() > MAX_LIVE:
 		for g: Dictionary in falling:
@@ -480,8 +480,8 @@ func _thud(f: Dictionary, game: Node3D) -> void:
 	game.debris.burst("leaves",crown,Vector3.UP,true)
 	game.debris.burst("dust",crown,Vector3.UP,float(f.height) > 12.0)
 	var big := clampf(float(f.height)/18.0,0.5,1.4)
-	game.sound.shot("thud",0.5*big,1.05-0.2*big,crown)
-	game.sound.shot("leaves",0.35,0.8,crown)
+	game.sound.shot("wood-thud",0.5*big,1.05-0.2*big,crown)
+	game.sound.shot("tree-fall",0.4*big,1.1-0.15*big,crown)
 	f.landed_at = crown
 
 ## The numbers line (F1).
