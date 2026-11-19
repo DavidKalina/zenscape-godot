@@ -298,9 +298,25 @@ class Flock:
 	var until := 0.0
 	var calm := 0.0
 	var nid := -1                # flown natively (ZenScapeBirds), or -1
+	var heard := false           # its wings played for this time in the air by the plane
+	var chirp_in := 0.0          # seconds to its next chirp
 	var plan := {}               # a covey's flush (grass_birds.gd `_try`), an escort's
 	var loose := 0.12            # how far a bird wanders about its place, of `keep`
 
+## The flight's sound (FlightSound; the study sets it). A flock in the air by
+## the plane (out of its tree, riding alongside, peeling off, an escort),
+## within VOICE_NEAR m: its wings once as it comes (WINGS_GAIN), then chirps
+## from among the birds every CHIRP_EVERY s (sooner for a big flock) at
+## CHIRP_GAIN, for CHIRP_PEEL s into the peel; heard VOICE_REACH m off, full
+## within VOICE_UNIT m. A covey's flush has its own cries (grass_birds.gd).
+var sound: Node = null
+const VOICE_NEAR := 80.0
+const VOICE_REACH := 140.0
+const VOICE_UNIT := 14.0
+const WINGS_GAIN := 0.7
+const CHIRP_GAIN := 0.55
+const CHIRP_EVERY := Vector2(0.25,0.8)
+const CHIRP_PEEL := 2.5
 var enabled := true
 var density := 1.0
 var reach := 1.0
@@ -474,6 +490,7 @@ func step(delta: float, eye: Vector3, plane: RefCounted) -> void:
 			if f.nid >= 0: native.drop(f.nid)
 			flocks.remove_at(i)
 			stats.dropped += 1
+		elif sound != null: _voice(f,delta,pp)
 	var t_draw := Time.get_ticks_usec()
 	_draw()
 	stats.draw_ms = lerpf(float(stats.draw_ms),(Time.get_ticks_usec()-t_draw)/1000.0,0.05)
@@ -1018,6 +1035,26 @@ func _covey_lift(b: Bird) -> void:
 	b.pitch = 1.0
 	b.face = b.way
 	grass.lifted(b.spot)
+
+## A flock's wings and chirps while it flies by the plane (`sound`).
+func _voice(f: Flock, delta: float, pp: Vector3) -> void:
+	var by := f.state == BURST or f.state == RIDING or f.state == ESCORT or (f.state == PEEL and f.t < CHIRP_PEEL)
+	if not by or f.birds.is_empty():
+		f.heard = false
+		return
+	if f.a.distance_to(pp) > VOICE_NEAR: return
+	var many := clampf(f.birds.size()/6.0,0.6,2.0)
+	if not f.heard:
+		f.heard = true
+		f.chirp_in = _rng.randf_range(0.1,0.4)
+		stats.winged = int(stats.get("winged",0))+1
+		sound.shot("bird-wings",WINGS_GAIN*clampf(many,0.7,1.3),_rng.randf_range(0.95,1.1),f.a,sound.SFX,false,VOICE_REACH,VOICE_UNIT)
+	f.chirp_in -= delta
+	if f.chirp_in > 0.0: return
+	f.chirp_in = _rng.randf_range(CHIRP_EVERY.x,CHIRP_EVERY.y)/many
+	stats.chirped = int(stats.get("chirped",0))+1
+	var at := f.a+Vector3(_rng.randf_range(-2.0,2.0),_rng.randf_range(-1.0,1.0),_rng.randf_range(-2.0,2.0))
+	sound.shot("bird-chirp",CHIRP_GAIN,_rng.randf_range(0.9,1.2),at,sound.SFX,false,VOICE_REACH,VOICE_UNIT)
 
 ## One bird's frame; its distance from the plane.
 func _covey_fly(f: Flock, b: Bird, delta: float, pp: Vector3, fwd: Vector3, speed: float, shove: Vector3) -> float:

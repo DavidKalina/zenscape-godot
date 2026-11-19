@@ -29,6 +29,16 @@ extends Node3D
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
+const FlightSound = preload("res://scripts/endless/flight_sound.gd")
+## The wake's water, a loop that travels with the first swimmer: its gain
+## while one swims, the seconds it takes to come and go, how far it carries
+## (full within WAKE_UNIT m, gone WAKE_HEAR m off).
+const WAKE_LOOP := "res://assets/audio/foley/fish-wake-loop.wav"
+const WAKE_GAIN := 0.7
+const WAKE_IN := 0.5
+const WAKE_OUT := 0.9
+const WAKE_UNIT := 16.0
+const WAKE_HEAR := 170.0
 
 ## The mean gap (s of time low over a lake) and how far either way it goes; the
 ## first comes at this share of one.
@@ -140,6 +150,8 @@ class Swimmer:
 	var lift := 0.0
 
 var wake: Node3D
+var _voice: AudioStreamPlayer3D
+var _voice_gain := 0.0
 var _rng := RandomNumberGenerator.new()
 var _gap_mean := GAP
 var _size := 1.0
@@ -342,8 +354,35 @@ func step(delta: float) -> void:
 	else:
 		_wait(delta)
 		if _d_live: _drops(delta)
+	_sound(delta)
 	ms = (Time.get_ticks_usec()-began)/1000.0
 	ms_avg = lerpf(ms_avg,ms,0.05)
+
+## The wake's loop, at the first swimmer while one swims.
+func _sound(delta: float) -> void:
+	if _voice == null:
+		if not _on or not FlightSound.wanted(): return
+		var stream := (load(WAKE_LOOP) as AudioStreamWAV).duplicate() as AudioStreamWAV
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		stream.loop_begin = 0
+		stream.loop_end = roundi(stream.get_length()*stream.mix_rate)
+		_voice = AudioStreamPlayer3D.new()
+		_voice.stream = stream
+		_voice.bus = FlightSound.SFX
+		_voice.unit_size = WAKE_UNIT
+		_voice.max_distance = WAKE_HEAR
+		_voice.panning_strength = 0.7
+		add_child(_voice)
+	var swimming := _on and not _swim.is_empty()
+	_voice_gain = move_toward(_voice_gain,1.0 if swimming else 0.0,delta/(WAKE_IN if swimming else WAKE_OUT))
+	if _voice_gain <= 0.0:
+		if _voice.playing: _voice.stop()
+		return
+	if swimming:
+		var p := _swim[0].pos
+		_voice.global_position = Vector3(p.x,Field.SEA_Y,p.z)
+	if not _voice.playing: _voice.play(randf()*_voice.stream.get_length())
+	_voice.volume_db = linear_to_db(WAKE_GAIN*_voice_gain)
 
 func _wait(delta: float) -> void:
 	if not wake._low or wake._high > LOW: return
@@ -494,12 +533,14 @@ func _breach(delta: float) -> float:
 	if not lead.out and depth < 0.0 and was_air >= 0.0:
 		lead.out = true
 		wake._splash(Vector3(lead.pos.x,Field.SEA_Y,lead.pos.z),way*0.2+Vector3.UP*vy,lead.long/0.6*0.8,false)
+		wake._plop_later(Vector3(lead.pos.x,Field.SEA_Y,lead.pos.z),lead.long/0.6,true)
 	if lead.out and vy < 0.0 and depth > 0.0:
 		lead.out = false
 		var at := Vector3(lead.pos.x,Field.SEA_Y,lead.pos.z)
 		wake._splash(at,way*0.2+Vector3.UP*vy,lead.long/0.6,true)
 		wake._splash(at,way*0.1+Vector3.UP*vy*0.5,lead.long/0.6*0.7,true,0.16)
 		wake._mark(at,wake._clock,lead.long/0.6)
+		wake._plop_later(at,lead.long/0.6)
 	if up < 0.0 and vy < 0.0:
 		_air = -1.0
 		return DEPTH

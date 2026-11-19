@@ -418,6 +418,11 @@ static func wanted() -> bool:
 		if arg == "--sound=on": return true
 	return DisplayServer.get_name() != "headless"
 
+## Whether the engine, the air's beds, the whooshes and the swishes are the
+## synthesised kit takes (`--air-sound=old`), not the recordings.
+static func old_air() -> bool:
+	return "--air-sound=old" in preload("res://scripts/launch_args.gd").user_args()
+
 # --- Setup ------------------------------------------------------------------------
 
 func _init() -> void:
@@ -435,10 +440,13 @@ func _ready() -> void:
 		_air_lpf = AudioServer.get_bus_effect(AudioServer.get_bus_index(AIR),0) as AudioEffectLowPassFilter
 		_eq = AudioServer.get_bus_effect(AudioServer.get_bus_index(BORE),0) as AudioEffectEQ6
 		_reverb = AudioServer.get_bus_effect(AudioServer.get_bus_index(BORE),1) as AudioEffectReverb
-	rush = _bed(KIT+"air-rush-loop.wav",AIR)
-	whistle = _bed(KIT+"air-whistle-loop.wav",AIR)
-	howl = _bed(KIT+"air-howl-loop.wav",AIR)
-	engine = _bed(KIT+"engine-loop.wav",BORE)
+	# The plane and its air: recordings (tools/foley/make_flight_foley.py), or
+	# the synthesised kit takes under --air-sound=old.
+	var kit := old_air()
+	rush = _bed(KIT+"air-rush-loop.wav" if kit else FOLEY+"wind-rush-loop.wav",AIR)
+	whistle = _bed(KIT+"air-whistle-loop.wav" if kit else FOLEY+"wind-whistle-loop.wav",AIR)
+	howl = _bed(KIT+"air-howl-loop.wav" if kit else FOLEY+"wind-howl-loop.wav",AIR)
+	engine = _bed(KIT+"engine-loop.wav" if kit else FOLEY+"prop-engine-loop.wav",BORE)
 	engine.attack = 3.0
 	engine.release = 1.2
 	wires = _bed(KIT+"wire-sing-loop.wav",BORE)
@@ -470,8 +478,8 @@ func _ready() -> void:
 		_pool3.append(p)
 	_clips = {
 		"thump":_takes(KIT+"thump-%d.wav",3),"creak":_takes(KIT+"creak-%d.wav",6),
-		"whoosh":_takes(KIT+"whoosh-%d.wav",4),"start":[load(KIT+"engine-start.wav")],
-		"swish":_takes(KIT+"swish-%d.wav",4),"grind":_takes(FOLEY+"land-grind-%d.wav",6),
+		"whoosh":_takes(KIT+"whoosh-%d.wav" if kit else FOLEY+"pass-whoosh-%d.wav",4),"start":[load(KIT+"engine-start.wav")],
+		"swish":_takes(KIT+"swish-%d.wav" if kit else FOLEY+"pass-swish-%d.wav",4),"grind":_takes(FOLEY+"land-grind-%d.wav",6),
 		"crash":_takes(FOLEY+"mesa-break-%d.wav",6),"debris":_takes(KIT+"rock-debris-%d.wav",3),
 		"splash":_takes(FOLEY+"water-splash-%d.wav",6),"leaves":_takes(FOLEY+"trees-%d.wav",6),
 		# Stone and soil breaking (the bore's rocks, the burrower): a rock crack,
@@ -484,6 +492,12 @@ func _ready() -> void:
 		"wood-crack":_takes(FOLEY+"wood-crack-%d.wav",6),"tree-creak":_takes(FOLEY+"tree-creak-%d.wav",4),
 		"tree-fall":_takes(FOLEY+"tree-fall-%d.wav",4),"wood-thud":_takes(FOLEY+"wood-thud-%d.wav",4),
 		"leaf-burst":_takes(FOLEY+"leaf-burst-%d.wav",6),
+		# The barrel roll keeps the kit's whoosh and swish (the recordings read worse on it).
+		"roll-whoosh":_takes(KIT+"whoosh-%d.wav",4),"roll-swish":_takes(KIT+"swish-%d.wav",4),
+		# The living things: a flock passing close (scripts/endless/endless_birds.gd),
+		# the whale's song, blow and flukes (scripts/endless/whale.gd).
+		"bird-wings":_takes(FOLEY+"bird-wings-%d.wav",6),"bird-chirp":_takes(FOLEY+"bird-chirp-%d.wav",8),"whale-call":_takes(FOLEY+"whale-call-%d.wav",3),
+		"whale-blow":_takes(FOLEY+"whale-blow-%d.wav",2),"whale-splash":_takes(FOLEY+"whale-splash-%d.wav",3),
 		# The rival race's beats (scripts/endless/rival_race.gd).
 		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
 		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
@@ -675,8 +689,8 @@ func _flight(delta: float, velocity: Vector3, speed: float, on_wheels: bool) -> 
 func _moves(delta: float, plane, on_wheels: bool) -> void:
 	rolling = bool(plane.get("rolling")) and not on_wheels
 	if rolling and not _was_rolling:
-		shot("whoosh",ROLL_WHOOSH*(0.7+0.3*fast),ROLL_PITCH+0.1*fast,Vector3.INF,AIR)
-		shot("swish",ROLL_SWISH,1.0,Vector3.INF,AIR)
+		shot("roll-whoosh",ROLL_WHOOSH*(0.7+0.3*fast),ROLL_PITCH+0.1*fast,Vector3.INF,AIR)
+		shot("roll-swish",ROLL_SWISH,1.0,Vector3.INF,AIR)
 	_was_rolling = rolling
 	_turn_wait -= delta
 	if not rolling and _was_pull < TURN_AT and pull >= TURN_AT and fast >= TURN_FAST and _turn_wait <= 0.0:

@@ -172,6 +172,7 @@ func _tell_blow(game: Node3D) -> void:
 	var head := shape-heading*WhaleBody.LONG*0.32
 	var level := Field.SEA_Y+float(game.sea_height(head))
 	_column_blow(game,Vector3(head.x,level+0.3,head.z),level)
+	_whale.voice(game,"whale-blow",_whale.BLOW_GAIN,_whale.BLOW_PITCH,Vector3(head.x,level+0.3,head.z))
 	if game.water != null:
 		game.water.mark(Vector3(head.x,level,head.z),false,0.5,6.0,16.0,6.0)
 		game.water.mark(Vector3(head.x,level,head.z),true,0.35,5.0,26.0,5.0)

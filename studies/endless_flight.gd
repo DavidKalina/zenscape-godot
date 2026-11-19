@@ -810,6 +810,7 @@ func _ready() -> void:
 	birds.name = "Birds"
 	add_child(birds)
 	birds.setup(seed,field,trees)
+	birds.sound = sound
 	if EndlessBalloons.wanted():
 		balloons = EndlessBalloons.new()
 		balloons.name = "Balloons"

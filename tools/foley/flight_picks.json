@@ -35,5 +35,70 @@
  ],
  "grass-skim-loop": [
   1
+ ],
+ "prop-engine-loop": [
+  11
+ ],
+ "wind-rush-loop": [
+  1
+ ],
+ "wind-whistle-loop": [
+  11
+ ],
+ "wind-howl-loop": [
+  1
+ ],
+ "pass-whoosh": [
+  2,
+  1,
+  7,
+  9
+ ],
+ "pass-swish": [
+  1,
+  2,
+  3,
+  5
+ ],
+ "bird-wings": [
+  28,
+  21,
+  37,
+  1,
+  19,
+  10
+ ],
+ "fish-splash": [
+  11,
+  15,
+  12,
+  5
+ ],
+ "whale-call": [
+  1,
+  3,
+  4
+ ],
+ "whale-blow": [
+  3,
+  1
+ ],
+ "whale-splash": [
+  2,
+  3,
+  5
+ ],
+ "bird-chirp": [
+  24,
+  25,
+  1,
+  12,
+  14,
+  20,
+  16,
+  27
+ ],
+ "fish-wake-loop": [
+  7
  ]
 }

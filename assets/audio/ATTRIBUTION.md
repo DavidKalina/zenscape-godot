@@ -45,7 +45,11 @@ for no credit; every file's source, author and page is listed anyway in
 `foley/SOURCES.tsv`.
 
 The flight's trees and grass (`foley/wood-crack-*`, `tree-creak-*`, `tree-fall-*`,
-`wood-thud-*`, `leaf-burst-*`, `grass-skim-loop.wav`) are cut the same way from
+`wood-thud-*`, `leaf-burst-*`, `grass-skim-loop.wav`) and the plane's engine and
+air (`prop-engine-loop.wav`, `wind-rush-loop.wav`, `wind-whistle-loop.wav`,
+`wind-howl-loop.wav`, `pass-whoosh-*`, `pass-swish-*`) and the living things
+(`bird-wings-*`, `bird-chirp-*`, `fish-splash-*`, `fish-wake-loop.wav`, `whale-call-*`, `whale-blow-*`,
+`whale-splash-*`) are cut the same way from
 CC0 Freesound recordings by `tools/foley/make_flight_foley.py`, and listed in
 the same `foley/SOURCES.tsv`.
 

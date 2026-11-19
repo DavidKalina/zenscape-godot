@@ -46,6 +46,21 @@ CLIPS = {
 	"wood-thud": ("shot", ["tree_thud"], 0.9, -18, 50, 4),
 	"leaf-burst": ("phrase", ["leaf_burst"], 1.2, -22, 180, 6),
 	"grass-skim-loop": ("loop", ["grass"], 4.0, -24, 350, 1),
+	# The plane and its air, at the levels of the synthesised kit takes they replace.
+	"prop-engine-loop": ("loop", ["engine"], 6.0, -15.5, 40, 1),
+	"wind-rush-loop": ("loop", ["wind_rush"], 8.0, -15, 80, 1),
+	"wind-whistle-loop": ("loop", ["wind_whistle"], 8.0, -18.5, 300, 1),
+	"wind-howl-loop": ("loop", ["wind_howl"], 8.0, -16, 80, 1),
+	"pass-whoosh": ("phrase", ["whoosh"], 1.3, -19, 100, 4),
+	"pass-swish": ("phrase", ["swish"], 0.5, -16.5, 200, 4),
+	# The living things: a flock passing, a fish breaking the surface, the whale.
+	"bird-wings": ("phrase", ["bird_wings", "bird_flock"], 1.6, -22, 150, 6),
+	"fish-splash": ("phrase", ["fish_splash"], 1.4, -20, 100, 4),
+	"bird-chirp": ("phrase", ["bird_chirp"], 0.45, -20, 800, 8),
+	"fish-wake-loop": ("loop", ["fish_wake"], 4.0, -20, 150, 1),
+	"whale-call": ("peak", ["whale_call"], 6.0, -20, 30, 3),
+	"whale-blow": ("peak", ["whale_blow"], 3.0, -18, 80, 2),
+	"whale-splash": ("peak", ["whale_splash"], 3.0, -17, 50, 3),
 }
 # Fetched sources whose titles show they are off-topic (a pencil under
 # "snap", a door under "creak", footsteps and birdsong under "grass").
@@ -54,6 +69,17 @@ EXCLUDE = set("""
 422963 424474 504437 402465 454222 767043 546787 827435 386228 836422 244989
 459999 721505 351609 479778 176252 593817 575320 384399 323457 734230 862894
 478389 447810 676988 743678 529396 675785
+315660 392486 392481 675386 648720 415299 437748 353610 496107 689188 127095
+437792 695970 607776
+637189 456127 727755 45483 825827 732788 370366 482285 152317 50905 517904
+337152 82560 839044 846301
+677451 844779 468209 877970 778384 573671 562342 534353
+733891 672568 611289 716930 534589
+877979 682534 179340 725425 591348 683102 451126 240311 514422 435815 529388
+275472 244340 555066 484197 533985 563690 563693 594266 205997 666549 560886
+615776 83740 475483 397236 868302 529463
+748262 14867 168439 182090 837674 614488 515155 158479 145387
+702386 681688 562862 381699 437516
 """.split())
 # Sources a clip leaves out of the folders it shares: the creaks are not
 # cracks, a fall and a split trunk are not creaks, snapping twigs not leaves.
