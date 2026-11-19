@@ -351,7 +351,7 @@ func _draw_sheet() -> void:
 	var b := box()
 	var tl := to_screen(b.position)
 	var br := to_screen(b.end)
-	v.draw_rect(Rect2(Vector2.ZERO,v.size),Color("ece5d0"))
+	v.draw_rect(Rect2(Vector2.ZERO,v.size),Color("ece5d0") if not _land else Color("2c7096"))
 	if _land and _tex != null:
 		v.draw_texture_rect(_tex,Rect2(tl,br-tl),false)
 	_draw_grid(v,k)
@@ -360,7 +360,7 @@ func _draw_sheet() -> void:
 			if p.has("line"): _draw_line(v,p.line,k)
 	# The finds found, then the start, then the places' marks and names, then
 	# the plane over all.
-	for at: Vector2 in _finds: _diamond(v,to_screen(at),2.6*k,Color(Kit.INK,0.8),Color("ece5d0"))
+	for at: Vector2 in _finds: _diamond(v,to_screen(at),3.0*k,Kit.GOLD,Kit.INK)
 	_draw_start(v,to_screen(_start()),k)
 	_draw_places(v,k)
 	_draw_plane(v,k)
@@ -406,11 +406,13 @@ func _draw_places(v: Control, k: float) -> void:
 		var at := to_screen(p.at)
 		match str(p.kind):
 			"ruin":
-				v.draw_rect(Rect2(at-Vector2(3.0,3.0)*k,Vector2(6.0,6.0)*k),Color(Kit.INK,0.9),false,maxf(1.4*k,1.0))
+				v.draw_rect(Rect2(at-Vector2(3.5,3.5)*k,Vector2(7.0,7.0)*k),Kit.CREAM)
+				v.draw_rect(Rect2(at-Vector2(3.5,3.5)*k,Vector2(7.0,7.0)*k),Kit.INK,false,maxf(1.5*k,1.0))
 				taken.append(Rect2(at-Vector2(4.0,4.0)*k,Vector2(8.0,8.0)*k))
 			"temple":
 				var t := PackedVector2Array([at+Vector2(0,-4.5)*k,at+Vector2(4.5,3.0)*k,at+Vector2(-4.5,3.0)*k])
-				v.draw_colored_polygon(t,Color(Kit.INK,0.9))
+				v.draw_colored_polygon(t,Kit.GOLD)
+				v.draw_polyline(t+PackedVector2Array([t[0]]),Kit.INK,maxf(1.4*k,1.0),true)
 				taken.append(Rect2(at-Vector2(5.0,5.0)*k,Vector2(10.0,9.0)*k))
 			"falls":
 				v.draw_circle(at,3.4*k,Color(WATER_INK,0.95))

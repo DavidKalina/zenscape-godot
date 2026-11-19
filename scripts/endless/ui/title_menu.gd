@@ -75,7 +75,7 @@ func _draw() -> void:
 		var a := arrival.y*_fade
 		var h := (24.0+rows_height(32.0))*s
 		var slip := Rect2(72.0*s-arrival.x*s,size.y-78.0*s-h,204.0*s,h)
-		Kit.slip(self,slip,s,a)
+		Kit.slip(self,slip,s,a,Kit.GRAIN_A,true)
 		draw_rows(slip,slip.position.y+12.0*s,s,32.0,16.0,36.0,a)
 		draw_footer([P_SELECT,P_CHOOSE],s,_fade)
 	draw_toast(s)

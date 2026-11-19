@@ -231,6 +231,181 @@ static func slip_in(t: float) -> Vector2:
 	var e := bez(t/T_SLIP,0.2,0.8,0.3,1.0)
 	return Vector2(SLIP_CUT*(1.0-e),e)
 
+# --- Trial looks (--ui-look=1|2) ---------------------------------------------------------
+
+## The look, `--ui-look=N`: 0 is the flat UI as first merged; 1, the default,
+## keeps its cream, ink and red and changes the shapes: the
+## slip hand-cut with a clipped corner and a hard shadow, a heading on a
+## swallowtail tab, the selected row on an ink bar that pokes out past both
+## edges, the chosen option a slanted stamp, a slider with a thick track and
+## a gilt diamond, key names on caps, a brass tab on the dark chips. 2 is 1
+## with colour: an ember bar, teal tabs and tracks, a ruled frame.
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+const TEAL := Color("1f6a70")
+const EMBER := Color("cf5a22")
+const SEPIA := Color("5a3b1c")
+const BRASS := Color("c9a455")
+
+static var _look := -1
+static var _tags := false
+static var _mottle: ImageTexture
+static var _cap: StyleBoxFlat
+
+static func look() -> int:
+	if _look < 0:
+		_look = 1
+		for arg: String in LaunchArgs.user_args():
+			if arg.begins_with("--ui-look="): _look = clampi(int(arg.get_slice("=",1)),0,2)
+	return _look
+
+static func _h(i: int, s: int) -> float:
+	var n := (i*374761393+s*668265263) & 0x7fffffff
+	n = ((n ^ (n >> 13))*1274126177) & 0x7fffffff
+	return float((n ^ (n >> 16)) & 0xffff)/65535.0
+
+## `pts` with each edge broken every `step` mock px and its points pushed
+## `amp` mock px in or out: a torn or hand-cut edge. The corners stay.
+static func rough(pts: PackedVector2Array, k: float, amp: float, step: float, seed_n: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var n := pts.size()
+	var c := 0
+	for i in n:
+		var p := pts[i]
+		var d := pts[(i+1)%n]-p
+		out.append(p)
+		var length := d.length()
+		var m := int(length/(step*k))
+		if m < 2: continue
+		var nrm := Vector2(d.y,-d.x)/length
+		for j in range(1,m):
+			c += 1
+			var t := (float(j)+(_h(c,seed_n)-0.5)*0.6)/float(m)
+			out.append(p+d*t+nrm*((_h(c,seed_n+7)-0.5)*2.0*amp*k))
+	return out
+
+## `pts` with each corner cut `c` screen px back along both its edges.
+static func chamfer(pts: PackedVector2Array, c: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var n := pts.size()
+	for i in n:
+		var p := pts[i]
+		out.append(p+(pts[(i+n-1)%n]-p).normalized()*c)
+		out.append(p+(pts[(i+1)%n]-p).normalized()*c)
+	return out
+
+static func _shift(pts: PackedVector2Array, by: Vector2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in pts: out.append(p+by)
+	return out
+
+## Blotches and grain laid over a filled shape: brown ink whose alpha is noise.
+static func _mottle_over(ci: CanvasItem, pts: PackedVector2Array, r: Rect2, a: float) -> void:
+	if _mottle == null:
+		var big := FastNoiseLite.new()
+		big.frequency = 0.012
+		big.fractal_octaves = 3
+		var img := Image.create(256,256,false,Image.FORMAT_RGBA8)
+		for y in 256:
+			for x in 256:
+				var v := clampf(big.get_noise_2d(x,y)*0.9+0.35,0.0,1.0)*0.75+_h(x,y)*0.25
+				img.set_pixel(x,y,Color(SEPIA,v*0.1))
+		_mottle = ImageTexture.create_from_image(img)
+	var span := maxf(maxf(r.size.x,r.size.y),1.0)
+	var uvs := PackedVector2Array()
+	for p in pts: uvs.append(((p-r.position)/span).clamp(Vector2.ZERO,Vector2.ONE))
+	ci.draw_colored_polygon(pts,Color(1,1,1,minf(a,1.0)),uvs,_mottle)
+
+## The colours on a row by what lies under it: {label, dim, ink, on_bg, on_fg, fill}.
+static func _cols(sel: bool) -> Dictionary:
+	if sel: return {"label":CREAM,"dim":Color(CREAM,0.74),"ink":CREAM,"on_bg":CREAM,"on_fg":INK,"fill":CREAM}
+	return {"label":LAND,"dim":DIM,"ink":INK,"on_bg":INK,"on_fg":CREAM,"fill":TEAL if look() == 2 else INK}
+
+## A key's name on a small cap ended at `at_r` (its right edge, middle line).
+static func keycap(ci: CanvasItem, key: String, at_r: Vector2, k: float, col: Color, a := 1.0) -> void:
+	if _cap == null:
+		_cap = StyleBoxFlat.new()
+		_cap.bg_color = Color(0,0,0,0)
+	var w := maxf(text_w(NUM,key,10.5,k,0.04)+9.0*k,17.0*k)
+	_cap.border_color = Color(col,col.a*a*0.8)
+	_cap.set_border_width_all(maxi(roundi(k),1))
+	_cap.border_width_bottom = maxi(roundi(2.4*k),2)
+	_cap.set_corner_radius_all(roundi(3.0*k))
+	ci.draw_style_box(_cap,Rect2(roundf(at_r.x-w),roundf(at_r.y-8.5*k),roundf(w),roundf(17.0*k)))
+	text(ci,NUM,key,Vector2(at_r.x-w*0.5,at_r.y-1.0*k),10.5,k,0.04,col,0.5,a)
+
+## The slip's outline in the trial looks: its top left corner clipped, its
+## right edge slanted, its foot a little off level, every edge hand-cut.
+static func _slip_cut(r: Rect2, k: float) -> PackedVector2Array:
+	var c := 11.0*k
+	return PackedVector2Array([Vector2(r.position.x+c,r.position.y),Vector2(r.end.x+3.0*k,r.position.y),
+		Vector2(r.end.x-SLIP_CUT*k,r.end.y+4.0*k),Vector2(r.position.x,r.end.y),Vector2(r.position.x,r.position.y+c)])
+
+static func _slip_game(ci: CanvasItem, r: Rect2, k: float, a: float, _menu: bool) -> void:
+	var base := _slip_cut(r,k)
+	var pts := rough(base,k,0.9,15.0,roundi(r.size.x)*31+roundi(r.size.y))
+	if _shadow == null:
+		_shadow = StyleBoxFlat.new()
+		_shadow.bg_color = Color(0,0,0,0)
+		_shadow.anti_aliasing = false
+	_shadow.shadow_size = roundi(30.0*k)
+	_shadow.shadow_color = Color(NIGHT,0.3*a*a)
+	_shadow.shadow_offset = Vector2(0.0,12.0*k)
+	_shadow.set_corner_radius_all(roundi(10.0*k))
+	ci.draw_style_box(_shadow,r.grow(-12.0*k))
+	ci.draw_colored_polygon(_shift(pts,Vector2(4.0,5.0)*k),Color(NIGHT,0.45*a))
+	poly(ci,pts,Color(PAPER,a))
+	_mottle_over(ci,pts,r,a)
+	if look() == 2:
+		for inner: PackedVector2Array in Geometry2D.offset_polygon(base,-6.0*k):
+			inner.append(inner[0])
+			ci.draw_polyline(inner,Color(INK,0.5*a),maxf(1.3*k,1.0),true)
+	else:
+		var c := 11.0*k
+		var w := maxf(roundf((SPINE+1.0)*k),2.0)
+		poly(ci,PackedVector2Array([Vector2(r.position.x-k,r.position.y+c+k),Vector2(r.position.x-k+w,r.position.y+c+k-w),
+			Vector2(r.position.x-k+w,r.end.y+k),Vector2(r.position.x-k,r.end.y+k)]),Color(INK,a))
+
+## A heading on a swallowtail tab that hangs out over the slip's left edge.
+static func _head_game(ci: CanvasItem, r: Rect2, cy: float, k: float, label: String, _pad_r: float, a: float) -> void:
+	var x := r.position.x+LABEL_X*k
+	var w := text_w(MED,label.to_upper(),10.5,k,0.26)
+	var x0 := r.position.x-7.0*k
+	var x1 := x+w+24.0*k
+	var t := cy-9.5*k
+	var b := cy+9.5*k
+	var band := PackedVector2Array([Vector2(x0,t),Vector2(x1+3.0*k,t),Vector2(x1-7.0*k,cy+1.0*k),Vector2(x1,b),Vector2(x0,b)])
+	var col := TEAL if look() == 2 else HEAD
+	ci.draw_colored_polygon(_shift(band,Vector2(2.0,3.0)*k),Color(NIGHT,0.3*a))
+	ci.draw_colored_polygon(PackedVector2Array([Vector2(x0,b),Vector2(r.position.x,b),Vector2(r.position.x,b+5.0*k)]),Color(col.darkened(0.45),a))
+	poly(ci,band,Color(col,a))
+	text(ci,MED,label.to_upper(),Vector2(x,cy),10.5,k,0.26,CREAM,0.0,a)
+
+## The selected row's bar (ink, or ember in look 2) with cream words: it
+## pokes out past both of the slip's edges, its ends slanted, its long edges
+## hand-cut.
+static func _row_game(ci: CanvasItem, r: Rect2, y: float, k: float, label: String, sel_t: float, h: float, px: float, a: float) -> float:
+	var cy := y+h*k*0.5
+	var sel := sel_t >= 0.0
+	var lean := ease_out(sel_t/T_LEAN) if sel else 1.0-ease_out(-sel_t/T_LEAN)
+	if sel:
+		var e := ease_out(sel_t/T_BAND)
+		var left := r.position.x-6.0*k
+		var right := left+(slip_edge(r,k,cy)+9.0*k-left)*(0.5+0.5*e)
+		var t := y+1.5*k
+		var b := y+(h-1.5)*k
+		var dx := SKEW*(b-t)*0.5
+		var bar := rough(PackedVector2Array([Vector2(left+dx,t),Vector2(right+dx,t),Vector2(right-dx,b),Vector2(left-dx,b)]),k,0.7,16.0,roundi(y))
+		ci.draw_colored_polygon(_shift(bar,Vector2(2.0,3.0)*k),Color(NIGHT,0.32*e*a))
+		poly(ci,bar,Color(EMBER if look() == 2 else INK,e*a))
+		var te := bez(sel_t/T_TICK,0.2,0.9,0.3,1.4)
+		slant(ci,Rect2(r.position.x+(16.0-9.0*(1.0-te))*k,cy-7.0*k,4.0*k,14.0*k),Color(CREAM if look() == 2 else EMBER,clampf(te,0.0,1.0)*a))
+	var c := _cols(sel)
+	var at := Vector2(r.position.x+(LABEL_X+LEAN*lean)*k,cy)
+	var col: Color = c["label"]
+	if sel: text(ci,NUM,label.to_upper(),at,px,k,0.085,col,0.0,a)
+	else: text(ci,MED,label.to_upper(),at,px,k,0.1,col,0.0,a)
+	return cy
+
 # --- Shapes ------------------------------------------------------------------------------
 
 ## A filled convex polygon whose slanted edges are feathered one px (the
@@ -288,8 +463,11 @@ static func slip_edge(r: Rect2, k: float, y: float) -> float:
 ## with 12 above and below the rows, the others 8 above and 12 below; pause
 ## 228, settings 452, controls 500, credits 440). `grain` is the grain's
 ## alpha (the chain's pennant uses 0.06).
-static func slip(ci: CanvasItem, r: Rect2, k: float, a := 1.0, grain := GRAIN_A) -> void:
+static func slip(ci: CanvasItem, r: Rect2, k: float, a := 1.0, grain := GRAIN_A, menu := false) -> void:
 	if a <= 0.003: return
+	if look() > 0:
+		_slip_game(ci,r,k,a,menu)
+		return
 	if _shadow == null:
 		_shadow = StyleBoxFlat.new()
 		_shadow.bg_color = Color(0,0,0,0)
@@ -330,6 +508,9 @@ static func slip(ci: CanvasItem, r: Rect2, k: float, a := 1.0, grain := GRAIN_A)
 ## on the credits page; `pad_r` 34 on the pause slip, 38 elsewhere).
 static func head(ci: CanvasItem, r: Rect2, y: float, k: float, label: String, h := 30.0, pad_top := 0.0, pad_r := 34.0, a := 1.0) -> void:
 	var cy := y+(pad_top+(h-pad_top)*0.5)*k
+	if look() > 0:
+		_head_game(ci,r,cy,k,label,pad_r,a)
+		return
 	var x := r.position.x+LABEL_X*k
 	var w := text(ci,MED,label.to_upper(),Vector2(x,cy),10.5,k,0.26,HEAD,0.0,a)
 	hair(ci,Vector2(x+w+10.0*k,cy),r.end.x-pad_r*k,k,Color(RULE,RULE.a*a))
@@ -344,6 +525,7 @@ static func row_rect(r: Rect2, y: float, k: float, h := 30.0) -> Rect2:
 ## The selection's furniture and the label, shared by every row. Returns
 ## the row's middle y.
 static func _row_base(ci: CanvasItem, r: Rect2, y: float, k: float, label: String, sel_t: float, h: float, px: float, a: float) -> float:
+	if look() > 0: return _row_game(ci,r,y,k,label,sel_t,h,px,a)
 	var cy := y+h*k*0.5
 	var sel := sel_t >= 0.0
 	var lean := ease_out(sel_t/T_LEAN) if sel else 1.0-ease_out(-sel_t/T_LEAN)
@@ -372,7 +554,10 @@ static func _row_base(ci: CanvasItem, r: Rect2, y: float, k: float, label: Strin
 ## Returns the row's rect for the mouse.
 static func row(ci: CanvasItem, r: Rect2, y: float, k: float, label: String, sel_t := OFF, h := 30.0, px := 16.0, key := "", key_pad := 36.0, a := 1.0) -> Rect2:
 	var cy := _row_base(ci,r,y,k,label,sel_t,h,px,a)
-	if not key.is_empty():
+	if not key.is_empty() and look() > 0:
+		var dim: Color = _cols(sel_t >= 0.0)["dim"]
+		keycap(ci,key.to_upper(),Vector2(r.end.x-(key_pad-4.0)*k,cy),k,dim,a)
+	elif not key.is_empty():
 		text(ci,MED,key.to_upper(),Vector2(r.end.x-key_pad*k,cy),10.5,k,0.14,DIM,1.0,a)
 	return row_rect(r,y,k,h)
 
@@ -398,6 +583,22 @@ static func seg_rects(r: Rect2, y: float, k: float, opts: PackedStringArray, on:
 static func seg_row(ci: CanvasItem, r: Rect2, y: float, k: float, label: String, opts: PackedStringArray, on: int, sel_t := OFF, on_t := ON, h := 28.0, px := 15.0, a := 1.0) -> Array[Rect2]:
 	var cy := _row_base(ci,r,y,k,label,sel_t,h,px,a)
 	var rects := seg_rects(r,y,k,opts,on,h)
+	if look() > 0:
+		# The chosen option is a slanted stamp, not an underline.
+		var c := _cols(sel_t >= 0.0)
+		var dim: Color = c["dim"]
+		var bg: Color = c["on_bg"]
+		var fg: Color = c["on_fg"]
+		for i in opts.size():
+			var o := rects[i]
+			if i != on:
+				text(ci,MED,opts[i].to_upper(),Vector2(o.position.x,cy),13.5,k,0.08,dim,0.0,a)
+				continue
+			var e := ease_out(on_t/T_BAND)
+			var grow := 7.0*k*(0.4+0.6*e)
+			slant(ci,Rect2(o.position.x-grow,cy-9.5*k,o.size.x+grow*2.0,19.0*k),Color(bg,bg.a*e*a))
+			text(ci,NUM,opts[i].to_upper(),Vector2(o.position.x,cy),13.5,k,0.07,fg,0.0,a)
+		return rects
 	for i in opts.size():
 		var o := rects[i]
 		if i != on:
@@ -427,6 +628,22 @@ static func slider_row(ci: CanvasItem, r: Rect2, y: float, k: float, label: Stri
 	var track := slider_rect(r,y,k,h)
 	var f := clampf(frac,0.0,1.0)
 	var line_y := track.position.y+11.0*k
+	if look() > 0:
+		# A thick track filled in colour and a gilt diamond for the mark.
+		var c := _cols(sel_t >= 0.0)
+		var ink: Color = c["ink"]
+		var fill: Color = c["fill"]
+		hair(ci,Vector2(track.position.x,line_y),track.end.x,k,Color(ink,0.28*a),5.0)
+		hair(ci,Vector2(track.position.x,line_y),track.position.x+track.size.x*f,k,Color(fill,a),5.0)
+		var m := Vector2(track.position.x+track.size.x*f,line_y)
+		var d := (7.5 if sel_t >= 0.0 else 6.5)*k
+		var gem := PackedVector2Array([m+Vector2(0,-d),m+Vector2(d*0.8,0),m+Vector2(0,d),m+Vector2(-d*0.8,0)])
+		poly(ci,_shift(gem,Vector2(1.0,2.0)*k),Color(NIGHT,0.35*a))
+		poly(ci,gem,Color(GOLD,a))
+		gem.append(gem[0])
+		ci.draw_polyline(gem,Color(INK,a),maxf(1.3*k,1.0),true)
+		text(ci,NUM,value,Vector2(r.end.x-VALUE_PAD*k,cy),14.5,k,0.0,ink,1.0,a)
+		return track
 	hair(ci,Vector2(track.position.x,line_y),track.end.x,k,Color(TRACK,TRACK.a*a),2.0)
 	hair(ci,Vector2(track.position.x,line_y),track.position.x+track.size.x*f,k,Color(INK,a),2.0)
 	slant(ci,Rect2(track.position.x+track.size.x*f-2.0*k,track.position.y+4.0*k,4.0*k,14.0*k),Color(TICK if sel_t >= 0.0 else INK,a))
@@ -466,6 +683,16 @@ static func plate(ci: CanvasItem, r: Rect2, k: float, right := false, a := 1.0, 
 	var cut := PLATE_CUT*k
 	var pts := PackedVector2Array([r.position,Vector2(r.end.x,r.position.y),Vector2(r.end.x-cut,r.end.y),Vector2(r.position.x,r.end.y)])
 	if right: pts = PackedVector2Array([Vector2(r.position.x+cut,r.position.y),Vector2(r.end.x,r.position.y),r.end,Vector2(r.position.x,r.end.y)])
+	if look() > 0 and col == PLATE:
+		# A hard shadow, a solid plate, a brass tab on its square end and a brass rule along its foot.
+		ci.draw_colored_polygon(_shift(pts,Vector2(2.0,3.0)*k),Color(NIGHT,0.4*a))
+		poly(ci,pts,Color(col,0.94*a))
+		var tab := maxf(roundf(3.0*k),2.0)
+		ci.draw_rect(Rect2(r.end.x-tab if right else r.position.x,r.position.y,tab,r.size.y),Color(BRASS,a))
+		var x0 := r.position.x+(cut+5.0*k if right else tab+4.0*k)
+		var x1 := r.end.x-(tab+4.0*k if right else cut+5.0*k)
+		ci.draw_line(Vector2(x0,r.end.y-3.0*k),Vector2(x1,r.end.y-3.0*k),Color(BRASS,0.55*a),1.0)
+		return
 	poly(ci,pts,Color(col,col.a*a))
 
 ## One piece of a run of text on a chip: `s` in a face at `px` mock px,
