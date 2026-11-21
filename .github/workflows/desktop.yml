@@ -33,9 +33,11 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+      # main publishes one rolling release instead (see the upload step);
+      # branches and tags still get a draft per run.
       - name: Create draft release
         id: release
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -122,8 +124,26 @@ jobs:
           else
             archive=ZenScape-mac-universal
           fi
-          mv "builds/$archive.zip" "builds/$archive-${GITHUB_SHA:0:7}.zip"
-          gh release upload "$BUILD_TAG" "builds/$archive-${GITHUB_SHA:0:7}.zip"
-          url="$(gh release view "$BUILD_TAG" --json url --jq .url)"
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            # One published release, always the latest green build of main,
+            # under a fixed file name so the README's link never changes:
+            # releases/latest/download/ZenScape-windows-x64.zip
+            tag=windows-latest
+            title="ZenScape for Windows · ${GITHUB_SHA:0:7}"
+            { printf 'Latest build of `main`: commit `%s`, %s.\n\n' "${GITHUB_SHA:0:7}" "$(date -u +%Y-%m-%d)"; cat docs/desktop-builds.md; } > release-notes.md
+            if gh release view "$tag" > /dev/null 2>&1; then
+              gh release upload "$tag" "builds/$archive.zip" --clobber
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+              gh release edit "$tag" --title "$title" --notes-file release-notes.md --latest
+            else
+              gh release create "$tag" --target "$GITHUB_SHA" --latest --title "$title" \
+                --notes-file release-notes.md "builds/$archive.zip"
+            fi
+          else
+            tag="$BUILD_TAG"
+            mv "builds/$archive.zip" "builds/$archive-${GITHUB_SHA:0:7}.zip"
+            gh release upload "$tag" "builds/$archive-${GITHUB_SHA:0:7}.zip"
+          fi
+          url="$(gh release view "$tag" --json url --jq .url)"
           printf '## Verified %s build\n\n[Download build](%s)\n\nCommit: `%s`\n\nThe exported game ran 400 frames from the title, native kernels loaded, no errors.\n' \
             '${{ matrix.platform }}' "$url" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
