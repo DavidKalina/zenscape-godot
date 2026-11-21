@@ -1,6 +1,16 @@
 # ZenScape
 
-## Play
+Fly a small plane over land that never ends, and land anywhere flat.
+
+### [⬇ Download for Windows](https://github.com/DavidKalina/zenscape-godot/releases/latest/download/ZenScape-windows-x64.zip)
+
+The newest build of `main`, checked before it's posted. Extract the zip to its
+own folder and run **`ZenScape.exe`**; if SmartScreen stops it, click **More
+info → Run anyway**. Install notes and controls:
+[ZenScape for Windows](docs/desktop-builds.md) ·
+[all releases](https://github.com/DavidKalina/zenscape-godot/releases).
+
+## Play from source
 
 The game is endless flight: you fly a plane over procedural land that never
 ends. Double-click **`run-endless-flight.command`** (Mac) or
@@ -17,8 +27,8 @@ turf; stopped, Space rolls it off again. Pad controls are in
 [gamepad](docs/gamepad.md). Flags such as `--seed=7`, `--world=regions` and
 `--hour=17` are listed at the top of `studies/endless_flight.gd`.
 
-For a standalone Windows or Mac app, see
-[desktop builds](docs/desktop-builds.md).
+How the Windows download is built and posted, and exporting by hand:
+[desktop builds](docs/desktop-builds.md#for-the-developer-how-builds-are-made).
 
 ## Structure
 
