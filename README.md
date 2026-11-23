@@ -2,12 +2,14 @@
 
 Fly a small plane over land that never ends, and land anywhere flat.
 
-### [⬇ Download for Windows](https://github.com/DavidKalina/zenscape-godot/releases/latest/download/ZenScape-windows-x64.zip)
+### [⬇ Download for Windows](https://github.com/DavidKalina/zenscape-godot/releases/latest/download/ZenScape-windows-x64.zip) · [⬇ Download for Mac](https://github.com/DavidKalina/zenscape-godot/releases/latest/download/ZenScape-mac-universal.zip)
 
-The newest build of `main`, checked before it's posted. Extract the zip to its
-own folder and run **`ZenScape.exe`**; if SmartScreen stops it, click **More
-info → Run anyway**. Install notes and controls:
-[ZenScape for Windows](docs/desktop-builds.md) ·
+Builds of `main`, checked before they're posted. **Windows:** extract the zip
+to its own folder and run **`ZenScape.exe`**; if SmartScreen stops it, click
+**More info → Run anyway**. **Mac** (Apple silicon or Intel): unzip, drag
+**`ZenScape.app`** to Applications, and the first time macOS blocks it, go to
+**System Settings → Privacy & Security → Open Anyway**. Install notes and
+controls: [ZenScape for Windows and Mac](docs/desktop-builds.md) ·
 [all releases](https://github.com/DavidKalina/zenscape-godot/releases).
 
 ## Play from source
@@ -27,7 +29,7 @@ turf; stopped, Space rolls it off again. Pad controls are in
 [gamepad](docs/gamepad.md). Flags such as `--seed=7`, `--world=regions` and
 `--hour=17` are listed at the top of `studies/endless_flight.gd`.
 
-How the Windows download is built and posted, and exporting by hand:
+How the downloads are built and posted, and exporting by hand:
 [desktop builds](docs/desktop-builds.md#for-the-developer-how-builds-are-made).
 
 ## Structure

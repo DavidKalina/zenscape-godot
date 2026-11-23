@@ -1,8 +1,8 @@
-# ZenScape for Windows
+# ZenScape for Windows and Mac
 
 Fly a small plane over land that never ends, and land anywhere flat.
 
-## Install and run
+## Install and run on Windows
 
 1. Download **ZenScape-windows-x64.zip** and extract it to a folder of its own
    (right-click → **Extract All**).
@@ -14,6 +14,22 @@ Fly a small plane over land that never ends, and land anywhere flat.
 Needs a 64-bit Windows PC with a graphics card that runs DirectX 12 or Vulkan
 (most from the last ten years). To update, delete the old folder and extract
 the new zip; your progress is kept outside it.
+
+## Install and run on Mac
+
+1. Download **ZenScape-mac-universal.zip** and open it; it unzips to
+   **`ZenScape.app`** (plus this README and `BUILD.txt`).
+2. Drag **`ZenScape.app`** to **Applications** and open it.
+3. This is an unsigned test build, so the first time macOS says it can't be
+   opened: click **Done**, then go to **System Settings → Privacy & Security**,
+   scroll down to the note about ZenScape and click **Open Anyway**. After that it
+   opens normally. (Or in Terminal:
+   `xattr -dr com.apple.quarantine /Applications/ZenScape.app`.)
+
+Runs on Apple silicon and Intel Macs. To update,
+replace the app with the new one; your progress is kept outside it. The Mac
+build is posted by hand, so it can be a little older than the Windows one:
+`BUILD.txt` names its commit.
 
 ## Controls
 
@@ -56,7 +72,15 @@ judged by `tools/ci_log_check.py`, which ignores Godot's exit-leak reports.
   collaborator (read access is enough for the published release; drafts need
   write access).
 
-To export locally, build the native kernels first
+The Mac app is not built in CI (macOS runners cost 10x the minutes). It is
+built on a Mac and posted to the same release, beside the Windows zip, by
+`python3 tools/release_mac.py` (on main, pulled). That rebuilds the universal
+native kernels if the C++ changed, exports the `macOS` preset, runs the app
+from outside the checkout, packages `ZenScape-mac-universal.zip` and uploads it
+(`--no-upload` stops before that). CI's pushes replace only the Windows zip, so
+rerun it when Mac players should get the newer build.
+
+To export Windows locally, build the native kernels first
 ([native/terrain_kernels/README.md](../native/terrain_kernels/README.md)),
 install the 4.7.2 export templates, then:
 

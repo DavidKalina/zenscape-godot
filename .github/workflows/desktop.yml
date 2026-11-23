@@ -129,7 +129,7 @@ jobs:
             # under a fixed file name so the README's link never changes:
             # releases/latest/download/ZenScape-windows-x64.zip
             tag=windows-latest
-            title="ZenScape for Windows · ${GITHUB_SHA:0:7}"
+            title="ZenScape · Windows ${GITHUB_SHA:0:7}"
             { printf 'Latest build of `main`: commit `%s`, %s.\n\n' "${GITHUB_SHA:0:7}" "$(date -u +%Y-%m-%d)"; cat docs/desktop-builds.md; } > release-notes.md
             if gh release view "$tag" > /dev/null 2>&1; then
               gh release upload "$tag" "builds/$archive.zip" --clobber
