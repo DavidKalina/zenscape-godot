@@ -341,6 +341,19 @@ python tools/bg.py wait suite          # blocks up to 540 s, prints the tail; ex
 Logs and state go to `scratch/bg/`. Use this rather than `sleep` and
 `until` polling loops.
 
+## release_mac.py: the Mac download
+
+```
+python3 tools/release_mac.py               # build, check, upload
+python3 tools/release_mac.py --no-upload   # build and check only
+```
+
+CI builds Windows only; this builds the Mac app on a Mac (HEAD must be
+origin/main), rebuilding the universal native kernels when the C++ changed
+(godot-cpp at `../godot-cpp` or `--godot-cpp`), runs it via
+`verify_desktop_export.py` and uploads `ZenScape-mac-universal.zip` beside
+the Windows zip. See docs/desktop-builds.md.
+
 ## The other tools
 
 These are one-off probes, captures, films, benches and dumps from earlier
