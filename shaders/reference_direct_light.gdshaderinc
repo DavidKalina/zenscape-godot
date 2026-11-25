@@ -29,7 +29,8 @@ void light() {
 		lit_hue = mix(lit_hue, ZS_ST_WARM, ZS_SPRUCE_TIER2.x * t);
 		DIFFUSE_LIGHT += crown_sun * t * lit_hue / PI;
 		float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
-		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
+		// The glow through the crown, strongest on its thin bough tips (the bake's thinness).
+		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * (0.6 + 0.8 * ZS_SPRUCE_TIP) * vec3(0.9, 1.0, 0.85) / PI;
 #ifdef ZS_BACKLIGHT_SPRUCE
 		// Backlight: the crown's silhouette, seen against a low sun, catches it.
 		// --spruce-look=g (ZS_SPRUCE_RIM): stronger, warm and saturated, the

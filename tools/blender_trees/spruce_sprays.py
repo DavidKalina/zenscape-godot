@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bpy, bmesh
 from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 import kit
 from kit import rng, srgb, ARGS
 
@@ -65,6 +66,17 @@ V_ROOT, V_TIP = 0.55, 1.02    # bake: a bough's value at the trunk and at its ti
 FACETS = False     # the "b" crown: each sheet cell and tooth split into small jittered facets
 FACET_JIT = 0.35   # the facets' jitter, of the local half width (sheets) and tooth size
 jit = random.Random(7)
+# The light bake (light_bake below): ray-cast sky occlusion and thickness per
+# vertex, against the tree's full crown and trunk. RAYS directions over the whole
+# sphere (the sheets take light on both sides), each weighted toward the sky
+# (SKY: the share of a ray straight down's weight to one straight up); REACH the
+# farthest an occluder counts (model units: a tier's reach is 0.6 at most);
+# LAYERS the most sheets counted along a ray for the thickness.
+BAKE = dict(rays=64, reach=1.4, sky=0.25, layers=4, eps=0.004,
+	# baked_value: the sky share that reads fully open, thickness's share of the
+	# light, its curve, the grey shut in and out in the open, and the bake's share
+	# over the ramp.
+	sky_open=0.75, thin_share=0.3, gamma=0.8, deep=0.34, open=1.1, mix=0.8)
 
 
 def axis_at(z, P):
@@ -312,6 +324,70 @@ def build(name, P):
 	return c, wood
 
 
+def sphere_dirs(n):
+	"""n directions spread evenly over the sphere (a Fibonacci lattice)."""
+	g = math.pi * (3 - math.sqrt(5))
+	out = []
+	for k in range(n):
+		z = 1 - 2 * (k + 0.5) / n
+		r = math.sqrt(max(0.0, 1 - z * z))
+		out.append(Vector((math.cos(g * k) * r, math.sin(g * k) * r, z)))
+	return out
+
+
+def occluders(*bms):
+	"""One BVH over the given bmeshes (the tree's full crown and its trunk)."""
+	verts, polys = [], []
+	for bm in bms:
+		base = len(verts)
+		verts.extend(v.co.copy() for v in bm.verts)
+		bm.verts.index_update()
+		polys.extend([base + v.index for v in f.verts] for f in bm.faces)
+	return BVHTree.FromPolygons(verts, polys, all_triangles=False)
+
+
+def light_bake(c, bvh):
+	"""Per vertex of crown c: (sky, thin). sky is the sky-weighted share of rays
+	that leave the crown unblocked within REACH (ambient occlusion, 1 open); thin
+	is how few sheets lie along the rays on their way out (1: a lone bough tip
+	with open air past it, 0: LAYERS or more sheets every way)."""
+	dirs = sphere_dirs(BAKE['rays'])
+	weights = [BAKE['sky'] + (1 - BAKE['sky']) * (0.5 + 0.5 * d.z) for d in dirs]
+	wsum = sum(weights)
+	eps, reach, layers = BAKE['eps'], BAKE['reach'], BAKE['layers']
+	out = {}
+	for v in c.bm.verts:
+		p = v.co
+		sky = thick = 0.0
+		for d, w in zip(dirs, weights):
+			o, hits, travelled, first = p + d * eps, 0, 0.0, None
+			while hits < layers:
+				loc, _, _, dist = bvh.ray_cast(o, d, 3.0 * reach - travelled)
+				if loc is None:
+					break
+				if first is None:
+					first = dist
+				hits += 1
+				travelled += dist + eps
+				o = loc + d * eps
+			if first is None or first > reach:
+				sky += w
+			thick += hits / layers
+		out[v] = (sky / wsum, 1.0 - thick / len(dirs))
+	return out
+
+
+def baked_value(ramp, sky, thin):
+	"""The grey a vertex carries (the shaders' contract: about 0.4 in the dense
+	core, 0.55 at a bough's root, 1 and over at the open tips): the bake's light,
+	sky occlusion with a little of the thickness, from DEEP shut in to OPEN out in
+	the air, mixed MIX of it over the hand-set ramp (which keeps the tiers'
+	lightening up the crown and each bough's own value)."""
+	light = min(1.0, (1 - BAKE['thin_share']) * sky / BAKE['sky_open'] + BAKE['thin_share'] * thin)
+	v = BAKE['deep'] + (BAKE['open'] - BAKE['deep']) * light ** BAKE['gamma']
+	return ramp + (v - ramp) * BAKE['mix']
+
+
 def paint_uvs(obj, uv_of_vert):
 	"""Bough space (see FACETS's note) per corner from the per-vertex values."""
 	mesh = obj.data
@@ -322,15 +398,17 @@ def paint_uvs(obj, uv_of_vert):
 		b.data[li].uv = (s, 1.0 - L)
 
 
-def paint_values(obj, value_of_vert):
-	"""Per-corner greyscale from the per-vertex values, so corners share vertices."""
+def paint_values(obj, value_of_vert, thin_of_vert=None):
+	"""Per-corner greyscale from the per-vertex values, so corners share vertices;
+	alpha the light bake's thinness (1 without one)."""
 	mesh = obj.data
 	attr = mesh.color_attributes.new('Col', 'FLOAT_COLOR', 'CORNER')
 	for poly in mesh.polygons:
 		for li in poly.loop_indices:
-			v = value_of_vert[mesh.loops[li].vertex_index]
-			v = max(0.22, min(1.1, v))
-			attr.data[li].color = (v, v, v, 1.0)
+			vi = mesh.loops[li].vertex_index
+			v = max(0.22, min(1.1, value_of_vert[vi]))
+			a = 1.0 if thin_of_vert is None else max(0.0, min(1.0, thin_of_vert[vi]))
+			attr.data[li].color = (v, v, v, a)
 		# Shared vertices (a third of the flat export's): the game's canopy shader
 		# shades each face flat from its own derivatives (reference_surface flat_faces).
 		poly.use_smooth = True
@@ -362,6 +440,7 @@ def tinted(name, tint, roughness):
 	return mat
 
 
+DUMP = {} if '--dump' in ARGS else None
 asset = kit.fresh_scene('EXPORT - spruce sprays')
 roots = {}
 faces = {}
@@ -376,11 +455,29 @@ for name, P in VARIANTS.items():
 		LOD = LODS['near' if lod == 'b' else lod]
 		FACETS = lod == 'b'
 		c, wood_bm = build(name, P)
+		# The light bake: the near and faceted crowns against themselves, the
+		# coarser crowns against the near one (the tree they stand in for).
+		if lod in ('near', 'b'):
+			bvh = occluders(c.bm, wood_bm)
+			if lod == 'near':
+				full = bvh
+		lit = light_bake(c, bvh if lod in ('near', 'b') else full)
+		if DUMP is not None:
+			DUMP.setdefault(name, {})[lod] = [(c.value[v], *lit[v], v.co.z) for v in c.bm.verts]
 		# Vertex values survive to_object in creation order.
-		order = [c.value[v] for v in c.bm.verts]
+		order = [baked_value(c.value[v], *lit[v]) for v in c.bm.verts]
+		thin = [lit[v][1] for v in c.bm.verts]
+		# Each crown keeps the ramp's mean over what the eye sees (each vertex
+		# weighted by its openness, a stand-in for how much of it shows), so its
+		# tone and the hand-overs between levels (matched on the ramp) stay; the
+		# bake moves light from the hidden depths to the open tips around it.
+		seen = [lit[v][0] + 0.05 for v in c.bm.verts]
+		ramp = [c.value[v] for v in c.bm.verts]
+		shift = sum(w * (r - x) for w, r, x in zip(seen, ramp, order)) / sum(seen)
+		order = [x + shift for x in order]
 		uvs = [c.uv[v] for v in c.bm.verts]
 		objs[lod] = kit.to_object(c.bm, f'{name} canopy' + {'near': '', 'far': ' far', 'b': ' b', 'mid': ' mid', 'low': ' low'}[lod], asset)
-		paint_values(objs[lod], order)
+		paint_values(objs[lod], order, thin)
 		paint_uvs(objs[lod], uvs)
 		if lod == 'near':
 			trunk = kit.to_object(wood_bm, f'{name} trunk', asset)
@@ -398,6 +495,10 @@ for name, P in VARIANTS.items():
 	roots[name] = (root, crown, trunk, far)
 	faces[name] = (len(crown.data.polygons), len(far.data.polygons), len(trunk.data.polygons), len(faceted.data.polygons), len(extra[0].data.polygons), len(extra[1].data.polygons))
 	faceted_objs.extend([faceted, *extra])
+if DUMP is not None:
+	import json
+	Path(ARGS[ARGS.index('--dump') + 1]).write_text(json.dumps(DUMP))
+	raise SystemExit
 print('SPRUCE_SPRAYS faces (canopy, far canopy, trunk, canopy b, canopy mid, canopy low)', faces)
 
 glb = kit.ROOT / 'assets/models/zenscape-spruce-sprays.glb'

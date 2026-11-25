@@ -121,7 +121,8 @@ uniform vec2 spruce_value = vec2(1.0);
 uniform vec4 spruce_var = vec4(0.0);
 uniform vec4 spruce_g = vec4(0.0, 0.0, 0.0, -1.0);
 uniform vec4 spruce_rim = vec4(0.0);
-// The crown's fresh-tip share at this pixel (the rim's glow reads it in light()).
+// The crown's thin-tip share at this pixel, from the light bake's thinness
+// (COLOR.a): the glow through the crown and the rim's tips read it in light().
 varying float spruce_tip;
 // --spruce-look=b (shaders/spruce_tiers.gdshaderinc; all off at 0): the tiers'
 // tilt, the dark band under a skirt, a lit top, the cool shade; and the sun's
@@ -1092,10 +1093,11 @@ void fragment() {
 	if (spruce_round > 0.0) {
 		tint *= spruce_value.x;
 		if (spruce_texture == 2) tint *= mix(spruce_value.y, 1.0, 1.0 - smoothstep(40.0, 110.0, distance(world_position, zs_camera_position)));
-		if (spruce_var.y > 0.0) {
-			tint = zs_sv_keep(tint, distance(world_position, zs_camera_position), spruce_g.z);
-			spruce_tip = zs_sv_tip(zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3));
-		}
+		if (spruce_var.y > 0.0) tint = zs_sv_keep(tint, distance(world_position, zs_camera_position), spruce_g.z);
+		// The light bake's thinness (COLOR.a; tools/blender_trees/spruce_sprays.py
+		// light_bake): 1 on a lone bough tip with open air past it, toward 0 deep
+		// in the crown. The sun shines through the thin tips (light()).
+		spruce_tip = smoothstep(0.35, 0.85, COLOR.a);
 	}
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
