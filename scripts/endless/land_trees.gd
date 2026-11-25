@@ -48,6 +48,8 @@ const FarTrees = preload("res://scripts/far_trees.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const DistanceRead = preload("res://scripts/endless/distance_read.gd")
+const WoodMap = preload("res://scripts/endless/wood_map.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const FAR_SHADER = preload("res://shaders/endless_tree_far.gdshader")
 const FLOOR_SHADER = preload("res://shaders/endless_forest_floor.gdshader")
@@ -105,6 +107,8 @@ const FAR_BAKED := 0.75
 const FLOOR_STEP := 16.0
 const FLOOR_COLOUR := Color(0.2,0.29,0.14)
 const FLOOR_STRENGTH := 0.82
+## With --wood-floor (DistanceRead) the floor's colour times this: darker, cooler.
+const FLOOR_WOOD := Color(0.8,0.86,1.0)
 ## The floor stops this far out a sunk cave's sinkhole (tunnel_sites.gd
 ## `on_bowl`'s grow): past the rim, so none of its lattice hangs in a bay of
 ## the ragged edge.
@@ -183,6 +187,9 @@ var _floor := true
 var _shadows := not ("--no-tree-shadows" in LaunchArgs.user_args())
 var _shade_end := SHADE_END
 var _near_floor: ShaderMaterial
+## The near blocks' floor weights as a texture for the grass (wood_map.gd);
+## null with --wood-floor=off or no floor.
+var _wood: RefCounted
 var _detail := -1.0           # DETAIL in force, or < 0: one crown for every near tree
 var _far_crowns: Array = []   # variant -> far crown mesh (with _detail)
 var _detail_material: Array = []  # variant -> the full crown's material, banded within _detail
@@ -350,6 +357,7 @@ func setup(land_seed: int) -> void:
 				var m: Material = (_parts[v][part] as Mesh).surface_get_material(0).duplicate()
 				_band(m,Vector2(0.0,_far_cut),Vector2(0.0,_fade.y))
 				(_crown_band if part == 1 else _trunk_band).append(m)
+	if _floor and DistanceRead.wood_floor() > 0.0: _wood = WoodMap.new()
 	_near_floor = _floor_shader(Vector4(-1.0,1.0,MID.z,MID.w))
 	_far_floor = _floor_shader(Vector4(MID.z-MID.w,MID.w,far_ring.z,far_ring.w))
 	if native_wanted():
@@ -418,7 +426,9 @@ func _floor_shader(band: Vector4) -> ShaderMaterial:
 	m.shader = FLOOR_SHADER
 	m.render_priority = FLOOR_PRIORITY
 	m.set_shader_parameter("band",band)
-	m.set_shader_parameter("colour",FLOOR_COLOUR)
+	# --wood-floor: the floor a little darker and cooler (DistanceRead).
+	var k := minf(DistanceRead.wood_floor(),1.5)
+	m.set_shader_parameter("colour",FLOOR_COLOUR*Color(lerpf(1.0,FLOOR_WOOD.r,k),lerpf(1.0,FLOOR_WOOD.g,k),lerpf(1.0,FLOOR_WOOD.b,k)))
 	m.set_shader_parameter("strength",FLOOR_STRENGTH)
 	if sprites != null:
 		var knobs := HeroTrees.spruce_paint_knobs()
@@ -544,6 +554,7 @@ func step(at: Vector3, plane_at: Vector3) -> void:
 			stats.slowest_commit = "%s %s, %d trees" % [next.kind,next.key,int(next.n)]
 		if (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET: break
 	if _detail >= 0.0: _detail_tiles(at)
+	if _wood != null: _wood.flush()
 	_collide(plane_at)
 
 ## The full crowns' squares within the detail distance stood, and the far
@@ -1170,7 +1181,9 @@ func _commit(done: Dictionary) -> void:
 			shade.visibility_range_end = _shade_end
 			shade.visibility_range_end_margin = NEAR_MARGIN
 			holder.add_child(shade)
-	if not (done.floor as Dictionary).is_empty(): holder.add_child(_floor_node(done.floor,_near_floor))
+	if not (done.floor as Dictionary).is_empty():
+		holder.add_child(_floor_node(done.floor,_near_floor))
+		if _wood != null: _wood.stamp(done.floor)
 	add_child(holder)
 	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n),"tiles":done.get("tiles",{}),"sprites":grouped,"sprite_at":{}}
 	for ck: Vector2i in done.cells: _publish_cell(ck,done.cells[ck].solid)
@@ -1215,6 +1228,7 @@ func _free_block(key: Vector2i) -> void:
 			_bodies.erase(ck)
 			_filling.erase(ck)
 	var regroup := not (b.get("sprites",{}) as Dictionary).is_empty()
+	if _wood != null: _wood.clear(key.x*BLOCK,key.y*BLOCK,BLOCK)
 	_blocks.erase(key)
 	stats.blocks = _blocks.size()
 	if regroup: _regroup(_group_of(key))

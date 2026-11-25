@@ -36,6 +36,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_shade.gdshaderinc"
 // The weather's wet (zs_soak_turf), as the near blades and the turf.
 #include "res://shaders/weather.gdshaderinc"
+#include "res://shaders/distance_read.gdshaderinc"
 // Backlight's gain on the far ring's tips (Godot's BACKLIGHT, shadowed).
 const float BACKLIGHT_GAIN = 5.0;
 
@@ -113,6 +114,13 @@ void vertex() {
 	float in_rank = fract(sin(dot(root.xz, vec2(41.37, 17.93))) * 24634.6345);
 	float in_at = mix(band.x, band.y, in_rank);
 	ring_keep *= smoothstep(in_at, in_at + band.z, ring_d);
+	// Under the woods (distance_read): darker, cooler and a little smaller,
+	// as the forest floor's sheet darkens the turf.
+	if (ring_keep > 0.0) {
+		float wood = zs_wood_at(root.xz);
+		ring_keep *= zs_wood_tuft(wood);
+		COLOR.rgb = zs_wood_grass(COLOR.rgb, wood);
+	}
 	// (The region's colours only for a tuft that shows: one shrunk away is a
 	// point, with nothing to colour.)
 	if (ring_keep > 0.0 && zs_region_paints()) {

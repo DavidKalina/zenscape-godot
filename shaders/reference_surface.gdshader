@@ -34,6 +34,7 @@ shader_type spatial;
 // The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc; off at 0).
 #include "res://shaders/endless_patch.gdshaderinc"
 #include "res://shaders/spruce_paint.gdshaderinc"
+#include "res://shaders/distance_read.gdshaderinc"
 // The light's leans: the crown's shade olive and the underglow turn with the light.
 #include "res://shaders/light_leans.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
@@ -518,6 +519,13 @@ void vertex() {
 		float ring_grow = smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d);
 		VERTEX.xz *= ring_keep * mix(1.0, grass_ring_grow.z, ring_grow);
 		VERTEX.y *= ring_keep * mix(1.0, grass_ring_grow.w, ring_grow);
+		// Under the woods (distance_read): darker, cooler and a little
+		// smaller, as the forest floor's sheet darkens the turf.
+		if (ring_keep > 0.0) {
+			float wood = zs_wood_at(MODEL_MATRIX[3].xz - look_shift.xz);
+			VERTEX *= zs_wood_tuft(wood);
+			COLOR.rgb = zs_wood_grass(COLOR.rgb, wood);
+		}
 		flower_gone = ring_keep <= 0.0;
 	}
 	if (flower_cycle && !flower_gone && CUSTOM0.w >= 2.0) {
@@ -1091,6 +1099,7 @@ void fragment() {
 		tint = zs_spruce_texture(tint, spruce_texture, UV, UV2, spruce_texture_gain, distance(world_position, zs_camera_position));
 	if (spruce_round > 0.0) {
 		tint *= spruce_value.x;
+		tint = zs_tree_vary(tint, plant_root);
 		if (spruce_texture == 2) tint *= mix(spruce_value.y, 1.0, 1.0 - smoothstep(40.0, 110.0, distance(world_position, zs_camera_position)));
 		if (spruce_var.y > 0.0) {
 			tint = zs_sv_keep(tint, distance(world_position, zs_camera_position), spruce_g.z);
@@ -1248,6 +1257,10 @@ void fragment() {
 	if (sea_mist > 0.0) EMISSION += zs_cloud_sun * SEA_MIST_SUN * sea_level_view * sea_mist;
 	inversion_transmit = zs_inversion_paint(world_position, EMISSION);
 	if (cloud_sun_shade > 0.0) inversion_transmit *= 1.0 - cloud_sun_shade * volume_shade;
+	// The far crowns a share more of the haze (distance_read).
+	if (spruce_round > 0.0) {
+		ZS_TREE_HAZE(zs_tree_haze(distance(world_position, zs_camera_position)));
+	}
 }
 
 #define ZS_GRASS_TRANSLUCENCY

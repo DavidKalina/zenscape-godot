@@ -19,6 +19,7 @@ render_mode blend_mix, depth_draw_never, cull_back, diffuse_lambert, specular_di
 #include "res://shaders/tree_wind.gdshaderinc"
 // The canopy's shade olive turns with the shade's hue (light_leans).
 #include "res://shaders/light_leans.gdshaderinc"
+#include "res://shaders/distance_read.gdshaderinc"
 
 uniform vec4 band = vec4(-1.0, 1.0, 1e6, 1.0);
 uniform vec4 colour : source_color = vec4(0.1, 0.16, 0.08, 1.0);
@@ -102,6 +103,10 @@ void fragment() {
 	}
 	ALBEDO = litter;
 	ROUGHNESS = 1.0;
+	// The painted canopy a share more of the haze, as the crowns (distance_read).
+	if (crown > 0.0) {
+		ZS_TREE_HAZE(zs_tree_haze(distance(world, CAMERA_POSITION_WORLD)) * crown);
+	}
 	ALPHA = clamp(alpha * fade, 0.0, 1.0);
 }
 

@@ -24,6 +24,7 @@ render_mode cull_disabled, diffuse_lambert, specular_disabled;
 #include "res://shaders/backlight.gdshaderinc"
 // --spruce-look=g (spruce_variety.gdshaderinc), as the near crowns'.
 #include "res://shaders/spruce_variety.gdshaderinc"
+#include "res://shaders/distance_read.gdshaderinc"
 // --spruce-look=b (spruce_tiers.gdshaderinc): the tiers' tones, tilt, the cool shade, the dabs.
 #include "res://shaders/spruce_tiers.gdshaderinc"
 // Backlight's gain on the crown's silhouette (shaders/backlight.gdshaderinc).
@@ -102,6 +103,7 @@ void fragment() {
 	if (spruce_tier2.y > 0.0) c = zs_st_dabs(c, (ring_world.xz - ring_foot.xz) + vec2(ring_world.y * 0.61, -ring_world.y * 0.37) + vec2(rank * 91.0, rank * 37.0), d, zs_st_pixel(d, PROJECTION_MATRIX[1][1], VIEWPORT_SIZE.y), spruce_tier2);
 	c *= paint.x;
 	if (spruce_var.y > 0.0) c = zs_sv_keep(c, d, spruce_g.z);
+	c = zs_tree_vary(c, ring_foot.xz);
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	// The crown as a volume: out from the trunk and up.
@@ -113,6 +115,8 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	vec3 ol = zs_cool(zs_st_shade(spruce_tier.w), shade_follow) * ring_luma(c);
 	EMISSION = mix(c, ol, tone.w) * hemi + mix(c, ol, tone.y) * hemi * tone.x + mix(c, ol, olive) * zs_look_bounce_light(n);
+	// The far crowns a share more of the haze (distance_read).
+	ZS_TREE_HAZE(zs_tree_haze(d));
 }
 
 void light() {

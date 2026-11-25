@@ -50,6 +50,7 @@ const EndlessPost = preload("res://scripts/endless/endless_post.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const DayCycle = preload("res://scripts/endless/day_cycle.gd")
 const LandHorizon = preload("res://scripts/endless/land_horizon.gd")
+const DistanceRead = preload("res://scripts/endless/distance_read.gd")
 const WindField = preload("res://scripts/endless/wind_field.gd")
 const WindMap = preload("res://scripts/endless/wind_map.gd")
 
@@ -64,7 +65,8 @@ const MOOD := "alpine_morning"
 const HOUR := 8.6
 
 ## The haze: from FOG_BEGIN m it thickens to all sky by FOG_END m (inside
-## the land's reach, LandStream ROOT_REACH), along FOG_CURVE.
+## the land's reach, LandStream ROOT_REACH), along FOG_CURVE (--far-haze
+## on: DistanceRead.FOG_CURVE, fuller through the middle distance).
 const FOG_BEGIN := 120.0
 const FOG_END := 7600.0
 const FOG_CURVE := 0.75
@@ -146,6 +148,10 @@ var _land_seed := 0
 var ground: ShaderMaterial
 ## Copies of `ground` (the rocks' bare one) that take its haze each frame too.
 var ground_copies: Array[ShaderMaterial] = []
+## The haze's aerial share by day (AERIAL, or DistanceRead's with --far-haze).
+var _aerial := AERIAL
+## The haze's curve by day (FOG_CURVE, or DistanceRead's with --far-haze).
+var _fog_curve := FOG_CURVE
 var _time := 0.0
 var _gust := 0.0
 ## The grass's swells' clock: the air's travel at the world's pace under the eye.
@@ -373,8 +379,11 @@ func setup(land_seed: int) -> void:
 	environment.fog_density = 1.0
 	environment.fog_depth_begin = FOG_BEGIN
 	environment.fog_depth_end = FOG_END*LandStream.view()
-	environment.fog_depth_curve = FOG_CURVE
-	environment.fog_aerial_perspective = AERIAL
+	_fog_curve = DistanceRead.fog_curve()
+	environment.fog_depth_curve = _fog_curve
+	_aerial = DistanceRead.aerial(AERIAL)
+	environment.fog_aerial_perspective = _aerial
+	DistanceRead.publish()
 	environment.fog_sky_affect = 0.0
 	environment.fog_sun_scatter = SUN_SCATTER
 	environment.fog_light_energy = 1.0
@@ -903,7 +912,10 @@ func _haze(facing: Vector3) -> void:
 	environment.fog_light_color = Color(c.r/top,c.g/top,c.b/top).linear_to_srgb()
 	environment.fog_light_energy = top
 	var k := float(celestial.state.get("zs_haze_sun",0.0))
-	environment.fog_aerial_perspective = lerpf(AERIAL,AERIAL_SUN,k)
+	environment.fog_aerial_perspective = lerpf(_aerial,AERIAL_SUN,k)
+	var day := DistanceRead.day_share(k,(celestial.state.zs_sun_direction as Vector3).y)
+	RenderingServer.global_shader_parameter_set(&"zs_haze_tint",DistanceRead.tree_tint(c,day))
+	environment.fog_depth_curve = lerpf(FOG_CURVE,_fog_curve,day)
 	environment.fog_sun_scatter = lerpf(SUN_SCATTER,SUN_SCATTER_SUN,k)
 	_haze_ground(c,k)
 
