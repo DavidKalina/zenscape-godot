@@ -825,6 +825,18 @@ zs_haze={
 "type": "float",
 "value": 0.15
 }
+zs_dread={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_haze_tint={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wood_map={
+"type": "sampler2D",
+"value": ""
+}
 zs_growth={
 "type": "vec2",
 "value": Vector2(1, 1)

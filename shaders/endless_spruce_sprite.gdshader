@@ -32,6 +32,7 @@ render_mode world_vertex_coords, cull_disabled, diffuse_lambert, specular_disabl
 // --spruce-look=g: the variety, the mid-distance contrast and the rim, as the
 // near crowns' (spruce_variety.gdshaderinc, spruce_paint.gdshaderinc).
 #include "res://shaders/spruce_variety.gdshaderinc"
+#include "res://shaders/distance_read.gdshaderinc"
 // --spruce-look=b (spruce_tiers.gdshaderinc): the atlas holds the tiers' tones and
 // tilted light normal; the sprite paints the cool shade, the warm light and its own dabs.
 #include "res://shaders/spruce_tiers.gdshaderinc"
@@ -295,12 +296,15 @@ void fragment() {
 		c *= 1.0 + (r1 - 0.5) * 2.0 * far_vary.y;
 		c *= mix(vec3(1.05, 1.0, 0.9), vec3(0.93, 1.0, 1.08), r2);
 	}
+	c = zs_tree_vary(c, sprite_foot.xz);
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	vec3 ol = zs_cool(zs_st_shade(spruce_tier.w), shade_follow) * sprite_luma(c);
 	EMISSION = mix(c, ol, tone.w) * hemi + mix(c, ol, tone.y) * hemi * tone.x + mix(c, ol, olive) * zs_look_bounce_light(n);
+	// The far crowns a share more of the haze (distance_read).
+	ZS_TREE_HAZE(zs_tree_haze(length(to_eye)));
 }
 
 void light() {

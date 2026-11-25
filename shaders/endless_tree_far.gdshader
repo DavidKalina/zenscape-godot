@@ -8,6 +8,7 @@ shader_type spatial;
 render_mode cull_back, diffuse_lambert, specular_disabled;
 // The cheap sway with the wind where the tree stands (tree_wind.gdshaderinc).
 #include "res://shaders/tree_wind.gdshaderinc"
+#include "res://shaders/distance_read.gdshaderinc"
 
 uniform vec4 band = vec4(0.0, 1.0, 1e6, 1.0);
 uniform vec4 albedo : source_color = vec4(1.0);
@@ -17,9 +18,11 @@ uniform float baked = 1.0;
 uniform float sway_tall = 4.3;
 
 varying float keep;
+varying vec3 far_foot;
 
 void vertex() {
 	vec3 foot = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	far_foot = foot;
 	float d = distance(foot, CAMERA_POSITION_WORLD);
 	keep = smoothstep(band.x, band.x + band.y, d) * (1.0 - smoothstep(band.z - band.w, band.z, d));
 	if (keep > 0.0 && zs_tree_alive > 0.0) {
@@ -32,6 +35,9 @@ void vertex() {
 
 void fragment() {
 	vec3 shade = mix(vec3(1.0), COLOR.rgb, baked);
-	ALBEDO = albedo.rgb * shade;
+	ALBEDO = zs_tree_vary(albedo.rgb * shade, far_foot.xz);
 	ROUGHNESS = 1.0;
+	// The far crowns a share more of the haze (distance_read).
+	EMISSION = vec3(0.0);
+	ZS_TREE_HAZE(zs_tree_haze(distance(far_foot, CAMERA_POSITION_WORLD)));
 }
