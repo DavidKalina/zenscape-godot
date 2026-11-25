@@ -201,7 +201,7 @@ void fragment() {
 	c *= sheen;
 	c = zs_react_tone(c, react * along * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);
-	c = zs_soak_turf(c);
+	c = zs_soak_turf(zs_meadow_tone(c));
 	ALBEDO = c * (1.0 - shade * cloud_shade);
 	ROUGHNESS = 0.85;
 	SPECULAR = 0.2;

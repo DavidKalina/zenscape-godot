@@ -1197,7 +1197,7 @@ void fragment() {
 		tint *= mix(1.0, NIGHT_NEAR_DIM * min(1.0, pow(NIGHT_NEAR_LEVEL.x / max(grey, 1e-3), NIGHT_NEAR_LEVEL.y)), night_near);
 	}
 	// Wet by the weather (weather lane rain), as the turf under it.
-	if (grass_blades) tint = zs_soak_turf(tint);
+	if (grass_blades) tint = zs_soak_turf(zs_meadow_tone(tint));
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);

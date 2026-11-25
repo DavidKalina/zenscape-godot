@@ -10,6 +10,9 @@ extends RefCounted
 ##                  forest floor's weight, wood_map.gd), with the floor
 ##                  sheet's own colour (land_trees FLOOR_COLOUR) a little
 ##                  darker and cooler.
+##   --meadow-tone=X the grass pulled off lime toward a natural meadow (0 the
+##                  old look, 1 the default; zs_meadow, MEADOW_* below), for
+##                  the ground's paint and every tuft alike.
 ##   --tree-vary=X  each spruce its own value and hue (a hash of its foot,
 ##                  the same on every ring: blue-black, olive, the odd pale
 ##                  or grey one).
@@ -49,6 +52,12 @@ const WOOD_SHRINK := 0.35
 ## The trees' spread (1: as tuned).
 const TREE_VARY := 1.0
 
+## --meadow-tone at 1: the saturation kept, the red lost (blue gained 0.6x
+## that), the value kept.
+const MEADOW_SAT := 0.68
+const MEADOW_YELLOW := 0.2
+const MEADOW_VALUE := 0.88
+
 static func _arg(name: String, fallback: float) -> float:
 	for a in LaunchArgs.user_args():
 		if a == "--%s=off" % name: return 0.0
@@ -57,6 +66,7 @@ static func _arg(name: String, fallback: float) -> float:
 
 static func far_haze() -> float: return _arg("far-haze",1.0)
 static func wood_floor() -> float: return _arg("wood-floor",1.0)
+static func meadow_tone() -> float: return _arg("meadow-tone",1.0)
 static func tree_vary() -> float: return _arg("tree-vary",1.0)
 
 ## The depth fog's curve.
@@ -85,6 +95,8 @@ static func tree_tint(c: Color, day: float) -> Vector4:
 
 ## The globals the shaders read (but zs_haze_tint, which goes each frame).
 static func publish() -> void:
+	var tone := meadow_tone()
+	RenderingServer.global_shader_parameter_set(&"zs_meadow",Vector4(minf(tone,1.0),_arg("meadow-sat",MEADOW_SAT),_arg("meadow-yellow",MEADOW_YELLOW),_arg("meadow-value",MEADOW_VALUE)))
 	var wood := wood_floor()
 	RenderingServer.global_shader_parameter_set(&"zs_dread",Vector4(
 		_arg("tree-haze",TREE_HAZE)*far_haze(),

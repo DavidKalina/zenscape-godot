@@ -23,6 +23,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_shade.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 #include "res://shaders/land_horizon.gdshaderinc"
+#include "res://shaders/distance_read.gdshaderinc"
 #include "res://shaders/endless_patch.gdshaderinc"
 #include "res://shaders/endless_rock.gdshaderinc"
 // The grass's ring distance (scripts/endless/endless_grass.gd), for where
@@ -1444,6 +1445,8 @@ void fragment() {
 				if (lawn_on > 0.0) grass = zs_far_lawn(grass, gxz, normalize(p - CAMERA_POSITION_WORLD), fp, sheen_s, zs_key_irradiance, zs_cool(vec3(0.93, 0.90, 1.02), paint_follow), lawn_on);
 			}
 		}
+		// The meadow's tone (distance_read): off lime, one pull for ground and tufts.
+		grass = zs_meadow_tone(grass);
 		// The flower drifts past the drawn flowers: heads of their colour dotted
 		// over the turf (two lattices, more of them at a drift's heart), which
 		// average to a wash of it as a pixel grows past a head; a light wash
