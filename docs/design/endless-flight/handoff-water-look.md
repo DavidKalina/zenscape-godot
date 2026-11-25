@@ -105,7 +105,43 @@ less green water.
   judge whether that pulses.
 - The pond in `cruise` has pale diagonal slashes, a few metres long, that
   this round did not touch (live foam or eddy lines, it seems).
-- The sea's lagoon at a low sun goes rather dark and flat. `view_shade` or
-  `water_light` could lift it.
+- (The dark lagoon at a low sun: fixed, see Dusk lagoon.)
 - No crest sharpening of the FFT slopes was tried. The FFT is already
   wave-shaped. The gel look came from the lighting, not from the shape.
+
+## Dusk lagoon
+
+At `--hour=17.5` the coast's shallow lagoon went a dark, murky grey-teal,
+where the old look kept a clear lit turquoise.
+
+**Cause: the dimmer body light and the calmer shallow tint, together.** A
+matched A/B at 17.5 (`scratch/dusk/ab1_sheet.png`, the same frame, one
+group of the previous round's knobs put back to the old values at a time;
+lagoon mean RGB in brackets): new (57,65,65), old (72,92,85);
+`water_light`/`river_light` 2.6 (69,79,79); the old `tint_shallow` (60,76,71);
+the sun on the chop (`body_shade*`) (57,64,64), no `view_shade` (58,66,65) and
+the old path (58,65,65) change nothing. The light and the tint between them
+make up the gap. Why only at a low sun: the body's light is
+`(ambient + key * 0.8) * water_light`, and at 17.5 the key is low (y 0.19
+against 0.61 at 9.6) and orange (its green a third of noon's, its blue a
+twentieth), so the teal body is lit mostly by the sky's ambient. The 1.7
+that keeps the day's shallows from going milky leaves them grey at dusk.
+
+**Fix (`low_sun`, `tint_low_sun`; the river's `river_low_sun`,
+`river_tint_low_sun`).** As the key's height falls from 0.45 to 0.2 the
+body's light goes from 1.7 to 3.0 and the shallows' tint back to the old
+(0.42, 0.90, 0.82). Above 0.45 nothing changes, so 9.6 is the previous
+round's look exactly (the fix and the previous round differ there only by
+the water's motion between frames). 7:00 (key 0.25) gets most of it. At
+18.5 the key is the moon's (y 0.11, faint), so the lift holds into the
+night, which brings back the old's bright blue lagoon. Knobs in
+`EndlessSea.WATER_LOOK` and `EndlessLook.RIVER_LOOK`; `x` 0 turns it off.
+The ripples' shading, the path and the mirror are untouched.
+
+Sheets (old left, previous round middle, fix right; this worktree's
+`scratch/dusk/`): `sheet_h{9.6,17.5,18.5}_{coast,river}.png`,
+`sheet_h7_coast.png`; stills in `final_<hour>/`. The tried strengths:
+`ab2_coast.png`, `ab2_river.png`.
+
+Coast frame time at 17.5 (look_views --time=240, median): fix 25.27 /
+25.83 ms, without it 25.12 / 25.90 ms: the same. Smoke check passes.

@@ -318,6 +318,9 @@ uniform vec2 river_depth = vec2(0.8, 5.0);
 // (the sea's water_light), what it absorbs a metre and the bed's fade (m).
 uniform vec2 river_tint_depths = vec2(2.5, 7.0);
 uniform float river_light = 2.6;
+// The body at a low sun (the sea's low_sun and tint_low_sun; x 0 off).
+uniform vec3 river_low_sun = vec3(0.0, 0.2, 0.45);
+uniform vec3 river_tint_low_sun : source_color = vec3(0.42, 0.90, 0.82);
 uniform vec3 river_absorb = vec3(0.30, 0.075, 0.06);
 uniform float river_bed_fade = 2.2;
 // The ripples: tile sizes (m), strengths, how much the flow stretches them
@@ -1940,12 +1943,14 @@ void fragment() {
 		// riffle, so the shallows' band never runs even.
 		float bars = mix(0.6, 1.45, ep_noise(p.xz / 37.0 + 3.7));
 		float depth = min(d_in * river_depth.x * bars, river_depth.y) * (1.0 - 0.4 * rif * running);
-		vec3 column = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
+		float low = river_low_sun.x > 0.0 ? 1.0 - smoothstep(river_low_sun.y, river_low_sun.z, zs_key_direction.y) : 0.0;
+		vec3 r_tint_sh = mix(river_tint_shallow, river_tint_low_sun, low);
+		vec3 column = mix(r_tint_sh, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
 		column = mix(column, river_tint_deep, smoothstep(river_tint_depths.x * 0.5, river_tint_depths.y, depth));
 		column *= zs_palette_water;
 		vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 		vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
-		vec3 light = (ambient + key * 0.8) * river_light;
+		vec3 light = (ambient + key * 0.8) * mix(river_light, river_low_sun.x, low);
 		float through = depth / max(abs(eye.y), 0.15);
 		vec3 seen = exp(-river_absorb * through) * exp(-depth / river_bed_fade);
 		vec3 bed_c = mix(SAND * 0.75, ROCK_PALE, 0.35) * (ambient * 0.9 + key);
@@ -2000,9 +2005,9 @@ void fragment() {
 			// the two agree where the sea fades in over it.)
 			if (river_plume_depth > 0.0) wd = mix(wd, min(wd, river_plume_depth * waver), r_mouth);
 			vec4 td = river_sea_tint_depths;
-			vec3 sc = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, td.y, wd));
+			vec3 sc = mix(r_tint_sh, river_tint_mid, smoothstep(0.0, td.y, wd));
 			sc = mix(sc, river_tint_deep, smoothstep(td.y * 0.6, td.z, wd));
-			sc = mix(river_tint_shallow, sc, smoothstep(0.0, td.x, wd) * 0.6 + 0.4);
+			sc = mix(r_tint_sh, sc, smoothstep(0.0, td.x, wd) * 0.6 + 0.4);
 			sc *= zs_palette_water * river_sea_body;
 			vec3 seen_m = exp(-river_absorb * through_m) * exp(-max(real, through_m * 0.4) / river_sea_bed_fade);
 			vec3 bed_m = SAND_WET * 0.85 * (ambient + key);

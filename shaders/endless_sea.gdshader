@@ -220,6 +220,13 @@ uniform vec4 tint_depths = vec4(1.5, 7.0, 22.0, 55.0);
 uniform vec3 absorb = vec3(0.30, 0.075, 0.06);
 uniform float bed_fade = 5.0;
 uniform float water_light = 2.6;
+// The body at a low sun (the water look's dusk lagoon): its key light is low,
+// orange and weak, so the dimmer day body goes a murky grey-teal. As the key
+// sinks from `low_sun.z` to `low_sun.y` (its height, the direction's y) the
+// body's light goes to `low_sun.x` and the shallows' tint to tint_low_sun.
+// x 0: off (the day's light and tint at every hour).
+uniform vec3 low_sun = vec3(0.0, 0.2, 0.45);
+uniform vec3 tint_low_sun : source_color = vec3(0.42, 0.90, 0.82);
 
 // The swell's heading (world xz), its strength, and the chop's.
 uniform vec2 swell_heading = vec2(0.8, 0.6);
@@ -1548,14 +1555,16 @@ void fragment() {
 	vec3 bed = textureLod(sea_screen, uv, 0.0).rgb;
 	if (debug_view == 16) bed = vec3(0.1, 0.12, 0.1);
 
-	vec3 column = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
+	float low = low_sun.x > 0.0 ? 1.0 - smoothstep(low_sun.y, low_sun.z, zs_key_direction.y) : 0.0;
+	vec3 tint_sh = mix(tint_shallow, tint_low_sun, low);
+	vec3 column = mix(tint_sh, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
 	column = mix(column, tint_deep, smoothstep(tint_depths.y * 0.6, tint_depths.z, water_depth));
 	column = mix(column, tint_abyss, smoothstep(tint_depths.z, tint_depths.w, water_depth));
-	column = mix(tint_shallow, column, smoothstep(0.0, tint_depths.x, water_depth) * 0.6 + 0.4);
+	column = mix(tint_sh, column, smoothstep(0.0, tint_depths.x, water_depth) * 0.6 + 0.4);
 	column *= zs_palette_water;
 	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 	vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
-	vec3 light = (ambient + key * 0.8) * water_light;
+	vec3 light = (ambient + key * 0.8) * mix(water_light, low_sun.x, low);
 	// The body: the water's light across the wave, darker in the troughs and
 	// lighter, greener up the crests, and a touch darker where it is rough.
 	float lift = 0.5;
@@ -1639,13 +1648,13 @@ void fragment() {
 		wake_laid = held.a * in_buffer * wake;
 		// The churned water round them, lighter and greener.
 		water = mix(water, mix(tint_mid, sss_color, 0.25) * zs_palette_water * light * 1.15, smoothstep(0.02, 0.6, churned) * 0.12 * foam_lace.w);
-		water = mix(water, mix(tint_shallow, sss_color, 0.3) * zs_palette_water * light * 0.8, surge_aired * 0.2);
+		water = mix(water, mix(tint_sh, sss_color, 0.3) * zs_palette_water * light * 0.8, surge_aired * 0.2);
 	} else if (sea_body > 0) {
 		float open_sea = smoothstep(4.0, 12.0, water_depth);
 		caps *= open_sea;
 		cover = max(cover, caps);
 		// The aerated water round and under them, lighter and greener.
-		water = mix(water, mix(tint_shallow, sss_color, 0.4) * zs_palette_water * light * 0.8, smoothstep(0.05, 0.6, caps) * 0.16);
+		water = mix(water, mix(tint_sh, sss_color, 0.4) * zs_palette_water * light * 0.8, smoothstep(0.05, 0.6, caps) * 0.16);
 	}
 	float foamed = zs_foam_pattern(rest_xz, t, cover, footprint) * foam;
 	// Whitecaps: the same breakup but softer-edged, so they read as foam and
@@ -1686,7 +1695,7 @@ void fragment() {
 		float bf = smoothstep(0.1, 0.5, zs_burrow_foam * (0.4 + 1.4 * fleck));
 		water = mix(water, vec3(0.97, 0.99, 1.0) * max(light * 1.0, vec3(0.85)), bf * 0.9);
 	}
-	water += tint_shallow * (ambient + key) * lip * 0.4;
+	water += tint_sh * (ambient + key) * lip * 0.4;
 
 	// The mirror: the sky, the cloud field, and what stands on screen.
 	vec3 reflected = reflect(-eye, calm);

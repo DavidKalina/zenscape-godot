@@ -614,7 +614,8 @@ func _build_sea() -> void:
 
 ## The rivers' knobs for the water look (_river_water).
 const RIVER_LOOK := {"river_body_shade":0.2,"river_light":1.7,"river_calm":1.0,"river_stretch":Vector2(2.5,1.2),"river_pad_mouth":1.0,"river_path_break":1.0,"river_view_shade":1.0,
-	"river_bank_mirror":Vector2(4.0,1.0),"river_fresnel":Vector2(0.14,2.2)}
+	"river_bank_mirror":Vector2(4.0,1.0),"river_fresnel":Vector2(0.14,2.2),
+	"river_low_sun":Vector3(3.0,0.2,0.45),"river_tint_low_sun":Color(0.42,0.90,0.82)}
 
 ## The rivers' water, painted by the ground shader (rivers-handoff.md):
 ## the sea's chop maps and its colours, so a river reads as the same water.

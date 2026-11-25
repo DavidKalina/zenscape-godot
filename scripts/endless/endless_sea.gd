@@ -108,7 +108,11 @@ static func water_look() -> int:
 ## The sea's knobs for the water look (over the body's, under the world's
 ## paint and --sea-set).
 const WATER_LOOK := {"body_shade_fine":0.0,"body_shade":0.6,"view_shade":1.2,"water_light":1.7,"calm_share":1.0,
-	"path_share":0.0,"path_break":1.0,"tint_shallow":Color(0.40,0.76,0.73)}
+	"path_share":0.0,"path_break":1.0,"tint_shallow":Color(0.40,0.76,0.73),
+	# At a low sun the body's key light is low, orange and weak: the dimmer day
+	# body went a murky grey-teal. Below a key height of 0.45 it goes back up
+	# to 3.0 and the old greener shallows (handoff-water-look.md, Dusk lagoon).
+	"low_sun":Vector3(3.0,0.2,0.45),"tint_low_sun":Color(0.42,0.90,0.82)}
 
 var _leaps_on := false
 ## The plume's reach the depth map bakes with (PLUME.x; --river-plume=M).
