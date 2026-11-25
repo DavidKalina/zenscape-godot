@@ -102,13 +102,14 @@ const SPRUCE_R3 := {"blue":0.85, "fill":2.2, "flat":1.0, "farlift":1.45, "steps"
 ##   (ZS_BACKLIGHT_SPRUCE's 3.0 times rim/3), its hue's share of a saturated
 ##   yellow-green, a floor for it by day (zs_backlight is 0 above sun height
 ##   0.42), and the fresh tips' share of it;
-## - flat: the bake's flattening (1.6 with texture b by default, 1.0 here, so the
-##   inner/fresh shading shows).
+## - flat: the bake's flattening (1.6 with texture b by default, 0.5 here, so the
+##   inner/fresh shading and the light bake's dark depths show; 1.0 before the
+##   bake, docs/design/endless-flight/handoff-tree-bake.md).
 ## Played 2026-10-26: at 0.3 blue, 0.1 kept and haze 0.6 the far woods read a
 ## toy green next to the default's dusty blue-green, so green trees keep most of
 ## the blue and the haze term is off.
 const SPRUCE_G := {"bshare":0.5, "bgrove":160.0, "blean":0.5, "bgreen":0.8, "inner":0.9, "fresh":0.9, "haze":0.0,
-	"rim":5.0, "rimwarm":0.7, "rimday":0.3, "rimtip":0.5, "flat":1.0}
+	"rim":5.0, "rimwarm":0.7, "rimday":0.3, "rimtip":0.5, "flat":0.5}
 
 ## `--spruce-look=b` (round 2, painterly): g plus these (each `--spruce-<knob>=X`,
 ## only with look b; 0 turns that part off), shaders/spruce_tiers.gdshaderinc:
