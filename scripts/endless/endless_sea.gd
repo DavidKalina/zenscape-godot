@@ -97,6 +97,19 @@ static func fft_wanted() -> bool:
 static func foam_wanted() -> bool:
 	return body_wanted() and not "--sea-foam=old" in LaunchArgs.user_args()
 
+## The water look (handoff-water-look.md): 1 unless --water-look=0. The
+## water's body lit as a liquid's (only the swell's faces shaded, dimmer, the
+## shallows less green), its ripples shown in the mirror and the sun's path.
+static func water_look() -> int:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--water-look="): return int(a.get_slice("=",1))
+	return 1
+
+## The sea's knobs for the water look (over the body's, under the world's
+## paint and --sea-set).
+const WATER_LOOK := {"body_shade_fine":0.0,"body_shade":0.6,"view_shade":1.2,"water_light":1.7,"calm_share":1.0,
+	"path_share":0.0,"path_break":1.0,"tint_shallow":Color(0.40,0.76,0.73)}
+
 var _leaps_on := false
 ## The plume's reach the depth map bakes with (PLUME.x; --river-plume=M).
 var plume := _plume_arg()
@@ -160,6 +173,8 @@ func _init(seed_value: int) -> void:
 					material.set_shader_parameter("whitecaps",FOAM_CAPS)
 					# The crest glow a touch down, so the foam stands out.
 					material.set_shader_parameter("sss_strength",0.65)
+	if water_look() > 0:
+		for k: String in WATER_LOOK: material.set_shader_parameter(k,WATER_LOOK[k])
 	# The world's sea tints (its paint), then the flags over them.
 	preload("res://scripts/endless/world/world_profile.gd").current().apply_sea(material)
 	for a: String in LaunchArgs.user_args():

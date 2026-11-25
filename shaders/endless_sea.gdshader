@@ -96,6 +96,13 @@ uniform float glitter_filter = 1.0;
 // How much the water's body brightens on slopes toward the sun (and darkens
 // away), so the chop's shape reads where the sky's mirror is faint.
 uniform float body_shade = 0.0;
+// The chop's share in that light (1 the old look; the water look, EndlessSea
+// --water-look, lights only the swell's faces: lit fine ripples read as a
+// lumpy solid, gel, where water shows its ripples in the mirror).
+uniform float body_shade_fine = 1.0;
+// The chop shown by the eye's side of it (the fragment; 0 the old).
+uniform float view_shade = 0.0;
+uniform vec2 view_fade = vec2(120.0, 450.0);
 
 // The body (EndlessSea, `--sea-body=old` sets 0): 1 a sea with mass:
 // - a long swell (`body_swell.x` m a wave's height scale) in two crossing
@@ -242,6 +249,8 @@ uniform vec2 mirror_march = vec2(2.5, 1.55);
 uniform float mirror_calm = 0.4;
 // The sun: its soft path, and the crisp glitter on the chop.
 uniform float glint_share = 1.0;
+// The sun's path broken into facets (0 the old soft path; see the fragment).
+uniform float path_break = 0.0;
 uniform float glitter = 1.0;
 uniform float cloud_shade = 1.0;
 // The clouds' shade map's square as drawn this frame (corner xz, side, on;
@@ -1565,7 +1574,14 @@ void fragment() {
 	vec3 water = column * light * (vec3(1.0) - seen) + bed * seen;
 	// (Without the surge's own slope, which would pin this at its clamp and take
 	// the chop's shading off the great faces.)
-	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz + surge_slope * normal.y, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz + (surge_slope + detail * (1.0 - body_shade_fine)) * normal.y, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	// The water look's ripples (view_shade): lighter on the faces tilted away
+	// from the eye, which see it glancing and mirror the paler low sky, darker
+	// on those turned to it. Tied to the eye as a mirror's are, not to the sun
+	// as a solid's: so they read as water.
+	// Faded with range (view_fade, m), so far water goes to a calm mirror
+	// rather than a field of strokes.
+	if (view_shade > 0.0) water *= 1.0 + clamp(dot(normal.xz, -normalize(eye.xz + vec2(1e-4))) / max(normal.y, 0.2) * 2.5, -0.4, 0.4) * view_shade * (1.0 - smoothstep(view_fade.x, view_fade.y, distance_to));
 	// The surge's mass: its faces lit or turned from the sun by the long waves'
 	// own slope, the chop left out, and its troughs a deeper blue.
 	if (surge_share > 0.0) {
@@ -1774,6 +1790,11 @@ void fragment() {
 	vec3 smooth_n = normalize(vec3(-(slope.x + detail.x * path_share), 1.0, -(slope.y + detail.y * path_share)));
 	vec4 path = zs_lake_glint(reflect(-eye, smooth_n), sun, zs_moon_direction, zs_celestial_clear, 0.0, glint_share);
 	path.a *= 1.0 - shaded;
+	// The path broken into the facets that catch the sun (path_break, the
+	// water look): its lobe off the full normal is wide enough to paint the
+	// ripples as soft white blobs, a wet gel's sheen; water's path is the
+	// envelope of many small bright facets.
+	if (path_break > 0.0) path.a *= mix(1.0, smoothstep(0.99, 0.998, dot(reflect(-eye, normal), sun)) * 1.6, path_break);
 	float sunlight = smoothstep(-0.03, 0.12, sun.y);
 	// (Not off a swimming fish's hump: a slope that broad lights as one hard
 	// white sheet.)

@@ -612,6 +612,10 @@ func _build_sea() -> void:
 		return
 	_build_old_sea()
 
+## The rivers' knobs for the water look (_river_water).
+const RIVER_LOOK := {"river_body_shade":0.2,"river_light":1.7,"river_calm":1.0,"river_stretch":Vector2(2.5,1.2),"river_pad_mouth":1.0,"river_path_break":1.0,"river_view_shade":1.0,
+	"river_bank_mirror":Vector2(4.0,1.0),"river_fresnel":Vector2(0.14,2.2)}
+
 ## The rivers' water, painted by the ground shader (rivers-handoff.md):
 ## the sea's chop maps and its colours, so a river reads as the same water.
 ## Off with the land's rivers (--no-rivers).
@@ -668,6 +672,11 @@ func _river_water(land_seed: int) -> void:
 		# A rim of it at every shore, and the beach's sand with grain.
 		ground.set_shader_parameter("river_bank_rim",Vector2(2.6,10.0))
 		ground.set_shader_parameter("sand_grit",1.0)
+	# The water look (EndlessSea.water_look; --water-look=0 the old): the
+	# ripples lit only by the mirror, not as a lumpy solid, drawn out down the
+	# current, a dimmer body and the banks darker in the mirror.
+	if EndlessSea.water_look() > 0:
+		for k: String in RIVER_LOOK: ground.set_shader_parameter(k,RIVER_LOOK[k])
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--river-knob="):
 			ground.set_shader_parameter(arg.get_slice("=",1),str_to_var(arg.get_slice("=",2)))
