@@ -96,6 +96,13 @@ uniform float glitter_filter = 1.0;
 // How much the water's body brightens on slopes toward the sun (and darkens
 // away), so the chop's shape reads where the sky's mirror is faint.
 uniform float body_shade = 0.0;
+// The chop's share in that light (1 the old look; the water look, EndlessSea
+// --water-look, lights only the swell's faces: lit fine ripples read as a
+// lumpy solid, gel, where water shows its ripples in the mirror).
+uniform float body_shade_fine = 1.0;
+// The chop shown by the eye's side of it (the fragment; 0 the old).
+uniform float view_shade = 0.0;
+uniform vec2 view_fade = vec2(120.0, 450.0);
 
 // The body (EndlessSea, `--sea-body=old` sets 0): 1 a sea with mass:
 // - a long swell (`body_swell.x` m a wave's height scale) in two crossing
@@ -213,6 +220,13 @@ uniform vec4 tint_depths = vec4(1.5, 7.0, 22.0, 55.0);
 uniform vec3 absorb = vec3(0.30, 0.075, 0.06);
 uniform float bed_fade = 5.0;
 uniform float water_light = 2.6;
+// The body at a low sun (the water look's dusk lagoon): its key light is low,
+// orange and weak, so the dimmer day body goes a murky grey-teal. As the key
+// sinks from `low_sun.z` to `low_sun.y` (its height, the direction's y) the
+// body's light goes to `low_sun.x` and the shallows' tint to tint_low_sun.
+// x 0: off (the day's light and tint at every hour).
+uniform vec3 low_sun = vec3(0.0, 0.2, 0.45);
+uniform vec3 tint_low_sun : source_color = vec3(0.42, 0.90, 0.82);
 
 // The swell's heading (world xz), its strength, and the chop's.
 uniform vec2 swell_heading = vec2(0.8, 0.6);
@@ -242,6 +256,8 @@ uniform vec2 mirror_march = vec2(2.5, 1.55);
 uniform float mirror_calm = 0.4;
 // The sun: its soft path, and the crisp glitter on the chop.
 uniform float glint_share = 1.0;
+// The sun's path broken into facets (0 the old soft path; see the fragment).
+uniform float path_break = 0.0;
 uniform float glitter = 1.0;
 uniform float cloud_shade = 1.0;
 // The clouds' shade map's square as drawn this frame (corner xz, side, on;
@@ -1539,14 +1555,16 @@ void fragment() {
 	vec3 bed = textureLod(sea_screen, uv, 0.0).rgb;
 	if (debug_view == 16) bed = vec3(0.1, 0.12, 0.1);
 
-	vec3 column = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
+	float low = low_sun.x > 0.0 ? 1.0 - smoothstep(low_sun.y, low_sun.z, zs_key_direction.y) : 0.0;
+	vec3 tint_sh = mix(tint_shallow, tint_low_sun, low);
+	vec3 column = mix(tint_sh, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
 	column = mix(column, tint_deep, smoothstep(tint_depths.y * 0.6, tint_depths.z, water_depth));
 	column = mix(column, tint_abyss, smoothstep(tint_depths.z, tint_depths.w, water_depth));
-	column = mix(tint_shallow, column, smoothstep(0.0, tint_depths.x, water_depth) * 0.6 + 0.4);
+	column = mix(tint_sh, column, smoothstep(0.0, tint_depths.x, water_depth) * 0.6 + 0.4);
 	column *= zs_palette_water;
 	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 	vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
-	vec3 light = (ambient + key * 0.8) * water_light;
+	vec3 light = (ambient + key * 0.8) * mix(water_light, low_sun.x, low);
 	// The body: the water's light across the wave, darker in the troughs and
 	// lighter, greener up the crests, and a touch darker where it is rough.
 	float lift = 0.5;
@@ -1565,7 +1583,14 @@ void fragment() {
 	vec3 water = column * light * (vec3(1.0) - seen) + bed * seen;
 	// (Without the surge's own slope, which would pin this at its clamp and take
 	// the chop's shading off the great faces.)
-	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz + surge_slope * normal.y, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz + (surge_slope + detail * (1.0 - body_shade_fine)) * normal.y, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
+	// The water look's ripples (view_shade): lighter on the faces tilted away
+	// from the eye, which see it glancing and mirror the paler low sky, darker
+	// on those turned to it. Tied to the eye as a mirror's are, not to the sun
+	// as a solid's: so they read as water.
+	// Faded with range (view_fade, m), so far water goes to a calm mirror
+	// rather than a field of strokes.
+	if (view_shade > 0.0) water *= 1.0 + clamp(dot(normal.xz, -normalize(eye.xz + vec2(1e-4))) / max(normal.y, 0.2) * 2.5, -0.4, 0.4) * view_shade * (1.0 - smoothstep(view_fade.x, view_fade.y, distance_to));
 	// The surge's mass: its faces lit or turned from the sun by the long waves'
 	// own slope, the chop left out, and its troughs a deeper blue.
 	if (surge_share > 0.0) {
@@ -1623,13 +1648,13 @@ void fragment() {
 		wake_laid = held.a * in_buffer * wake;
 		// The churned water round them, lighter and greener.
 		water = mix(water, mix(tint_mid, sss_color, 0.25) * zs_palette_water * light * 1.15, smoothstep(0.02, 0.6, churned) * 0.12 * foam_lace.w);
-		water = mix(water, mix(tint_shallow, sss_color, 0.3) * zs_palette_water * light * 0.8, surge_aired * 0.2);
+		water = mix(water, mix(tint_sh, sss_color, 0.3) * zs_palette_water * light * 0.8, surge_aired * 0.2);
 	} else if (sea_body > 0) {
 		float open_sea = smoothstep(4.0, 12.0, water_depth);
 		caps *= open_sea;
 		cover = max(cover, caps);
 		// The aerated water round and under them, lighter and greener.
-		water = mix(water, mix(tint_shallow, sss_color, 0.4) * zs_palette_water * light * 0.8, smoothstep(0.05, 0.6, caps) * 0.16);
+		water = mix(water, mix(tint_sh, sss_color, 0.4) * zs_palette_water * light * 0.8, smoothstep(0.05, 0.6, caps) * 0.16);
 	}
 	float foamed = zs_foam_pattern(rest_xz, t, cover, footprint) * foam;
 	// Whitecaps: the same breakup but softer-edged, so they read as foam and
@@ -1670,7 +1695,7 @@ void fragment() {
 		float bf = smoothstep(0.1, 0.5, zs_burrow_foam * (0.4 + 1.4 * fleck));
 		water = mix(water, vec3(0.97, 0.99, 1.0) * max(light * 1.0, vec3(0.85)), bf * 0.9);
 	}
-	water += tint_shallow * (ambient + key) * lip * 0.4;
+	water += tint_sh * (ambient + key) * lip * 0.4;
 
 	// The mirror: the sky, the cloud field, and what stands on screen.
 	vec3 reflected = reflect(-eye, calm);
@@ -1774,6 +1799,11 @@ void fragment() {
 	vec3 smooth_n = normalize(vec3(-(slope.x + detail.x * path_share), 1.0, -(slope.y + detail.y * path_share)));
 	vec4 path = zs_lake_glint(reflect(-eye, smooth_n), sun, zs_moon_direction, zs_celestial_clear, 0.0, glint_share);
 	path.a *= 1.0 - shaded;
+	// The path broken into the facets that catch the sun (path_break, the
+	// water look): its lobe off the full normal is wide enough to paint the
+	// ripples as soft white blobs, a wet gel's sheen; water's path is the
+	// envelope of many small bright facets.
+	if (path_break > 0.0) path.a *= mix(1.0, smoothstep(0.99, 0.998, dot(reflect(-eye, normal), sun)) * 1.6, path_break);
 	float sunlight = smoothstep(-0.03, 0.12, sun.y);
 	// (Not off a swimming fish's hump: a slope that broad lights as one hard
 	// white sheet.)

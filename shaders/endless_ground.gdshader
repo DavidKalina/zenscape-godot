@@ -318,6 +318,9 @@ uniform vec2 river_depth = vec2(0.8, 5.0);
 // (the sea's water_light), what it absorbs a metre and the bed's fade (m).
 uniform vec2 river_tint_depths = vec2(2.5, 7.0);
 uniform float river_light = 2.6;
+// The body at a low sun (the sea's low_sun and tint_low_sun; x 0 off).
+uniform vec3 river_low_sun = vec3(0.0, 0.2, 0.45);
+uniform vec3 river_tint_low_sun : source_color = vec3(0.42, 0.90, 0.82);
 uniform vec3 river_absorb = vec3(0.30, 0.075, 0.06);
 uniform float river_bed_fade = 2.2;
 // The ripples: tile sizes (m), strengths, how much the flow stretches them
@@ -400,6 +403,13 @@ uniform float river_streaks = 1.0;
 // z: pad radius share of the cell.
 uniform vec3 river_pads = vec3(1.0, 1.15, 0.22);
 uniform vec3 river_pad_colour : source_color = vec3(0.42, 0.56, 0.24);
+// No pads on a river mouth's still pool by the sea (the water look): in the
+// pale shallows they read as rows of dots laid on the water. 0 the old.
+uniform float river_pad_mouth = 0.0;
+// The sun's path broken into facets (the sea's path_break; 0 the old).
+uniform float river_path_break = 0.0;
+// The ripples shown by the eye's side of them (the sea's view_shade; 0 the old).
+uniform float river_view_shade = 0.0;
 // How much of the cloud field the water mirrors (the sea's cloud_mirror).
 uniform float river_cloud_mirror = 0.8;
 // The wind on the water (wind_field, only where a field blows): cat's paws,
@@ -445,6 +455,10 @@ uniform float river_churn = 1.6;
 uniform vec3 river_slick = vec3(4.5, 0.22, 0.7);
 // The ripples' faces lit toward the sun (the sea's body_shade).
 uniform float river_body_shade = 1.0;
+// The ripples drawn out down the current (the water look, EndlessLook
+// --water-look): stretched `x` + 1 times along the flow where it runs `y` m/s
+// or more, so running water streaks instead of standing in round lumps. 0 none.
+uniform vec2 river_stretch = vec2(0.0, 1.2);
 // --- Rivers as moving water (`river_live` 1, unless --river-live=0; docs/design/
 // endless-flight/river-live-handoff.md). The chunks then carry the channel's
 // frame in CUSTOM2 (scripts/endless/land_stream.gd `_river_frame`): its
@@ -614,6 +628,16 @@ vec2 zs_paw_ripple(sampler2D tex, vec2 p, float fp) {
 // `vel` (m/s, varying from pixel to pixel, so the pattern shears and curls),
 // two copies each living a cycle and cross-faded half a cycle apart; `phase`
 // staggers the copies over the river. Its slopes (a normal map's xy).
+// The ripple map's frame drawn out along the flow (river_stretch): `p` (and
+// the gradients) to the map's, and back for a slope (the matrix is symmetric).
+mat2 zs_flow_stretch(vec2 vel) {
+	float v = length(vel);
+	if (river_stretch.x <= 0.0 || v < 1e-3) return mat2(1.0);
+	vec2 a = vel / v;
+	float k = 1.0 - 1.0 / (1.0 + river_stretch.x * smoothstep(0.05, river_stretch.y, v));
+	return mat2(1.0) - k * outerProduct(a, a);
+}
+
 vec2 zs_live_flow(sampler2D tex, vec2 p, vec2 vel, float size, float phase, float t, vec2 dx, vec2 dy) {
 	float cycle = max(river_live_cycle.x * pow(size / 3.0, 0.3), 0.25);
 	float c0 = t / cycle + phase;
@@ -623,11 +647,12 @@ vec2 zs_live_flow(sampler2D tex, vec2 p, vec2 vel, float size, float phase, floa
 	vec2 j1 = fract(vec2(0.7071, 0.2360) * floor(c1));
 	vec2 q0 = p - vel * cycle * (f0 - 0.5);
 	vec2 q1 = p - vel * cycle * (f1 - 0.5);
-	vec2 s0 = textureGrad(tex, q0 / size + j0, dx / size, dy / size).xy * 2.0 - 1.0;
-	vec2 s1 = textureGrad(tex, q1 / size + j1, dx / size, dy / size).xy * 2.0 - 1.0;
+	mat2 m = zs_flow_stretch(vel);
+	vec2 s0 = textureGrad(tex, m * q0 / size + j0, m * dx / size, m * dy / size).xy * 2.0 - 1.0;
+	vec2 s1 = textureGrad(tex, m * q1 / size + j1, m * dx / size, m * dy / size).xy * 2.0 - 1.0;
 	float w0 = 1.0 - abs(2.0 * f0 - 1.0);
 	float w1 = 1.0 - w0;
-	return (s0 * w0 + s1 * w1) * inversesqrt(w0 * w0 + w1 * w1);
+	return m * (s0 * w0 + s1 * w1) * inversesqrt(w0 * w0 + w1 * w1);
 }
 
 // The same through an FFT cascade's slopes (layer 3 + c), its tile shrunk
@@ -643,11 +668,12 @@ vec2 zs_live_fft(int c, vec2 p, vec2 vel, float share, float phase, float t, vec
 	vec2 q0 = p - vel * cycle * (f0 - 0.5);
 	vec2 q1 = p - vel * cycle * (f1 - 0.5);
 	float layer = float(c + 3);
-	vec2 s0 = textureGrad(river_fft_maps, vec3(q0 / size + j0, layer), dx / size, dy / size).xy;
-	vec2 s1 = textureGrad(river_fft_maps, vec3(q1 / size + j1, layer), dx / size, dy / size).xy;
+	mat2 m = zs_flow_stretch(vel);
+	vec2 s0 = textureGrad(river_fft_maps, vec3(m * q0 / size + j0, layer), m * dx / size, m * dy / size).xy;
+	vec2 s1 = textureGrad(river_fft_maps, vec3(m * q1 / size + j1, layer), m * dx / size, m * dy / size).xy;
 	float w0 = 1.0 - abs(2.0 * f0 - 1.0);
 	float w1 = 1.0 - w0;
-	return (s0 * w0 + s1 * w1) * inversesqrt(w0 * w0 + w1 * w1) / share;
+	return m * (s0 * w0 + s1 * w1) * inversesqrt(w0 * w0 + w1 * w1) / share;
 }
 
 // The height map (features `size` m) carried by the current as above, each
@@ -1917,12 +1943,14 @@ void fragment() {
 		// riffle, so the shallows' band never runs even.
 		float bars = mix(0.6, 1.45, ep_noise(p.xz / 37.0 + 3.7));
 		float depth = min(d_in * river_depth.x * bars, river_depth.y) * (1.0 - 0.4 * rif * running);
-		vec3 column = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
+		float low = river_low_sun.x > 0.0 ? 1.0 - smoothstep(river_low_sun.y, river_low_sun.z, zs_key_direction.y) : 0.0;
+		vec3 r_tint_sh = mix(river_tint_shallow, river_tint_low_sun, low);
+		vec3 column = mix(r_tint_sh, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
 		column = mix(column, river_tint_deep, smoothstep(river_tint_depths.x * 0.5, river_tint_depths.y, depth));
 		column *= zs_palette_water;
 		vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI * zs_wx_water_fill(); // weather lane rain
 		vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
-		vec3 light = (ambient + key * 0.8) * river_light;
+		vec3 light = (ambient + key * 0.8) * mix(river_light, river_low_sun.x, low);
 		float through = depth / max(abs(eye.y), 0.15);
 		vec3 seen = exp(-river_absorb * through) * exp(-depth / river_bed_fade);
 		vec3 bed_c = mix(SAND * 0.75, ROCK_PALE, 0.35) * (ambient * 0.9 + key);
@@ -1977,9 +2005,9 @@ void fragment() {
 			// the two agree where the sea fades in over it.)
 			if (river_plume_depth > 0.0) wd = mix(wd, min(wd, river_plume_depth * waver), r_mouth);
 			vec4 td = river_sea_tint_depths;
-			vec3 sc = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, td.y, wd));
+			vec3 sc = mix(r_tint_sh, river_tint_mid, smoothstep(0.0, td.y, wd));
 			sc = mix(sc, river_tint_deep, smoothstep(td.y * 0.6, td.z, wd));
-			sc = mix(river_tint_shallow, sc, smoothstep(0.0, td.x, wd) * 0.6 + 0.4);
+			sc = mix(r_tint_sh, sc, smoothstep(0.0, td.x, wd) * 0.6 + 0.4);
 			sc *= zs_palette_water * river_sea_body;
 			vec3 seen_m = exp(-river_absorb * through_m) * exp(-max(real, through_m * 0.4) / river_sea_bed_fade);
 			vec3 bed_m = SAND_WET * 0.85 * (ambient + key);
@@ -2016,6 +2044,9 @@ void fragment() {
 		// The ripples' faces: lighter toward the sun, darker away (the
 		// sea's body_shade), so the chop reads where the mirror is dim.
 		water *= 1.0 + clamp(dot(slope, -normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.5, -0.45, 0.45) * river_body_shade;
+		// The water look: the ripples by the eye's side of them, as a mirror's
+		// (endless_sea's view_shade), not lit by the sun as a solid's.
+		if (river_view_shade > 0.0) water *= 1.0 + clamp(dot(slope, normalize(eye.xz + vec2(1e-4))) * 2.5, -0.4, 0.4) * river_view_shade;
 		water *= 1.0 - 0.4 * shaded;
 		water *= 1.0 - river_paw_dark * paw;
 		// The live river's foam and white water.
@@ -2027,7 +2058,7 @@ void fragment() {
 		// the shallow ring; far off, the clusters' mean green.
 		float pad = 0.0;
 		if (still > 0.0 && river_pads.x > 0.0 && d_in > 0.5) {
-			float cluster = smoothstep(0.52, 0.72, zs_noise(p.xz / 7.0 + 2.3)) * smoothstep(0.6, 1.8, d_in) * (1.0 - smoothstep(4.5, 7.5, d_in)) * still * river_pads.x;
+			float cluster = smoothstep(0.52, 0.72, zs_noise(p.xz / 7.0 + 2.3)) * smoothstep(0.6, 1.8, d_in) * (1.0 - smoothstep(4.5, 7.5, d_in)) * still * river_pads.x * (1.0 - river_pad_mouth * r_tint);
 			if (cluster > 0.0) {
 				vec2 g = p.xz / river_pads.y;
 				vec2 cell = floor(g);
@@ -2107,7 +2138,11 @@ void fragment() {
 		fres = clamp(fres * (1.0 + sl * river_slick.z), 0.0, 1.0);
 		fres *= 1.0 - river_paws.z * paw;
 		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - skin) * (1.0 - pad));
-		vec4 path = zs_lake_glint(refl, zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
+		// (The water look: the path off the calmer normal, broken into the
+		// facets of the full one that catch the sun, not soft white blobs.)
+		vec3 path_n = normalize(mix(vec3(0.0, 1.0, 0.0), calm, 1.0 - river_path_break * 0.7));
+		vec4 path = zs_lake_glint(reflect(-eye, path_n), zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
+		if (river_path_break > 0.0) path.a *= mix(1.0, smoothstep(0.99, 0.998, dot(reflect(-eye, wn), zs_sun_direction)) * 1.6, river_path_break);
 		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad) * (1.0 - 0.6 * paw));
 		float spark = smoothstep(0.9993, 0.99955, dot(reflect(-eye, wn), zs_sun_direction)) * (0.0025 / (0.0025 + rough));
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
