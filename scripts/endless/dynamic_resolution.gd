@@ -104,7 +104,11 @@ func tick(delta: float, hold := false) -> void:
 		if scale < ceiling-0.005: _step_to(ceiling)
 		return
 	# No faster than the frame cap in force (a preset's 45 has 22 ms a frame).
-	if not _own_fps: _budget = 1000.0/clampf(minf(TARGET_FPS,float(Engine.max_fps)) if Engine.max_fps > 0 else TARGET_FPS,20.0,240.0)
+	if not _own_fps:
+		var fps := minf(TARGET_FPS,float(Engine.max_fps)) if Engine.max_fps > 0 else TARGET_FPS
+		# Locked 60 (GameSettings): room under the cap, so a heavy view doesn't miss a frame.
+		if Engine.max_fps > 0 and GameSettings.lock_60(): fps *= GameSettings.LOCK_MARGIN
+		_budget = 1000.0/clampf(fps,20.0,240.0)
 	var now := RenderingServer.viewport_get_measured_render_time_gpu(_viewport.get_viewport_rid())
 	if now <= 0.0: return
 	if _settle > 0.0:
