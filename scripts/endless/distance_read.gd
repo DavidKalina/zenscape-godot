@@ -54,7 +54,7 @@ const TREE_VARY := 1.0
 
 ## --meadow-tone at 1: the saturation kept, the red lost (blue gained 0.6x
 ## that), the value kept.
-const MEADOW_SAT := 0.68
+const MEADOW_SAT := 0.8
 const MEADOW_YELLOW := 0.2
 const MEADOW_VALUE := 0.88
 
