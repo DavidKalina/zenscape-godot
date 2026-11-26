@@ -18,7 +18,8 @@ extends RefCounted
 ## the measuring on) and moves through STEPS. Down when the time has sat over
 ## DOWN of the frame's budget for DOWN_HOLD s: straight to the first step
 ## that should fit (DOWN_WITH of the GPU's time taken to follow the pixel
-## count), so a dive from height is one change, not three. Up one when the
+## count), so a dive from height is one change, not three. At once, when the
+## GPU alone takes the cap's whole frame MISS_FRAMES frames running. Up one when the
 ## time it would take a step up (UP_WITH of it following the pixels) has sat
 ## under UP of the budget for UP_HOLD s. (Measured at 2560x1440 on an RTX
 ## 4070 SUPER: 0.68 to 0.84 of the time follows the pixels from 400 m up,
@@ -51,6 +52,12 @@ const DOWN_FIT := 0.92
 const UP_WITH := 0.75
 ## The GPU's time is smoothed over about this long (s).
 const SMOOTH := 0.2
+## Frames missed outright: the GPU alone over MISS of the cap's whole frame
+## for MISS_FRAMES frames running steps down at once, not after DOWN_HOLD. (A
+## flight locked at 60 had climbed to 85% over a light view; a heavy one came
+## and 16 frames ran 17.6 to 19.4 ms before the hold let it step.)
+const MISS := 1.0
+const MISS_FRAMES := 3
 
 var on := false
 ## The scale in force (the viewport's), and the most it may be.
@@ -68,6 +75,7 @@ var _forced := -1
 var _over := 0.0
 var _under := 0.0
 var _settle := 0.0
+var _missed := 0
 
 func begin(viewport: Viewport) -> void:
 	_viewport = viewport
@@ -104,7 +112,11 @@ func tick(delta: float, hold := false) -> void:
 		if scale < ceiling-0.005: _step_to(ceiling)
 		return
 	# No faster than the frame cap in force (a preset's 45 has 22 ms a frame).
-	if not _own_fps: _budget = 1000.0/clampf(minf(TARGET_FPS,float(Engine.max_fps)) if Engine.max_fps > 0 else TARGET_FPS,20.0,240.0)
+	if not _own_fps:
+		var fps := minf(TARGET_FPS,float(Engine.max_fps)) if Engine.max_fps > 0 else TARGET_FPS
+		# Locked 60 (GameSettings): room under the cap, so a heavy view doesn't miss a frame.
+		if Engine.max_fps > 0 and GameSettings.lock_60(): fps *= GameSettings.LOCK_MARGIN
+		_budget = 1000.0/clampf(fps,20.0,240.0)
 	var now := RenderingServer.viewport_get_measured_render_time_gpu(_viewport.get_viewport_rid())
 	if now <= 0.0: return
 	if _settle > 0.0:
@@ -112,6 +124,16 @@ func tick(delta: float, hold := false) -> void:
 		gpu_ms = now
 		return
 	gpu_ms = lerpf(gpu_ms,now,clampf(delta/SMOOTH,0.0,1.0)) if gpu_ms > 0.0 else now
+	# The whole frame the cap allows (the budget, when that is longer).
+	var frame_ms := maxf(_budget,1000.0/clampf(minf(TARGET_FPS,float(Engine.max_fps)) if Engine.max_fps > 0 else TARGET_FPS,20.0,240.0))
+	if now > frame_ms*MISS:
+		_missed += 1
+		if _missed >= MISS_FRAMES and scale > STEPS[-1]+0.005:
+			gpu_ms = maxf(gpu_ms,now)
+			steps_down += 1
+			_step_to(_fit_down())
+			return
+	else: _missed = 0
 	if gpu_ms > _budget*DOWN:
 		_under = 0.0
 		_over += delta
@@ -156,6 +178,7 @@ func _step_to(s: float) -> void:
 	scale = minf(s,ceiling)
 	_over = 0.0
 	_under = 0.0
+	_missed = 0
 	_settle = maxf(_settle,SETTLE)
 	if _viewport != null and absf(_viewport.scaling_3d_scale-scale) > 0.001: _viewport.scaling_3d_scale = scale
 

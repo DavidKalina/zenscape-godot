@@ -250,6 +250,21 @@ static func reset_season_globals() -> void:
 		if ProjectSettings.has_setting(path):
 			RenderingServer.global_shader_parameter_set(key,(ProjectSettings.get_setting(path) as Dictionary).get("value"))
 
+## The land's shader: shaders/endless_ground.gdshader, or with
+## --land-paint=old (`old` true) the same file compiled with ZS_LAND_OLD: the
+## paint before the noise lattices and its skipped work (per-pixel hashes,
+## docs/design/endless-flight/handoff-land-paint.md), its own variant so the new path pays nothing.
+static func land_shader(old := "--land-paint=old" in LaunchArgs.user_args()) -> Shader:
+	var base: Shader = preload("res://shaders/endless_ground.gdshader")
+	if not old: return base
+	if _old_land == null:
+		_old_land = Shader.new()
+		var code := base.code
+		var at := code.find("\n")
+		_old_land.code = code.substr(0,at+1)+"#define ZS_LAND_OLD\n"+code.substr(at+1)
+	return _old_land
+static var _old_land: Shader
+
 ## Whether the full look runs (not --plain-look, not the Compatibility
 ## renderer).
 static func wanted() -> bool:
@@ -389,7 +404,11 @@ func setup(land_seed: int) -> void:
 	environment.fog_light_energy = 1.0
 	_wind_angle = float(absi(hash(land_seed))%6283)/1000.0
 	ground = ShaderMaterial.new()
-	ground.shader = preload("res://shaders/endless_ground.gdshader")
+	ground.shader = land_shader()
+	# The paint's noise lattices (tools/bake_land_noise.py), read in place of
+	# per-pixel hashes (er_tnoise, zs_tnoise).
+	ground.set_shader_parameter("er_noise_tex",load("res://assets/textures/land_noise_3d.png"))
+	ground.set_shader_parameter("zs_noise_tex",load("res://assets/textures/land_noise_2d.png"))
 	ground.set_shader_parameter("old_rock","--old-rock" in LaunchArgs.user_args())
 	# The land painted simpler from well above (endless_ground `far_simple`):
 	# --far-paint=full keeps the whole paint at every height, --far-paint=a,b

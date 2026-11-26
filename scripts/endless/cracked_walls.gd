@@ -131,7 +131,18 @@ func _make(site: Dictionary) -> void:
 	var h := float(site.high)
 	var l := float(site.long)
 	var s := int(site.seed)
-	site.made = {"room":build_room(s,WEATHERED,w,h,l),"front":build_wall(s+1,WEATHERED,w,h),"back":build_wall(s+2,WEATHERED,w,h)}
+	var made := {"room":build_room(s,WEATHERED,w,h,l),"front":build_wall(s+1,WEATHERED,w,h),"back":build_wall(s+2,WEATHERED,w,h)}
+	# Their hulls freed here, off the tree, on the worker that made them: boxes
+	# stand in (`_commit`). Freed on the main thread they cost ~6 ms for the
+	# room's ~1200 shapes and ~1 ms a wall, in one frame of the flight.
+	for piece: Node3D in made.values(): _drop_hulls(piece)
+	site.made = made
+
+## A built piece's hull bodies freed (it is off the tree).
+static func _drop_hulls(piece: Node3D) -> void:
+	for old in piece.find_children("*","StaticBody3D",true,false):
+		old.get_parent().remove_child(old)
+		old.free()
 
 ## The kit's own, for the wall and the room: a Build as the gothic pieces' are.
 static func _build(s: int, weathered: float, label: String) -> RuinKit.Build:
@@ -236,11 +247,9 @@ func _commit(site: Dictionary) -> void:
 		(site.walls as Dictionary)[part] = {"node":wall,"body":body,"record":record,"target":target}
 	site.state = "up"
 
-## A built piece's stone as the land's ruins', its hulls off (boxes stand in).
+## A built piece's stone as the land's ruins' (its hulls already off, `_make`).
 func _tidy(piece: Node3D) -> void:
-	for old in piece.find_children("*","StaticBody3D",true,false):
-		old.get_parent().remove_child(old)
-		old.free()
+	_drop_hulls(piece)
 	game.arches._sunlit(piece,false,false,global_position)
 
 func _body(root: Node3D, label: String, boxes: Array) -> StaticBody3D:

@@ -42,6 +42,7 @@ const ROWS: Array[Dictionary] = [
 	{"id":"dynamic","label":"Dynamic resolution","opts":["On","Off"]},
 	{"id":"display","label":"Display","opts":["Fullscreen","Windowed"]},
 	{"id":"vsync","label":"VSync","opts":["On","Off"]},
+	{"id":"lock60","label":"Locked 60","opts":["On","Off"]},
 	{"head":"Sound"},
 	{"id":"master","label":"Master","slider":true},
 	{"id":"effects","label":"Effects","slider":true},

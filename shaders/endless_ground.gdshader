@@ -26,6 +26,32 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/distance_read.gdshaderinc"
 #include "res://shaders/endless_patch.gdshaderinc"
 #include "res://shaders/endless_rock.gdshaderinc"
+
+// zs_noise's paint twin from a baked lattice (tools/bake_land_noise.py,
+// assets/textures/land_noise_2d.png, 256 cells a side, tiling): one filtered
+// sample at the smoothstepped point for the four sine hashes. Only the
+// ground's own paint reads it (zs_fade, zs_patch, its specks, washes and
+// stones; and in place of ep_noise, the river water's grain, slicks,
+// riffles, bars and fringe); the wind's fields, the edges and patches the CPU or the tufts
+// mirror (rock, sand, snow, the banks, endless_patch.gd) keep their own.
+// ZS_LAND_OLD (--land-paint=old): zs_noise (ep_noise where it stood in).
+uniform sampler2D zs_noise_tex : filter_linear, repeat_enable;
+#ifdef ZS_LAND_OLD
+#define ZS_EP_T ep_noise
+#else
+#define ZS_EP_T zs_tnoise
+#endif
+float zs_tnoise(vec2 p) {
+#ifdef ZS_LAND_OLD
+	return zs_noise(p);
+#else
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	f = f * f * (3.0 - 2.0 * f);
+	return textureLod(zs_noise_tex, (mod(i, 256.0) + f + 0.5) / 256.0, 0.0).r;
+#endif
+}
+
 // The grass's ring distance (scripts/endless/endless_grass.gd), for where
 // its tufts and flowers give way to paint.
 #include "res://shaders/endless_ring.gdshaderinc"
@@ -760,10 +786,10 @@ vec2 zs_river_grain(vec2 q, vec2 dir) {
 	vec2 qa = TURN * q / s;
 	vec2 da = TURN * dir;
 	float a = 0.0;
-	for (int k = 0; k < 6; k++) a += ep_noise(qa + da * (float(k) - 2.5));
+	for (int k = 0; k < 6; k++) a += ZS_EP_T(qa + da * (float(k) - 2.5));
 	a = clamp(0.5 + (a / 6.0 - 0.5) * 2.1, 0.0, 1.0);
 	vec2 qf = TURN * (q / river_foam_size.y);
-	float f = ep_noise(qf + vec2(17.3, 4.1)) * 0.6 + ep_noise(qf * 2.7 + vec2(3.9, 8.2)) * 0.4;
+	float f = ZS_EP_T(qf + vec2(17.3, 4.1)) * 0.6 + ZS_EP_T(qf * 2.7 + vec2(3.9, 8.2)) * 0.4;
 	return vec2(a, a * 0.7 + f * 0.3);
 }
 
@@ -804,8 +830,8 @@ vec3 zs_river_foam(vec2 p, vec2 dir, float vspd, float t, float th, float fp) {
 	vec2 r1 = TURN * (p - dir * vspd * scyc * h1 + vec2(5.9, 23.7) * floor(e1) + 90.0) / river_slick.x;
 	float s0 = 0.0, s1 = 0.0;
 	for (int k = 0; k < 4; k++) {
-		s0 += ep_noise(r0 + da * (float(k) - 1.5) * 1.6);
-		s1 += ep_noise(r1 + da * (float(k) - 1.5) * 1.6);
+		s0 += ZS_EP_T(r0 + da * (float(k) - 1.5) * 1.6);
+		s1 += ZS_EP_T(r1 + da * (float(k) - 1.5) * 1.6);
 	}
 	float v0 = 1.0 - abs(2.0 * h0 - 1.0);
 	float slick = clamp(0.5 + (mix(s1, s0, v0) * 0.25 - 0.5) * 2.4, 0.0, 1.0);
@@ -818,7 +844,7 @@ vec3 zs_river_foam(vec2 p, vec2 dir, float vspd, float t, float th, float fp) {
 float zs_fade(vec2 p, float scale, float fp) {
 	float keep = 1.0 - smoothstep(scale * 0.18, scale * 0.6, fp);
 	if (keep <= 0.0) return 0.0;
-	return (zs_noise(p / scale) - 0.5) * keep;
+	return (zs_tnoise(p / scale) - 0.5) * keep;
 }
 
 // zs_fade's grain from gradient noise (quintic, a hash free of sin's
@@ -849,7 +875,7 @@ float zs_patch(vec2 p, float scale, float fp) {
 	float keep = 1.0 - smoothstep(scale * 0.18, scale * 0.6, fp);
 	if (keep <= 0.0) return 0.0;
 	float w = 0.07 + fp / scale * 1.2;
-	return (smoothstep(0.5 - w, 0.5 + w, zs_noise(p / scale)) - 0.5) * keep;
+	return (smoothstep(0.5 - w, 0.5 + w, zs_tnoise(p / scale)) - 0.5) * keep;
 }
 
 // A point turned and shifted for the carpet grain's two lattices, so no
@@ -859,7 +885,7 @@ float zs_patch(vec2 p, float scale, float fp) {
 // (By the world point, not the sheared plan: the bank's side is steep, and
 // the plan's noise ran down it in zigzag stripes.)
 float zs_bank_clods(vec3 q) {
-	return abs(er_vnoise(q / 0.34) * 2.0 - 1.0) * 0.6 + abs(er_vnoise(q / 0.11 + 3.7) * 2.0 - 1.0) * 0.4;
+	return abs(er_tnoise(q / 0.34) * 2.0 - 1.0) * 0.6 + abs(er_tnoise(q / 0.11 + 3.7) * 2.0 - 1.0) * 0.4;
 }
 
 vec2 turned_speck(vec2 p, int k) {
@@ -901,15 +927,27 @@ vec4 peak_paint(vec3 p) {
 	}
 	float across = abs(v - mid) / half_w;
 	// The floor, with a ragged edge up the valley's sides.
+#ifdef ZS_LAND_OLD
 	float rag = (zs_noise(p.xz / 37.0) - 0.5) * 0.16 + (zs_noise(p.xz / 9.0) - 0.5) * 0.06;
 	float floor_on = 1.0 - smoothstep(0.92, 1.06, across + rag);
+#endif
 	// The icefall and the glacier hold ice, down to the toe; the boulder
 	// field between them is scree.
 	float icefall = smoothstep(peak_stretch.x - 60.0, peak_stretch.x + 20.0, a) * (1.0 - smoothstep(peak_stretch.y - 20.0, peak_stretch.y + 60.0, a));
 	float glacier = smoothstep(peak_stretch.z - 80.0, peak_stretch.z + 160.0, a) * (1.0 - smoothstep(peak_stretch.w - 200.0, peak_stretch.w + 60.0, a));
+	bool in_gorge = peak_rock_count > 1 && p.x > peak_rock_box.x && p.z > peak_rock_box.y && p.x < peak_rock_box.z && p.z < peak_rock_box.w;
+#ifndef ZS_LAND_OLD
+	// (The rag only where the ice or the gorge's scree reads it.)
+	float rag = 0.0;
+	float floor_on = 0.0;
+	if (icefall + glacier > 0.0 || in_gorge) {
+		rag = (zs_noise(p.xz / 37.0) - 0.5) * 0.16 + (zs_noise(p.xz / 9.0) - 0.5) * 0.06;
+		floor_on = 1.0 - smoothstep(0.92, 1.06, across + rag);
+	}
+#endif
 	// The rock gorge's floor is bare: scree by its line, with the same rag.
 	float scree = 0.0;
-	if (peak_rock_count > 1 && p.x > peak_rock_box.x && p.z > peak_rock_box.y && p.x < peak_rock_box.z && p.z < peak_rock_box.w) {
+	if (in_gorge) {
 		float best = 1e9;
 		for (int i = 0; i < peak_rock_count - 1; i++) {
 			vec2 s0 = peak_rock_line[i].xy;
@@ -1132,6 +1170,7 @@ void fragment() {
 	float pk_dark = 0.0;
 	if (peak_basalt > 0.0 && pk.x > 0.0) pk_dark = peak_basalt * pk.x * smoothstep(PEAK_BASALT.x, PEAK_BASALT.y, over + (peak_noise(p.xz / 340.0) - 0.5) * 170.0 + (peak_noise(p.xz / 90.0) - 0.5) * 70.0);
 	if (pk.x > 0.0) {
+#ifdef ZS_LAND_OLD
 		float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
 		float pk_line = mix(snow_line, peak_snow, pk.x);
 		float high = smoothstep(peak_snow, peak_snow + 500.0, over);
@@ -1142,6 +1181,23 @@ void fragment() {
 			pk_snowy = psnow_mask(psnow_point(p, over), p.xz, over, n.y, pk_line, pk_bare);
 			rocky = max(rocky, pk_bare * pk.x);
 		}
+#else
+		float pk_line = mix(snow_line, peak_snow, pk.x);
+		float pk_snowy = 0.0;
+		if (psnow_on > 0.5) {
+			// (psnow_mask's edge reaches at most 98 m under its line, and its
+			// band starts 20 m under that: below, no snow and no bare rock.)
+			if (over > pk_line - 120.0) {
+				float pk_bare;
+				pk_snowy = psnow_mask(psnow_point(p, over), p.xz, over, n.y, pk_line, pk_bare);
+				rocky = max(rocky, pk_bare * pk.x);
+			}
+		} else {
+			float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
+			pk_snowy = smoothstep(pk_line - 20.0, pk_line + 4.0, over + pk_edge)
+				* smoothstep(0.56, 0.70, n.y + rock_edge);
+		}
+#endif
 		snowy = mix(snowy, pk_snowy, pk.x) * (1.0 - max(pk.y, pk.z));
 		// The cirque's rim: granite on its slopes, snow on its flatter
 		// tops and in its hollows, ragged.
@@ -1173,13 +1229,20 @@ void fragment() {
 		vec2 sq = p.xz;
 		float s_dist = distance(p, CAMERA_POSITION_WORLD);
 		float far_up = smoothstep(150.0, 1200.0, s_dist);
+		float proud = smoothstep(summit_proud.x, summit_proud.y, land_shape.b);
+#ifndef ZS_LAND_OLD
+		sm_far = smoothstep(250.0, 900.0, s_dist);
+		sm_snow = (1.0 - pk.x) * (1.0 - max(pk.y, pk.z));
+		// (No cap where nothing is proud, or where even the noise's whole
+		// swing, 24 m, can't lift it to the snow: its noise is left out.)
+		if (proud > 0.0 && over + 24.0 > summit_snow.x - far_up * 35.0) {
+#endif
 		// (zs_fade: centred on 0, each scale gone as a pixel outgrows it.)
 		float n38 = zs_fade(sq + 40.0, 38.0, fp);
 		float n12 = zs_fade(sq + 6.0, 12.0, fp);
 		float n4 = zs_fade(sq + 2.0, 3.5, fp);
 		float n1 = zs_fade(sq + 17.0, 1.1, fp);
 		float n05 = zs_fade(sq.yx + 5.0, 0.45, fp);
-		float proud = smoothstep(summit_proud.x, summit_proud.y, land_shape.b);
 		float lift = smoothstep(summit_snow.x - far_up * 35.0, summit_snow.y - far_up * 20.0, over + (n38 + n12) * 24.0);
 		// Flats and hollows (the small radius under its ring) hold it, and the
 		// lee of the Peak's wind; steep ground, the windward and the rock's faces
@@ -1204,12 +1267,19 @@ void fragment() {
 		cap *= 1.0 - stones;
 		// Far off: the cover's own mean, a soft light crown.
 		float crown = max(smoothstep(0.03, 0.45, cov), proud * lift * smoothstep(0.50, 0.75, n.y) * 0.75) * 0.9;
+#ifdef ZS_LAND_OLD
 		sm_far = smoothstep(250.0, 900.0, s_dist);
+#endif
 		cap = mix(cap, max(cap, crown), sm_far * summit_far);
+#ifdef ZS_LAND_OLD
 		sm_snow = (1.0 - pk.x) * (1.0 - max(pk.y, pk.z));
+#endif
 		sm_cap = cap * sm_snow;
 		sm_tone = clamp(n12 * 0.9 + n4 * 0.9 + n1 * 0.5 + n38 * 0.5, -1.0, 1.0);
 		snowy = max(snowy, sm_cap);
+#ifndef ZS_LAND_OLD
+		}
+#endif
 	}
 	// Bare rock lying flat on the Peak is scree: the walls' beds over a floor lie
 	// as rings round every bump, like wood grain.
@@ -1309,8 +1379,8 @@ void fragment() {
 		grass *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
 		float speck = 0.0;
 		if (simple < 1.0) {
-			float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
-			float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
+			float speck_a = smoothstep(0.3, 0.7, zs_tnoise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
+			float speck_b = smoothstep(0.3, 0.7, zs_tnoise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
 			speck = (speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
 				+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp))) * (1.0 - simple);
 		}
@@ -1328,8 +1398,8 @@ void fragment() {
 			vec2 sperp = vec2(-sdir.y, sdir.x);
 			float streak;
 			if (high_paint_old > 0.5) {
-				streak = zs_noise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
-				streak += (zs_noise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
+				streak = zs_tnoise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
+				streak += (zs_tnoise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
 			} else {
 				// (smooth_wave_field.gdshaderinc: plane waves, long and a little
 				// tilted along the wind, their lines bent by slow swings, so no
@@ -1487,13 +1557,13 @@ void fragment() {
 				float d = endless_ring_d(CAMERA_POSITION_WORLD, p);
 				float past = mix(smoothstep(bloom_fade.x, bloom_fade.y, d), 1.0, wc_up);
 				float cut = 0.78 - 0.3 * bloom_w;
-				float dot_a = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz, 0) / bloom_dots.x));
-				float dot_b = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz + 7.3, 1) / bloom_dots.y));
+				float dot_a = smoothstep(cut, cut + 0.06, zs_tnoise(turned_speck(gxz, 0) / bloom_dots.x));
+				float dot_b = smoothstep(cut, cut + 0.06, zs_tnoise(turned_speck(gxz + 7.3, 1) / bloom_dots.y));
 				float dots = max(dot_a, dot_b);
 				// Their mean as the pixel outgrows a head.
 				dots = mix(dots, bloom_w * 0.42, smoothstep(bloom_dots.x * 0.4, bloom_dots.y * 1.2, fp));
 				// From high up the dots melt into soft blooms of colour.
-				dots = mix(dots, bloom_w * smoothstep(0.30, 0.85, zs_noise(gxz / 38.0 + 3.0)) * 0.34, wc_up);
+				dots = mix(dots, bloom_w * smoothstep(0.30, 0.85, zs_tnoise(gxz / 38.0 + 3.0)) * 0.34, wc_up);
 				float wash = mix(bloom_wash.x * bloom_w, bloom_wash.y * dots, past);
 				grass = mix(grass, ep_wash(int(bloom.y + 0.5)), clamp(wash, 0.0, 1.0));
 			}
@@ -1504,8 +1574,8 @@ void fragment() {
 
 	// --- Rock, sand, snow -----------------------------------------------------
 	// Its beds: bands by height, waved, hard pale ones among dark.
-	float bed_y = p.y + sin(p.x * 0.013 + p.z * 0.008) * 6.0 + (zs_noise(gxz / 40.0) - 0.5) * 8.0;
-	float bed = zs_noise(vec2(bed_y / 3.5, 0.5));
+	float bed_y = p.y + sin(p.x * 0.013 + p.z * 0.008) * 6.0 + (zs_tnoise(gxz / 40.0) - 0.5) * 8.0;
+	float bed = zs_tnoise(vec2(bed_y / 3.5, 0.5));
 	float grain = zs_fade(gxz + p.y, 2.2, fp) + zs_fade(p.zx + p.y * 0.7, 11.0, fp);
 	vec3 rock = mix(ROCK, ROCK_PALE, smoothstep(0.35, 0.75, bed) * 0.8) * (1.0 + grain * 0.5);
 	rock *= mix(vec3(1.0), zs_warm(vec3(1.10, 1.0, 0.86), paint_follow), clamp(broad * 2.0 + 0.5, 0.0, 1.0) * 0.6);
@@ -1545,12 +1615,12 @@ void fragment() {
 		float s_mid = (1.0 - smoothstep(1.0, 3.5, fp)) * sand_grit;
 		float s_grit = (1.0 - smoothstep(0.08, 0.4, fp)) * sand_grit;
 		float s_grain = (1.0 - smoothstep(0.03, 0.12, fp)) * sand_grit;
-		sand *= mix(1.0, mix(0.78, 1.1, er_vnoise(p / 2.9 + 3.1) * 0.6 + er_vnoise(p / 0.9 + 8.2) * 0.4), s_mid);
+		sand *= mix(1.0, mix(0.78, 1.1, er_tnoise(p / 2.9 + 3.1) * 0.6 + er_tnoise(p / 0.9 + 8.2) * 0.4), s_mid);
 		if (s_grit > 0.0) {
-			float g1 = er_vnoise(p / 0.035);
-			float g2 = er_vnoise(p / 0.12 + 5.3);
+			float g1 = er_tnoise(p / 0.035);
+			float g2 = er_tnoise(p / 0.12 + 5.3);
 			sand *= 1.0 + (g1 - 0.5) * 0.5 * s_grain + (g2 - 0.5) * 0.4 * s_grit;
-			float sn = er_vnoise(p / 0.07 + 2.6);
+			float sn = er_tnoise(p / 0.07 + 2.6);
 			sand = mix(sand, vec3(0.74, 0.71, 0.65), smoothstep(0.86, 0.9, sn) * 0.7 * s_grit);
 			sand *= 1.0 - 0.45 * smoothstep(0.2, 0.16, sn) * s_grit;
 			float e = max(0.02, fp * 0.7);
@@ -1568,9 +1638,9 @@ void fragment() {
 	vec2 bank_tilt = vec2(0.0);
 	float damp_c = 1.0;
 	if (banked > 0.0) {
-		float stones = smoothstep(0.6, 0.82, zs_noise(turned_speck(gxz, 0) / 0.3)) * (1.0 - smoothstep(0.06, 0.25, fp));
-		float cobbles = smoothstep(0.62, 0.86, zs_noise(turned_speck(gxz + 5.1, 1) / 0.8)) * (1.0 - smoothstep(0.15, 0.6, fp));
-		bank_c = mix(SAND * vec3(0.88, 0.92, 1.0), ROCK_PALE * 1.1, 0.45 + 0.35 * zs_noise(gxz / 9.0)) * (1.0 + fine * 0.3 + mid * 0.2);
+		float stones = smoothstep(0.6, 0.82, zs_tnoise(turned_speck(gxz, 0) / 0.3)) * (1.0 - smoothstep(0.06, 0.25, fp));
+		float cobbles = smoothstep(0.62, 0.86, zs_tnoise(turned_speck(gxz + 5.1, 1) / 0.8)) * (1.0 - smoothstep(0.15, 0.6, fp));
+		bank_c = mix(SAND * vec3(0.88, 0.92, 1.0), ROCK_PALE * 1.1, 0.45 + 0.35 * zs_tnoise(gxz / 9.0)) * (1.0 + fine * 0.3 + mid * 0.2);
 		bank_c = mix(bank_c, ROCK_PALE * 1.2, stones * 0.6);
 		bank_c = mix(bank_c, ROCK * 1.1, cobbles * 0.45);
 		// Far off, the pebbles' mean.
@@ -1585,13 +1655,13 @@ void fragment() {
 			float mid_k = 1.0 - smoothstep(1.0, 3.5, fp);
 			float k_grain = 1.0 - smoothstep(0.03, 0.12, fp);
 			float k_grit = 1.0 - smoothstep(0.08, 0.4, fp);
-			float patchy = mix(0.5, er_vnoise(p / 2.7 + 7.7) * 0.6 + er_vnoise(p / 0.8 + 1.3) * 0.4, mid_k);
+			float patchy = mix(0.5, er_tnoise(p / 2.7 + 7.7) * 0.6 + er_tnoise(p / 0.8 + 1.3) * 0.4, mid_k);
 			vec3 dirt = mix(vec3(0.150, 0.110, 0.072), vec3(0.330, 0.255, 0.165), smoothstep(0.25, 0.75, patchy));
 			if (k_grit > 0.0) {
-				float g1 = er_vnoise(p / 0.04);
-				float g2 = er_vnoise(p / 0.13 + 2.1);
+				float g1 = er_tnoise(p / 0.04);
+				float g2 = er_tnoise(p / 0.13 + 2.1);
 				dirt *= 1.0 + (g1 - 0.5) * 0.7 * k_grain + (g2 - 0.5) * 0.6 * k_grit;
-				float sn = er_vnoise(p / 0.085 + 9.4);
+				float sn = er_tnoise(p / 0.085 + 9.4);
 				dirt = mix(dirt, ROCK_PALE * mix(0.7, 1.15, g2), smoothstep(0.83, 0.87, sn) * 0.8 * k_grit);
 				dirt *= 1.0 - 0.5 * smoothstep(0.22, 0.17, sn) * k_grit;
 				float e = max(0.02, fp * 0.7);
@@ -1601,7 +1671,7 @@ void fragment() {
 			}
 			dirt = mix(dirt, SAND * (1.0 + fine * 0.25 + mid * 0.2), r_mouth * 0.85);
 			bank_c = mix(bank_c, dirt, river_bank_grit);
-			damp = 1.0 - smoothstep(0.0, river_bank.y * mix(1.0, mix(0.35, 1.7, er_vnoise(p / 1.3 + 4.2)), mid_k * river_bank_grit), r_out);
+			damp = 1.0 - smoothstep(0.0, river_bank.y * mix(1.0, mix(0.35, 1.7, er_tnoise(p / 1.3 + 4.2)), mid_k * river_bank_grit), r_out);
 			bank_c = mix(bank_c, bank_c * 0.5, damp * 0.85 * river_bank_grit);
 			damp_c = mix(1.0, 0.0, river_bank_grit);
 		}
@@ -1660,7 +1730,7 @@ void fragment() {
 		if (bare > 0.003) {
 			// Stone patches with ragged edges, broad then small; turf in the gaps.
 			float cut = 0.62 - stone_up * 0.30 - (1.0 - n.y) * 0.8;
-			float f1 = zs_noise(p.xz / 30.0 + 3.0) * 0.30 + zs_noise(p.xz / 10.0 + 11.0) * 0.35 + zs_noise(p.xz / 3.4) * 0.35;
+			float f1 = zs_tnoise(p.xz / 30.0 + 3.0) * 0.30 + zs_tnoise(p.xz / 10.0 + 11.0) * 0.35 + zs_tnoise(p.xz / 3.4) * 0.35;
 			float stone = smoothstep(cut - 0.06, cut + 0.06 + fp * 0.01, 1.0 - f1);
 			// (far off the patches melt to their mean share)
 			stone = mix(stone, 0.70 + stone_up * 0.25, smoothstep(150.0, 1000.0, distance(p, CAMERA_POSITION_WORLD)));
@@ -1671,8 +1741,8 @@ void fragment() {
 			float grit = zs_fade(p.xz + 3.7, 0.55, fp) * 1.4 + zs_fade(p.zx + 8.1, 1.7, fp) * 1.0 + zs_fade(p.xz + 1.3, 5.0, fp) * 0.8;
 			st *= 1.0 + grit * 0.4;
 			// Lichen: yellow-green and rust crusts on the stone.
-			float lich = smoothstep(0.58, 0.72, zs_noise(p.xz / 2.3 + 5.0) * 0.6 + zs_noise(p.xz / 7.0 + 2.0) * 0.4) * (1.0 - smoothstep(6.0, 40.0, fp));
-			float rust = smoothstep(0.6, 0.75, zs_noise(p.xz / 4.4 + 17.0));
+			float lich = smoothstep(0.58, 0.72, zs_tnoise(p.xz / 2.3 + 5.0) * 0.6 + zs_tnoise(p.xz / 7.0 + 2.0) * 0.4) * (1.0 - smoothstep(6.0, 40.0, fp));
+			float rust = smoothstep(0.6, 0.75, zs_tnoise(p.xz / 4.4 + 17.0));
 			st = mix(st, mix(vec3(0.30, 0.33, 0.14), vec3(0.40, 0.23, 0.11), rust), lich * 0.35);
 			// Short turf: a lighter olive-green than the tundra, in patches.
 			vec3 tf = mix(vec3(0.155, 0.225, 0.095), vec3(0.235, 0.285, 0.120), clamp(0.5 + mid + fine, 0.0, 1.0));
@@ -1720,10 +1790,10 @@ void fragment() {
 		vec2 f = peak_frame.zw;
 		vec2 flow = vec2(dot(p.xz, f), dot(p.xz, vec2(-f.y, f.x)));
 		// (Each scale eases to its mean as the pixel outgrows it across the flow.)
-		float streak = mix(zs_noise(vec2(flow.x / 140.0, flow.y / 11.0)), 0.5, smoothstep(3.0, 9.0, fp)) * 0.6
-			+ mix(zs_noise(vec2(flow.x / 45.0, flow.y / 4.0)), 0.5, smoothstep(1.0, 3.5, fp)) * 0.4;
+		float streak = mix(zs_tnoise(vec2(flow.x / 140.0, flow.y / 11.0)), 0.5, smoothstep(3.0, 9.0, fp)) * 0.6
+			+ mix(zs_tnoise(vec2(flow.x / 45.0, flow.y / 4.0)), 0.5, smoothstep(1.0, 3.5, fp)) * 0.4;
 		vec3 ice = mix(vec3(0.36, 0.52, 0.62), vec3(0.58, 0.70, 0.78), smoothstep(0.3, 0.7, streak));
-		ice = mix(ice, vec3(0.36, 0.35, 0.34), smoothstep(0.78, 1.0, pk.w) * 0.6 * (0.6 + 0.4 * zs_noise(gxz / 17.0)));
+		ice = mix(ice, vec3(0.36, 0.35, 0.34), smoothstep(0.78, 1.0, pk.w) * 0.6 * (0.6 + 0.4 * zs_tnoise(gxz / 17.0)));
 		ice = mix(ice, vec3(0.20, 0.38, 0.50), rocky);
 		albedo = mix(albedo, ice, pk.y);
 	}
@@ -1800,7 +1870,7 @@ void fragment() {
 		// How broken the water is (0 calm, 1 white water): by the current's
 		// speed (the level's fall), more in riffle patches down any running
 		// stretch, none in a still pool, and settling into the mouth.
-		float rif = smoothstep(0.42, 0.66, ep_noise(p.xz / river_riffle.x) * 0.7 + ep_noise(p.xz / (river_riffle.x * 0.3) + 9.1) * 0.3);
+		float rif = smoothstep(0.42, 0.66, ZS_EP_T(p.xz / river_riffle.x) * 0.7 + ZS_EP_T(p.xz / (river_riffle.x * 0.3) + 9.1) * 0.3);
 		float running = smoothstep(0.45, 1.1, spd);
 		float tb = smoothstep(river_rapids.x, river_rapids.y, spd) * (0.45 + 0.75 * rif) + rif * running * river_riffle.y;
 		// (The mouth read from the drawn water's own height, not the level's
@@ -1944,7 +2014,7 @@ void fragment() {
 		d_in = mix(d_in, min(d_in, max(river_wall.z - r_rise, 0.0) * 4.0), r_steep);
 		// The depth swings down the river (bars and pools), shallower over a
 		// riffle, so the shallows' band never runs even.
-		float bars = mix(0.6, 1.45, ep_noise(p.xz / 37.0 + 3.7));
+		float bars = mix(0.6, 1.45, ZS_EP_T(p.xz / 37.0 + 3.7));
 		float depth = min(d_in * river_depth.x * bars, river_depth.y) * (1.0 - 0.4 * rif * running);
 		float low = river_low_sun.x > 0.0 ? 1.0 - smoothstep(river_low_sun.y, river_low_sun.z, zs_key_direction.y) : 0.0;
 		vec3 r_tint_sh = mix(river_tint_shallow, river_tint_low_sun, low);
@@ -2028,7 +2098,7 @@ void fragment() {
 			// broken fringe along both banks (wider the rougher), and in a front
 			// where the river meets the sea; on calm water only streak lines.
 			float vspd = max(spd * river_flow_look.x, river_flow_look.y);
-			float fringe = mix(river_bank_foam.x, river_bank_foam.y, tb) * (0.45 + 1.1 * ep_noise(p.xz / 9.0 + 2.3)) + r_fp * 0.5;
+			float fringe = mix(river_bank_foam.x, river_bank_foam.y, tb) * (0.45 + 1.1 * ZS_EP_T(p.xz / 9.0 + 2.3)) + r_fp * 0.5;
 			float at_bank = (1.0 - smoothstep(0.0, fringe, d_in)) * river_bank_foam.z;
 			float front = river_mouth_foam * smoothstep(0.45, 0.72, r_sea) * (1.0 - smoothstep(0.82, 0.97, r_sea));
 			float th = mix(1.05, 0.55, tb);
@@ -2061,7 +2131,7 @@ void fragment() {
 		// the shallow ring; far off, the clusters' mean green.
 		float pad = 0.0;
 		if (still > 0.0 && river_pads.x > 0.0 && d_in > 0.5) {
-			float cluster = smoothstep(0.52, 0.72, zs_noise(p.xz / 7.0 + 2.3)) * smoothstep(0.6, 1.8, d_in) * (1.0 - smoothstep(4.5, 7.5, d_in)) * still * river_pads.x * (1.0 - river_pad_mouth * r_tint);
+			float cluster = smoothstep(0.52, 0.72, zs_tnoise(p.xz / 7.0 + 2.3)) * smoothstep(0.6, 1.8, d_in) * (1.0 - smoothstep(4.5, 7.5, d_in)) * still * river_pads.x * (1.0 - river_pad_mouth * r_tint);
 			if (cluster > 0.0) {
 				vec2 g = p.xz / river_pads.y;
 				vec2 cell = floor(g);
@@ -2085,8 +2155,8 @@ void fragment() {
 		float skin = line;
 		if (river_live > 0.5) {
 			// The pale line at the edge, lapping, broken; far off a soft rim.
-			float lap = river_edge * (0.6 + 0.4 * zs_noise(p.xz / 23.0)) * (0.85 + 0.15 * sin(t * 0.8 + zs_noise(p.xz * 0.15) * 6.2832)) + r_fp * 0.5;
-			line = (1.0 - smoothstep(0.0, lap, d_in)) * mix(0.25 + 0.3 * zs_noise(p.xz * 0.35 - dir * t * 0.3), 0.3, smoothstep(0.3, 1.5, r_fp));
+			float lap = river_edge * (0.6 + 0.4 * zs_tnoise(p.xz / 23.0)) * (0.85 + 0.15 * sin(t * 0.8 + zs_tnoise(p.xz * 0.15) * 6.2832)) + r_fp * 0.5;
+			line = (1.0 - smoothstep(0.0, lap, d_in)) * mix(0.25 + 0.3 * zs_tnoise(p.xz * 0.35 - dir * t * 0.3), 0.3, smoothstep(0.3, 1.5, r_fp));
 			water = mix(water, white, line * 0.7);
 			skin = max(line, live_foam);
 		} else {
@@ -2108,7 +2178,7 @@ void fragment() {
 			float flat_len = max(length(refl.xz), 1e-3);
 			float toward = clamp(dot(refl.xz / flat_len, r_bank_way), -1.0, 1.0);
 			float reach = min(d_in / max(toward, 0.05), max(2.0 * r_w - d_in, 0.0) / max(-toward, 0.05));
-			float tall = river_bank_mirror.x * mix(0.5, 1.5, zs_noise(p.xz / 11.0 + 5.1));
+			float tall = river_bank_mirror.x * mix(0.5, 1.5, zs_tnoise(p.xz / 11.0 + 5.1));
 			float in_bank = 1.0 - smoothstep(0.6, 1.4, refl.y / flat_len * reach / tall);
 			sky = mix(sky, shore_tone, in_bank * river_bank_mirror.y);
 		}
@@ -2152,7 +2222,15 @@ void fragment() {
 		vec3 warm_c = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y)));
 		disp = mix(disp, warm_c, clamp(spark, 0.0, 1.0));
 		disp = zs_rain_beaten(disp, sky * 0.5 + vec3(0.45), p.xz, rain_on, r_fp, t); // weather lane rain
+#ifdef ZS_LAND_OLD
 		if (peak_tarn.w > 0.5) disp = mix(disp, peak_tarn_water(p, eye, r_fp, t, ambient, key, shaded), peak_tarn_in(p.xz));
+#else
+		// (The tarn's water worked out only on the tarn: elsewhere its share is 0.)
+		if (peak_tarn.w > 0.5) {
+			float pt_in = peak_tarn_in(p.xz);
+			if (pt_in > 0.0) disp = mix(disp, peak_tarn_water(p, eye, r_fp, t, ambient, key, shaded), pt_in);
+		}
+#endif
 		vec3 water_em = scene_linear_for_display(clamp(disp, vec3(0.0), vec3(1.0)));
 		ALBEDO = mix(ALBEDO, vec3(0.0), wet);
 		SPECULAR = mix(SPECULAR, 0.0, wet);

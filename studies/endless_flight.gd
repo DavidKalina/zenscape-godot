@@ -401,6 +401,8 @@ var _away_sun := false
 var _numbers := false
 var _alt := START_ALT
 var _alt_given := false
+## --uncapped or --max-fps= set the frame cap: the Locked 60 setting leaves it.
+var _cap_flagged := false
 var _fly_look := Vector2.ZERO
 var _roll_asked := 0.0
 var _hud: Label
@@ -580,7 +582,7 @@ func _ready() -> void:
 	# The graphics preset first: its flags lie under the command line's for
 	# everything below, its height under the render resolution.
 	GraphicsPreset.begin()
-	Engine.max_fps = GraphicsPreset.fps()
+	Engine.max_fps = GameSettings.frame_cap(GraphicsPreset.fps())
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
 	rr.apply(get_tree().root,rr.load_cap())
@@ -627,10 +629,16 @@ func _ready() -> void:
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 			Engine.max_fps = 0
+			_cap_flagged = true
 		elif arg.begins_with("--max-fps="):
 			# A cap the machine holds every frame, under the screen's rate:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
+			_cap_flagged = true
+		elif arg.begins_with("--pace="):
+			# Every frame's script work padded to this many ms (scripts/endless/frame_pace.gd).
+			var pad := float(arg.get_slice("=",1))
+			if pad > 0.0: add_child(preload("res://scripts/endless/frame_pace.gd").new(pad))
 	# A taped flight drawn again: its seed, the land stood where it starts, no
 	# title. Else the tape, if one is asked for.
 	replay = FlightReplay.from_args(preload("res://scripts/launch_args.gd").user_args())
@@ -1476,11 +1484,14 @@ func tick(delta: float) -> void:
 	var input := _fly_input(delta) if replay == null else replay.input()
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)
+	FrameLog.mark(&"t_fly")
 	# The roll button on a full meter is the surge roll (scripts/endless/surge_smash.gd).
 	# A roll locked out by a whiffed parry is dropped (scripts/endless/parry.gd).
 	if parry != null: parry.before(input)
 	if coast != null: coast.before(delta)
+	FrameLog.mark(&"t_coast")
 	if smash != null: smash.before(delta,input)
+	FrameLog.mark(&"t_smash")
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
@@ -2197,6 +2208,8 @@ func _next_preset() -> void:
 ## hints (FlightHud.set_hints) with it.
 func _setting_changed(key: String) -> void:
 	if key in ["scale","dynamic"]: dynamic_res.sync()
+	# Locked 60 on or off: the cap follows at once, unless a flag set it.
+	if key == "lock60" and not _cap_flagged: Engine.max_fps = GameSettings.frame_cap(GraphicsPreset.fps())
 	if key != "hints": return
 	if _hint != null: _hint.visible = GameSettings.hud_hints() and stage == null
 	FlightHud.set_hints(GameSettings.hud_hints())

@@ -20,6 +20,7 @@ extends RefCounted
 ## | dynamic resolution | look.cfg [display] dynamic_3d (on until chosen) | scripts/endless/dynamic_resolution.gd: the 3D's scale stepped down while the GPU can't hold 60 frames a second and up again when it can, never over the 3D resolution chosen (`ceiling`) |
 ## | full screen | look.cfg [display] fullscreen | DisplayServer.window_set_mode |
 ## | vsync | look.cfg [display] vsync | DisplayServer.window_set_vsync_mode |
+## | locked 60 | look.cfg [display] lock_60 (off until chosen) | `frame_cap`: the flight caps at LOCK_FPS, and dynamic resolution holds the GPU LOCK_MARGIN faster than the cap so a heavy view has room (scripts/endless/dynamic_resolution.gd) |
 ## | Master, Effects, Ambience | sound.cfg [sound] master, sound, ambience | the buses Master, SFX (SFX Air and SFX Bore feed it; the Genesis bus too) and Ambience, through genesis_audio's and flight_sound's `apply_settings` |
 ## | mouse sensitivity | settings.cfg [controls] mouse_sensitivity | a factor on the flight's FLY_LOOK |
 ## | invert pitch | settings.cfg [controls] invert_pitch | `pitch_sign` on the flight's pitch (keys, stick and mouse) |
@@ -82,6 +83,7 @@ static var _fullscreen := true
 static var _fullscreen_kept := false
 static var _vsync := false
 static var _vsync_kept := false
+static var _lock60 := false
 static var _master := 1.0
 static var _muted := false
 static var _effects := 0.8
@@ -145,6 +147,7 @@ static func _ensure() -> void:
 		if _fullscreen_kept: _fullscreen = bool(look.get_value("display","fullscreen"))
 		_vsync_kept = look.has_section_key("display","vsync")
 		if _vsync_kept: _vsync = bool(look.get_value("display","vsync"))
+		_lock60 = bool(look.get_value("display","lock_60",false))
 	var own := ConfigFile.new()
 	if own.load(_dir.path_join(OWN)) == OK:
 		_mouse = clampf(snappedf(float(own.get_value("controls","mouse_sensitivity",1.0)),MOUSE.z),MOUSE.x,MOUSE.y)
@@ -315,6 +318,30 @@ static func set_vsync(on: bool) -> void:
 	_put(LOOK,"display","vsync",on)
 	hub.changed.emit("vsync")
 
+## Locked 60: the flight capped at LOCK_FPS, with dynamic resolution keeping
+## the GPU LOCK_MARGIN faster than the cap, so a heavy view has room before a
+## frame is missed. (Flown on an RTX 4070 SUPER at 1440p with G-Sync: frames
+## 16.6 to 16.8 ms apart, under 1% long, at about 67% 3D scale; a margin of
+## 1.25 sent the scale to 50%.)
+const LOCK_FPS := 60
+const LOCK_MARGIN := 1.1
+
+static func lock_60() -> bool:
+	_ensure()
+	return _lock60
+
+static func set_lock_60(on: bool) -> void:
+	_ensure()
+	_lock60 = on
+	_put(LOOK,"display","lock_60",on)
+	hub.changed.emit("lock60")
+
+## The frame cap for a flight whose own cap is `base` (0 for none): LOCK_FPS
+## while locked, unless `base` is already lower.
+static func frame_cap(base: int) -> int:
+	if not lock_60(): return base
+	return mini(base,LOCK_FPS) if base > 0 else LOCK_FPS
+
 static func _apply_vsync(on: bool) -> void:
 	if DisplayServer.get_name() == "headless": return
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED)
@@ -408,6 +435,7 @@ static func index(id: String) -> int:
 		"dynamic": return 0 if _dynamic else 1
 		"display": return 0 if fullscreen() else 1
 		"vsync": return 0 if vsync() else 1
+		"lock60": return 0 if _lock60 else 1
 		"invert": return 0 if _invert else 1
 		"hints": return 0 if _hints else 1
 	return 0
@@ -421,6 +449,7 @@ static func pick(id: String, i: int) -> void:
 		"dynamic": set_dynamic_resolution(i == 0)
 		"display": set_fullscreen(i == 0)
 		"vsync": set_vsync(i == 0)
+		"lock60": set_lock_60(i == 0)
 		"invert": set_invert_pitch(i == 0)
 		"hints": set_hud_hints(i == 0)
 
