@@ -9,6 +9,10 @@
 // full wood goes to the floor's shade, z the trees' per-tree spread, w how
 // much the tufts under a full wood shrink.
 global uniform vec4 zs_dread;
+// The meadow's tone (scripts/endless/distance_read.gd --meadow-tone=): x how
+// far the grass colour is pulled (0: the old lime), y saturation kept at 1, z
+// the red lost and the blue gained at 1 (less yellow), w the value kept at 1.
+global uniform vec4 zs_meadow;
 // The crowns' haze colour (scene linear: endless_look `horizon` toward the
 // facing, greyed a little) and in w how much of zs_dread.x shows now (less
 // at a low sun, when a wood against the glow reads dark).
@@ -39,6 +43,19 @@ float zs_wood_at(vec2 xz) {
 // shade (land_trees FLOOR_COLOUR over the meadow's green).
 vec3 zs_wood_grass(vec3 c, float w) {
 	return c * mix(vec3(1.0), vec3(0.5, 0.6, 0.72), clamp(w * zs_dread.y, 0.0, 1.0));
+}
+
+// The grass colour pulled off lime toward a natural meadow: less saturated, a
+// little less yellow, a bit deeper. One place for the ground's paint and every
+// tuft (endless_ground, reference_surface and endless_tuft_far call it).
+vec3 zs_meadow_tone(vec3 c) {
+	float k = zs_meadow.x;
+	if (k <= 0.0) return c;
+	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+	vec3 t = mix(vec3(l), c, zs_meadow.y);
+	t *= vec3(1.0 - zs_meadow.z, 1.0, 1.0 + zs_meadow.z * 0.6);
+	t *= zs_meadow.w;
+	return mix(c, t, clamp(k, 0.0, 1.0));
 }
 
 // A tuft's size under the woods.
