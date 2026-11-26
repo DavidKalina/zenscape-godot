@@ -635,6 +635,10 @@ func _ready() -> void:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
 			_cap_flagged = true
+		elif arg.begins_with("--pace="):
+			# Every frame's script work padded to this many ms (scripts/endless/frame_pace.gd).
+			var pad := float(arg.get_slice("=",1))
+			if pad > 0.0: add_child(preload("res://scripts/endless/frame_pace.gd").new(pad))
 	# A taped flight drawn again: its seed, the land stood where it starts, no
 	# title. Else the tape, if one is asked for.
 	replay = FlightReplay.from_args(preload("res://scripts/launch_args.gd").user_args())
