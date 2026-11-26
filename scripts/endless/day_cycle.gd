@@ -16,7 +16,9 @@ extends RefCounted
 const Celestial = preload("res://scripts/shared/celestial.gd")
 
 ## Seconds for one full cycle (--day-length=S).
-const LENGTH := 1200.0
+## (1200 with the high sun's part at 540 s; trimmed to 240 s on 2026-11-25,
+## so the low sun's light comes about 4 minutes into a flight, not 9.)
+const LENGTH := 900.0
 ## How deep the sun sinks (celestial `night_floor`): the deepest blue hour.
 const FLOOR := 0.1
 ## The parts, in order round the ring from the blue hour's end: [name, the
@@ -28,7 +30,7 @@ const GOLDEN := 0.42
 const PARTS := [
 	["twilight", 0.0, true, 70.0],
 	["sunrise", GOLDEN, true, 150.0],
-	["day", GOLDEN, false, 540.0],
+	["day", GOLDEN, false, 240.0],
 	["golden hour", 0.0, false, 210.0],
 	["afterglow", -BLUE, false, 100.0],
 	["blue hour", -BLUE, true, 130.0],

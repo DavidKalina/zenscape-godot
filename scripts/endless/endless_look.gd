@@ -31,7 +31,7 @@ extends Node3D
 ## flat sea and vertex colours; also under the Compatibility renderer).
 ## The day cycle (scripts/endless/day_cycle.gd, day-cycle-handoff.md) runs
 ## by default from the opening hour: --day=0 stops it (--day or --day=1
-## runs it from --hour=H too), --day-length=S (seconds a cycle, 1200),
+## runs it from --hour=H too), --day-length=S (seconds a cycle, 900),
 ## --day-at=dawn|noon|dusk|blue (where it starts), --night=1 (the full night
 ## under the horizon instead of the blue hour). T sweeps to the next stop
 ## (dawn, noon, dusk, blue hour), ] and [ speed time up and back, L steps
