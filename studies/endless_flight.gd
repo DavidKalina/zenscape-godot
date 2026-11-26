@@ -1480,11 +1480,14 @@ func tick(delta: float) -> void:
 	var input := _fly_input(delta) if replay == null else replay.input()
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)
+	FrameLog.mark(&"t_fly")
 	# The roll button on a full meter is the surge roll (scripts/endless/surge_smash.gd).
 	# A roll locked out by a whiffed parry is dropped (scripts/endless/parry.gd).
 	if parry != null: parry.before(input)
 	if coast != null: coast.before(delta)
+	FrameLog.mark(&"t_coast")
 	if smash != null: smash.before(delta,input)
+	FrameLog.mark(&"t_smash")
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
