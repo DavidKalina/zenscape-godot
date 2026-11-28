@@ -60,6 +60,15 @@ func _init() -> void:
 		"balloons":false,"whale":false,"peak":false,"traffic":-1}
 	# The start: in the pass at the valley's head, facing down it.
 	spawn = {"at":Vector2(-80.0,4000.0),"alt":70.0,"heading":0.0}
+	# The greybox pieces on the land (scripts/endless/land_pieces.gd): a row
+	# each, its piece script, its middle (x, z), its heading (degrees clockwise
+	# from -z: 0 runs its length along the valley, north end downstream),
+	# scale (across and along) and tall (up). The fin ridge stands in the open
+	# field west of the river, its south end off the wedge's west gap, clear of
+	# the pond at (-300, 220) and the west valley's mouth at (-250, -260).
+	pieces = [
+		{"piece":preload("res://scripts/pieces/fin_ridge.gd"),"at":Vector2(-170.0,150.0),"heading":0.0,"scale":1.0,"tall":1.0},
+	]
 
 ## `line` as a Catmull-Rom curve with a point every STEP m: LandField's `vale`
 ## rows (x, z, floor, half-width, 1 on the line's first point, wall left,

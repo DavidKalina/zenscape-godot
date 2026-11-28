@@ -187,6 +187,31 @@ static func pool_centre() -> Vector2:
 	var p := spine_point(t)+n*(TOP_WIDTH*0.5*(0.55+0.45*sqrt(crest(t)/PEAK_HEIGHT))+FALL_FACE_RUN+POOL_R*0.7)
 	return Vector2(p.x,p.z)
 
+## --- Stamped into a map (scripts/endless/land_pieces.gd) ---------------------
+## Only the ridge and its plunge pool: the map's own ground and woods stand in
+## for the clearing and the forest ring.
+
+## The ridge's rise over the ground it stands on at local (x, z), the pool dug
+## in at its foot; 0 off it, its foot eased to 0 (no step where it meets).
+static func rise(x: float, z: float) -> float:
+	var h := ridge_height(x,z)
+	var pool := Vector2(x,z).distance_to(pool_centre())
+	if pool < POOL_R: h -= POOL_DEEP*smoothstep(POOL_R,POOL_R*0.35,pool)
+	return h
+
+## The local box `rise` is 0 outside of.
+static func reach() -> Rect2:
+	var half := BEND+BASE_WIDTH*0.5+WOBBLE*2.0+4.0
+	return Rect2(-half,-RIDGE_LENGTH*0.5,half*2.0,RIDGE_LENGTH)
+
+## The dressing a map hangs on it (land_pieces.gd `dressing`): the waterfall,
+## its lip's y over the ground, the pool's water over the ground at its middle.
+static func dressing() -> Array:
+	var lip := fall_lip()
+	lip.y = ridge_height(lip.x,lip.z)
+	return [{"kind": "waterfall", "lip": lip, "out": side_normal(FALL_T,FALL_SIDE), "pool": pool_centre(),
+		"pool_y": POOL_Y, "pool_r": POOL_R}]
+
 ## Whether (x, z) is on the ridge's footprint (its rise over the floor).
 static func on_ridge(x: float, z: float) -> bool:
 	return ridge_height(x,z) > 0.5
