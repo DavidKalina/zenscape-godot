@@ -9,7 +9,8 @@ extends RefCounted
 ##
 ## Everything here is a pure function of (x, z) and the constants below, free
 ## of scene state, so a later round can stamp the piece into a map:
-## `height(x, z)`, `rock(x, z)` (0 grass .. 1 bare rock), `tree_spots()`.
+## `height(x, z)`, `rock(x, z)` (0 grass .. 1 bare rock), `tree_spots()`,
+## and `slab_face(x, z)` (1 on a flatiron's face) or both at once, `sample`.
 ##
 ## Every size is a first guess; retune here.
 
@@ -36,27 +37,50 @@ const GULLY_WIDTHS := [70.0, 100.0, 80.0]
 const GULLY_DEPTH := [380.0, 480.0, 420.0]
 const GULLY_WALL := 22.0
 const GULLY_DIP := 5.0
-# The flatirons: tilted slabs leaning on the block faces. Each is
-# [block index, x offset from the block's middle, base width, how far its tip
-# stands above the bench edge, front tilt in degrees, how far its tip leans
-# aside (m)]. Their height from the approach is then SCARP_H + that tip
-# (about 165-190 m: the asked-for 80-150 m can't put a tip above a 150 m
-# edge). FLATIRON_BACK_DEG is the steep back's slope; FLATIRON_STANDOFF how
-# far in front of the face's foot the tip stands; FLATIRON_FULL < 1 fills
-# the outline's shoulders out (1: a straight triangle).
+# The flatirons: thin plates of rock leaning on the block faces, each on a
+# buttress of its own. A row is [block index, x offset of the foot's middle
+# from the block's middle, base width, how far the tip stands above the
+# scarp under it (m), front tilt (deg), how far the tip leans aside (m),
+# plate thickness (m, square to the face), how far behind the bench edge the
+# tip stands (m; negative brings it forward and down the cliff)]. The foot
+# lies where the tilted face meets the approach, so the steeper the slab,
+# the nearer the cliff's base. The plate is whatever the face stands proud
+# of: the buttress under it (the face's plane, a plate's thickness down) or
+# the cliff and bench, whichever is higher. Rows later in the table lie on
+# top of earlier ones (block 1's pair overlaps like shingles: the second's
+# tip stands in front of the first's face). Keep them off the gully mouths.
 const FLATIRONS := [
-	[0, -30.0, 105.0, 25.0, 50.0, 12.0],
-	[1, 60.0, 120.0, 35.0, 48.0, -15.0],
-	[2, 0.0, 90.0, 15.0, 52.0, 8.0],
-	[3, -50.0, 115.0, 30.0, 50.0, -10.0],
+	[0, -10.0, 170.0, 30.0, 70.0, 14.0, 22.0, 5.0],
+	[1, -30.0, 170.0, 38.0, 69.0, -18.0, 22.0, 6.0],
+	[1, 30.0, 90.0, 34.0, 66.0, 10.0, 16.0, -10.0],
+	[2, 0.0, 120.0, 20.0, 67.0, -10.0, 18.0, 2.0],
+	[3, 5.0, 150.0, 26.0, 71.0, 16.0, 20.0, 4.0],
 ]
-const FLATIRON_FULL := 0.75
-const FLATIRON_BACK_DEG := 72.0
-const FLATIRON_STANDOFF := 6.0
-# A slab's sides: how steeply they fall from its front's edges (rise per m)
-# and how far out that fall is drawn.
-const FLATIRON_EDGE_DROP := 3.5
-const FLATIRON_EDGE_RUN := 60.0
+# The face's outline is a shield: a pointed tip, the sides bowing out to
+# full shoulders. FLATIRON_FULL is how full: 1 a straight triangle, 2 the
+# fullest (sides square to the base at the foot). FLATIRON_BACK_DEG is the
+# steep back behind the tip.
+const FLATIRON_FULL := 1.6
+const FLATIRON_BACK_DEG := 76.0
+# A plate's sides: how steeply they fall from the face's edges (rise per m,
+# on average; the fall's top and foot are rounded), and over how far (m)
+# the face's paint fades into the sides'.
+const FLATIRON_EDGE_DROP := 4.0
+const FACE_FADE := 4.0
+# The fillet (m) where a plate meets the land, rounding the crease at its foot.
+const FLATIRON_FILLET := 4.0
+# The buttress under a plate: how far its top runs out past the plate's
+# edges (m), then how wide its sides fan out and down into the cliff (m).
+# The fan dies away within BUTTRESS_GULLY_GAP m of a gully's floor, so the
+# gully mouths stay open.
+const BUTTRESS_SHOULDER := 4.0
+const BUTTRESS_FAN := 70.0
+const BUTTRESS_GULLY_GAP := 15.0
+# The notch behind each tip: a dip in the bench this deep (m), this long
+# (m, along the path) and this wide either side of the tip (m).
+const NOTCH_DEPTH := 8.0
+const NOTCH_RUN := 28.0
+const NOTCH_HALF := 30.0
 # The bench on top: how deep it runs before the land rolls up into low hills
 # at the piece's back, and its own gentle uphill slope.
 const BENCH_DEPTH := 400.0
@@ -80,6 +104,8 @@ static var EXTENT := Rect2(-SCARP_W*0.5-MARGIN_SIDE,-(BENCH_DEPTH+FACE_RUN+MARGI
 
 static var _noise: FastNoiseLite
 static var _layout: Dictionary = {}
+## Each flatiron's box (x0, x1, u0, u1: its buttress and notch), a quick test.
+static var _boxes := PackedFloat64Array()
 
 static func _n() -> FastNoiseLite:
 	if _noise == null:
@@ -111,11 +137,25 @@ static func layout() -> Dictionary:
 		# The ramp starts at the more recessed of its two blocks' faces.
 		gullies[i]["mouth"] = maxf(blocks[i].face,blocks[i+1].face)
 	var irons: Array = []
+	_layout = {"blocks": blocks, "gullies": gullies, "irons": irons}
+	# Each plate's face is the plane through its tip (ut, H) falling `tan`
+	# per m toward the approach, down to its foot (uf, hf) on the approach.
 	for f: Array in FLATIRONS:
 		var b: Dictionary = blocks[int(f[0])]
-		irons.append({"x": float(b.mid)+float(f[1]), "half": float(f[2])*0.5, "tip": float(f[3]),
-			"tan": tan(deg_to_rad(float(f[4]))), "skew": float(f[5]), "face": float(b.face)})
-	_layout = {"blocks": blocks, "gullies": gullies, "irons": irons}
+		var ix := float(b.mid)+float(f[1])
+		var tilt := deg_to_rad(float(f[4]))
+		var t := tan(tilt)
+		var fl := _face(ix+float(f[5]))
+		var ut := fl+FACE_RUN+float(f[7])
+		var top := _tilt(ut)+_cliff(ut,fl)+float(f[3])
+		var uf := ut
+		for _r in 4: uf = ut-(top-_tilt(uf))/t
+		var thick := float(f[6])/cos(tilt)
+		irons.append({"x": ix, "half": float(f[2])*0.5, "tan": t, "skew": float(f[5]),
+			"thick": thick, "ut": ut, "top": top, "uf": uf, "hf": _tilt(uf), "rise": float(f[3])})
+		var reach := float(f[2])*0.5+absf(float(f[5]))+thick/FLATIRON_EDGE_DROP+BUTTRESS_SHOULDER+BUTTRESS_FAN
+		var back := ut+(float(f[3])+NOTCH_DEPTH+20.0)/tan(deg_to_rad(FLATIRON_BACK_DEG))+NOTCH_RUN
+		_boxes.append_array([ix-reach,ix+reach,uf-10.0,back])
 	return _layout
 
 ## The land's slope term alone (no scarp): approach and bench (m at u).
@@ -152,6 +192,15 @@ static func _ramp(t: float) -> float:
 
 ## The land's height at local (x, z).
 static func height(x: float, z: float) -> float:
+	return sample(x,z).x
+
+## How much (x, z) lies on a flatiron's face (1) rather than its sides, its
+## buttress or the land (0): for painting the faces apart.
+static func slab_face(x: float, z: float) -> float:
+	return sample(x,z).y
+
+## The height at local (x, z) and how much it lies on a flatiron's face.
+static func sample(x: float, z: float) -> Vector2:
 	var u := -z
 	var L := layout()
 	var n := _n()
@@ -159,7 +208,8 @@ static func height(x: float, z: float) -> float:
 	# Gentle roll on the open ground.
 	h += ROLL*n.get_noise_2d(x/140.0,u/140.0)
 	var span := _span(x)
-	var rise := _cliff(u,_face(x))*(1.0+0.015*n.get_noise_2d(x/70.0,u/70.0))
+	var rise := _cliff(u,_face(x))
+	if rise > 0.0: rise *= 1.0+0.015*n.get_noise_2d(x/70.0,u/70.0)
 	for g: Dictionary in L.gullies:
 		var dx := absf(x-float(g.mid))
 		var half := float(g.w)*0.5
@@ -173,26 +223,64 @@ static func height(x: float, z: float) -> float:
 	h += rise*span
 	# The back of the bench rolls up into low hills, closing the piece.
 	var back := BENCH_DEPTH+FACE_RUN
-	h += BACK_HILLS*smoothstep(back,back+MARGIN_BACK,u)*(0.7+0.3*n.get_noise_1d(x/180.0))
-	# The flatirons: slabs with a sloped front, a steep back, a pointed top.
-	for f: Dictionary in L.irons:
+	if u > back: h += BACK_HILLS*smoothstep(back,back+MARGIN_BACK,u)*(0.7+0.3*n.get_noise_1d(x/180.0))
+	# The notches: a dip in the bench just behind each tip.
+	var back_tan := tan(deg_to_rad(FLATIRON_BACK_DEG))
+	var near: Array[int] = []
+	for i in _boxes.size()/4:
+		if x > _boxes[i*4] and x < _boxes[i*4+1] and u > _boxes[i*4+2] and u < _boxes[i*4+3]: near.append(i)
+	if near.is_empty(): return Vector2(h,0.0)
+	var irons: Array = L.irons
+	for i: int in near:
+		var f: Dictionary = irons[i]
+		var nu := float(f.ut)+float(f.rise)/back_tan+NOTCH_RUN*0.5
+		var du := absf(u-nu)/(NOTCH_RUN*0.5)
+		var dx := absf(x-float(f.x)-float(f.skew))/NOTCH_HALF
+		if du < 1.0 and dx < 1.0:
+			h -= NOTCH_DEPTH*(1.0-smoothstep(0.0,1.0,du))*(1.0-smoothstep(0.0,1.0,dx))
+	# The flatirons: each a plate whose face is a plane tilted toward the
+	# approach, outlined as a shield (the base's width at the foot, a point at
+	# the tip, leant `skew` aside), its back falling steeply behind the tip.
+	# Past the outline the plate's sides drop by its thickness onto its
+	# buttress (the face's plane that much lower), whose own sides then fall
+	# away to the cliff and the approach.
+	var face := 0.0
+	for i: int in near:
+		var f: Dictionary = irons[i]
 		var half := float(f.half)
-		if absf(x-float(f.x)) >= half+absf(float(f.skew))+FLATIRON_EDGE_RUN: continue
-		var tip_u := float(f.face)+FLATIRON_STANDOFF
-		var tip_h := _tilt(tip_u+FACE_RUN)+SCARP_H+float(f.tip)
-		var tall := tip_h-_tilt(tip_u)
-		var front := tip_h-(tip_u-u)*float(f.tan)
-		var rear := tip_h-(u-tip_u)*tan(deg_to_rad(FLATIRON_BACK_DEG))
-		var slab := minf(front,rear)
-		# The front face's outline: as wide as the base at the foot, a point
-		# at the tip, the shoulders a little full (a flatiron's), the tip
-		# leant `skew` m aside; past its edges the slab's sides fall away.
-		var down := clampf((tip_h-slab)/tall,0.0,1.0)
-		var hw := half*pow(down,FLATIRON_FULL)
-		var a := absf(x-float(f.x)-float(f.skew)*(1.0-down))
-		if a > hw: slab -= (a-hw)*FLATIRON_EDGE_DROP
-		if slab > h: h = slab
-	return h
+		var thick := float(f.thick)
+		var edge := thick/FLATIRON_EDGE_DROP
+		var top := float(f.top)
+		var front := top-(float(f.ut)-u)*float(f.tan)
+		var ridge := minf(front,top-(u-float(f.ut))*back_tan)
+		if ridge <= h: continue
+		var down := clampf((top-front)/(top-float(f.hf)),0.0,1.0)
+		var hw := half*(1.0-pow(1.0-down,FLATIRON_FULL))
+		var out := absf(x-float(f.x)-float(f.skew)*(1.0-down))-hw
+		# The side falls the plate's thickness, or less where the land beside
+		# stands nearer (up by the tip, or on a plate below), at one slope.
+		var drop := minf(thick,ridge-h)
+		var run := drop/FLATIRON_EDGE_DROP
+		var s := ridge
+		if out > run:
+			var fan := 1.0-smoothstep(0.0,BUTTRESS_FAN,out-edge-BUTTRESS_SHOULDER)
+			for g: Dictionary in L.gullies:
+				fan *= smoothstep(float(g.w)*0.5,float(g.w)*0.5+BUTTRESS_GULLY_GAP,absf(x-float(g.mid)))
+			s = h+maxf(ridge-thick-h,0.0)*fan
+		elif out > 0.0:
+			s = ridge-drop*smoothstep(0.0,run,out)
+		# A small fillet where the plate (not its fan, already smooth) meets
+		# the land: a smooth max.
+		var gap := s-h
+		var lift := maxf(FLATIRON_FILLET-absf(gap),0.0) if out <= run else 0.0
+		if gap <= 0.0 and lift <= 0.0: continue
+		h = maxf(s,h)+lift*lift/(4.0*FLATIRON_FILLET)
+		if gap > 0.0:
+			# The face's paint: full inside the outline, below the tip; the
+			# plate's sides half, the buttress none.
+			var on := 1.0-0.4*smoothstep(-FACE_FADE,FACE_FADE,out)
+			face = on*(1.0-smoothstep(run*0.6,run+0.01,out))*smoothstep(0.0,3.0,float(f.ut)-u)
+	return Vector2(h,face)
 
 ## The ground's normal at (x, z), by finite steps of `e` m.
 static func normal(x: float, z: float, e := 1.5) -> Vector3:

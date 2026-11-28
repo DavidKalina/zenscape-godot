@@ -23,7 +23,10 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Scarp = preload("res://scripts/pieces/scarp.gd")
 
 ## The land mesh's grid step (m).
-const STEP := 4.0
+const STEP := 3.0
+## How far (m) a cell's two diagonal middles must differ before the land at
+## its middle picks the split.
+const SPLIT_GAP := 0.5
 const GRASS_LOW := Color("4f7535")
 const GRASS_HIGH := Color("6f8048")
 const ROCK := Color("8a7a66")
@@ -64,6 +67,8 @@ var _n := 0
 var _m := 0
 var _x0 := 0.0
 var _z0 := 0.0
+## Per grid cell: 1 split along its (0,0)-(1,1) diagonal, else (1,0)-(0,1).
+var _split := PackedByteArray()
 
 func _ready() -> void:
 	Pad.ensure()
@@ -137,9 +142,13 @@ func _build_ground() -> void:
 	_n = int(ceil(r.size.x/STEP))+1
 	_m = int(ceil(r.size.y/STEP))+1
 	_hs.resize(_n*_m)
+	var faces := PackedFloat32Array()
+	faces.resize(_n*_m)
 	for j in _m:
 		for i in _n:
-			_hs[j*_n+i] = Scarp.height(_x0+i*STEP,_z0+j*STEP)
+			var hf: Vector2 = Scarp.sample(_x0+i*STEP,_z0+j*STEP)
+			_hs[j*_n+i] = hf.x
+			faces[j*_n+i] = hf.y
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()
@@ -162,10 +171,9 @@ func _build_ground() -> void:
 			normals[k] = nm
 			var grass := GRASS_LOW.lerp(GRASS_HIGH,clampf((y+70.0)/top,0.0,1.0))
 			var stone := ROCK_DARK.lerp(ROCK,0.5+0.5*sin(y*0.35))
-			# A flatiron's front (one bedding plane, tilted toward the
+			# A flatiron's face (one bedding plane, tilted toward the
 			# approach) reads paler and unbanded.
-			var front := smoothstep(0.45,0.55,nm.y)*smoothstep(0.82,0.74,nm.y)*smoothstep(0.4,0.55,nm.z)
-			stone = stone.lerp(SLAB,front)
+			stone = stone.lerp(SLAB,faces[k])
 			var c := grass.lerp(stone,Scarp.rock_of(nm))
 			# A faint grid of 100 m lines, to judge sizes by.
 			if fmod(absf(x)+1.0,100.0) < 2.0 or fmod(absf(z)+1.0,100.0) < 2.0: c = c.darkened(0.08)
@@ -173,11 +181,27 @@ func _build_ground() -> void:
 	var index := PackedInt32Array()
 	index.resize((_n-1)*(_m-1)*6)
 	var o := 0
+	# Where a cell's two diagonals disagree, split it along the one whose
+	# middle matches the land at the cell's middle, so a slanting crease (a
+	# slab's edge) follows the cut instead of zig-zagging.
+	_split.resize(_n*_m)
 	for j in _m-1:
 		for i in _n-1:
 			var a := j*_n+i
-			index[o] = a; index[o+1] = a+1; index[o+2] = a+_n
-			index[o+3] = a+1; index[o+4] = a+_n+1; index[o+5] = a+_n
+			var m1 := (_hs[a]+_hs[a+_n+1])*0.5
+			var m2 := (_hs[a+1]+_hs[a+_n])*0.5
+			if absf(m1-m2) > SPLIT_GAP:
+				var c := Scarp.height(_x0+(i+0.5)*STEP,_z0+(j+0.5)*STEP)
+				_split[a] = 1 if absf(m1-c) < absf(m2-c) else 0
+	for j in _m-1:
+		for i in _n-1:
+			var a := j*_n+i
+			if _split[a] == 1:
+				index[o] = a; index[o+1] = a+1; index[o+2] = a+_n+1
+				index[o+3] = a; index[o+4] = a+_n+1; index[o+5] = a+_n
+			else:
+				index[o] = a; index[o+1] = a+1; index[o+2] = a+_n
+				index[o+3] = a+1; index[o+4] = a+_n+1; index[o+5] = a+_n
 			o += 6
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -206,12 +230,14 @@ func height(x: float, z: float) -> float:
 	var fu := u-i
 	var fv := v-j
 	var k := j*_n+i
+	var h00 := _hs[k]
 	var h10 := _hs[k+1]
 	var h01 := _hs[k+_n]
-	if fu+fv <= 1.0:
-		var h00 := _hs[k]
-		return h00+fu*(h10-h00)+fv*(h01-h00)
 	var h11 := _hs[k+_n+1]
+	if _split[k] == 1:
+		if fu >= fv: return h00+fu*(h10-h00)+fv*(h11-h10)
+		return h00+fv*(h01-h00)+fu*(h11-h01)
+	if fu+fv <= 1.0: return h00+fu*(h10-h00)+fv*(h01-h00)
 	return h11+(1.0-fu)*(h01-h11)+(1.0-fv)*(h10-h11)
 
 ## The plane's ground (SkyGlide `step`).
