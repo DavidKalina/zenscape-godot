@@ -114,7 +114,7 @@ var material: Material
 var root_reach := ROOT_REACH
 ## Whether chunks carry the channel frame (river_live_wanted()).
 var river_live := false
-## --crest-cut=0: the Peak's chunks keep the grid's one diagonal (_crest_cut).
+## --crest-cut=0: the Peak's and the pieces' chunks keep the grid's one diagonal (_crest_cut).
 var crest_cut := not "--crest-cut=0" in preload("res://scripts/launch_args.gd").user_args()
 var _chunks := {}          # key -> {node, heights, faces, tops}
 var _pending := {}         # key -> true (a task is making it)
@@ -675,10 +675,16 @@ static func _on_mask(mask: PackedByteArray, v: int) -> bool:
 ## running against that diagonal stood as a row of teeth, and the sun's shadow
 ## drew them long over the ice. The same vertices; the draw only (a chunk's
 ## collider keeps the field). --crest-cut=0 off.
+## The world's greybox pieces (LandField `pieces`, a scarp's cliffs and gully
+## walls) get the same cut at levels 1 to 4, where their walls stood as teeth.
 func _crest_cut(f: RefCounted, made: Dictionary, key: Vector3i, x0: float, z0: float, s: float) -> void:
-	if key.x < 1 or key.x > 2 or made.has("indices") or not crest_cut: return
-	var pk: RefCounted = f.peak()
-	if pk == null or not pk.meets(x0,z0,x0+s,z0+s): return
+	if key.x < 1 or key.x > 4 or made.has("indices") or not crest_cut: return
+	var ps: RefCounted = f.pieces() if f.has_method("pieces") else null
+	var on_piece: bool = ps != null and ps.meets(x0,z0,x0+s,z0+s)
+	if not on_piece:
+		if key.x > 2: return
+		var pk: RefCounted = f.peak()
+		if pk == null or not pk.meets(x0,z0,x0+s,z0+s): return
 	var v: PackedVector3Array = made.verts
 	var n := CELLS+1
 	var out := _indices.duplicate()

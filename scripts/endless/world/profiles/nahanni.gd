@@ -66,8 +66,17 @@ func _init() -> void:
 	# scale (across and along) and tall (up). The fin ridge stands in the open
 	# field west of the river, its south end off the wedge's west gap, clear of
 	# the pond at (-300, 220) and the west valley's mouth at (-250, -260).
+	# The scarp (a change of level) crosses the west valley's lower reach wall
+	# to wall, facing down it: flying up from the lake you meet its face. Its
+	# middle foot is `at`; the stamp gathers the valley's climb over its reach
+	# (350 m in front to 950 m behind, about 45 m there) into a cliff of about
+	# 70 m (tall 0.5 of 150), the ground let down a little in front and the
+	# bench falling back gently behind (scarp.gd `rise`). Its front stops short
+	# of the lake (y -40). `across` narrows it to the valley (blocks and gullies
+	# 0.8: gullies 56, 80, 64 m) without thinning its height.
 	pieces = [
 		{"piece":preload("res://scripts/pieces/fin_ridge.gd"),"at":Vector2(-170.0,150.0),"heading":0.0,"scale":1.0,"tall":1.0},
+		{"piece":preload("res://scripts/pieces/scarp.gd"),"at":Vector2(-1577.0,-2504.0),"heading":125.0,"scale":1.0,"across":0.8,"along":1.0,"tall":0.5},
 	]
 
 ## `line` as a Catmull-Rom curve with a point every STEP m: LandField's `vale`

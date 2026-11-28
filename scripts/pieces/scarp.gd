@@ -10,7 +10,8 @@ extends RefCounted
 ## Everything here is a pure function of (x, z) and the constants below, free
 ## of scene state, so a later round can stamp the piece into a map:
 ## `height(x, z)`, `rock(x, z)` (0 grass .. 1 bare rock), `tree_spots()`,
-## and `slab_face(x, z)` (1 on a flatiron's face) or both at once, `sample`.
+## and `slab_face(x, z)` (1 on a flatiron's face) or both at once, `sample`;
+## `rise` and `reach` stamp it into a map (scripts/endless/land_pieces.gd).
 ##
 ## Every size is a first guess; retune here.
 
@@ -95,6 +96,15 @@ const ROCK_UP := 0.74
 const APPROACH_TREES := 14
 const BENCH_TREES := 10
 const TREE_SEED := 31
+# Stamped into a map (`rise`, scripts/endless/land_pieces.gd): the map's own
+# ground stands in for the approach, the bench and their roll; the scarp's
+# level change is taken back off by a smooth ramp from MAP_FRONT m in front of
+# the face to MAP_BACK m behind it (eased in and out over MAP_EASE of that), so
+# the stamp is 0 at both ends and gathers the climb the map's ground already
+# has over that run into the cliff. MAP_BACK must clear the gullies' heads.
+const MAP_FRONT := 350.0
+const MAP_BACK := 950.0
+const MAP_EASE := 0.3
 # The footprint (local x0, u0 .. x1, u1 as a Rect2 in x, z).
 const MARGIN_SIDE := 350.0
 const MARGIN_BACK := 260.0
@@ -201,12 +211,17 @@ static func slab_face(x: float, z: float) -> float:
 
 ## The height at local (x, z) and how much it lies on a flatiron's face.
 static func sample(x: float, z: float) -> Vector2:
+	return _shape(x,z,true)
+
+## `sample`, with the study's own ground (the roll and the back hills) or,
+## without `land`, the scarp alone on its tilt (for `rise`).
+static func _shape(x: float, z: float, land: bool) -> Vector2:
 	var u := -z
 	var L := layout()
 	var n := _n()
 	var h := _tilt(u)
 	# Gentle roll on the open ground.
-	h += ROLL*n.get_noise_2d(x/140.0,u/140.0)
+	if land: h += ROLL*n.get_noise_2d(x/140.0,u/140.0)
 	var span := _span(x)
 	var rise := _cliff(u,_face(x))
 	if rise > 0.0: rise *= 1.0+0.015*n.get_noise_2d(x/70.0,u/70.0)
@@ -223,7 +238,7 @@ static func sample(x: float, z: float) -> Vector2:
 	h += rise*span
 	# The back of the bench rolls up into low hills, closing the piece.
 	var back := BENCH_DEPTH+FACE_RUN
-	if u > back: h += BACK_HILLS*smoothstep(back,back+MARGIN_BACK,u)*(0.7+0.3*n.get_noise_1d(x/180.0))
+	if land and u > back: h += BACK_HILLS*smoothstep(back,back+MARGIN_BACK,u)*(0.7+0.3*n.get_noise_1d(x/180.0))
 	# The notches: a dip in the bench just behind each tip.
 	var back_tan := tan(deg_to_rad(FLATIRON_BACK_DEG))
 	var near: Array[int] = []
@@ -281,6 +296,76 @@ static func sample(x: float, z: float) -> Vector2:
 			var on := 1.0-0.4*smoothstep(-FACE_FADE,FACE_FADE,out)
 			face = on*(1.0-smoothstep(run*0.6,run+0.01,out))*smoothstep(0.0,3.0,float(f.ut)-u)
 	return Vector2(h,face)
+
+## --- Stamped into a map (scripts/endless/land_pieces.gd) ---------------------
+## The scarp on the map's ground: its cliff, gullies, flatirons and notches
+## (the study's own tilt, roll and back hills left out), less the ramp
+## `level` of the same height, so in front of the face the ground is let down
+## and behind it lifted, and 0 at both ends of the reach and past the ends of
+## the scarp (its END_FADE).
+
+## The scarp's rise over the map's ground at local (x, z) (m; negative in
+## front of the face, where the stamp lowers the ground).
+static func rise(x: float, z: float) -> float:
+	var u := -z
+	if u <= -MAP_FRONT or u >= MAP_BACK or absf(x) >= SCARP_W*0.5+END_FADE: return 0.0
+	var span := _span(x)
+	var h := 0.0
+	var clear := _map_clear()
+	if u < clear.x:
+		# In front of every face, gully mouth and flatiron: the ramp alone
+		# (what `_shape` gives there, without its cost).
+		h = -span*SCARP_H*level(u)
+	elif u > clear.y:
+		# Behind every face, gully head and notch: the bench, the cliff's
+		# wobble and the gullies' full height (as `_shape` has it there).
+		var top := SCARP_H*(1.0+0.015*_n().get_noise_2d(x/70.0,u/70.0))
+		for g: Dictionary in layout().gullies:
+			var half := float(g.w)*0.5
+			var inside := smoothstep(half+GULLY_WALL*0.5,half-GULLY_WALL*0.5,absf(x-float(g.mid)))
+			if inside > 0.0: top = lerpf(top,SCARP_H,inside)
+		h = span*(top-SCARP_H*level(u))
+	else:
+		h = _shape(x,z,false).x-_tilt(u)-span*SCARP_H*level(u)
+	# The cliff's own small wobble, left at the ends, eased off.
+	return h*smoothstep(-MAP_FRONT,-MAP_FRONT+80.0,u)*smoothstep(MAP_BACK,MAP_BACK-80.0,u)
+
+static var _clear := Vector2.ZERO
+
+## The u in front of which `_shape` has no scarp at all, and behind which it
+## has only the bench at full height (the faces' wobble and end bend, the
+## gully mouths' wobble and sag, the heads, the flatirons' boxes counted).
+static func _map_clear() -> Vector2:
+	if _clear != Vector2.ZERO: return _clear
+	var L := layout()
+	var lo := INF
+	var hi := -INF
+	for b: Dictionary in L.blocks:
+		lo = minf(lo,float(b.face)-FACE_WOBBLE)
+		hi = maxf(hi,float(b.face)+FACE_WOBBLE+END_FADE*0.6+FACE_RUN)
+	for g: Dictionary in L.gullies:
+		lo = minf(lo,float(g.mouth)-4.0-60.0)
+		hi = maxf(hi,float(g.mouth)+4.0+float(g.depth))
+	for i in _boxes.size()/4:
+		lo = minf(lo,_boxes[i*4+2])
+		hi = maxf(hi,_boxes[i*4+3])
+	_clear = Vector2(lo-1.0,hi+1.0)
+	return _clear
+
+## The local box `rise` is 0 outside of.
+static func reach() -> Rect2:
+	var half := SCARP_W*0.5+END_FADE
+	return Rect2(-half,-MAP_BACK,half*2.0,MAP_BACK+MAP_FRONT)
+
+## The share (0..1) of the level change made up by distance `u` uphill: 0 at
+## -MAP_FRONT, 1 at MAP_BACK, at an even slope between eased ends.
+static func level(u: float) -> float:
+	var t := clampf((u+MAP_FRONT)/(MAP_FRONT+MAP_BACK),0.0,1.0)
+	var e := MAP_EASE*0.5
+	var p := 1.0/(1.0-e)
+	if t < e: return p*t*t/(2.0*e)
+	if t > 1.0-e: return 1.0-p*(1.0-t)*(1.0-t)/(2.0*e)
+	return p*(t-e*0.5)
 
 ## The ground's normal at (x, z), by finite steps of `e` m.
 static func normal(x: float, z: float, e := 1.5) -> Vector3:

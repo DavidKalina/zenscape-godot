@@ -23,8 +23,16 @@ extends RefCounted
 ##                         pool_r}] for piece_dress.gd.
 ##
 ## A row: {"piece": preload(script), "at": Vector2(x, z), "heading": degrees
-## clockwise from -z (the flight's --heading), "scale": horizontal (1), "tall":
-## vertical (1)}.
+## clockwise from -z (the flight's --heading), "scale": horizontal and
+## vertical (1), "tall": vertical on top of that (1), and optional "across"
+## and "along": local x and z on top of `scale` (1 each), to fit a piece to a
+## valley narrower than it was built for without changing its height}.
+##
+## A piece that changes the land's level (scarp.gd: low ground in front, high
+## behind) keeps the same contract: its `rise` takes the level change back off
+## with a smooth ramp over its reach, so it is 0 at both ends and gathers the
+## climb the map's ground already has there into its cliff. Place it where the
+## ground climbs about as much as its cliff is tall over its reach.
 
 ## Lifted less than this (m), the land is the map's own (river, trees).
 const LIFTED := 0.5
@@ -35,6 +43,9 @@ var _cz := PackedFloat64Array()
 var _ca := PackedFloat64Array()
 var _sa := PackedFloat64Array()
 var _scale := PackedFloat64Array()
+## The horizontal scale across (local x) and along (local z).
+var _sx := PackedFloat64Array()
+var _sz := PackedFloat64Array()
 var _tall := PackedFloat64Array()
 ## The local reach, and the world box round it (x0, z0, x1, z1 a row).
 var _local: Array[Rect2] = []
@@ -64,6 +75,8 @@ func _init(rows: Array) -> void:
 		_ca.append(cos(h))
 		_sa.append(sin(h))
 		_scale.append(sc)
+		_sx.append(sc*maxf(float(row.get("across",1.0)),0.01))
+		_sz.append(sc*maxf(float(row.get("along",1.0)),0.01))
 		_tall.append(float(row.get("tall",1.0)))
 		var r: Rect2 = s.reach()
 		_local.append(r)
@@ -82,14 +95,14 @@ func count() -> int:
 
 ## Piece `i`'s local point (x, z) in world XZ.
 func to_world(i: int, p: Vector2) -> Vector2:
-	var q := p*_scale[i]
+	var q := Vector2(p.x*_sx[i],p.y*_sz[i])
 	return Vector2(_cx[i]+q.x*_ca[i]-q.y*_sa[i],_cz[i]+q.x*_sa[i]+q.y*_ca[i])
 
 ## World XZ (x, z) in piece `i`'s local frame.
 func to_local(i: int, x: float, z: float) -> Vector2:
 	var dx := x-_cx[i]
 	var dz := z-_cz[i]
-	return Vector2(dx*_ca[i]+dz*_sa[i],dz*_ca[i]-dx*_sa[i])/_scale[i]
+	return Vector2((dx*_ca[i]+dz*_sa[i])/_sx[i],(dz*_ca[i]-dx*_sa[i])/_sz[i])
 
 ## Piece `i`'s script, its vertical and horizontal scale and its heading's
 ## (cos, sin) (for the dressing).
