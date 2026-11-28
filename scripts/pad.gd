@@ -119,6 +119,9 @@ const ACTIONS := {
 	# a race; pressed in the race, call it off (scripts/endless/rival_race.gd).
 	# R3 is free there (fly_camera's first-person view is the isles').
 	"fly_challenge":[["key",KEY_TAB],["button",JOY_BUTTON_RIGHT_STICK]],
+	# In endless flight with --raider, pressed: lock on / let go (scripts/endless/lock_on.gd).
+	# R3 is fly_challenge's too, but that one is held on a traffic plane.
+	"fly_lock":[["key",KEY_Y],["mouse",MOUSE_BUTTON_MIDDLE],["button",JOY_BUTTON_RIGHT_STICK]],
 	# In flight, pressed: open the cargo bag and let its load fall (the
 	# home isle's drop pass, scripts/home/drop_pass.gd).
 	"fly_drop":[["key",KEY_E],["button",JOY_BUTTON_B]],

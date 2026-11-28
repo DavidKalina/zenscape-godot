@@ -19,6 +19,8 @@ extends Node3D
 ##   (scripts/endless/bore_plug.gd `struck`, `smash`: the whole wall, hole and all)
 ##   burst into rubble; each is a `smash` moment on the line (LineMoves `smash`,
 ##   `smashed` "spur" or "plug"). The bore itself stays stone.
+## - the raider (`--raider`, scripts/endless/raider.gd `try_kill`) breaks apart, a
+##   `smash` moment (`smashed` "raider").
 ##
 ## Below a full meter the roll button is the clean roll and `fly_surge` the plain
 ## surge, as before.
@@ -74,6 +76,7 @@ var hits := 0
 var spurs := 0
 var plugs := 0
 var catches := 0
+var raiders := 0
 var _held_was := false
 var _hold := 0.0
 var _scan := 0.0
@@ -128,6 +131,7 @@ func before(delta: float, input: Dictionary) -> void:
 		return
 	_strike()
 	if game.burrower != null and game.burrower.try_catch(game): _caught()
+	if game.raider != null: _raider()
 
 ## While hot a wingtip's touch of stone is nothing: the stone's going (NearMiss
 ## `touching`, read by FlightContact).
@@ -251,6 +255,20 @@ func _caught() -> void:
 	game.sound.shot("crash",1.2,0.6)
 	game.sound.shot("thump",1.2,0.7)
 	vapour = 1.0
+
+## The raider (scripts/endless/raider.gd `try_kill`) flown into: it breaks
+## apart, a `smash` moment on the line (`smashed` "raider").
+func _raider() -> void:
+	var q: Vector3 = game.raider.try_kill(game)
+	if q == Vector3.INF: return
+	raiders += 1
+	hub.pause(int(PLUG_STOP.x),PLUG_STOP.y)
+	game.feel_hit(PLUG_KICK.x,PLUG_KICK.y)
+	game.sound.shot("crash",1.3,0.7,q)
+	game.sound.shot("thump",1.3,0.5,q)
+	vapour = 1.0
+	game.near.moves.smash(game,"raider",q,hash([q,raiders]))
+	smashed.emit(q)
 
 ## The hub's stone sounds, as the flight's.
 func _stone_sound(what: StringName, at: Vector3) -> void:

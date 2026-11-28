@@ -267,6 +267,9 @@ const SCRAPE_OUT := 0.08
 ## SURGE_PULL times harder than the throttle pulls, the cap lifted to it and
 ## falling back CAP_FALL m/s² after.
 var surge := 0.0
+## m/s over the throttle's speed, set from outside each frame: the raider's
+## chase (scripts/endless/raider_chase.gd), skimming builds speed; 0 else.
+var skim_over := 0.0
 const SURGE_OVER := 1.3
 const SURGE_PULL := 2.5
 const CAP_FALL := 6.0
@@ -619,6 +622,9 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	target = lerpf(target,minf(target,FLAP_SPEED),flap)
 	# The surge drives it past Boost, flaps or not.
 	if surge > 0.0: target = lerpf(target,boost_speed()*SURGE_OVER,surge)
+	if skim_over > 0.0:
+		target += skim_over
+		_cap = maxf(_cap,target)
 	var slow := lerpf(SLOW,FLAP_SLOW,flap)
 	# Heavy, the climb and dive are the path's, not the nose's.
 	var path: Vector3

@@ -172,6 +172,8 @@ const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
+const Raider = preload("res://scripts/endless/raider.gd")
+const LockOn = preload("res://scripts/endless/lock_on.gd")
 const Whale = preload("res://scripts/endless/whale.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const GoldenTrees = preload("res://scripts/endless/golden_trees.gd")
@@ -374,6 +376,10 @@ var spray: Node3D
 ## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
 ## --no-burrower: none).
 var burrower: Node
+## The raider plane (scripts/endless/raider.gd; --raider: on).
+var raider: Node3D
+## Lock-on (scripts/endless/lock_on.gd; with --raider).
+var lock_on: Node
 ## The towers that lead from the start to the ruin and the isles (scripts/endless/way_towers.gd).
 var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
@@ -918,6 +924,14 @@ func _ready() -> void:
 	smash = SurgeSmash.new()
 	add_child(smash)
 	smash.setup(self)
+	if Raider.wanted():
+		raider = Raider.new()
+		add_child(raider)
+		raider.setup(self)
+	if LockOn.wanted():
+		lock_on = LockOn.new()
+		add_child(lock_on)
+		lock_on.setup(self)
 	parry = Parry.new()
 	add_child(parry)
 	parry.setup(self)
@@ -1530,6 +1544,8 @@ func tick(delta: float) -> void:
 	# The roll's parry window, before the shots fly and meet the plane.
 	if parry != null: parry.step(delta)
 	if coast != null: coast.after(delta,events)
+	if raider != null: raider.step(delta,self,events)
+	FrameLog.mark(&"raider")
 	_near_misses(delta,events)
 	FrameLog.mark(&"near")
 	if water != null: water.step(delta,events)
@@ -1931,6 +1947,7 @@ func _frame(delta: float) -> void:
 	_punch_want *= exp(-delta/PUNCH_FADE)
 	_punch = lerpf(_punch,_punch_want,1.0-exp(-delta/PUNCH_IN)) if delta > 0.0 else _punch_want
 	camera.fov = chase.fov+_punch+_speed_wide(delta)
+	if lock_on != null: lock_on.frame(delta,self)
 
 ## Stutter hunt (drop when done): a fixed loop timed each frame (slow while
 ## the rest is slow: the main thread is crowded, not our code), whether the
