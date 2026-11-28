@@ -26,6 +26,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 namespace zsland {
@@ -130,6 +132,32 @@ public:
 	double HILLS = 320.0, HILL_TALL = 16.0;
 	// The sea round a world with an edge (half 0: none).
 	double COAST_X = 0.0, COAST_Z = 0.0, COAST_HALF = 0.0, COAST_CORNER = 0.0, COAST_RAMP = 1.0, COAST_DEPTH = 0.0, COAST_WOBBLE = 0.0;
+	double RIM_TALL = 0.0, RIM_RAMP = 1.0;
+	// land_field.gd `r_vale`: rows of 9 floats (x, z, floor, half-width, new line, wall left, wall right, way along, spurs).
+	std::vector<float> vale;
+	double VALE_SLOPE = 0.3, VALE_EASE = 400.0, VALE_KEEP = 0.12, VALE_WARP = 0.0, VALE_RIVER = 0.0;
+	// Set by vale_at: the signed distance from the nearest line, its way down.
+	double vale_r = INF, vale_dx = 0.0, vale_dz = 0.0, vale_rock = 0.0, vale_wedge = 0.0, vale_busy = 0.0;
+	// land_field.gd `r_vale_wall`, `r_vale_knoll`, `r_vale_wedge`.
+	double VALE_WALL = 70.0, VALE_KNOLL = 0.0;
+	std::vector<float> vale_wedges;
+	// vale_at's shortlist: per cell of a grid over the lines, the segments that
+	// can decide a point in it (vale_grid_build), so a sample walks a few of
+	// them and not every one. `vale_all` for a point off the grid.
+	// Built once for a set of lines and shared by every field of them (a field
+	// is made per worker and per grass cell).
+	struct ValeGrid {
+		std::vector<float> rows;
+		double warp = 0.0, slope = 0.0, ease = 0.0, wall = 0.0;
+		std::vector<int32_t> cell_at, cell_seg, all, line;
+		double gx = 0.0, gz = 0.0;
+		int64_t gn = 0;
+	};
+	std::shared_ptr<const ValeGrid> vale_grid;
+	static constexpr double VALE_CELL = 160.0;
+	// vale_at's last answer (broad asks twice at a point under the rim).
+	double vale_memo_x = INF, vale_memo_z = INF;
+	V2 vale_memo;
 	static constexpr double MOUNTAINS = 2600.0, MOUNTAIN_TALL = 105.0;
 	static constexpr float MOUNTAIN_BAND_X = 0.18f, MOUNTAIN_BAND_Y = 0.5f;
 	double RANGES = 2300.0, RANGE_WIDTH = 0.36, RANGE_MASK = 3400.0;
@@ -228,6 +256,7 @@ public:
 		noise(n_mesa, 21, MESA_SCALE, 2, FNL::FractalType_FBm);
 		noise(n_mesa_mask, 22, MESA_MASK, 1, FNL::FractalType_None);
 		noise(n_coast, 23, 1500.0, 3, FNL::FractalType_FBm);
+		vale_grid_build();
 	}
 
 	// Vector2(world height, meadow) at a world XZ point (`sample`).
@@ -376,6 +405,206 @@ private:
 		return COAST_DEPTH * t * t;
 	}
 
+	// land_field.gd `_vale`: (height over the sea, how far outside a floor).
+	static double seg_dist(double px, double pz, double ax, double az, double bx, double bz) {
+		const double ex = bx - ax, ez = bz - az;
+		const double t = clampf(((px - ax) * ex + (pz - az) * ez) / maxf(ex * ex + ez * ez, 1e-6), 0.0, 1.0);
+		const double dx = px - (ax + ex * t), dz = pz - (az + ez * t);
+		return std::sqrt(dx * dx + dz * dz);
+	}
+
+	// The shortlist grid: a segment stays in a cell's list when the lowest it
+	// could stand anywhere in the cell is under the highest the best one could
+	// (its floor, the slope off it, a wall), or when the cell is near its floor.
+	void vale_grid_build() {
+		const int64_t ROW = 9;
+		vale_grid.reset();
+		vale_memo_x = INF;
+		const int64_t n = int64_t(vale.size()) / ROW;
+		if (n < 2) return;
+		static std::mutex lock;
+		static std::shared_ptr<const ValeGrid> shared;
+		std::lock_guard<std::mutex> hold(lock);
+		if (shared && shared->rows == vale && shared->warp == VALE_WARP && shared->slope == VALE_SLOPE && shared->ease == VALE_EASE && shared->wall == VALE_WALL) {
+			vale_grid = shared;
+			return;
+		}
+		std::shared_ptr<ValeGrid> made = std::make_shared<ValeGrid>();
+		made->rows = vale;
+		made->warp = VALE_WARP;
+		made->slope = VALE_SLOPE;
+		made->ease = VALE_EASE;
+		made->wall = VALE_WALL;
+		std::vector<int32_t> &vale_cell_at = made->cell_at, &vale_cell_seg = made->cell_seg, &vale_all = made->all, &vale_line = made->line;
+		double &vale_gx = made->gx, &vale_gz = made->gz;
+		int64_t &vale_gn = made->gn;
+		vale_line.assign(size_t(n), 0);
+		double x0 = INF, z0 = INF, x1 = -INF, z1 = -INF;
+		int32_t line = 0;
+		for (int64_t i = 0; i < n; ++i) {
+			if (i > 0 && vale[i * ROW + 4] > 0.5f) ++line;
+			vale_line[size_t(i)] = line;
+			if (i > 0 && vale[i * ROW + 4] <= 0.5f) vale_all.push_back(int32_t(i));
+			x0 = minf(x0, double(vale[i * ROW]));
+			x1 = maxf(x1, double(vale[i * ROW]));
+			z0 = minf(z0, double(vale[i * ROW + 1]));
+			z1 = maxf(z1, double(vale[i * ROW + 1]));
+		}
+		const double pad = 3200.0;
+		vale_gx = x0 - pad;
+		vale_gz = z0 - pad;
+		vale_gn = int64_t(std::ceil(maxf(x1 - x0, z1 - z0) + pad * 2.0) / VALE_CELL) + 1;
+		const double reach = VALE_CELL * 0.7072 + VALE_WARP * 1.05;
+		vale_cell_at.assign(size_t(vale_gn * vale_gn + 1), 0);
+		std::vector<double> lo(vale_all.size()), nearby(vale_all.size());
+		for (int64_t cz = 0; cz < vale_gn; ++cz) {
+			for (int64_t cx = 0; cx < vale_gn; ++cx) {
+				const double mx = vale_gx + (double(cx) + 0.5) * VALE_CELL, mz = vale_gz + (double(cz) + 0.5) * VALE_CELL;
+				double best_hi = INF;
+				for (size_t k = 0; k < vale_all.size(); ++k) {
+					const int64_t q = int64_t(vale_all[k]) * ROW, p = q - ROW;
+					const double d = seg_dist(mx, mz, double(vale[p]), double(vale[p + 1]), double(vale[q]), double(vale[q + 1]));
+					const double half_hi = maxf(double(vale[p + 3]), double(vale[q + 3]));
+					const double half_lo = minf(double(vale[p + 3]), double(vale[q + 3])) * 0.4;
+					const double s_lo = maxf(d - reach - half_hi, 0.0), s_hi = maxf(d + reach - half_lo, 0.0);
+					lo[k] = minf(double(vale[p + 2]), double(vale[q + 2])) + VALE_SLOPE * s_lo * s_lo / (s_lo + VALE_EASE);
+					nearby[k] = s_lo;
+					const double hi = maxf(double(vale[p + 2]), double(vale[q + 2])) + VALE_SLOPE * s_hi * s_hi / (s_hi + VALE_EASE) + VALE_WALL;
+					if (hi < best_hi) best_hi = hi;
+				}
+				for (size_t k = 0; k < vale_all.size(); ++k) {
+					if (lo[k] <= best_hi + 45.0 || nearby[k] <= 160.0) vale_cell_seg.push_back(vale_all[k]);
+				}
+				vale_cell_at[size_t(cz * vale_gn + cx + 1)] = int32_t(vale_cell_seg.size());
+			}
+		}
+		shared = made;
+		vale_grid = made;
+	}
+
+	V2 vale_at(double x, double z) {
+		if (x == vale_memo_x && z == vale_memo_z) return vale_memo;
+		const double JOIN = 40.0, WALL_RUN = 55.0, SPUR_EVERY = 420.0, EDGE = 24.0;
+		const int64_t ROW = 9;
+		double px = x, pz = z;
+		if (VALE_WARP > 0.0) {
+			px = x + nz(n_valley_warp, x, z) * VALE_WARP;
+			pz = z + nz(n_valley_warp, x - 4111.0, z + 2027.0) * VALE_WARP;
+		}
+		double best = INF, best_s = INF, best_rock = 0.0, cur = INF, cur_rock = 0.0, near = INF;
+		vale_r = INF;
+		vale_busy = 0.0;
+		// The point's shortlist (every segment off the grid).
+		if (!vale_grid) return V2::of(0.0f, float(INF));
+		const std::vector<int32_t> &vale_cell_at = vale_grid->cell_at, &vale_cell_seg = vale_grid->cell_seg, &vale_all = vale_grid->all, &vale_line = vale_grid->line;
+		const double vale_gx = vale_grid->gx, vale_gz = vale_grid->gz;
+		const int64_t vale_gn = vale_grid->gn;
+		const int32_t *list = vale_all.data();
+		int64_t count = int64_t(vale_all.size());
+		if (vale_gn > 0) {
+			const int64_t cx = int64_t(std::floor((px - vale_gx) / VALE_CELL)), cz = int64_t(std::floor((pz - vale_gz) / VALE_CELL));
+			if (cx >= 0 && cz >= 0 && cx < vale_gn && cz < vale_gn) {
+				const int64_t c = cz * vale_gn + cx;
+				list = vale_cell_seg.data() + vale_cell_at[size_t(c)];
+				count = int64_t(vale_cell_at[size_t(c + 1)] - vale_cell_at[size_t(c)]);
+			}
+		}
+		int32_t line = -1;
+		for (int64_t k = 0; k <= count; ++k) {
+			if (k == count || vale_line[size_t(list[k])] != line) {
+				// A line ends: fold it into the rest.
+				if (cur < INF) {
+					if (best == INF) {
+						best = cur;
+						best_rock = cur_rock;
+					} else {
+						const double m = clampf(0.5 + 0.5 * (best - cur) / JOIN, 0.0, 1.0);
+						best = lerpf(best, cur, m) - JOIN * m * (1.0 - m);
+						best_rock = lerpf(best_rock, cur_rock, m);
+					}
+				}
+				cur = INF;
+				if (k == count) break;
+				line = vale_line[size_t(list[k])];
+			}
+			const int64_t q = int64_t(list[k]) * ROW;
+			const int64_t p = q - ROW;
+			const double ax = double(vale[p]), az = double(vale[p + 1]);
+			const double ex = double(vale[q]) - ax, ez = double(vale[q + 1]) - az;
+			const double t = clampf(((px - ax) * ex + (pz - az) * ez) / maxf(ex * ex + ez * ez, 1e-6), 0.0, 1.0);
+			const double dx = px - (ax + ex * t), dz = pz - (az + ez * t);
+			const double dc = std::sqrt(dx * dx + dz * dz);
+			const bool left = ex * dz - ez * dx >= 0.0;
+			const double busy = lerpf(double(vale[p + 8]), double(vale[q + 8]), t);
+			if (dc < near) {
+				near = dc;
+				const double el = maxf(std::sqrt(ex * ex + ez * ez), 1e-6);
+				vale_dx = ex / el;
+				vale_dz = ez / el;
+				vale_r = left ? dc : -dc;
+				vale_busy = busy;
+			}
+			double half = lerpf(double(vale[p + 3]), double(vale[q + 3]), t);
+			double wall = left ? lerpf(double(vale[p + 5]), double(vale[q + 5]), t) : lerpf(double(vale[p + 6]), double(vale[q + 6]), t);
+			if (busy > 0.0) {
+				const double c = 0.5 + 0.5 * std::cos(6.283185307179586 * (lerpf(double(vale[p + 7]), double(vale[q + 7]), t) / SPUR_EVERY + (left ? 0.5 : 0.0)));
+				const double lobe = c * c * c * c * busy;
+				half *= 1.0 - lobe;
+				wall = maxf(wall, minf(lobe * 2.0, 1.0));
+			}
+			const double s = maxf(dc - half, 0.0);
+			const double v = lerpf(double(vale[p + 2]), double(vale[q + 2]), t) + VALE_SLOPE * s * s / (s + VALE_EASE) + wall * VALE_WALL * smoothstep(0.0, WALL_RUN, s);
+			if (v < cur) {
+				cur = v;
+				cur_rock = wall * smoothstep(0.0, WALL_RUN * 0.3, s) * (1.0 - smoothstep(WALL_RUN, WALL_RUN * 2.0, s));
+			}
+			if (s < best_s) best_s = s;
+		}
+		double wedge = 0.0;
+		const int64_t wn = int64_t(vale_wedges.size()) / 6;
+		for (int64_t w = 0; w < wn; ++w) {
+			const int64_t o = w * 6;
+			const double tx = double(vale_wedges[o]), tz = double(vale_wedges[o + 1]);
+			double wx = double(vale_wedges[o + 2]) - tx, wz = double(vale_wedges[o + 3]) - tz;
+			const double length = maxf(std::sqrt(wx * wx + wz * wz), 1.0);
+			wx /= length;
+			wz /= length;
+			const double along = (px - tx) * wx + (pz - tz) * wz;
+			if (along <= 0.0 || along >= length + EDGE) continue;
+			const double a = minf(along / length, 1.0);
+			const double wide = double(vale_wedges[o + 5]) * (0.2 + 0.8 * a);
+			const double side = 1.0 - smoothstep(wide, wide + EDGE, absf((px - tx) * wz - (pz - tz) * wx));
+			const double bow = 1.0 - smoothstep(0.0, EDGE, along - length);
+			const double top = a * a * (3.0 - 2.0 * a);
+			const double on = side * bow;
+			wedge += double(vale_wedges[o + 4]) * top * on;
+			best_rock = maxf(best_rock, 4.0 * on * (1.0 - on) * smoothstep(0.1, 0.4, top));
+		}
+		vale_rock = best_rock;
+		vale_wedge = wedge;
+		vale_memo_x = x;
+		vale_memo_z = z;
+		vale_memo = V2::of(float(best), float(best_s));
+		return vale_memo;
+	}
+
+	// land_field.gd `_rim`: (rise, how far up the climb).
+	V2 rim(double x, double z) const {
+		const double dx = absf(x - COAST_X) - (COAST_HALF - COAST_CORNER);
+		const double dz = absf(z - COAST_Z) - (COAST_HALF - COAST_CORNER);
+		const double ox = maxf(dx, 0.0), oz = maxf(dz, 0.0);
+		const double off = std::sqrt(ox * ox + oz * oz) + minf(maxf(dx, dz), 0.0) - COAST_CORNER;
+		if (off + COAST_WOBBLE * 2.0 + RIM_RAMP <= 0.0) return V2();
+		const double t = clampf(1.0 + (off + nz(n_coast, x, z) * COAST_WOBBLE * 2.0) / RIM_RAMP, 0.0, 1.0);
+		if (t <= 0.0) return V2();
+		const double p = t * t * (3.0 - 2.0 * t);
+		const double crest = 1.0 - absf(nz(n_range, x, z));
+		const double tall = clampf(nz(n_peak, x, z) * 0.9 + 0.5, 0.0, 1.0);
+		const double ridge = nz(n_ridges, x, z) * 0.5 + 0.5;
+		const double rise = RIM_TALL * p * (0.15 + p * (0.45 + 0.3 * tall + 0.25 * crest * crest) * (0.7 + 0.3 * ridge));
+		return V2::of(float(rise), float(p));
+	}
+
 	V2 broad(double x, double z) {
 		double base = nz(n_continent, x, z) * CONTINENT_SWING * 2.0 + CONTINENT_LIFT;
 		if (COAST_HALF > 0.0) base -= coast_sink(x, z);
@@ -464,6 +693,18 @@ private:
 				}
 			}
 		}
+		double rim_p = 0.0;
+		if (RIM_TALL > 0.0) {
+			const V2 r = rim(x, z);
+			if (r.y > 0.0) {
+				double open = 1.0;
+				if (!vale.empty()) open = smoothstep(0.0, 500.0, double(vale_at(x, z).y));
+				rim_p = r.y;
+				h += double(r.x) * open;
+				mountain = maxf(mountain, r.y);
+				meadow *= 1.0 - smoothstep(0.0, 0.2, r.y);
+			}
+		}
 		rock_ = mesa;
 		last_river_r = INF;
 		last_river_w = 0.0;
@@ -493,7 +734,8 @@ private:
 			if (d < half + side) {
 				double fill = 0.0;
 				if (rivers > 0.0) {
-					const double k = smoothstep(0.0, 0.12, inland) * minf(valleys, 1.0) * minf(rivers, 1.0);
+					double k = smoothstep(0.0, 0.12, inland) * minf(valleys, 1.0) * minf(rivers, 1.0);
+					if (rim_p > 0.0) k *= 1.0 - smoothstep(0.08, 0.3, rim_p);
 					const double ds = v / maxf(std::sqrt(gx * gx + gz * gz), 0.25 / VALLEYS);
 					fill = smoothstep(0.5, 3.0, base - double(RIVER_DROP_Y) * river_drop) * k;
 					const double reach_r = RIVER_REACH + (inland < 0.95 ? double(RIVER_PLAIN_Y) * RIVER_PLAIN_SPREAD : 0.0);
@@ -564,6 +806,7 @@ private:
 					cut_in = lerpf(inland, lerpf(smoothstep(0.0, RIVER_INLAND, inland), inland, tc * tc * (3.0 - 2.0 * tc)), minf(river_cut, 1.0));
 				}
 				keep = lerpf(1.0, keep, minf(valleys, 1.0) * cut_in);
+				if (rim_p > 0.0) keep = lerpf(keep, 1.0, smoothstep(0.1, 0.45, rim_p));
 				if (h > floor_y) h = floor_y + (h - floor_y) * keep;
 				else if (fill > 0.0 && river_fill > 0.0) {
 					const double tf = clampf((d - half) / RIVER_FILL_SIDE, 0.0, 1.0);
@@ -573,6 +816,32 @@ private:
 				const double floor_meadow = (1.0 - smoothstep(half * 0.7, half + side * 0.2, d)) * inland * minf(valleys, 1.0);
 				meadow = maxf(meadow, floor_meadow);
 			}
+		}
+		if (!vale.empty()) {
+			const V2 va = vale_at(x, z);
+			double keep = VALE_KEEP + (1.0 - VALE_KEEP) * smoothstep(0.0, 700.0, double(va.y));
+			if (VALE_RIVER > 0.0) {
+				const double reach = VALE_RIVER + RIVER_BANK + RIVER_RAMP;
+				keep *= smoothstep(reach * 0.5, reach * 1.5, absf(vale_r));
+				last_river_r = vale_r;
+				last_river_w = VALE_RIVER;
+				river_top = SEA_Y + double(va.x);
+				last_river_y = river_top - 2.4;
+				river_k = 1.0;
+				river_mouth_s = 0.0;
+				river_bed = RIVER_BED + 0.8;
+				river_bank = RIVER_BANK;
+				last_river_flow = V2::of(float(vale_dx * 2.6), float(vale_dz * 2.6));
+			}
+			h = double(va.x) + h * keep + vale_wedge;
+			if (VALE_KNOLL > 0.0 && vale_busy > 0.0 && double(va.y) < 60.0) {
+				const double kn = smoothstep(0.2, 0.5, nz(n_hills, x * 2.3, z * 2.3)) * minf(vale_busy * 2.5, 1.0) * smoothstep(40.0, 110.0, absf(vale_r)) * (1.0 - smoothstep(0.0, 60.0, double(va.y)));
+				h += kn * VALE_KNOLL;
+				meadow *= 1.0 - smoothstep(0.15, 0.5, kn);
+			}
+			rock_ = maxf(rock_, vale_rock);
+			meadow *= 1.0 - smoothstep(0.2, 0.6, vale_rock);
+			meadow = maxf(meadow * smoothstep(0.0, 300.0, double(va.y)), 1.0 - smoothstep(0.0, 60.0, double(va.y)));
 		}
 		if (absf(h) < BEACH * 2.0) h = h * lerpf(0.45, 1.0, smoothstep(0.0, BEACH * 2.0, absf(h)));
 		last_mountain = mountain;

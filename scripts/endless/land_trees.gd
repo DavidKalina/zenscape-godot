@@ -384,7 +384,8 @@ static func native_wanted() -> bool:
 func _native_config(r := -1) -> Dictionary:
 	var weights: PackedFloat32Array = Plan.variant_weights() if r < 0 else regional[r].weights
 	return {"seed":seed,"share":share if r < 0 else float(regional[r].share),"meadows":meadows if r < 0 else float(regional[r].meadows),"gap":WorldScale.opening(Plan.TOY_GAP),"lane_open":WorldScale.opening(Plan.TOY_LANE),
-		"dims":PackedVector3Array(_dims),"weights":weights,"tint":_tint,"crown_fit":PackedVector3Array(_crown_fit),"detail":_detail >= 0.0,"rings":_rings}
+		"dims":PackedVector3Array(_dims),"weights":weights,"tint":_tint,"crown_fit":PackedVector3Array(_crown_fit),"detail":_detail >= 0.0,"rings":_rings,
+		"tree_line":world.flora_value("tree_line",Plan.TREE_LINE) if r < 0 else Plan.TREE_LINE}
 
 ## A distance crown's value over the near crown's (HeroTrees SPRUCE_PAINT `knob`):
 ## the near crown's gaps and core read as a darker mass at range.
@@ -458,6 +459,7 @@ func _plan_for(r := -1) -> RefCounted:
 	if r < 0 or regional.is_empty():
 		var p: RefCounted = Plan.new(seed,share,_dims,_arch_flags)
 		p.meadows = meadows
+		p.tree_line = world.flora_value("tree_line",Plan.TREE_LINE)
 		return p
 	var g: Dictionary = regional[r]
 	var q: RefCounted = Plan.new(seed,float(g.share),_dims,_arch_flags)

@@ -40,6 +40,8 @@ func _init() -> void:
 		paint["far"] = {"grass_swell":swell}
 		paint["sheen_pace"] = GrassSheen.pace()
 		paint.globals["zs_grass_lean"] = swell.x*swell.y
+	# The Nahanni look (the default; --look=old without): its mood, hour, water and rock over these.
+	preload("res://scripts/endless/look_nahanni.gd").paint_over(paint)
 	# Every dressing layer. The rock shapes: sea stacks along the coasts
 	# (--no-rocks turns them off). No hoodoos (taken out 2026-10-27: they
 	# read as clay; --hoodoos=2.5 brings back the pockets they had). The

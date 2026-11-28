@@ -367,7 +367,7 @@ static func recipe_defaults() -> Dictionary:
 ## rebuilt) is still used for the stock recipe (`native_available`).
 ## 3 also takes the built land's forms (V3_KEYS); a version-2 library still
 ## grows a recipe that leaves them off.
-const NATIVE_VERSION := 4
+const NATIVE_VERSION := 6
 const V3_KEYS := ["ridge_crisp","notch","notch_scale","notch_width","terrace","terrace_step","terrace_flat","terrace_scale","terrace_band",
 	"mesa","mesa_tall","mesa_scale","mesa_level","mesa_edge","mesa_steps","mesa_gap","mesa_keep","mesa_mask_scale","mesa_band"]
 ## The recipe's sharp forms (gable crests, notches, terraces, mesas): their
@@ -586,7 +586,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 		_tunnel_test = true
 	splits = 0.0 if k.get("old_land",false) else Splits.wanted(float(world.layer("splits",0.0)))
 	split_mix = world.layer("split_kinds",{})
-	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed,Callable(_impl,"height"))
+	_massif = null if k.get("old_land",false) or not bool(world.layer("peak",true)) else PeakMassif.make(land_seed,Callable(_impl,"height"))
 	ice_tunnel = PeakTunnel.make(_massif)
 	_isles = null if k.get("old_land",false) else CoastIsles.make(land_seed,String(world.id))
 	_set_edge(k)
@@ -695,6 +695,8 @@ static func _stock(k: Dictionary) -> bool:
 ## recipe of its own, 3 one with the built land's forms (V3_KEYS), 4 one with
 ## a sea round it (coast_ keys).
 static func _need(k: Dictionary) -> int:
+	if not (k.get("vale",PackedFloat32Array()) as PackedFloat32Array).is_empty(): return 6
+	if float(k.get("rim_tall",0.0)) > 0.0: return 5
 	if float(k.get("coast_half",0.0)) > 0.0: return 4
 	if _stock(k): return 1
 	var d := recipe_defaults()
@@ -1561,6 +1563,44 @@ class GDField extends RefCounted:
 	var _coast_edge := Vector4.ZERO
 	var r_coast_ramp := 0.0
 	var r_coast_depth := 0.0
+	var r_rim_tall := 0.0
+	var r_rim_ramp := 1.0
+	## The placed valleys (recipe `vale`): rows of VALE_ROW floats, [x, z, the
+	## floor's height (m over the sea), its half-width (m), 1 where a new line
+	## starts, the wall on its left and right (0..1), the way along the line (m),
+	## the spurs' share (0..0.6)], each line's points close enough to read as a curve.
+	var r_vale := PackedFloat32Array()
+	var r_vale_slope := 0.3
+	var r_vale_ease := 400.0
+	var r_vale_keep := 0.12
+	var r_vale_warp := 0.0
+	## A river down each placed valley's line, this half-width (m; 0 none): the
+	## noise valleys' own river (`_river`, the ground's water) fed from the line.
+	var r_vale_river := 0.0
+	const VALE_RIVER_DROP := 2.4
+	const VALE_RIVER_FLOW := 2.6
+	## Set by `_vale`: the point's signed distance (m) from the nearest line and
+	## that line's way down (unit).
+	var _vale_r := INF
+	## And: how rocky its wall is there (0..1), a wedge's rise (m), how busy
+	## the line is there (its row's spur share).
+	var _vale_rock := 0.0
+	var _vale_wedge := 0.0
+	var _vale_busy := 0.0
+	## A rock wall off the floor's edge where a row asks one (m tall, over
+	## VALE_WALL_RUN m), rock knolls on a busy floor (m tall), the wedges (rows of
+	## 6: tail x, z, tip x, z, height, half-width at the tip).
+	var r_vale_wall := 70.0
+	var r_vale_knoll := 0.0
+	var r_vale_wedge := PackedFloat32Array()
+	const VALE_WALL_RUN := 55.0
+	const VALE_SPUR_EVERY := 420.0
+	const VALE_WEDGE_EDGE := 24.0
+	var _vale_dir := Vector2.ZERO
+	const VALE_ROW := 9
+	const VALE_JOIN := 40.0
+	const VALE_FULL := 700.0
+	const VALE_RIM := 500.0
 	var r_coast_wobble := 0.0
 	var _hills := FastNoiseLite.new()
 	var _mask := FastNoiseLite.new()
@@ -1727,6 +1767,15 @@ class GDField extends RefCounted:
 		r_mesa_keep = float(k.get("mesa_keep",r_mesa_keep))
 		r_mesa_mask = float(k.get("mesa_mask_scale",r_mesa_mask))
 		r_mesa_band = Vector2(k.get("mesa_band",r_mesa_band))
+		r_vale = k.get("vale",PackedFloat32Array())
+		r_vale_slope = float(k.get("vale_slope",r_vale_slope))
+		r_vale_ease = maxf(float(k.get("vale_ease",r_vale_ease)),1.0)
+		r_vale_keep = float(k.get("vale_keep",r_vale_keep))
+		r_vale_warp = float(k.get("vale_warp",r_vale_warp))
+		r_vale_river = float(k.get("vale_river",r_vale_river))
+		r_vale_wall = float(k.get("vale_wall",r_vale_wall))
+		r_vale_knoll = float(k.get("vale_knoll",r_vale_knoll))
+		r_vale_wedge = k.get("vale_wedge",PackedFloat32Array())
 		_noise(_notch,19,r_notch_scale,1,FastNoiseLite.FRACTAL_NONE)
 		_noise(_terrace,20,r_terrace_scale,2,FastNoiseLite.FRACTAL_FBM)
 		_noise(_mesa,21,r_mesa_scale,2,FastNoiseLite.FRACTAL_FBM)
@@ -1735,6 +1784,8 @@ class GDField extends RefCounted:
 			_coast_edge = Vector4(float(k.coast_x),float(k.coast_z),float(k.coast_half),float(k.coast_corner))
 			r_coast_ramp = float(k.coast_ramp)
 			r_coast_depth = float(k.coast_depth)
+			r_rim_tall = float(k.get("rim_tall",0.0))
+			r_rim_ramp = maxf(float(k.get("rim_ramp",1.0)),1.0)
 			r_coast_wobble = float(k.coast_wobble)
 			_noise(_coast,23,COAST_WOBBLE_SCALE,3,FastNoiseLite.FRACTAL_FBM)
 		_noise(_continent,1,r_continent,3,FastNoiseLite.FRACTAL_FBM)
@@ -1900,6 +1951,116 @@ class GDField extends RefCounted:
 		var t := clampf(1.0+(off+_coast.get_noise_2d(x,z)*r_coast_wobble*2.0)/r_coast_ramp,0.0,1.0)
 		return r_coast_depth*t*t
 
+	## The placed valleys' land at (x, z): (its height, m over the sea; how far
+	## outside the nearest floor, m, 0 on one). Off a floor the land climbs
+	## r_vale_slope a metre, eased in over r_vale_ease m, so a floor runs into
+	## its sides with no step; the floor's own height runs along its line, so
+	## the valley slopes. Lines meet smoothly (VALE_JOIN m). The point is first
+	## moved by the valleys' warp noise (r_vale_warp m), so no line is ruled.
+	func _vale(x: float, z: float) -> Vector2:
+		var px := x
+		var pz := z
+		if r_vale_warp > 0.0:
+			px = x+_valley_warp.get_noise_2d(x,z)*r_vale_warp
+			pz = z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*r_vale_warp
+		var best := INF
+		var best_s := INF
+		var best_rock := 0.0
+		var cur := INF
+		var cur_rock := 0.0
+		var near := INF
+		_vale_r = INF
+		_vale_busy = 0.0
+		var n := r_vale.size()/VALE_ROW
+		for i in range(1,n+1):
+			var q := i*VALE_ROW
+			if i == n or r_vale[q+4] > 0.5:
+				# A line ends: fold it into the rest.
+				if cur < INF:
+					if best == INF:
+						best = cur
+						best_rock = cur_rock
+					else:
+						var m := clampf(0.5+0.5*(best-cur)/VALE_JOIN,0.0,1.0)
+						best = lerpf(best,cur,m)-VALE_JOIN*m*(1.0-m)
+						best_rock = lerpf(best_rock,cur_rock,m)
+				cur = INF
+				continue
+			var p := q-VALE_ROW
+			var ax := float(r_vale[p])
+			var az := float(r_vale[p+1])
+			var ex := float(r_vale[q])-ax
+			var ez := float(r_vale[q+1])-az
+			var t := clampf(((px-ax)*ex+(pz-az)*ez)/maxf(ex*ex+ez*ez,1e-6),0.0,1.0)
+			var dx := px-(ax+ex*t)
+			var dz := pz-(az+ez*t)
+			var dc := sqrt(dx*dx+dz*dz)
+			var left := ex*dz-ez*dx >= 0.0
+			var busy := lerpf(float(r_vale[p+8]),float(r_vale[q+8]),t)
+			if dc < near:
+				near = dc
+				var el := maxf(sqrt(ex*ex+ez*ez),1e-6)
+				_vale_dir = Vector2(ex/el,ez/el)
+				_vale_r = dc if left else -dc
+				_vale_busy = busy
+			var half := lerpf(float(r_vale[p+3]),float(r_vale[q+3]),t)
+			var wall := lerpf(float(r_vale[p+5]),float(r_vale[q+5]),t) if left else lerpf(float(r_vale[p+6]),float(r_vale[q+6]),t)
+			if busy > 0.0:
+				# A spur: this side's wall reaching into the floor, every
+				# VALE_SPUR_EVERY m of the line, the two sides turn about.
+				var c := 0.5+0.5*cos(TAU*(lerpf(float(r_vale[p+7]),float(r_vale[q+7]),t)/VALE_SPUR_EVERY+(0.5 if left else 0.0)))
+				var lobe := c*c*c*c*busy
+				half *= 1.0-lobe
+				wall = maxf(wall,minf(lobe*2.0,1.0))
+			var s := maxf(dc-half,0.0)
+			var v := lerpf(float(r_vale[p+2]),float(r_vale[q+2]),t)+r_vale_slope*s*s/(s+r_vale_ease)+wall*r_vale_wall*smoothstep(0.0,VALE_WALL_RUN,s)
+			if v < cur:
+				cur = v
+				cur_rock = wall*smoothstep(0.0,VALE_WALL_RUN*0.3,s)*(1.0-smoothstep(VALE_WALL_RUN,VALE_WALL_RUN*2.0,s))
+			if s < best_s: best_s = s
+		# The wedges: each a tongue of land rising from its tail along its line
+		# to its tip, cliffs down its sides and off the tip.
+		var wedge := 0.0
+		for w in r_vale_wedge.size()/6:
+			var o := w*6
+			var tx := float(r_vale_wedge[o])
+			var tz := float(r_vale_wedge[o+1])
+			var wx := float(r_vale_wedge[o+2])-tx
+			var wz := float(r_vale_wedge[o+3])-tz
+			var length := maxf(sqrt(wx*wx+wz*wz),1.0)
+			wx /= length
+			wz /= length
+			var along := (px-tx)*wx+(pz-tz)*wz
+			if along <= 0.0 or along >= length+VALE_WEDGE_EDGE: continue
+			var a := minf(along/length,1.0)
+			var wide := float(r_vale_wedge[o+5])*(0.2+0.8*a)
+			var side := 1.0-smoothstep(wide,wide+VALE_WEDGE_EDGE,absf((px-tx)*wz-(pz-tz)*wx))
+			var bow := 1.0-smoothstep(0.0,VALE_WEDGE_EDGE,along-length)
+			var top := a*a*(3.0-2.0*a)
+			var on := side*bow
+			wedge += float(r_vale_wedge[o+4])*top*on
+			best_rock = maxf(best_rock,4.0*on*(1.0-on)*smoothstep(0.1,0.4,top))
+		_vale_rock = best_rock
+		_vale_wedge = wedge
+		return Vector2(best,best_s)
+
+	## The world's rim (rim_tall > 0): a ring of mountains the land climbs into
+	## toward the (wobbled) edge line, from r_rim_ramp m short of it, standing
+	## full height from the line on. (rise in m, how far up the climb 0..1.)
+	## Crests and cols round the ring from the ranges' noise, spurs from the
+	## ridges'; a floor under them so no col drops to the lowland.
+	func _rim(x: float, z: float) -> Vector2:
+		var off := edge_off(_coast_edge,x,z)
+		if off+r_coast_wobble*2.0+r_rim_ramp <= 0.0: return Vector2.ZERO
+		var t := clampf(1.0+(off+_coast.get_noise_2d(x,z)*r_coast_wobble*2.0)/r_rim_ramp,0.0,1.0)
+		if t <= 0.0: return Vector2.ZERO
+		var p := t*t*(3.0-2.0*t)
+		var crest := 1.0-absf(_range.get_noise_2d(x,z))
+		var tall := clampf(_peak.get_noise_2d(x,z)*0.9+0.5,0.0,1.0)
+		var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
+		var rise := r_rim_tall*p*(0.15+p*(0.45+0.3*tall+0.25*crest*crest)*(0.7+0.3*ridge))
+		return Vector2(rise,p)
+
 	## The land before the carve: continents, hills, ranges, meadows, valleys.
 	func _broad(x: float, z: float) -> Vector2:
 		var base := _continent.get_noise_2d(x,z)*r_continent_swing*2.0+r_continent_lift
@@ -1986,6 +2147,19 @@ class GDField extends RefCounted:
 					h = lerpf(h,maxf(top,r_meadow_above),minf(mesa*tiers,1.0))
 					# The walls bare (no turf), the tops a meadow to land on.
 					meadow = maxf(meadow*(1.0-smoothstep(0.0,0.3,wall)),smoothstep(0.9,1.0,mesa)*inland)
+		# The rim, before the valleys: they cut into its foot and close as it
+		# climbs (`rim_p`), their rivers ending there.
+		var rim_p := 0.0
+		if r_rim_tall > 0.0:
+			var rim := _rim(x,z)
+			if rim.y > 0.0:
+				# A placed valley notches the rim: a pass between its peaks.
+				var open := 1.0
+				if not r_vale.is_empty(): open = smoothstep(0.0,VALE_RIM,_vale(x,z).y)
+				rim_p = rim.y
+				h += rim.x*open
+				mountain = maxf(mountain,rim.y)
+				meadow *= 1.0-smoothstep(0.0,0.2,rim.y)
 		_rock = mesa
 		# The valleys: carved along the zero lines of a warped noise, their
 		# distance read from the noise over its slope.
@@ -2022,6 +2196,7 @@ class GDField extends RefCounted:
 					# worked out only within its reach of the floor (RIVER_REACH
 					# past the floor's edge, more near a coast for the plain).
 					var k := smoothstep(0.0,0.12,inland)*minf(valleys,1.0)*minf(rivers,1.0)
+					if rim_p > 0.0: k *= 1.0-smoothstep(0.08,0.3,rim_p)
 					var ds := v/maxf(sqrt(gx*gx+gz*gz),0.25/r_valleys)
 					fill = smoothstep(0.5,3.0,base-RIVER_DROP.y*river_drop)*k
 					# To one side: its middle near the floor's edge, at the foot of
@@ -2114,6 +2289,7 @@ class GDField extends RefCounted:
 					var tc := clampf((d-half)/(side*RIVER_CUT_SIDE),0.0,1.0)
 					cut_in = lerpf(inland,lerpf(smoothstep(0.0,RIVER_INLAND,inland),inland,tc*tc*(3.0-2.0*tc)),minf(river_cut,1.0))
 				keep = lerpf(1.0,keep,minf(valleys,1.0)*cut_in)
+				if rim_p > 0.0: keep = lerpf(keep,1.0,smoothstep(0.1,0.45,rim_p))
 				if h > floor_y: h = floor_y+(h-floor_y)*keep
 				elif fill > 0.0 and river_fill > 0.0:
 					# A hollow under the floor filled up to it, out to
@@ -2123,6 +2299,35 @@ class GDField extends RefCounted:
 					h = lerpf(h,floor_y+(h-floor_y)*keep_f,fill*minf(river_fill,1.0))
 				var floor_meadow := (1.0-smoothstep(half*0.7,half+side*0.2,d))*inland*minf(valleys,1.0)
 				meadow = maxf(meadow,floor_meadow)
+		# The placed valleys: their land, the rest riding on it (little of it on
+		# a floor, all of it VALE_FULL m off one); a floor is a meadow.
+		if not r_vale.is_empty():
+			var vale := _vale(x,z)
+			var keep := r_vale_keep+(1.0-r_vale_keep)*smoothstep(0.0,VALE_FULL,vale.y)
+			if r_vale_river > 0.0:
+				# The river down the line: the floor dead level by it (its banks'
+				# top), the water VALE_RIVER_DROP under that, running the line's way.
+				var reach := r_vale_river+RIVER_BANK+RIVER_RAMP
+				keep *= smoothstep(reach*0.5,reach*1.5,absf(_vale_r))
+				last_river_r = _vale_r
+				last_river_w = r_vale_river
+				_river_top = SEA_Y+vale.x
+				last_river_y = _river_top-VALE_RIVER_DROP
+				_river_k = 1.0
+				_river_mouth = 0.0
+				_river_bed = RIVER_BED+0.8
+				_river_bank = RIVER_BANK
+				last_river_flow = _vale_dir*VALE_RIVER_FLOW
+			h = vale.x+h*keep+_vale_wedge
+			if r_vale_knoll > 0.0 and _vale_busy > 0.0 and vale.y < 60.0:
+				# Rock knolls standing in a busy floor, off the river; trees take them.
+				var kn := smoothstep(0.2,0.5,_hills.get_noise_2d(x*2.3,z*2.3))*minf(_vale_busy*2.5,1.0)*smoothstep(40.0,110.0,absf(_vale_r))*(1.0-smoothstep(0.0,60.0,vale.y))
+				h += kn*r_vale_knoll
+				meadow *= 1.0-smoothstep(0.15,0.5,kn)
+			# The walls, spurs and a wedge's cliffs are rock: carved as a mesa's are.
+			_rock = maxf(_rock,_vale_rock)
+			meadow *= 1.0-smoothstep(0.2,0.6,_vale_rock)
+			meadow = maxf(meadow*smoothstep(0.0,300.0,vale.y),1.0-smoothstep(0.0,60.0,vale.y))
 		# The coast: the land eases flat into the sea (a beach), not a step.
 		if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
 		last_mountain = mountain

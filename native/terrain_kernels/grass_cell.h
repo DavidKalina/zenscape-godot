@@ -50,6 +50,9 @@
 
 namespace zsgrass {
 
+// endless_patch.gd `alpine_lift` (ZenScapeGrass::configure sets it).
+inline double g_alpine_lift = 0.0;
+
 using godot::Basis;
 using godot::Color;
 using godot::Transform3D;
@@ -316,7 +319,7 @@ struct Patch {
 		const double dry_far = smoothstep(0.05, 0.32, broad + wide * 0.6 + 0.1);
 		const double dry = clampf(DRY_NEAR * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
 		g = g.lerp(DRY, float(dry * 0.4));
-		const double alpine = smoothstep(42.0, 78.0, over + broad * 30.0);
+		const double alpine = smoothstep(42.0, 78.0, over - g_alpine_lift + broad * 30.0);
 		g = g.lerp(TUNDRA * float(1.0 + mid * 0.6), float(alpine * 0.8));
 		const double thin = smoothstep(THIN_UP, ROCK_UP, up);
 		g = g.lerp(OLIVE, float(thin * 0.7));
@@ -355,7 +358,7 @@ struct Patch {
 	static double rock_ragged(const Vector3 &p) {
 		return (rock_noise(p / 7.0f) - 0.5) * 0.10 + (rock_noise(p / 31.0f + Vector3(4.0, 4.0, 4.0)) - 0.5) * 0.16;
 	}
-	static double alpine_of(double over, double broad_patch) { return smoothstep(42.0, 78.0, over + broad_patch * 30.0); }
+	static double alpine_of(double over, double broad_patch) { return smoothstep(42.0, 78.0, over - g_alpine_lift + broad_patch * 30.0); }
 	static double broad(double x, double z) { return fade(x + 71.0, z + 13.0, 260.0); }
 
 	static Vector2 layer(const Vector2 &q, double cell, double chance, const Vector2 &rad, int64_t salt, Vector2 best) {
@@ -1055,6 +1058,7 @@ public:
 
 	void configure(const Dictionary &d) {
 		using namespace zsgrass;
+		g_alpine_lift = num(d, "alpine_lift", 0.0);
 		cfg.tufts = num(d, "tufts", 4.6);
 		cfg.tuft_bump = num(d, "tuft_bump", 1.0);
 		cfg.shag = num(d, "shag", 0.0);

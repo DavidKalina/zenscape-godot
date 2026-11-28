@@ -26,6 +26,11 @@ const SPRUCE_FAR := ["res://assets/models/zenscape-spruce-sprays.glb"]
 ## The source pine stands 4.26 m and 1.2 m wide; the family keeps that width and
 ## height while the variants keep their differences.
 const SPRUCE_SCALE := Vector3(1.0, 1.46, 1.0)
+## The family's scale with the look's over it (the Nahanni look, --tree-size=:
+## scripts/endless/look_nahanni.gd): the meshes themselves grow, so whatever
+## reads their bounds (spacing, sprites, solids) follows.
+static func spruce_scale() -> Vector3:
+	return SPRUCE_SCALE*preload("res://scripts/endless/look_nahanni.gd").tree_scale()
 ## Variant and how often it grows. Dead tops are rare accents.
 const SPRUCE := [["mature", 4.0], ["young", 2.0], ["spire", 2.0], ["windswept", 1.5], ["sparse", 1.5], ["dead-top", 0.5]]
 
@@ -224,7 +229,7 @@ static func spruce_keys() -> Array:
 static func spruce_mesh(index: int, canopy: bool, material: Material) -> Mesh:
 	var variant: String = SPRUCE[index][0]
 	var part := "canopy b" if canopy and spruce_texture() == 2 else ("canopy" if canopy else "trunk")
-	return _build(spruce_glb(), "%s %s" % [variant, part], SPRUCE_SCALE, GREY, material)
+	return _build(spruce_glb(), "%s %s" % [variant, part], spruce_scale(), GREY, material)
 
 ## True when the picked look carries a far level of detail ("<variant> canopy far").
 static func spruce_has_far() -> bool:
@@ -232,20 +237,20 @@ static func spruce_has_far() -> bool:
 
 ## A variant's crown in the default look (the faceted family), whatever look is picked.
 static func spruce_family_crown(index: int, material: Material) -> Mesh:
-	return _build(SPRUCE_GLB, "%s canopy" % SPRUCE[index][0], SPRUCE_SCALE, GREY, material)
+	return _build(SPRUCE_GLB, "%s canopy" % SPRUCE[index][0], spruce_scale(), GREY, material)
 
 ## A variant's distance crowns (spruce_has_far looks only), the same generator's
 ## tiers and drooping boughs with fewer faces: "mid" (land_trees.gd, 200 to 400 m)
 ## and "low" (the mid and far rings).
 static func spruce_mid_mesh(index: int, material: Material) -> Mesh:
-	return _build(spruce_glb(), "%s canopy mid" % SPRUCE[index][0], SPRUCE_SCALE, GREY, material)
+	return _build(spruce_glb(), "%s canopy mid" % SPRUCE[index][0], spruce_scale(), GREY, material)
 
 static func spruce_low_mesh(index: int, material: Material) -> Mesh:
-	return _build(spruce_glb(), "%s canopy low" % SPRUCE[index][0], SPRUCE_SCALE, GREY, material)
+	return _build(spruce_glb(), "%s canopy low" % SPRUCE[index][0], spruce_scale(), GREY, material)
 
 ## A variant's far crown (spruce_has_far looks only).
 static func spruce_far_mesh(index: int, material: Material) -> Mesh:
-	return _build(spruce_glb(), "%s canopy far" % SPRUCE[index][0], SPRUCE_SCALE, GREY, material)
+	return _build(spruce_glb(), "%s canopy far" % SPRUCE[index][0], spruce_scale(), GREY, material)
 
 static func joshua_mesh(node_name: String) -> Mesh:
 	var material := ShaderMaterial.new()

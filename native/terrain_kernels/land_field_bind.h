@@ -115,7 +115,9 @@ public:
 	// refuses a stale library (and runs its GDScript field instead).
 	// 2: `configure` takes the world's land recipe (land_field.gd recipe_defaults());
 	// 3: and the built land's forms (ridge_crisp, notch, terrace, mesa keys).
-	int64_t version() const { return 4; }
+	// 4: a sea round it (coast_ keys); 5: or a rim of mountains (rim_ keys).
+	// 6: and placed valleys (vale keys).
+	int64_t version() const { return 6; }
 
 	// The flags LandField parsed (see land_field.gd), then the noises built.
 	void configure(int64_t seed, double floor_half, const Dictionary &knobs) {
@@ -194,6 +196,23 @@ public:
 		ZS_RECIPE("coast_ramp", COAST_RAMP);
 		ZS_RECIPE("coast_depth", COAST_DEPTH);
 		ZS_RECIPE("coast_wobble", COAST_WOBBLE);
+		ZS_RECIPE("rim_tall", RIM_TALL);
+		ZS_RECIPE("rim_ramp", RIM_RAMP);
+		ZS_RECIPE("vale_slope", VALE_SLOPE);
+		ZS_RECIPE("vale_ease", VALE_EASE);
+		ZS_RECIPE("vale_keep", VALE_KEEP);
+		ZS_RECIPE("vale_warp", VALE_WARP);
+		ZS_RECIPE("vale_river", VALE_RIVER);
+		ZS_RECIPE("vale_wall", VALE_WALL);
+		ZS_RECIPE("vale_knoll", VALE_KNOLL);
+		{
+			const PackedFloat32Array wedges = knobs.get("vale_wedge", PackedFloat32Array());
+			f.vale_wedges.assign(wedges.ptr(), wedges.ptr() + wedges.size());
+		}
+		{
+			const PackedFloat32Array vale = knobs.get("vale", PackedFloat32Array());
+			f.vale.assign(vale.ptr(), vale.ptr() + vale.size());
+		}
 		ZS_RECIPE2("mesa_band", MESA_BAND_X, MESA_BAND_Y);
 #undef ZS_RECIPE
 #undef ZS_RECIPE2

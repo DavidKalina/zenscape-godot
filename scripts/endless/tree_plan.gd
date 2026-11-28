@@ -130,6 +130,9 @@ const WIDE_LONE := Vector2(1.15,1.35)
 const SINK := 0.35
 
 var seed := 1
+## The tree line (m over the sea, thinning from x to none at y): TREE_LINE
+## unless the world's flora sets `tree_line`.
+var tree_line := TREE_LINE
 ## The share: 1 the default; 0 none (--forest=X).
 var share := 1.0
 ## How much of the meadows the woods may take (1; 0 none: --forest-meadows=X).
@@ -207,7 +210,7 @@ func suits(field: RefCounted, x: float, z: float, s: Dictionary, up: float) -> f
 	if float(s.river) < RIVER_KEEP: return 0.0
 	if up < STEEP.x: return 0.0
 	var k := smoothstep(STEEP.x,STEEP.y,up)
-	k *= 1.0-smoothstep(TREE_LINE.x,TREE_LINE.y,over)
+	k *= 1.0-smoothstep(tree_line.x,tree_line.y,over)
 	var off := MEADOW_OFF
 	last_wild = 0.0
 	var v := float(s.valley)
