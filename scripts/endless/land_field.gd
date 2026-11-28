@@ -557,6 +557,10 @@ var _curtains_of: Array = [null,null]
 ## Set by `surface` (main thread): the curtains' caves left out.
 var _cave_off := false
 var _isles: RefCounted = null
+## The world profile's greybox pieces (land_pieces.gd), or null where it lists
+## none: a stamp like the isles, over everything else.
+const LandPieces = preload("res://scripts/endless/land_pieces.gd")
+var _pieces: RefCounted = null
 ## The world's edge line (centre x, z, half side, corner radius), or half 0.
 var _edge := Vector4.ZERO
 ## The region it rings, in a world of regions.
@@ -589,6 +593,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	_massif = null if k.get("old_land",false) or not bool(world.layer("peak",true)) else PeakMassif.make(land_seed,Callable(_impl,"height"))
 	ice_tunnel = PeakTunnel.make(_massif)
 	_isles = null if k.get("old_land",false) else CoastIsles.make(land_seed,String(world.id))
+	_pieces = null if k.get("old_land",false) else LandPieces.make(world)
 	_set_edge(k)
 	if _blend:
 		for r: int in world.regions.size():
@@ -740,6 +745,7 @@ func native_impl_in(x0: float, z0: float, x1: float, z1: float) -> Object:
 	# The native kernels read the field without the Peak's massif.
 	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	if _isles != null and _isles.meets(x0,z0,x1,z1): return null
+	if _pieces != null and _pieces.meets(x0,z0,x1,z1): return null
 	if not _blend: return native_impl()
 	var one: int = _impl.one_in(x0,z0,x1,z1)
 	return _impl.kids[one] if one >= 0 and _impl.kid_native[one] else null
@@ -760,6 +766,7 @@ func region_in(x0: float, z0: float, x1: float, z1: float) -> int:
 func native_band_in(x0: float, z0: float, x1: float, z1: float) -> Object:
 	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	if _isles != null and _isles.meets(x0,z0,x1,z1): return null
+	if _pieces != null and _pieces.meets(x0,z0,x1,z1): return null
 	return _impl.band_in(x0,z0,x1,z1) if _blend else null
 
 ## Region `r`'s own native field (ZenScapeLandField), or null (GDScript).
@@ -789,7 +796,7 @@ func sample(x: float, z: float) -> Vector2:
 	_t_on = false
 	_m_on = false
 	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0 and not _curtain_near(x,z):
-		return _isle(_impl.sample(x,z) if _massif == null else _peak(_impl.sample(x,z),x,z),x,z)
+		return _piece(_isle(_impl.sample(x,z) if _massif == null else _peak(_impl.sample(x,z),x,z),x,z),x,z)
 	# (The square's pond, tunnel, hall and split first: finding them samples
 	# the field.)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
@@ -803,7 +810,21 @@ func sample(x: float, z: float) -> Vector2:
 	if not sp.is_empty(): got.x = Splits.carve(sp,got.x,x,z)
 	got.x = _curtain(x,z,got.x)
 	if _massif != null: got = _peak(got,x,z)
-	return _isle(got,x,z)
+	return _piece(_isle(got,x,z),x,z)
+
+## Vector2(height, meadow) `got` with the world's pieces on it at (x, z); where
+## they lift it they count as the massif's land for the rivers (`_m_on`).
+func _piece(got: Vector2, x: float, z: float) -> Vector2:
+	if _pieces == null or not _pieces.reaches(x,z): return got
+	got = _pieces.apply(got,x,z)
+	if absf(float(_pieces.last_lift)) > LandPieces.LIFTED:
+		_m_on = true
+		_p_on = false
+	return got
+
+## The world's pieces (land_pieces.gd), or null.
+func pieces() -> RefCounted:
+	return _pieces
 
 ## Vector2(height, meadow) `got` with the islands on it at (x, z); they count
 ## as the massif's land for the rivers (`_m_on`).
@@ -872,9 +893,10 @@ func peak() -> RefCounted:
 func _peak_clear(x: float, z: float, r: float) -> bool:
 	return (_massif == null or _massif.clear(x,z,r)) and (_isles == null or _isles.clear(x,z,r))
 
-## The same for placers outside the field (PeakMassif `off`).
+## The same for placers outside the field (PeakMassif `off`), and off the
+## world's pieces.
 func off_peak(x: float, z: float, r := 0.0) -> bool:
-	return (_massif == null or _massif.clear(x,z,r)) and (_isles == null or _isles.clear(x,z,r))
+	return (_massif == null or _massif.clear(x,z,r)) and (_isles == null or _isles.clear(x,z,r)) and (_pieces == null or _pieces.clear(x,z,r))
 
 ## Whether a site of reach `r` at (x, z) keeps out of every placed site's
 ## clear footprint (placed_list.gd; the arches, the rocks and the trees ask
@@ -1171,7 +1193,7 @@ func shape(x: float, z: float) -> Dictionary:
 	_t_on = false
 	_m_on = false
 	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0 and not _curtain_near(x,z):
-		return _isle_shape(_impl.shape(x,z) if _massif == null else _peak_shape(_impl.shape(x,z),x,z),x,z)
+		return _piece_shape(_isle_shape(_impl.shape(x,z) if _massif == null else _peak_shape(_impl.shape(x,z),x,z),x,z),x,z)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var h := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
@@ -1201,7 +1223,24 @@ func shape(x: float, z: float) -> Dictionary:
 			s.river_w = _p_w
 			s.river_y = _p_y
 	if _massif != null: s = _peak_shape(s,x,z)
-	return _isle_shape(s,x,z)
+	return _piece_shape(_isle_shape(s,x,z),x,z)
+
+## `shape`'s dictionary `s` with the world's pieces on it at (x, z): no river
+## where one lifts the land.
+func _piece_shape(s: Dictionary, x: float, z: float) -> Dictionary:
+	if _pieces == null or not _pieces.reaches(x,z): return s
+	var keep_m := _m_on
+	var keep_p := _p_on
+	var got := _piece(Vector2(float(s.height),float(s.meadow)),x,z)
+	if absf(float(_pieces.last_lift)) <= LandPieces.LIFTED:
+		_m_on = keep_m
+		_p_on = keep_p
+		s.height = got.x
+		return s
+	s.height = got.x
+	s.river = 1000.0
+	s.river_r = 1000.0
+	return s
 
 ## `shape`'s dictionary `s` with the islands on it at (x, z): no river there.
 func _isle_shape(s: Dictionary, x: float, z: float) -> Dictionary:
@@ -1242,6 +1281,7 @@ func _peak_shape(s: Dictionary, x: float, z: float) -> Dictionary:
 ## The river's water level (world y) where a point is on a river's water,
 ## else NAN.
 func river_y(x: float, z: float) -> float:
+	if _pieces != null and _pieces.reaches(x,z) and absf(float(_pieces.rise(x,z))) > LandPieces.LIFTED: return NAN
 	if _isles != null and _isles.reaches(x,z):
 		sample(x,z)
 		if _m_on and not _p_on: return NAN
@@ -1275,6 +1315,7 @@ func height(x: float, z: float) -> float:
 	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0 or _curtain_near(x,z): return sample(x,z).x
 	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	if _isles != null and _isles.reaches(x,z): return sample(x,z).x
+	if _pieces != null and _pieces.reaches(x,z): return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
@@ -1320,6 +1361,8 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 		if _massif.tarn_meets(x0,z0,x0+cells*step,z0+cells*step): Ponds.apply_chunk(self,_impl,made,[_massif.pond],x0,z0,step,cells,skirt_drop)
 	if _isles != null and _isles.meets(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step):
 		_isles.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
+	if _pieces != null and _pieces.meets(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step):
+		_pieces.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
 	return made
 
 ## The field whose `colour` a chunk pass over the box (x0, z0)..(x1, z1) may
@@ -1471,6 +1514,8 @@ func peak_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: 
 			Ponds.apply_grid(got,[_massif.pond],x0,z0,step,nx,nz,pad)
 	if _isles != null and _isles.meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step):
 		_isles.apply_grid(got,x0,z0,step,nx,nz,pad)
+	if _pieces != null and _pieces.meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step):
+		_pieces.apply_grid(got,x0,z0,step,nx,nz,pad)
 
 func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
 	if _native: return _impl.grid(x0,z0,step,nx,nz,pad)

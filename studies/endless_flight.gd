@@ -932,6 +932,12 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	# The world's greybox pieces' dressing (scripts/endless/piece_dress.gd).
+	if field.pieces() != null:
+		var dress: Node3D = preload("res://scripts/endless/piece_dress.gd").new()
+		dress.name = "PieceDress"
+		add_child(dress)
+		dress.setup(self)
 	if Whale.wanted():
 		whale = Whale.new()
 		whale.name = "Whale"

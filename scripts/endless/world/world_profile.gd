@@ -63,6 +63,10 @@ var flora := {"forest":1.0,"forest_meadows":1.0,"tree_weights":PackedFloat32Arra
 var paint := {"mood":"alpine_morning","hour":8.6,"ground":{},"sea":{},"globals":{}}
 var layers := {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"stacks":0.0,"hoodoos":0.0,"traffic":-1}
 var spawn := {"at":Vector2.ZERO,"alt":45.0,"heading":0.0}
+## Greybox pieces of land (scripts/pieces/) stamped onto the ground, a row
+## each: {piece: preload(script), at: Vector2 xz, heading: degrees clockwise
+## from -z, scale, tall} (scripts/endless/land_pieces.gd). None: nothing paid.
+var pieces: Array = []
 ## One profile everywhere (the engine skips the per-spot asks).
 var uniform := true
 
