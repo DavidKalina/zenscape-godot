@@ -153,6 +153,8 @@ inline uint32_t hash4(int64_t a, int64_t b, int64_t c, int64_t d) {
 struct Config {
 	int64_t seed = 1;
 	double share = 1.0, meadows = 1.0;
+	// tree_plan.gd `tree_line` (the world's, else TREE_LINE).
+	double tree_line_x = 60.0, tree_line_y = 82.0;
 	double gap = 0.0, lane_open = 0.0;
 	std::vector<Vector3> dims;
 	std::vector<float> weights;
@@ -353,7 +355,7 @@ struct Planner {
 		if (s.river < RIVER_KEEP) return 0.0;
 		if (up < double(STEEP.x)) return 0.0;
 		double k = smoothstep(STEEP.x, STEEP.y, up);
-		k *= 1.0 - smoothstep(TREE_LINE.x, TREE_LINE.y, over);
+		k *= 1.0 - smoothstep(cfg.tree_line_x, cfg.tree_line_y, over);
 		F2 off = MEADOW_OFF;
 		last_wild = 0.0;
 		const double v = s.valley;
@@ -796,6 +798,11 @@ public:
 		cfg.seed = int64_t(d.get("seed", 1));
 		cfg.share = double(d.get("share", 1.0));
 		cfg.meadows = double(d.get("meadows", 1.0));
+		{
+			const Vector2 tl = d.get("tree_line", Vector2(60.0f, 82.0f));
+			cfg.tree_line_x = tl.x;
+			cfg.tree_line_y = tl.y;
+		}
 		cfg.gap = double(d.get("gap", 0.0));
 		cfg.lane_open = double(d.get("lane_open", 0.0));
 		const PackedVector3Array dims = d.get("dims", PackedVector3Array());

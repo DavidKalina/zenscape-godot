@@ -144,6 +144,9 @@ uniform float snow_line = 95.0;
 // summit_proud) whiten in broken patches from summit_snow (m over the sea).
 uniform float summit_mode : hint_range(0.0, 1.0) = 1.0;
 uniform vec2 alpine_from = vec2(0.25, 0.95);
+// A world whose land stands higher: the turf turns to tundra this many m
+// higher (EndlessPatch.alpine_lift, the tufts' and the patches' too).
+uniform float alpine_lift = 0.0;
 uniform vec2 alpine_stone = vec2(70.0, 130.0);
 uniform vec2 summit_snow = vec2(70.0, 100.0);
 uniform vec2 summit_proud = vec2(0.50, 0.58);
@@ -1115,7 +1118,7 @@ void fragment() {
 	float mid = ep_fade(gxz + vec2(133.0, 41.0), 19.0, fp);
 	float fine = zs_fade(gxz + vec2(17.0, 3.0), 5.5, fp);
 	// High ground goes to a tundra's browner turf.
-	float alpine = smoothstep(42.0, 78.0, over + broad * 30.0);
+	float alpine = smoothstep(42.0, 78.0, over - alpine_lift + broad * 30.0);
 	// Where the rock, the beach, a bank and snow lie (their paint below).
 	float rock_edge = (zs_noise(gxz / 9.0) - 0.5) * 0.10 + mid * 0.08;
 	float rocky = smoothstep(rock_up + 0.04, rock_up - 0.05, n.y + rock_edge);

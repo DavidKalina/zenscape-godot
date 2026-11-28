@@ -56,7 +56,7 @@ const WindMap = preload("res://scripts/endless/wind_map.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
-const MOODS := ["alpine_morning","golden_meadow","ocean_light","meadow_morning","after_the_rain","desert_afternoon","amber_hour","rosewater_dusk","rose_dusk","moonlit_stillness"]
+const MOODS := ["alpine_morning","golden_meadow","ocean_light","meadow_morning","after_the_rain","desert_afternoon","amber_hour","rosewater_dusk","rose_dusk","moonlit_stillness","nahanni"]
 const MOOD := "alpine_morning"
 ## The hour it opens on with no --mood or --hour: the mood's own, as the
 ## aqueduct isle opens on it. (Round one's 7.6, a low sun raking every
@@ -317,6 +317,7 @@ func setup(land_seed: int) -> void:
 	sky_lights.setup(land_seed)
 	# The world's mood and hour (its paint), then the flags over them.
 	var world: RefCounted = WorldProfile.current()
+	preload("res://scripts/endless/endless_patch.gd").alpine_lift = float(world.paint.get("alpine_lift",0.0))
 	var world_mood := str(world.paint.get("mood",MOOD))
 	if world_mood in MOODS: mood = world_mood
 	var hour := -1.0
@@ -393,7 +394,8 @@ func setup(land_seed: int) -> void:
 	# Depth fog's density scales its curve: 1 runs it to all sky.
 	environment.fog_density = 1.0
 	environment.fog_depth_begin = FOG_BEGIN
-	environment.fog_depth_end = FOG_END*LandStream.view()
+	# The Nahanni look, --haze-end=: the haze nearer (scripts/endless/look_nahanni.gd).
+	environment.fog_depth_end = FOG_END*LandStream.view()*preload("res://scripts/endless/look_nahanni.gd").haze_end()
 	_fog_curve = DistanceRead.fog_curve()
 	environment.fog_depth_curve = _fog_curve
 	_aerial = DistanceRead.aerial(AERIAL)
@@ -461,7 +463,7 @@ func setup(land_seed: int) -> void:
 	if EndlessClouds.wanted():
 		clouds = EndlessClouds.new()
 		add_child(clouds)
-		clouds.setup(land_seed,celestial,Vector4(FOG_BEGIN,FOG_END*LandStream.view(),FOG_CURVE,CLOUD_HAZE),SUN_SCATTER*0.5)
+		clouds.setup(land_seed,celestial,Vector4(FOG_BEGIN,environment.fog_depth_end,FOG_CURVE,CLOUD_HAZE),SUN_SCATTER*0.5)
 		if sea != null and sea.material_override is ShaderMaterial and (sea.material_override as ShaderMaterial).shader == preload("res://shaders/endless_sea.gdshader"):
 			clouds.sea_material = sea.material_override
 	_light_on = not "--light=0" in LaunchArgs.user_args()

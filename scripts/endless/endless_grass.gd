@@ -1004,6 +1004,7 @@ static func native_config(site_values: Dictionary, far_share: float, rings: Vect
 	for k: String in ["tufts","tuft_bump","shag","contact","height_field","tilt","rim","variety","patches","flower_tall","slope","alpine","alp","flower_part"]:
 		if site_values.has(k): c[k] = site_values[k]
 	c.sub = site_values.get("sub",0.0)
+	c.alpine_lift = Patch.alpine_lift
 	c.flowers = bool(site_values.get("flowers",true)) and far_share < 1.0
 	c.flower_tries = (BLOOM_TRIES if c.flowers else 0.0001) if Patch.bloom_amount > 0.0 else KitFlora.FLOWER_TRIES
 	c.high = HIGH
@@ -1023,7 +1024,7 @@ static func native_config(site_values: Dictionary, far_share: float, rings: Vect
 	c.beach_clear = BEACH_CLEAR
 	c.beach_ramp = BEACH_RAMP
 	c.rock_near = ROCK_NEAR
-	c.alpine_top = ALPINE_TOP
+	c.alpine_top = ALPINE_TOP+Patch.alpine_lift
 	c.tuft_tone = TUFT_TONE
 	c.thatch_straw = KitFlora.THATCH_STRAW.srgb_to_linear()
 	c.bloom_peak = BLOOM_PEAK
@@ -1939,7 +1940,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var f: RefCounted = Field.new(land_seed)
 	var sl: Vector2 = site_values.get("slope",SLOPE)
 	var alp: Vector2 = site_values.get("alpine",ALPINE)
-	var top := ALPINE_TOP if alp.y > 0.0 else HIGH.y
+	var top := ALPINE_TOP+Patch.alpine_lift if alp.y > 0.0 else HIGH.y
 	var x0 := key.x*CELL
 	var z0 := key.y*CELL
 	var n := int(CELL)+1+PAD*2

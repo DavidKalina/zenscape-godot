@@ -45,6 +45,11 @@ const PRESETS := {
 	# sky, muted shade.
 	"amber_hour": {"title":"Amber hour","description":"Soft late gold through a warm haze.","palette":"Amber","phase":0.696,"weather":"clear","clouds":0.08,"mist":0.1,"haze":0.3,"wind":0.45,
 		"strength":1.0,"ambient_energy":1.0,"exposure":1.04,"colors":{"ambient":"b0adb2","bounce":"7a6a52","rim":"f0d098","fog":"e4dccf"}},
+	# The default look (scripts/endless/look_nahanni.gd; --look=old without): a northern river valley.
+	# A grey-blue sky over a cool pale haze, dark spruce, olive grass gone a
+	# little dry, grey limestone, silty green water; a touch under-exposed.
+	"nahanni": {"title":"Nahanni","description":"Dark spruce and grey stone in cool, heavy air.","palette":"Mountain","phase":0.304,"weather":"fair","clouds":0.3,"mist":0.22,"haze":0.24,"wind":0.55,
+		"strength":1.0,"exposure":0.94,"colors":{"sky":"6c8496","horizon":"7b8c92","glow":"c4cdcc","sun":"ffe4c0","grass":"4f7242","foliage":"2e4f39","rock":"7f7d76","earth":"57483b","water":"4d7868"}},
 	"storm_gathering": {"title":"Storm gathering","description":"Slate skies and a rising wind.","palette":"Storm","phase":0.46,"weather":"storm","clouds":0.8,"mist":0.42,"haze":0.58,"wind":2.5,
 		"strength":1.0,"wet":0.5,"humidity":0.8,"colors":{}},
 }

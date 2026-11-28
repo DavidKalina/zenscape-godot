@@ -95,7 +95,7 @@ static func grass(x: float, z: float, meadow: float, over: float, up: float, hue
 	var dry_far := smoothstep(0.05,0.32,broad+wide*0.6+0.1)
 	var dry := clampf(DRY_NEAR*0.6+dry_far*0.55,0.0,1.0)*(1.0-meadow*0.6)
 	g = g.lerp(DRY,dry*0.4)
-	var alpine := smoothstep(42.0,78.0,over+broad*30.0)
+	var alpine := smoothstep(42.0,78.0,over-alpine_lift+broad*30.0)
 	g = g.lerp(TUNDRA*(1.0+mid*0.6),alpine*0.8)
 	var thin := smoothstep(THIN_UP,ROCK_UP,up)
 	g = g.lerp(OLIVE,thin*0.7)
@@ -147,7 +147,12 @@ static func alpine(x: float, z: float, over: float) -> float:
 
 ## The same from the broad patch there (`broad`).
 static func alpine_of(over: float, broad_patch: float) -> float:
-	return smoothstep(42.0,78.0,over+broad_patch*30.0)
+	return smoothstep(42.0,78.0,over-alpine_lift+broad_patch*30.0)
+
+## A world whose land stands higher: the turf turns to tundra this many m
+## higher (the world's paint `alpine_lift`, set by EndlessLook.setup before
+## any patch is asked; the ground shader's and the native grass's too).
+static var alpine_lift := 0.0
 
 ## Under this over the sea (m) alpine is 0 whatever the broad patch.
 const ALPINE_FROM := 42.0-15.0
